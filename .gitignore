@@ -23,3 +23,6 @@ frontend/dist/
 
 # Vite cache
 .vite/
+
+# Project instructions
+AGENTS.md
