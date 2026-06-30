@@ -1,0 +1,5 @@
+table_name,column_name,data_type
+rs_industrial_info_yc,sewer_inspection_rectification_since_2020,text
+rs_industrial_info_yc,rectification_status,text
+rs_outlet_remediation_v2,remediation_type,character varying
+rs_outlet_remediation_v2,remediation_video,character varying
