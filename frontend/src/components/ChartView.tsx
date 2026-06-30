@@ -44,6 +44,7 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     return auto ?? 'bar';
   });
   const echartsRef = useRef<ReactECharts>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // 跟踪上次 dataVersion 和 spec.type，用于判断数据/推荐类型是否真正变化
   const prevDataVersionRef = useRef(chart.dataVersion);
@@ -106,6 +107,30 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     }
   }, [effectiveViewMode, localType, isChartOnly]);
 
+  // fillHeight 模式下监听容器尺寸变化，驱动 ECharts resize
+  useEffect(() => {
+    if (!fillHeight) return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    let rafId: number | null = null;
+
+    const observer = new ResizeObserver(() => {
+      if (rafId !== null) return; // 合并同一帧
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const instance = echartsRef.current?.getEchartsInstance();
+        if (instance) instance.resize();
+      });
+    });
+
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [fillHeight]);
+
   const option = useMemo(() => {
     // chartOnly 模式：固定使用 spec.type，忽略 localType
     const type = isChartOnly && isRenderableChartType(chart.spec.type) ? chart.spec.type : localType;
@@ -133,7 +158,13 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
   );
 
   return (
-    <div style={{ marginTop: isChartOnly ? 0 : 12 }}>
+    <div
+      ref={containerRef}
+      style={{
+        ...(fillHeight ? { height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' } : {}),
+        marginTop: isChartOnly ? 0 : (fillHeight ? 0 : 12),
+      }}
+    >
       {/* 工具栏：仅普通查询模式显示，追加图表模式隐藏 */}
       {!isChartOnly && (
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -209,7 +240,7 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
           option={option}
           notMerge={true}
           onChartReady={handleChartReady}
-          style={{ height: fillHeight ? '100%' : 350 }}
+          style={fillHeight ? { flex: 1, minHeight: 0, width: '100%' } : { height: 350 }}
         />
       ) : !isChartOnly && effectiveViewMode === 'chart' && !option ? (
         <div

@@ -52,8 +52,6 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
 
   const handleLayoutChange = useCallback((newLayout: Layout) => {
     onLayoutChange(newLayout);
-    // 延迟 resize ECharts，等 DOM 更新完成
-    setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
   }, [onLayoutChange]);
 
   return (
@@ -238,6 +236,9 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
                   {/* 内容 */}
                   <div style={{
                     flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: 0,
                     overflow: 'hidden',
                     padding: isChart ? '8px 12px 12px' : 0,
                   }}>
