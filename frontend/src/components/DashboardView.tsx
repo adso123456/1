@@ -81,7 +81,7 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
       {/* 完整内容容器：供导出，随内容自然撑开，不设固定高度 */}
       <div ref={contentRef} data-export-root>
         {/* 顶部栏 */}
-      <header style={{
+      <header data-export-header style={{
         padding: '12px 20px',
         backgroundColor: '#fff',
         borderBottom: `1px solid ${BORDER}`,
@@ -197,6 +197,8 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
 
               return (
                 <div
+                  data-export-card
+                  data-export-card-id={di.id}
                   key={di.id}
                   style={{
                     border: `1px solid ${BORDER}`,
