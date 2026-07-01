@@ -33,12 +33,6 @@ export async function exportDashboardAsPng(
   const canvas = await html2canvas(element, {
     width: scrollWidth,
     height: scrollHeight,
-    windowWidth: scrollWidth,
-    windowHeight: scrollHeight,
-    scrollX: 0,
-    scrollY: 0,
-    x: 0,
-    y: 0,
     scale,
     backgroundColor: '#f5f5f5', // 仪表板背景色
     useCORS: true,
@@ -50,7 +44,7 @@ export async function exportDashboardAsPng(
         el.classList.contains('react-resizable-handle')
       );
     },
-    // 在克隆文档中展开滚动容器，使 html2canvas 截取完整内容
+    // 在克隆文档中展开内容容器，确保 html2canvas 截取完整高度
     onclone: (clonedDoc) => {
       const root = clonedDoc.querySelector('[data-export-root]') as HTMLElement | null;
       if (root) {
@@ -60,24 +54,6 @@ export async function exportDashboardAsPng(
         root.style.overflow = 'visible';
         root.scrollTop = 0;
         root.scrollLeft = 0;
-      }
-
-      // 同步扩展 html 和 body 到导出尺寸，防止视口裁剪
-      const html = clonedDoc.documentElement;
-      const body = clonedDoc.body;
-      if (html) {
-        html.style.width = `${Math.max(scrollWidth, html.scrollWidth || 0)}px`;
-        html.style.height = `${Math.max(scrollHeight, html.scrollHeight || 0)}px`;
-        html.style.overflow = 'visible';
-        html.scrollTop = 0;
-        html.scrollLeft = 0;
-      }
-      if (body) {
-        body.style.width = `${Math.max(scrollWidth, body.scrollWidth || 0)}px`;
-        body.style.height = `${Math.max(scrollHeight, body.scrollHeight || 0)}px`;
-        body.style.overflow = 'visible';
-        body.scrollTop = 0;
-        body.scrollLeft = 0;
       }
     },
   });

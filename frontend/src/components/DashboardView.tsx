@@ -72,15 +72,15 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
 
   return (
     <div
-      ref={contentRef}
-      data-export-root
       style={{
         height: '100vh',
         overflowY: 'auto',
         backgroundColor: '#f5f5f5',
       }}
     >
-      {/* 顶部栏 */}
+      {/* 完整内容容器：供导出，随内容自然撑开，不设固定高度 */}
+      <div ref={contentRef} data-export-root>
+        {/* 顶部栏 */}
       <header style={{
         padding: '12px 20px',
         backgroundColor: '#fff',
@@ -300,6 +300,7 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
           </GridLayout>
         </div>
       )}
+      </div>
     </div>
   );
 }
