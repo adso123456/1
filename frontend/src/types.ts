@@ -53,6 +53,15 @@ export type ChartType =
 
 export type RenderableChartType = Exclude<ChartType, 'none'>;
 
+/** 单个图表类型的可用性评估结果 */
+export interface ChartTypeAvailability {
+  type: RenderableChartType;
+  label: string;
+  supported: boolean;
+  /** 不支持时的原因说明 */
+  reason: string;
+}
+
 export interface ChartSpec {
   type: ChartType;
   title?: string;

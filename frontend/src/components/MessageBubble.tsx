@@ -2,9 +2,10 @@ import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, RenderableChartType } from '../types';
+import { buildChartOption } from '../chartRegistry';
 import { ThinkingSteps } from './ThinkingSteps';
 import { ChartView } from './ChartView';
-import { ChartCard, ChartErrorBoundary } from './ChartCard';
+import { ChartErrorBoundary } from './ChartCard';
 
 interface Props {
   message: ChatMessage;
@@ -205,50 +206,45 @@ export function MessageBubble({ message, onChangeChartType }: Props) {
             )}
 
             {/* 图表区域（SQL 模式下用 display:none 保留内部状态） */}
-            <div style={{ display: showSql ? 'none' : undefined }}>
-              {message.charts.length === 1 && (
-                <ChartErrorBoundary
-                  resetKey={`${message.charts[0].id}|${message.charts[0].error ?? ''}|${JSON.stringify(message.charts[0].spec)}|${message.charts[0].columns.join(',')}|${message.charts[0].dataVersion}`}
-                  fallback={
-                    <div
-                      style={{
-                        color: '#ef4444',
-                        fontSize: 13,
-                        padding: '12px',
-                        backgroundColor: '#fef2f2',
-                        borderRadius: 6,
-                        border: '1px solid #fecaca',
-                      }}
-                    >
-                      图表渲染失败
-                    </div>
-                  }
-                >
-                  <ChartView chart={message.charts[0]} onChangeType={onChangeChartType} />
-                </ChartErrorBoundary>
-              )}
-              {message.charts.length >= 2 && (
-                <div
-                  className="chart-grid"
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(2, 1fr)',
-                    gap: 14,
-                    marginTop: 14,
-                  }}
-                >
-                  {message.charts.map((chart, i) => (
-                    <ChartCard
-                      key={chart.id}
-                      chart={chart}
-                      index={i}
-                      isSingle={false}
-                      onChangeType={onChangeChartType}
-                    />
-                  ))}
+            {/* 多条 charts 时，只展示第一张无 error 且可构建的图表；无有效图表则展示第一张错误图表 */}
+            {(() => {
+              // 选择展示图表：第一张无 error 且可构建 > 第一张有 error > 第一张
+              let best = message.charts.length > 0 ? message.charts[0] : null;
+              if (message.charts.length > 1) {
+                const valid = message.charts.find(c => !c.error && buildChartOption(c) !== null);
+                if (valid) {
+                  best = valid;
+                } else {
+                  const errChart = message.charts.find(c => !!c.error);
+                  if (errChart) best = errChart;
+                }
+              }
+              if (!best) return null;
+
+              return (
+                <div style={{ display: showSql ? 'none' : undefined }}>
+                  <ChartErrorBoundary
+                    resetKey={`${best.id}|${best.error ?? ''}|${JSON.stringify(best.spec)}|${best.columns.join(',')}|${best.dataVersion}`}
+                    fallback={
+                      <div
+                        style={{
+                          color: '#ef4444',
+                          fontSize: 13,
+                          padding: '12px',
+                          backgroundColor: '#fef2f2',
+                          borderRadius: 6,
+                          border: '1px solid #fecaca',
+                        }}
+                      >
+                        图表渲染失败
+                      </div>
+                    }
+                  >
+                    <ChartView chart={best} onChangeType={onChangeChartType} />
+                  </ChartErrorBoundary>
                 </div>
-              )}
-            </div>
+              );
+            })()}
           </>
         )}
       </div>

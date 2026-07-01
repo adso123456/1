@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
-import type { ChartData, RenderableChartType } from '../types';
+import type { ChartData, ChartTypeAvailability, RenderableChartType } from '../types';
 import {
   buildChartOption,
   CHART_TYPE_LABELS,
+  getChartTypeAvailability,
   getCompatibleChartTypes,
   isNullValue,
   isRenderableChartType,
@@ -45,6 +46,19 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
   });
   const echartsRef = useRef<ReactECharts>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 下拉菜单状态
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** 显示 toast 提示，自动清除上一次 */
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(msg);
+    toastTimerRef.current = setTimeout(() => setToastMessage(null), 2000);
+  };
 
   // 跟踪上次 dataVersion 和 spec.type，用于判断数据/推荐类型是否真正变化
   const prevDataVersionRef = useRef(chart.dataVersion);
@@ -79,13 +93,11 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     }
   };
 
-  const chartTypes = useMemo(() => {
-    const types = candidates.map(type => ({ key: type, label: CHART_TYPE_LABELS[type] }));
-    if (chart.explicitType && isRenderableChartType(chart.spec.type) && !candidates.includes(chart.spec.type)) {
-      types.unshift({ key: chart.spec.type, label: CHART_TYPE_LABELS[chart.spec.type] });
-    }
-    return types;
-  }, [candidates, chart.explicitType, chart.spec.type]);
+  /** 全部 13 种图表类型的可用性评估 */
+  const allTypes = useMemo<ChartTypeAvailability[]>(
+    () => getChartTypeAvailability(chart),
+    [chart],
+  );
 
   const handleTypeChange = (type: RenderableChartType) => {
     // 切换前清空画布，避免旧图表类型配置残留（双保险第一层）
@@ -130,6 +142,27 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [fillHeight]);
+
+  // 下拉菜单：点击外部或按 Escape 关闭
+  useEffect(() => {
+    if (!dropdownOpen) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDropdownOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [dropdownOpen]);
 
   const option = useMemo(() => {
     // chartOnly 模式：固定使用 spec.type，忽略 localType
@@ -206,28 +239,113 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
         </div>
         )}
 
-        {/* 二级：图表类型（仅图表模式下显示，包括 hideTableToggle 时） */}
+        {/* 二级：图表类型下拉菜单（仅图表模式下显示） */}
         {effectiveViewMode === 'chart' && (
-          <div style={{ display: 'flex', gap: 4, backgroundColor: '#f3f4f6', borderRadius: 6, padding: 3 }}>
-            {chartTypes.map(t => (
-              <button
-                key={t.key}
-                onClick={() => handleTypeChange(t.key)}
-                style={{
-                  padding: '4px 12px',
-                  border: 'none',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  backgroundColor: localType === t.key ? '#2563eb' : 'transparent',
-                  color: localType === t.key ? '#fff' : '#374151',
-                  fontWeight: localType === t.key ? 500 : 400,
-                  transition: 'all .15s',
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            {/* 当前类型按钮 */}
+            <button
+              onClick={() => setDropdownOpen(prev => !prev)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '4px 10px',
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 500,
+                backgroundColor: dropdownOpen ? '#f3f4f6' : '#fff',
+                color: '#374151',
+                transition: 'all .15s',
+              }}
+            >
+              {CHART_TYPE_LABELS[localType]}
+              <span style={{ fontSize: 9, color: '#9ca3af' }}>
+                {dropdownOpen ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {/* 下拉面板 */}
+            {dropdownOpen && (
+              <>
+                {/* Toast 提示 */}
+                {toastMessage && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 8px)',
+                    left: 0,
+                    padding: '6px 12px',
+                    backgroundColor: '#374151',
+                    color: '#fff',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    whiteSpace: 'nowrap',
+                    zIndex: 102,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  }}>
+                    {toastMessage}
+                  </div>
+                )}
+
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: 4,
+                  backgroundColor: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 8,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                  zIndex: 100,
+                  minWidth: 150,
+                  maxHeight: 360,
+                  overflowY: 'auto',
+                  padding: '4px 0',
+                }}>
+                  {allTypes.map(t => {
+                    const isCurrent = t.type === localType;
+                    return (
+                      <button
+                        key={t.type}
+                        onClick={() => {
+                          if (t.supported) {
+                            handleTypeChange(t.type);
+                            setDropdownOpen(false);
+                          } else {
+                            showToast('该数据类型暂不支持该图表');
+                          }
+                        }}
+                        aria-disabled={!t.supported || undefined}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '6px 14px',
+                          border: 'none',
+                          cursor: t.supported ? 'pointer' : 'not-allowed',
+                          fontSize: 12,
+                          backgroundColor: isCurrent ? '#eff6ff' : 'transparent',
+                          color: t.supported ? '#374151' : '#d1d5db',
+                          fontWeight: isCurrent ? 500 : 400,
+                          transition: 'background-color .1s',
+                        }}
+                        onMouseEnter={e => {
+                          if (t.supported) {
+                            e.currentTarget.style.backgroundColor = isCurrent ? '#dbeafe' : '#f3f4f6';
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.backgroundColor = isCurrent ? '#eff6ff' : 'transparent';
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

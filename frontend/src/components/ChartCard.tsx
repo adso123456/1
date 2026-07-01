@@ -40,11 +40,10 @@ export class ChartErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
 interface ChartCardProps {
   chart: ChartData;
   index: number;
-  isSingle: boolean;
   onChangeType?: (type: RenderableChartType) => void;
 }
 
-export function ChartCard({ chart, index, isSingle, onChangeType }: ChartCardProps) {
+export function ChartCard({ chart, index, onChangeType }: ChartCardProps) {
   const showError =
     !!chart.error ||
     (!chart.columns.length && !chart.rows.length && chart.spec.type === 'none');
@@ -114,7 +113,7 @@ export function ChartCard({ chart, index, isSingle, onChangeType }: ChartCardPro
           >
             <ChartView
               chart={chart}
-              hideTitle={!isSingle}
+              hideTitle
               onChangeType={onChangeType}
             />
           </ChartErrorBoundary>
