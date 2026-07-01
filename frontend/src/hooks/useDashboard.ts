@@ -114,9 +114,9 @@ function loadStore(): StoreData {
     // 解析失败，走迁移/初始化逻辑
   }
 
-  // 迁移旧数据：旧 key 存在时，包装成一个仪表板
+  // 迁移旧数据：只要旧 key 存在（含空数组[]），就包装成"默认仪表板"
   const oldItems = loadOldDashboard();
-  if (oldItems && oldItems.length > 0) {
+  if (oldItems !== null) {
     generateLayout(oldItems);
     const dashboard: DashboardMeta = {
       id: generateId(),
@@ -125,14 +125,17 @@ function loadStore(): StoreData {
       updatedAt: Date.now(),
       items: oldItems,
     };
-    return {
+    const store: StoreData = {
       version: 2,
       currentDashboardId: dashboard.id,
       dashboards: [dashboard],
     };
+    // 立即持久化到新 key，防止刷新后重复迁移、重新生成 ID
+    saveStore(store);
+    return store;
   }
 
-  // 无任何旧数据：创建空仪表板
+  // 无任何旧数据：创建空"新建仪表板"，立即持久化
   const newDashboard: DashboardMeta = {
     id: generateId(),
     name: '新建仪表板',
@@ -140,11 +143,13 @@ function loadStore(): StoreData {
     updatedAt: Date.now(),
     items: [],
   };
-  return {
+  const initialStore: StoreData = {
     version: 2,
     currentDashboardId: newDashboard.id,
     dashboards: [newDashboard],
   };
+  saveStore(initialStore);
+  return initialStore;
 }
 
 function saveStore(data: StoreData): boolean {
