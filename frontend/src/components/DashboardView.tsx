@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { DashboardItem } from '../types';
 import { default as GridLayout } from 'react-grid-layout/legacy';
 import type { Layout } from 'react-grid-layout/legacy';
 import { ChartView } from './ChartView';
 import { TableView } from './TableView';
 import 'react-grid-layout/css/styles.css';
+import { exportDashboardAsPng, generateExportFilename } from '../utils/dashboardExport';
 
 interface Props {
   items: DashboardItem[];
@@ -24,6 +25,8 @@ const ROW_HEIGHT = 100;
 
 export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: Props) {
   const [containerWidth, setContainerWidth] = useState(() => window.innerWidth - 240 - 40);
+  const [exporting, setExporting] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleResize = () => setContainerWidth(window.innerWidth - 240 - 40);
@@ -54,12 +57,29 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
     onLayoutChange(newLayout);
   }, [onLayoutChange]);
 
+  const handleExport = useCallback(async () => {
+    if (!contentRef.current || exporting) return;
+    setExporting(true);
+    try {
+      await exportDashboardAsPng(contentRef.current, generateExportFilename());
+    } catch (err) {
+      console.error('仪表板导出失败:', err);
+      alert('导出图片失败，请稍后重试');
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
+
   return (
-    <div style={{
-      height: '100vh',
-      overflowY: 'auto',
-      backgroundColor: '#f5f5f5',
-    }}>
+    <div
+      ref={contentRef}
+      data-export-root
+      style={{
+        height: '100vh',
+        overflowY: 'auto',
+        backgroundColor: '#f5f5f5',
+      }}
+    >
       {/* 顶部栏 */}
       <header style={{
         padding: '12px 20px',
@@ -78,22 +98,44 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
             {summary}
           </p>
         </div>
-        <button
-          onClick={onAddChart}
-          style={{
-            padding: '8px 18px',
-            border: 'none',
-            borderRadius: 6,
-            backgroundColor: ACTIVE_TEXT,
-            color: '#fff',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 500,
-            transition: 'all .15s',
-          }}
-        >
-          + 添加
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            data-export-exclude
+            disabled={items.length === 0 || exporting}
+            onClick={handleExport}
+            style={{
+              padding: '8px 16px',
+              border: `1px solid ${BORDER}`,
+              borderRadius: 6,
+              backgroundColor: '#fff',
+              color: exporting ? TEXT_MUTED : TEXT_PRIMARY,
+              cursor: items.length === 0 || exporting ? 'not-allowed' : 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              transition: 'all .15s',
+              opacity: items.length === 0 ? 0.5 : 1,
+            }}
+          >
+            {exporting ? '导出中…' : '导出图片'}
+          </button>
+          <button
+            data-export-exclude
+            onClick={onAddChart}
+            style={{
+              padding: '8px 18px',
+              border: 'none',
+              borderRadius: 6,
+              backgroundColor: ACTIVE_TEXT,
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              transition: 'all .15s',
+            }}
+          >
+            + 添加
+          </button>
+        </div>
       </header>
 
       {items.length === 0 ? (
@@ -110,6 +152,7 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
             从历史会话中选择表格和图表加入仪表板
           </div>
           <button
+            data-export-exclude
             onClick={onAddChart}
             style={{
               padding: '10px 24px',
@@ -194,6 +237,7 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
                       {itemTitle}
                     </span>
                     <button
+                      data-export-exclude
                       onClick={() => {
                         if (window.confirm(`确定从仪表板移除「${itemTitle}」吗？`)) {
                           onRemove(di.id);
