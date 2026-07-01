@@ -1,14 +1,12 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
-import type { ChartData, ChartTypeAvailability, RenderableChartType } from '../types';
+import type { ChartData, ChartSpec, ChartTypeAvailability, RenderableChartType } from '../types';
 import {
   buildChartOption,
   CHART_TYPE_LABELS,
   getChartTypeAvailability,
-  getCompatibleChartTypes,
   isNullValue,
   isRenderableChartType,
-  normalizeChartSpec,
 } from '../chartRegistry';
 import { generateChartDescription } from '../chartDescription';
 import { formatCellValue, formatColumnLabel } from '../utils/tableFormatting';
@@ -36,14 +34,6 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
   // hideTableToggle 时始终按图表模式处理
   const effectiveViewMode: ViewMode = hideTableToggle ? 'chart' : viewMode;
 
-  const candidates = useMemo(() => getCompatibleChartTypes(chart), [chart]);
-
-  const [localType, setLocalType] = useState<RenderableChartType>(() => {
-    if (chart.explicitType && isRenderableChartType(chart.spec.type)) return chart.spec.type;
-    // 自动选择时跳过 combo（combo 仅用户显式操作可用）
-    const auto = candidates.find(c => c !== 'combo');
-    return auto ?? 'bar';
-  });
   const echartsRef = useRef<ReactECharts>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -60,6 +50,35 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     toastTimerRef.current = setTimeout(() => setToastMessage(null), 2000);
   };
 
+  /** 全部 13 种图表类型的可用性评估（含完整 Spec） */
+  const allTypes = useMemo<ChartTypeAvailability[]>(
+    () => getChartTypeAvailability(chart),
+    [chart],
+  );
+
+  /** 从 allTypes 中按优先级选取默认类型 */
+  function pickDefault(): RenderableChartType {
+    const recommended = isRenderableChartType(chart.spec.type) ? chart.spec.type : null;
+
+    // 1. LLM 推荐类型可用（包括 combo）
+    if (recommended) {
+      const rec = allTypes.find(t => t.type === recommended && t.supported);
+      if (rec) return rec.type;
+    }
+
+    // 2. 柱状图可用
+    const bar = allTypes.find(t => t.type === 'bar' && t.supported);
+    if (bar) return bar.type;
+
+    // 3. 第一个可用类型
+    const first = allTypes.find(t => t.supported);
+    if (first) return first.type;
+
+    return 'bar';
+  }
+
+  const [localType, setLocalType] = useState<RenderableChartType>(() => pickDefault());
+
   // 跟踪上次 dataVersion 和 spec.type，用于判断数据/推荐类型是否真正变化
   const prevDataVersionRef = useRef(chart.dataVersion);
   const prevSpecTypeRef = useRef(chart.spec.type);
@@ -72,18 +91,15 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     prevSpecTypeRef.current = chart.spec.type;
 
     if (dataChanged || specChanged) {
-      if (chart.explicitType && isRenderableChartType(chart.spec.type)) {
-        setLocalType(chart.spec.type);
-      } else if (candidates.length > 0) {
-        const recommended = isRenderableChartType(chart.spec.type) ? chart.spec.type : null;
-        // combo 不参与自动推荐（仅用户显式操作可用）
-        const first = recommended && recommended !== 'combo' && candidates.includes(recommended)
-          ? recommended
-          : candidates.find(c => c !== 'combo');
-        if (first) setLocalType(first);
-      }
+      setLocalType(pickDefault());
     }
-  }, [chart.dataVersion, chart.spec.type, chart.explicitType, candidates]);
+  }, [chart.dataVersion, chart.spec.type, allTypes]);
+
+  /** 当前类型对应的完整渲染 Spec（从 availability 中获取） */
+  const activeSpec = useMemo<ChartSpec | null>(() => {
+    const item = allTypes.find(t => t.type === localType);
+    return item?.spec ?? null;
+  }, [allTypes, localType]);
 
   // 首次初始化完成后 resize，解决 container 宽度未定导致图例错位的问题
   const handleChartReady = () => {
@@ -93,14 +109,8 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     }
   };
 
-  /** 全部 13 种图表类型的可用性评估 */
-  const allTypes = useMemo<ChartTypeAvailability[]>(
-    () => getChartTypeAvailability(chart),
-    [chart],
-  );
-
   const handleTypeChange = (type: RenderableChartType) => {
-    // 切换前清空画布，避免旧图表类型配置残留（双保险第一层）
+    // 切换前清空画布，避免旧图表类型配置残留
     const instance = echartsRef.current?.getEchartsInstance();
     if (instance) {
       instance.clear();
@@ -165,21 +175,20 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
   }, [dropdownOpen]);
 
   const option = useMemo(() => {
-    // chartOnly 模式：固定使用 spec.type，忽略 localType
-    const type = isChartOnly && isRenderableChartType(chart.spec.type) ? chart.spec.type : localType;
-    const opt = buildChartOption({ ...chart, spec: normalizeChartSpec(chart.spec, type) });
+    // 使用 availability 中验证通过的完整 Spec（不容许仅替换 type）
+    if (!activeSpec) return null;
+    // 所有类型切换均为用户显式操作（包括自动选择），避免 buildAxisChart 的 explicitType 守卫误判
+    const opt = buildChartOption({ ...chart, spec: activeSpec, explicitType: true });
     if (opt && hideTitle) {
-      // 删除 ECharts 内部标题，由外部卡片显示
       const stripped = { ...opt };
       delete (stripped as Record<string, unknown>).title;
       return stripped;
     }
     return opt;
-  }, [chart, localType, hideTitle, isChartOnly]);
+  }, [chart, activeSpec, hideTitle]);
 
-  // 图表说明（基于当前实际渲染类型，与 option useMemo 一致）
-  const effectiveType: RenderableChartType =
-    isChartOnly && isRenderableChartType(chart.spec.type) ? chart.spec.type : localType;
+  // 图表说明（基于当前实际渲染类型）
+  const effectiveType = localType;
 
   const description = useMemo(() => {
     return generateChartDescription(chart, effectiveType);
@@ -198,11 +207,12 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
         marginTop: isChartOnly ? 0 : (fillHeight ? 0 : 12),
       }}
     >
-      {/* 工具栏：仅普通查询模式显示，追加图表模式隐藏 */}
-      {!isChartOnly && (
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        {/* 一级：图表 / 表格  — hideTableToggle 时隐藏 */}
-        {!hideTableToggle && (
+      {/* 工具栏 */}
+      {/* chartOnly 时隐藏表格切换但保留类型下拉 */}
+      {(effectiveViewMode === 'chart' || isChartOnly) && (
+      <div style={{ display: 'flex', gap: 8, marginBottom: isChartOnly ? 0 : 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* 一级：图表 / 表格 — chartOnly 或 hideTableToggle 时隐藏 */}
+        {!isChartOnly && !hideTableToggle && (
         <div style={{ display: 'flex', gap: 4, border: '1px solid #e5e7eb', borderRadius: 6, padding: 3 }}>
           <button
             onClick={() => setViewMode('chart')}
@@ -239,115 +249,113 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
         </div>
         )}
 
-        {/* 二级：图表类型下拉菜单（仅图表模式下显示） */}
-        {effectiveViewMode === 'chart' && (
-          <div ref={dropdownRef} style={{ position: 'relative' }}>
-            {/* 当前类型按钮 */}
-            <button
-              onClick={() => setDropdownOpen(prev => !prev)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '4px 10px',
-                border: '1px solid #d1d5db',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 500,
-                backgroundColor: dropdownOpen ? '#f3f4f6' : '#fff',
-                color: '#374151',
-                transition: 'all .15s',
-              }}
-            >
-              {CHART_TYPE_LABELS[localType]}
-              <span style={{ fontSize: 9, color: '#9ca3af' }}>
-                {dropdownOpen ? '▲' : '▼'}
-              </span>
-            </button>
+        {/* 二级：图表类型下拉菜单（始终显示） */}
+        <div ref={dropdownRef} style={{ position: 'relative' }}>
+          {/* 当前类型按钮 */}
+          <button
+            onClick={() => setDropdownOpen(prev => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              border: '1px solid #d1d5db',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 500,
+              backgroundColor: dropdownOpen ? '#f3f4f6' : '#fff',
+              color: '#374151',
+              transition: 'all .15s',
+            }}
+          >
+            {CHART_TYPE_LABELS[localType]}
+            <span style={{ fontSize: 9, color: '#9ca3af' }}>
+              {dropdownOpen ? '▲' : '▼'}
+            </span>
+          </button>
 
-            {/* 下拉面板 */}
-            {dropdownOpen && (
-              <>
-                {/* Toast 提示 */}
-                {toastMessage && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: 'calc(100% + 8px)',
-                    left: 0,
-                    padding: '6px 12px',
-                    backgroundColor: '#374151',
-                    color: '#fff',
-                    borderRadius: 6,
-                    fontSize: 12,
-                    whiteSpace: 'nowrap',
-                    zIndex: 102,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                  }}>
-                    {toastMessage}
-                  </div>
-                )}
-
+          {/* 下拉面板 */}
+          {dropdownOpen && (
+            <>
+              {/* Toast 提示 */}
+              {toastMessage && (
                 <div style={{
                   position: 'absolute',
-                  top: '100%',
+                  bottom: 'calc(100% + 8px)',
                   left: 0,
-                  marginTop: 4,
-                  backgroundColor: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 8,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                  zIndex: 100,
-                  minWidth: 150,
-                  maxHeight: 360,
-                  overflowY: 'auto',
-                  padding: '4px 0',
+                  padding: '6px 12px',
+                  backgroundColor: '#374151',
+                  color: '#fff',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  whiteSpace: 'nowrap',
+                  zIndex: 102,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
                 }}>
-                  {allTypes.map(t => {
-                    const isCurrent = t.type === localType;
-                    return (
-                      <button
-                        key={t.type}
-                        onClick={() => {
-                          if (t.supported) {
-                            handleTypeChange(t.type);
-                            setDropdownOpen(false);
-                          } else {
-                            showToast('该数据类型暂不支持该图表');
-                          }
-                        }}
-                        aria-disabled={!t.supported || undefined}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '6px 14px',
-                          border: 'none',
-                          cursor: t.supported ? 'pointer' : 'not-allowed',
-                          fontSize: 12,
-                          backgroundColor: isCurrent ? '#eff6ff' : 'transparent',
-                          color: t.supported ? '#374151' : '#d1d5db',
-                          fontWeight: isCurrent ? 500 : 400,
-                          transition: 'background-color .1s',
-                        }}
-                        onMouseEnter={e => {
-                          if (t.supported) {
-                            e.currentTarget.style.backgroundColor = isCurrent ? '#dbeafe' : '#f3f4f6';
-                          }
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.backgroundColor = isCurrent ? '#eff6ff' : 'transparent';
-                        }}
-                      >
-                        {t.label}
-                      </button>
-                    );
-                  })}
+                  {toastMessage}
                 </div>
-              </>
-            )}
-          </div>
-        )}
+              )}
+
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                marginTop: 4,
+                backgroundColor: '#fff',
+                border: '1px solid #e5e7eb',
+                borderRadius: 8,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                zIndex: 100,
+                minWidth: 150,
+                maxHeight: 360,
+                overflowY: 'auto',
+                padding: '4px 0',
+              }}>
+                {allTypes.map(t => {
+                  const isCurrent = t.type === localType;
+                  return (
+                    <button
+                      key={t.type}
+                      onClick={() => {
+                        if (t.supported && t.spec) {
+                          handleTypeChange(t.type);
+                          setDropdownOpen(false);
+                        } else {
+                          showToast('该数据类型暂不支持该图表');
+                        }
+                      }}
+                      aria-disabled={!t.supported || undefined}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '6px 14px',
+                        border: 'none',
+                        cursor: t.supported ? 'pointer' : 'not-allowed',
+                        fontSize: 12,
+                        backgroundColor: isCurrent ? '#eff6ff' : 'transparent',
+                        color: t.supported ? '#374151' : '#d1d5db',
+                        fontWeight: isCurrent ? 500 : 400,
+                        transition: 'background-color .1s',
+                      }}
+                      onMouseEnter={e => {
+                        if (t.supported) {
+                          e.currentTarget.style.backgroundColor = isCurrent ? '#dbeafe' : '#f3f4f6';
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.backgroundColor = isCurrent ? '#eff6ff' : 'transparent';
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
       </div>
       )}
 

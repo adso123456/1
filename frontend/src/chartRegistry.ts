@@ -204,33 +204,41 @@ export function getCompatibleChartTypes(chart: ChartData): RenderableChartType[]
 /**
  * 评估全部 13 种图表类型对当前数据的可用性。
  * 为每种类型构造最佳 spec（补全必要字段映射），再通过 buildChartOption 验证。
+ * supported=true 时 spec 为通过验证的完整 ChartSpec，可直接用于渲染。
  */
 export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailability[] {
   const { columns, rows, spec } = chart;
 
-  // 列分类
+  // ── 列分类 ──
   const numericCols = columns.filter(c => isNumericField(rows, c));
   const categoricalCols = columns.filter(c => !isNumericField(rows, c));
   const orderedCols = columns.filter(c => isOrderedField(rows, c));
 
-  // 从已有 spec 取字段（如果存在且合法）
+  // ── 从已有 spec 取字段（仅当列存在且满足目标图表语义时才复用） ──
   const specX = spec.xField && columns.includes(spec.xField) ? spec.xField : null;
   const specY0 = spec.yFields?.[0] && columns.includes(spec.yFields[0]) ? spec.yFields[0] : null;
   const specY1 = spec.yFields?.[1] && columns.includes(spec.yFields[1]) ? spec.yFields[1] : null;
   const specVal = spec.valueField && columns.includes(spec.valueField) ? spec.valueField : null;
   const specSize = spec.sizeField && columns.includes(spec.sizeField) ? spec.sizeField : null;
 
-  // 最佳候选字段
+  // ── 最佳候选字段 ──
   const bestX = specX ?? categoricalCols[0] ?? columns[0] ?? null;
-  const bestOrderedX = specX ?? orderedCols[0] ?? null;
-  const bestNum1 = specY0 && numericCols.includes(specY0) ? specY0 : numericCols[0] ?? null;
-  const bestNum2 = specY1 && numericCols.includes(specY1) ? specY1 : numericCols[1] ?? null;
+  // bestOrderedX：仅当原 specX 为有序列时才复用，否则取第一个有序列
+  const bestOrderedX = (specX && orderedCols.includes(specX)) ? specX : (orderedCols[0] ?? null);
+  // 数值列：优先复用 spec 中已指定且合法的字段
+  const bestNum1 = specY0 && numericCols.includes(specY0) ? specY0 : (numericCols[0] ?? null);
+  const bestNum2 = specY1 && numericCols.includes(specY1) ? specY1 : (numericCols[1] ?? null);
   const bestNum3 = numericCols[2] ?? null;
   const bestVal = specVal ?? bestNum1;
 
-  /** 构造测试 spec 并调用 buildChartOption 验证 */
-  function check(type: RenderableChartType, overrides: Partial<ChartSpec>): boolean {
-    const testSpec: ChartSpec = {
+  // 饼图/环形图 兼容性（分类数≤6 且无非负数）
+  const xCats = bestX ? [...new Set(rows.map(r => String(r[bestX])).filter(v => v !== ''))] : [];
+  const catCount = xCats.length;
+  const hasNegativeY1 = bestNum1 ? rows.some(r => (toNumber(r[bestNum1]) ?? 0) < 0) : true;
+
+  /** 构造测试 spec（继承原 spec.title） */
+  function buildSpec(type: RenderableChartType, overrides: Partial<ChartSpec>): ChartSpec {
+    return {
       type,
       title: spec.title,
       xField: null,
@@ -240,12 +248,24 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       valueField: null,
       ...overrides,
     };
-    // 清理：确保不残留无关字段
-    return buildChartOption({ ...chart, spec: testSpec }) !== null;
   }
 
-  function result(type: RenderableChartType, supported: boolean, reason: string): ChartTypeAvailability {
-    return { type, label: CHART_TYPE_LABELS[type], supported, reason: supported ? '' : reason };
+  /** 用 buildChartOption 验证，返回完整 ChartSpec 或 null */
+  function check(type: RenderableChartType, overrides: Partial<ChartSpec>, opts?: { explicitType?: boolean }): ChartSpec | null {
+    const testSpec = buildSpec(type, overrides);
+    const testChart: ChartData = { ...chart, spec: testSpec, explicitType: opts?.explicitType ?? false };
+    return buildChartOption(testChart) !== null ? testSpec : null;
+  }
+
+  /** 生成结果项 */
+  function avail(type: RenderableChartType, checked: ChartSpec | null, fallbackReason: string): ChartTypeAvailability {
+    return {
+      type,
+      label: CHART_TYPE_LABELS[type],
+      supported: checked !== null,
+      spec: checked,
+      reason: checked !== null ? '' : fallbackReason,
+    };
   }
 
   const items: ChartTypeAvailability[] = [];
@@ -256,54 +276,58 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       case 'bar':
       case 'horizontal_bar': {
         if (!bestX || !bestNum1) {
-          items.push(result(type, false, '需要分类列和数值列'));
+          items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
-          items.push(result(type, false, '数值列必须为数字类型'));
+          items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const ok = check(type, { xField: bestX, yFields: [bestNum1] });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: bestX, yFields: [bestNum1] });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
 
-      // ── 折线图：有序 xField + 数值 yField ──
+      // ── 折线图：有序 xField + 数值 yField（显式切换允许分类 X） ──
       case 'line': {
-        if (!bestOrderedX || !bestNum1) {
-          items.push(result(type, false, '需要有序横轴（时间/月份等）和数值列'));
+        // 优先有序横轴，没有则回退到任意分类列（dropdown 选择均为显式操作）
+        const lx = bestOrderedX ?? bestX;
+        if (!lx || !bestNum1) {
+          items.push(avail(type, null, '需要横轴和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
-          items.push(result(type, false, '数值列必须为数字类型'));
+          items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const ok = check(type, { xField: bestOrderedX, yFields: [bestNum1] });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: lx, yFields: [bestNum1] }, { explicitType: true });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
 
-      // ── 面积图：有序 xField + 数值 yField（比折线图更严格） ──
+      // ── 面积图：有序 xField + 数值 yField（严格，不允许分类 X） ──
       case 'area': {
         if (!bestOrderedX || !bestNum1) {
-          items.push(result(type, false, '需要有序横轴（时间/月份等）和数值列'));
+          items.push(avail(type, null, '需要有序横轴（时间/月份等）和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
-          items.push(result(type, false, '数值列必须为数字类型'));
-        } else if (!isOrderedField(rows, bestOrderedX)) {
-          items.push(result(type, false, '面积图需要有序横轴（时间/月份等）'));
+          items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const ok = check(type, { xField: bestOrderedX, yFields: [bestNum1] });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: bestOrderedX, yFields: [bestNum1] });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
 
-      // ── 饼图 / 环形图：类别 xField + 数值 yField ──
+      // ── 饼图 / 环形图：类别≤6、无非负数 ──
       case 'pie':
       case 'donut': {
         if (!bestX || !bestNum1) {
-          items.push(result(type, false, '需要分类列和数值列'));
+          items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
-          items.push(result(type, false, '数值列必须为数字类型'));
+          items.push(avail(type, null, '数值列必须为数字类型'));
+        } else if (catCount > 6) {
+          items.push(avail(type, null, '分类数超过 6 个，不适合饼图'));
+        } else if (hasNegativeY1) {
+          items.push(avail(type, null, '包含负数，不适合饼图'));
         } else {
-          const ok = check(type, { xField: bestX, yFields: [bestNum1] });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: bestX, yFields: [bestNum1] });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
@@ -313,12 +337,12 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         const sx = bestNum1;
         const sy = bestNum2;
         if (!sx || !sy) {
-          items.push(result(type, false, '需要两个数值列'));
+          items.push(avail(type, null, '需要两个数值列'));
         } else if (!isNumericField(rows, sx) || !isNumericField(rows, sy)) {
-          items.push(result(type, false, '两个轴均需为数字类型'));
+          items.push(avail(type, null, '两个轴均需为数字类型'));
         } else {
-          const ok = check(type, { xField: sx, yFields: [sy] });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: sx, yFields: [sy] });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
@@ -327,18 +351,18 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       case 'bubble': {
         const bx = bestNum1;
         const by = bestNum2;
-        const bs = specSize ?? bestNum3;
+        const bs = specSize && numericCols.includes(specSize) ? specSize : bestNum3;
         if (!bx || !by || !bs) {
-          items.push(result(type, false, '需要三个数值列（X/Y/大小）'));
+          items.push(avail(type, null, '需要三个数值列（X/Y/大小）'));
         } else if (
           !isNumericField(rows, bx) ||
           !isNumericField(rows, by) ||
           !isNumericField(rows, bs)
         ) {
-          items.push(result(type, false, 'X/Y/大小列均需为数字类型'));
+          items.push(avail(type, null, 'X/Y/大小列均需为数字类型'));
         } else {
-          const ok = check(type, { xField: bx, yFields: [by], sizeField: bs });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: bx, yFields: [by], sizeField: bs });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
@@ -346,13 +370,13 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       // ── 雷达图：类别 xField + ≥2 数值 yFields ──
       case 'radar': {
         if (numericCols.length < 2) {
-          items.push(result(type, false, '需要至少两个数值列'));
+          items.push(avail(type, null, '需要至少两个数值列'));
         } else if (!bestX) {
-          items.push(result(type, false, '需要分类列作为指标维度'));
+          items.push(avail(type, null, '需要分类列作为指标维度'));
         } else {
-          const yAll = numericCols.slice(0, 4); // 最多取4个数值列
-          const ok = check(type, { xField: bestX, yFields: yAll });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const yAll = numericCols.slice(0, 4);
+          const s = check(type, { xField: bestX, yFields: yAll });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
@@ -360,15 +384,15 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       // ── 热力图：横轴 xField + 纵轴 yField + 数值 valueField ──
       case 'heatmap': {
         const hx = bestX;
-        const hy = categoricalCols.length >= 2 ? categoricalCols[1] : columns[1] ?? null;
+        const hy = categoricalCols.length >= 2 ? categoricalCols[1] : (columns[1] ?? null);
         const hv = bestVal;
         if (!hx || !hy || !hv) {
-          items.push(result(type, false, '需要两个分类列和一个数值列'));
+          items.push(avail(type, null, '需要两个分类列和一个数值列'));
         } else if (!isNumericField(rows, hv)) {
-          items.push(result(type, false, '热力值列必须为数字类型'));
+          items.push(avail(type, null, '热力值列必须为数字类型'));
         } else {
-          const ok = check(type, { xField: hx, yFields: [hy], valueField: hv });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: hx, yFields: [hy], valueField: hv });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
@@ -376,25 +400,30 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       // ── 箱线图：类别 xField + 数值 valueField ──
       case 'boxplot': {
         if (!bestX || !bestVal) {
-          items.push(result(type, false, '需要分类列和数值列'));
+          items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestVal)) {
-          items.push(result(type, false, '数值列必须为数字类型'));
+          items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const ok = check(type, { xField: bestX, valueField: bestVal });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: bestX, valueField: bestVal });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
 
-      // ── 仪表盘：单个数值 valueField ──
+      // ── 仪表盘：仅允许单值 KPI（清洗后仅 1 行数据） ──
       case 'gauge': {
         if (!bestVal) {
-          items.push(result(type, false, '需要数值列作为指标值'));
+          items.push(avail(type, null, '需要数值列作为指标值'));
         } else if (!isNumericField(rows, bestVal)) {
-          items.push(result(type, false, '数值列必须为数字类型'));
+          items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const ok = check(type, { valueField: bestVal });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const cleanVals = rows.filter(r => !isNullValue(r[bestVal!]));
+          if (cleanVals.length > 1) {
+            items.push(avail(type, null, '仪表盘仅适用于单值 KPI'));
+          } else {
+            const s = check(type, { valueField: bestVal });
+            items.push(avail(type, s, '该数据类型暂不支持该图表'));
+          }
         }
         break;
       }
@@ -402,18 +431,18 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       // ── 组合图：类别 xField + ≥2 数值 yFields ──
       case 'combo': {
         if (numericCols.length < 2) {
-          items.push(result(type, false, '需要至少两个数值列（双轴）'));
+          items.push(avail(type, null, '需要至少两个数值列（双轴）'));
         } else if (!bestX) {
-          items.push(result(type, false, '需要分类列作为横轴'));
+          items.push(avail(type, null, '需要分类列作为横轴'));
         } else {
-          const ok = check(type, { xField: bestX, yFields: [numericCols[0], numericCols[1]] });
-          items.push(result(type, ok, ok ? '' : '该数据类型暂不支持该图表'));
+          const s = check(type, { xField: bestX, yFields: [numericCols[0], numericCols[1]] });
+          items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
 
       default:
-        items.push(result(type, false, '未知图表类型'));
+        items.push(avail(type, null, '未知图表类型'));
     }
   }
 

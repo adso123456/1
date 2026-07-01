@@ -60,6 +60,8 @@ export interface ChartTypeAvailability {
   supported: boolean;
   /** 不支持时的原因说明 */
   reason: string;
+  /** 通过 buildChartOption 验证的完整 Spec（supported=true 时非 null） */
+  spec: ChartSpec | null;
 }
 
 export interface ChartSpec {
