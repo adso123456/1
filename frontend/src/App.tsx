@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { ChatArea } from './components/ChatArea';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
+import { DashboardListPanel } from './components/DashboardListPanel';
 import { AddChartDialog } from './components/AddChartDialog';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
@@ -11,7 +12,17 @@ type View = 'chat' | 'dashboard';
 
 function App() {
   const { messages, loading, sendMessage, cancelRequest, clearMessages, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession } = useSSE();
-  const { dashboardItems, addItems, removeItem, updateLayout } = useDashboard();
+  const {
+    currentItems: dashboardItems,
+    currentDashboardName,
+    dashboards,
+    currentDashboardId,
+    addItems,
+    removeItem,
+    updateLayout,
+    createDashboard,
+    switchDashboard,
+  } = useDashboard();
 
   const [currentView, setCurrentView] = useState<View>('chat');
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -64,6 +75,14 @@ function App() {
         onSwitchSession={handleSwitchSession}
         onDeleteSession={deleteSession}
       />
+      {currentView === 'dashboard' && (
+        <DashboardListPanel
+          dashboards={dashboards}
+          currentDashboardId={currentDashboardId}
+          onSwitch={switchDashboard}
+          onCreate={createDashboard}
+        />
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         {currentView === 'chat' ? (
           <ChatArea
@@ -77,6 +96,7 @@ function App() {
         ) : (
           <DashboardView
             items={dashboardItems}
+            dashboardName={currentDashboardName}
             onRemove={handleRemoveItem}
             onAddChart={() => setShowAddDialog(true)}
             onLayoutChange={updateLayout}

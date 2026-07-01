@@ -9,6 +9,7 @@ import { exportDashboardAsPng, generateExportFilename } from '../utils/dashboard
 
 interface Props {
   items: DashboardItem[];
+  dashboardName: string;
   onRemove: (id: string) => void;
   onAddChart: () => void;
   onLayoutChange: (layout: Layout) => void;
@@ -23,15 +24,24 @@ const ACTIVE_TEXT = '#2563eb';
 const COLS = 6;
 const ROW_HEIGHT = 100;
 
-export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: Props) {
-  const [containerWidth, setContainerWidth] = useState(() => window.innerWidth - 240 - 40);
+export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLayoutChange }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(600);
   const [exporting, setExporting] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // 通过 ResizeObserver 获取实际可用宽度，替代 window.innerWidth 硬编码减法
   useEffect(() => {
-    const handleResize = () => setContainerWidth(window.innerWidth - 240 - 40);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const el = rootRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        // 减去网格容器左右 padding 各 20px
+        setContainerWidth(entry.contentRect.width - 40);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const chartCount = items.filter(i => i.type === 'chart').length;
@@ -72,6 +82,7 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
 
   return (
     <div
+      ref={rootRef}
       style={{
         height: '100vh',
         overflowY: 'auto',
@@ -92,7 +103,7 @@ export function DashboardView({ items, onRemove, onAddChart, onLayoutChange }: P
       }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: TEXT_PRIMARY }}>
-            仪表板
+            {dashboardName}
           </h1>
           <p style={{ margin: '2px 0 0', fontSize: 12, color: TEXT_MUTED }}>
             {summary}

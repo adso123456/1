@@ -130,6 +130,15 @@ export interface DashboardTableItem {
 
 export type DashboardItem = DashboardChartItem | DashboardTableItem;
 
+/** 单个仪表板元数据（含所有卡片） */
+export interface DashboardMeta {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  items: DashboardItem[];
+}
+
 /** 一条聊天消息 */
 export interface ChatMessage {
   id: string;
