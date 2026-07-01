@@ -232,9 +232,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   const bestNum3 = numericCols[2] ?? null;
   const bestVal = specVal ?? bestNum1;
 
-  // 饼图/环形图 兼容性（分类数≤6 且无非负数）
-  const xCats = bestX ? [...new Set(rows.map(r => String(r[bestX])).filter(v => v !== ''))] : [];
-  const catCount = xCats.length;
+  // 饼图/环形图 兼容性：仅需非负（分类数量不再作为限制，仅影响可读性）
   const hasNegativeY1 = bestNum1 ? rows.some(r => (toNumber(r[bestNum1]) ?? 0) < 0) : true;
 
   /** 构造测试 spec（继承原 spec.title） */
@@ -315,20 +313,25 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         break;
       }
 
-      // ── 饼图 / 环形图：类别≤6、无非负数 ──
+      // ── 饼图 / 环形图：分类字段 + 数值字段 + 非负 + 合计>0 ──
+      // 注：分类数量多仅影响可读性，不再作为 supported 判定条件（≤6 限制仅保留在旧自动推荐 isProportionCompatible 中）
       case 'pie':
       case 'donut': {
         if (!bestX || !bestNum1) {
           items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
           items.push(avail(type, null, '数值列必须为数字类型'));
-        } else if (catCount > 6) {
-          items.push(avail(type, null, '分类数超过 6 个，不适合饼图'));
         } else if (hasNegativeY1) {
           items.push(avail(type, null, '包含负数，不适合饼图'));
         } else {
-          const s = check(type, { xField: bestX, yFields: [bestNum1] });
-          items.push(avail(type, s, '该数据类型暂不支持该图表'));
+          // 有效数值合计必须大于 0（挡住全为 0 的数据）
+          const ySum = rows.reduce((s, r) => s + (toNumber(r[bestNum1!]) ?? 0), 0);
+          if (ySum <= 0) {
+            items.push(avail(type, null, '数值合计必须大于 0'));
+          } else {
+            const s = check(type, { xField: bestX, yFields: [bestNum1] });
+            items.push(avail(type, s, '该数据类型暂不支持该图表'));
+          }
         }
         break;
       }
