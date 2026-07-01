@@ -187,12 +187,13 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     return opt;
   }, [chart, activeSpec, hideTitle]);
 
-  // 图表说明（基于当前实际渲染类型）
+  // 图表说明（基于当前实际渲染类型与 Spec，与 ECharts 渲染使用同一份 activeSpec）
   const effectiveType = localType;
 
   const description = useMemo(() => {
-    return generateChartDescription(chart, effectiveType);
-  }, [chart, effectiveType]);
+    if (!activeSpec) return null;
+    return generateChartDescription({ ...chart, spec: activeSpec }, effectiveType);
+  }, [chart, activeSpec, effectiveType]);
 
   // 表格渲染
   const cleanRows = chart.rows.filter(
@@ -208,8 +209,9 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
       }}
     >
       {/* 工具栏 */}
-      {/* chartOnly 时隐藏表格切换但保留类型下拉 */}
-      {(effectiveViewMode === 'chart' || isChartOnly) && (
+      {/* 普通模式：「图表/表格」切换始终显示，类型下拉仅在图表模式显示 */}
+      {/* chartOnly：只显示类型下拉；hideTableToggle：只隐藏「图表/表格」切换 */}
+      {(!isChartOnly && !hideTableToggle || effectiveViewMode === 'chart' || isChartOnly) && (
       <div style={{ display: 'flex', gap: 8, marginBottom: isChartOnly ? 0 : 12, flexWrap: 'wrap', alignItems: 'center' }}>
         {/* 一级：图表 / 表格 — chartOnly 或 hideTableToggle 时隐藏 */}
         {!isChartOnly && !hideTableToggle && (
@@ -249,7 +251,8 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
         </div>
         )}
 
-        {/* 二级：图表类型下拉菜单（始终显示） */}
+        {/* 二级：图表类型下拉菜单（仅图表模式显示；表格模式下隐藏） */}
+        {(effectiveViewMode === 'chart' || isChartOnly) && (
         <div ref={dropdownRef} style={{ position: 'relative' }}>
           {/* 当前类型按钮 */}
           <button
@@ -356,6 +359,7 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
             </>
           )}
         </div>
+        )}
       </div>
       )}
 

@@ -211,7 +211,8 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
 
   // ── 列分类 ──
   const numericCols = columns.filter(c => isNumericField(rows, c));
-  const categoricalCols = columns.filter(c => !isNumericField(rows, c));
+  // 显式标注 string[]：!isNumericField 的否定类型谓词会被推断为 never[]，导致后续 .includes/.find 报错
+  const categoricalCols: string[] = columns.filter(c => !isNumericField(rows, c));
   const orderedCols = columns.filter(c => isOrderedField(rows, c));
 
   // ── 从已有 spec 取字段（仅当列存在且满足目标图表语义时才复用） ──
@@ -381,13 +382,18 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         break;
       }
 
-      // ── 热力图：横轴 xField + 纵轴 yField + 数值 valueField ──
+      // ── 热力图：两个不同的分类列（xField + yField）+ 数值 valueField ──
       case 'heatmap': {
-        const hx = bestX;
-        const hy = categoricalCols.length >= 2 ? categoricalCols[1] : (columns[1] ?? null);
+        // 严格使用分类列，禁止回退到 columns[1]
+        const hx = (specX && categoricalCols.includes(specX)) ? specX : (categoricalCols[0] ?? null);
+        const hy = hx ? (categoricalCols.find(c => c !== hx) ?? null) : (categoricalCols.length >= 2 ? categoricalCols[1] : null);
         const hv = bestVal;
         if (!hx || !hy || !hv) {
-          items.push(avail(type, null, '需要两个分类列和一个数值列'));
+          items.push(avail(type, null, '需要两个不同的分类列和一个数值列'));
+        } else if (hx === hy) {
+          items.push(avail(type, null, '横轴与纵轴必须是不同的分类列'));
+        } else if (hv === hx || hv === hy) {
+          items.push(avail(type, null, '热力值列不得与横轴/纵轴相同'));
         } else if (!isNumericField(rows, hv)) {
           items.push(avail(type, null, '热力值列必须为数字类型'));
         } else {
@@ -421,7 +427,12 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
           if (cleanVals.length > 1) {
             items.push(avail(type, null, '仪表盘仅适用于单值 KPI'));
           } else {
-            const s = check(type, { valueField: bestVal });
+            // 仅保留原始合法的 min/max/unit（number/string），避免被其他图表继承
+            const gaugeExtra: Partial<ChartSpec> = {};
+            if (typeof spec.min === 'number') gaugeExtra.min = spec.min;
+            if (typeof spec.max === 'number') gaugeExtra.max = spec.max;
+            if (typeof spec.unit === 'string') gaugeExtra.unit = spec.unit;
+            const s = check(type, { valueField: bestVal, ...gaugeExtra });
             items.push(avail(type, s, '该数据类型暂不支持该图表'));
           }
         }
@@ -766,6 +777,9 @@ function buildHeatmapChart(chart: ChartData): EChartsOption | null {
   const valueField = getField(chart.spec, 'valueField');
   if (!hasColumn(chart.columns, xField) || !hasColumn(chart.columns, yField) || !hasColumn(chart.columns, valueField)) return null;
   if (!isNumericField(chart.rows, valueField)) return null;
+  // 防御性校验：横轴、纵轴必须不同，且热力值列不得与二者相同
+  if (!xField || !yField || !valueField) return null;
+  if (xField === yField || valueField === xField || valueField === yField) return null;
 
   const rows = cleanRows(chart.rows, [xField, yField, valueField]);
   if (!rows.length) return null;
