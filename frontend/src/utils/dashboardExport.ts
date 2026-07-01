@@ -44,17 +44,30 @@ export async function exportDashboardAsPng(
         el.classList.contains('react-resizable-handle')
       );
     },
-    // 在克隆文档中展开内容容器，确保 html2canvas 截取完整高度
+    // 将导出节点从裁剪祖先中移出，直接挂到 body 下
     onclone: (clonedDoc) => {
       const root = clonedDoc.querySelector('[data-export-root]') as HTMLElement | null;
-      if (root) {
-        root.style.width = `${scrollWidth}px`;
-        root.style.height = `${scrollHeight}px`;
-        root.style.maxHeight = 'none';
-        root.style.overflow = 'visible';
-        root.scrollTop = 0;
-        root.scrollLeft = 0;
-      }
+      if (!root) return;
+
+      // 移到 body 下，彻底脱离 App/Dashboard 的 overflow 裁剪祖先
+      clonedDoc.body.appendChild(root);
+
+      // body 展开到导出尺寸，无裁剪
+      clonedDoc.body.style.margin = '0';
+      clonedDoc.body.style.overflow = 'visible';
+      clonedDoc.body.style.width = `${scrollWidth}px`;
+      clonedDoc.body.style.height = `${scrollHeight}px`;
+
+      // root 定位于 body 左上角，完整展开
+      root.style.position = 'absolute';
+      root.style.left = '0';
+      root.style.top = '0';
+      root.style.width = `${scrollWidth}px`;
+      root.style.height = `${scrollHeight}px`;
+      root.style.maxHeight = 'none';
+      root.style.overflow = 'visible';
+      root.style.margin = '0';
+      root.style.padding = '0';
     },
   });
 
