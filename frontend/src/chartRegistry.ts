@@ -213,7 +213,6 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   const numericCols = columns.filter(c => isNumericField(rows, c));
   // 显式标注 string[]：!isNumericField 的否定类型谓词会被推断为 never[]，导致后续 .includes/.find 报错
   const categoricalCols: string[] = columns.filter(c => !isNumericField(rows, c));
-  const orderedCols = columns.filter(c => isOrderedField(rows, c));
 
   // ── 从已有 spec 取字段（仅当列存在且满足目标图表语义时才复用） ──
   const specX = spec.xField && columns.includes(spec.xField) ? spec.xField : null;
@@ -225,15 +224,15 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   // ── 最佳候选字段 ──
   // 数值列：优先复用 spec 中已指定且合法的字段
   const bestNum1 = specY0 && numericCols.includes(specY0) ? specY0 : (numericCols[0] ?? null);
-  // 分类横轴候选：必须与数值指标列不同，优先复用合法 specX，其次分类列，最后任意非指标列。
-  // 防止数字型 specX（如“排污口数量”）被分类型图表无条件当作名称轴。
-  const bestX = (specX && specX !== bestNum1)
+  // 分类横轴候选：只有非数值分类列才优先复用 specX，避免数字型 specX（如 COD/排污口数量）
+  // 被分类型图表当作名称轴；其次取分类列，最后才考虑其他非指标列。
+  const bestCategoryX = (specX && categoricalCols.includes(specX))
     ? specX
     : (categoricalCols.find(c => c !== bestNum1) ?? columns.find(c => c !== bestNum1) ?? null);
-  // 有序横轴候选：时间/月份/季度/年份/日期等真实有序维度（含数字型时间维度），
-  // 必须与数值指标列不同，避免同一数值列同时成为 xField 与 yField。
-  const orderedColsExclY = orderedCols.filter(c => c !== bestNum1);
-  const bestOrderedX = (specX && orderedColsExclY.includes(specX)) ? specX : (orderedColsExclY[0] ?? null);
+  // 有序横轴候选：仅真实时间/顺序维度（字符串日期/月份/季度 + 数字年份），
+  // 排除 COD/BOD/温度/浓度/金额等普通数值指标。
+  const temporalCols = columns.filter(c => isTemporalField(rows, c) && c !== bestNum1);
+  const bestOrderedX = (specX && temporalCols.includes(specX)) ? specX : (temporalCols[0] ?? null);
   const bestNum2 = specY1 && numericCols.includes(specY1) ? specY1 : (numericCols[1] ?? null);
   const bestNum3 = numericCols[2] ?? null;
   const bestVal = specVal ?? bestNum1;
@@ -280,21 +279,21 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       // ── 柱状图 / 横向柱状图：类别 xField + 数值 yField ──
       case 'bar':
       case 'horizontal_bar': {
-        if (!bestX || !bestNum1) {
+        if (!bestCategoryX || !bestNum1) {
           items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
           items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const s = check(type, { xField: bestX, yFields: [bestNum1] });
+          const s = check(type, { xField: bestCategoryX, yFields: [bestNum1] });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
 
-      // ── 折线图：有序 xField + 数值 yField（显式切换允许分类 X） ──
+      // ── 折线图：优先时间维度，其次分类列（显式切换不得优先普通数值指标） ──
       case 'line': {
-        // 优先有序横轴，没有则回退到任意分类列（dropdown 选择均为显式操作）
-        const lx = bestOrderedX ?? bestX;
+        // 优先有序横轴，没有则回退到分类列（dropdown 选择均为显式操作）
+        const lx = bestOrderedX ?? bestCategoryX;
         if (!lx || !bestNum1) {
           items.push(avail(type, null, '需要横轴和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
@@ -306,7 +305,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         break;
       }
 
-      // ── 面积图：有序 xField + 数值 yField（严格，不允许分类 X） ──
+      // ── 面积图：只允许真实时间/顺序维度，不得用普通数值指标作横轴 ──
       case 'area': {
         if (!bestOrderedX || !bestNum1) {
           items.push(avail(type, null, '需要有序横轴（时间/月份等）和数值列'));
@@ -323,7 +322,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       // 注：分类数量多仅影响可读性，不再作为 supported 判定条件（≤6 限制仅保留在旧自动推荐 isProportionCompatible 中）
       case 'pie':
       case 'donut': {
-        if (!bestX || !bestNum1) {
+        if (!bestCategoryX || !bestNum1) {
           items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
           items.push(avail(type, null, '数值列必须为数字类型'));
@@ -335,7 +334,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
           if (ySum <= 0) {
             items.push(avail(type, null, '数值合计必须大于 0'));
           } else {
-            const s = check(type, { xField: bestX, yFields: [bestNum1] });
+            const s = check(type, { xField: bestCategoryX, yFields: [bestNum1] });
             items.push(avail(type, s, '该数据类型暂不支持该图表'));
           }
         }
@@ -381,11 +380,11 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       case 'radar': {
         if (numericCols.length < 2) {
           items.push(avail(type, null, '需要至少两个数值列'));
-        } else if (!bestX) {
+        } else if (!bestCategoryX) {
           items.push(avail(type, null, '需要分类列作为指标维度'));
         } else {
           const yAll = numericCols.slice(0, 4);
-          const s = check(type, { xField: bestX, yFields: yAll });
+          const s = check(type, { xField: bestCategoryX, yFields: yAll });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
@@ -414,12 +413,12 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
 
       // ── 箱线图：类别 xField + 数值 valueField ──
       case 'boxplot': {
-        if (!bestX || !bestVal) {
+        if (!bestCategoryX || !bestVal) {
           items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestVal)) {
           items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const s = check(type, { xField: bestX, valueField: bestVal });
+          const s = check(type, { xField: bestCategoryX, valueField: bestVal });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
@@ -452,10 +451,10 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       case 'combo': {
         if (numericCols.length < 2) {
           items.push(avail(type, null, '需要至少两个数值列（双轴）'));
-        } else if (!bestX) {
+        } else if (!bestCategoryX) {
           items.push(avail(type, null, '需要分类列作为横轴'));
         } else {
-          const s = check(type, { xField: bestX, yFields: [numericCols[0], numericCols[1]] });
+          const s = check(type, { xField: bestCategoryX, yFields: [numericCols[0], numericCols[1]] });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
@@ -530,6 +529,33 @@ function isOrderedField(rows: Row[], field: string | null): field is string {
   return values.every(value => typeof value === 'number' || isOrderedStringValue(value));
 }
 
+/** 字段名是否暗示为年份维度（年/年份/年度/year） */
+function isYearLikeFieldName(field: string): boolean {
+  return /年|year/i.test(field);
+}
+
+/** 数字值是否全部为合理四位年份（1900~2100） */
+function isFourDigitYearValues(rows: Row[], field: string): boolean {
+  const values = rows.map(r => r[field]).filter(v => !isNullValue(v));
+  if (!values.length) return false;
+  return values.every(v => typeof v === 'number' && Number.isInteger(v) && v >= 1900 && v <= 2100);
+}
+
+/** 识别真实时间/顺序维度：字符串日期/月份/季度，或数字年份。
+ *  区别于 isOrderedField：后者把所有数字列视为有序，本函数排除 COD/BOD/温度/浓度/金额等普通数值指标。 */
+function isTemporalField(rows: Row[], field: string | null): field is string {
+  if (!field) return false;
+  const values = rows.map(row => row[field]).filter(value => !isNullValue(value));
+  if (!values.length) return false;
+  // 全为有序字符串（日期/月份/季度/年份字符串）
+  if (values.every(value => isOrderedStringValue(value))) return true;
+  // 数字列：仅当字段名暗示年份，或值域为合理四位年份时才视为时间维度
+  if (values.every(value => typeof value === 'number')) {
+    return isYearLikeFieldName(field) || isFourDigitYearValues(rows, field);
+  }
+  return false;
+}
+
 /** 将 xField 值转为可比较的排序键（时间→时间戳，数值→数字，有序字符串→数值，其它→字符串） */
 function xFieldSortKey(value: unknown): number | string {
   if (typeof value === 'number') return value;
@@ -572,9 +598,10 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
   // 防御：xField 不得与 yField 相同，避免数值指标列同时充当名称轴
   if (xField === yField) return null;
   if (!isNumericField(chart.rows, yField)) return null;
-  if (mode === 'area' && !isOrderedField(chart.rows, xField)) return null;
-  // 显式指定折线图时允许分类字段作为 category X 轴，非显式仍要求有序字段
-  if (mode === 'line' && !chart.explicitType && !isOrderedField(chart.rows, xField)) return null;
+  // area 必须为真实时间/顺序维度，不得用普通数值指标（COD/温度等）作横轴
+  if (mode === 'area' && !isTemporalField(chart.rows, xField)) return null;
+  // 显式指定折线图时允许分类字段作为 category X 轴，非显式仍要求真实时间维度
+  if (mode === 'line' && !chart.explicitType && !isTemporalField(chart.rows, xField)) return null;
 
   const rows = cleanRows(chart.rows, [xField, yField]);
   if (!rows.length) return null;
