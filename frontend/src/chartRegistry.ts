@@ -178,7 +178,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
           break;
         }
 
-        const entityField = findEntityNameField(columns);
+        const entityField = findEntityNameField(columns, rows);
         let lineX: string | null = null;
         let reason = '';
 
@@ -211,6 +211,11 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         }
         if (!lineX) {
           items.push(avail(type, null, '需要横轴和数值列'));
+          break;
+        }
+        // 防御：横轴不得与数值指标相同（正常规则下不应触发，但必须保留）
+        if (lineX === bestNum1) {
+          items.push(avail(type, null, '横轴不能与数值指标相同'));
           break;
         }
         const s = check(type, { xField: lineX, yFields: [bestNum1] }, { explicitType: true });
@@ -475,19 +480,50 @@ function isTemporalField(rows: Row[], field: string | null): field is string {
   return false;
 }
 
-/** 对象名称字段名关键词（排口/站点/断面/企业等实体名称）。仅匹配字段名，不匹配具体数据值 */
-const ENTITY_NAME_RE = /名称|排口|站点|监测点|断面|企业|单位|水厂|项目|name|site|station|company/i;
-/** 地区字段名关键词（区县/地区/城市等行政区划）。仅匹配字段名 */
-const REGION_RE = /区县|地区|区域|行政区|城市|city|region|district/i;
+/** 对象名称字段优先级（仅匹配字段名，不匹配具体数据值）。
+ *  裸“单位”不作为关键词（可能表示 mg/L 等计量单位）；“单位名称”通过第 2 层识别。 */
+const ENTITY_PRIORITY: string[][] = [
+  ['排口名称', '监测点名称', '站点名称', '断面名称', '水厂名称'],
+  ['企业名称', '公司名称', '单位名称', '项目名称'],
+  ['名称', 'name'],
+  ['排口', '监测点', '站点', '断面', '企业', '公司', '水厂', '项目', 'site', 'station', 'company'],
+];
+/** 对象字段需排除的指标/标识词（字段名包含即排除） */
+const ENTITY_METRIC_WORDS = ['数量', '个数', '总数', '次数', '金额', '浓度', '含量', '值', '比例', '占比', '平均', '均值', '总量', '排放量', '面积', '长度', '编号', '编码', 'id'];
+/** 地区字段名关键词 */
+const REGION_KEYWORDS = ['区县', '地区', '区域', '行政区', '城市', 'city', 'region', 'district'];
+/** 地区字段需排除的指标/标识词 */
+const REGION_METRIC_WORDS = ['数量', '面积', '金额', '值', '率', '比例', '占比', '编号', '编码', 'id'];
 
-/** 识别对象名称字段：返回第一个命中关键词的列，无则 null */
-function findEntityNameField(columns: string[]): string | null {
-  return columns.find(c => ENTITY_NAME_RE.test(c)) ?? null;
+/** 字段名是否包含任一排除词（大小写不敏感） */
+function containsAnyWord(field: string, words: string[]): boolean {
+  const lower = field.toLowerCase();
+  return words.some(w => lower.includes(w.toLowerCase()));
 }
 
-/** 识别地区字段：返回第一个命中关键词的列，无则 null */
-function findRegionField(columns: string[]): string | null {
-  return columns.find(c => REGION_RE.test(c)) ?? null;
+/** 识别对象名称字段：仅选非数值分类列，排除指标/标识字段，按优先级返回第一个合法字段，无则 null */
+function findEntityNameField(columns: string[], rows: Row[]): string | null {
+  // 用 Set 缓存数值列，避免 isNumericField 类型谓词把 col 收窄为 never
+  const numericCols = new Set(columns.filter(c => isNumericField(rows, c)));
+  for (const layer of ENTITY_PRIORITY) {
+    for (const col of columns) {
+      if (numericCols.has(col)) continue;
+      if (containsAnyWord(col, ENTITY_METRIC_WORDS)) continue;
+      if (layer.some(kw => col.toLowerCase().includes(kw.toLowerCase()))) return col;
+    }
+  }
+  return null;
+}
+
+/** 识别地区字段：仅选非数值分类列，排除指标/标识字段，返回第一个合法字段，无则 null */
+function findRegionField(columns: string[], rows: Row[]): string | null {
+  const numericCols = new Set(columns.filter(c => isNumericField(rows, c)));
+  for (const col of columns) {
+    if (numericCols.has(col)) continue;
+    if (containsAnyWord(col, REGION_METRIC_WORDS)) continue;
+    if (REGION_KEYWORDS.some(kw => col.toLowerCase().includes(kw.toLowerCase()))) return col;
+  }
+  return null;
 }
 
 /** 统计对象字段的不同值数量与单个对象最大出现次数（基于非空有效行） */
@@ -557,8 +593,8 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
   const line = mode === 'line' || mode === 'area';
 
   // 折线图字段语义：对象名称、地区、横轴是否为时间字段
-  const entityField = findEntityNameField(chart.columns);
-  const regionField = findRegionField(chart.columns);
+  const entityField = findEntityNameField(chart.columns, chart.rows);
+  const regionField = findRegionField(chart.columns, chart.rows);
   const xIsTemporal = isTemporalField(chart.rows, xField);
   const xIsEntity = mode === 'line' && xField === entityField;
   // 非横轴的时间字段：横轴为对象/分类时，tooltip 用它显示监测日期
