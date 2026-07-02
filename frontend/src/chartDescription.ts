@@ -24,10 +24,14 @@ function readableField(name: string): string {
   return name.replace(/_(avg|sum|count|min|max|total)$/, '');
 }
 
-/** 展示用字段名：先剥离聚合后缀，再通过统一入口翻译为中文。
+/** 展示用字段名：优先用完整原字段的精确中文映射；只有完整字段无映射时，
+ *  才回退到删除聚合后缀后的字段名再翻译，避免 outlet_count 被误删为 outlet。
  *  readableField 仅用于 isSummable 等语义判断，展示一律走 displayField。 */
 function displayField(name: string): string {
-  return formatColumnLabel(readableField(name));
+  const direct = formatColumnLabel(name);
+  if (direct !== name) return direct;
+  const readable = readableField(name);
+  return readable === name ? direct : formatColumnLabel(readable);
 }
 
 function num(n: number): string {
