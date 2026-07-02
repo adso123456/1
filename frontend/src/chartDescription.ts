@@ -1,4 +1,5 @@
 import type { ChartData, RenderableChartType } from './types';
+import { formatColumnLabel } from './utils/tableFormatting';
 
 /* ---- 工具函数 ---- */
 
@@ -21,6 +22,12 @@ function getYFields(spec: ChartData['spec']): string[] {
 
 function readableField(name: string): string {
   return name.replace(/_(avg|sum|count|min|max|total)$/, '');
+}
+
+/** 展示用字段名：先剥离聚合后缀，再通过统一入口翻译为中文。
+ *  readableField 仅用于 isSummable 等语义判断，展示一律走 displayField。 */
+function displayField(name: string): string {
+  return formatColumnLabel(readableField(name));
 }
 
 function num(n: number): string {
@@ -151,8 +158,8 @@ function buildModel(
   const summable = isSummable(y1);
 
   return {
-    dim: readableField(xField),
-    metric: readableField(y1),
+    dim: displayField(xField),
+    metric: displayField(y1),
     count,
     total,
     average,
@@ -289,8 +296,8 @@ export function generateChartDescription(
       const m1 = buildModel(rows, xField, y1, true);
       if (!m1) return null;
 
-      const barLabel = readableField(y1);
-      const lineLabel = readableField(y2);
+      const barLabel = displayField(y1);
+      const lineLabel = displayField(y2);
 
       let maxCat2 = '';
       let maxVal2 = -Infinity;

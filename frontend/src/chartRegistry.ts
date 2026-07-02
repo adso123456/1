@@ -926,7 +926,7 @@ function buildRadarChart(chart: ChartData): EChartsOption | null {
     },
     series: yFields.map((yf, i) => ({
       type: 'radar',
-      data: [{ value: rows.map(row => toNumber(row[yf]) ?? 0), name: yf }],
+      data: [{ value: rows.map(row => toNumber(row[yf]) ?? 0), name: formatColumnLabel(yf) }],
       symbol: 'circle',
       symbolSize: 4,
       lineStyle: { width: 2 },
@@ -1041,7 +1041,7 @@ function buildBoxplotChart(chart: ChartData): EChartsOption | null {
     tooltip: { trigger: 'item' },
     grid: { bottom: 60, top: 50, left: 60, right: 24 },
     xAxis: { type: 'category', data: groupNames, axisLabel: { rotate: groupNames.length > 6 ? 45 : 0, fontSize: 11 } },
-    yAxis: { type: 'value', name: valueField },
+    yAxis: { type: 'value', name: formatColumnLabel(valueField) },
     series: [{
       type: 'boxplot',
       data: boxData,
@@ -1076,7 +1076,7 @@ function buildGaugeChart(chart: ChartData): EChartsOption | null {
       axisLine: { lineStyle: { color: [[0.3, '#2563eb'], [0.7, '#93c5fd'], [1, '#e5e7eb']], width: 20 } },
       pointer: { length: '70%', width: 6 },
       detail: { formatter: `{value}${unit}`, fontSize: 20, offsetCenter: [0, '60%'] },
-      data: [{ value, name: valueField }],
+      data: [{ value, name: formatColumnLabel(valueField) }],
     }],
   };
 }
@@ -1148,7 +1148,7 @@ function buildComboOption(
       },
     },
     legend: {
-      data: [y1, y2],
+      data: [formatColumnLabel(y1), formatColumnLabel(y2)],
       type: 'scroll',
       orient: 'horizontal',
       bottom: 0,
@@ -1161,19 +1161,19 @@ function buildComboOption(
       axisLabel: { rotate: labels.length > 6 ? 45 : 0, fontSize: 11 },
     },
     yAxis: [
-      { type: 'value', name: y1, nameTextStyle: { fontSize: 11, color: '#6b7280' } },
-      { type: 'value', name: y2, nameTextStyle: { fontSize: 11, color: '#6b7280' } },
+      { type: 'value', name: formatColumnLabel(y1), nameTextStyle: { fontSize: 11, color: '#6b7280' } },
+      { type: 'value', name: formatColumnLabel(y2), nameTextStyle: { fontSize: 11, color: '#6b7280' } },
     ],
     series: [
       {
-        name: y1,
+        name: formatColumnLabel(y1),
         type: 'bar',
         data: barData,
         yAxisIndex: 0,
         itemStyle: { color: '#2563eb' },
       },
       {
-        name: y2,
+        name: formatColumnLabel(y2),
         type: 'line',
         data: lineData,
         yAxisIndex: 1,
