@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { DashboardItem, DashboardMeta, DashboardChartItem, DashboardLayoutInfo } from '../types';
+import type { DashboardItem, DashboardMeta, DashboardChartItem, DashboardLayoutInfo, ChartSpec } from '../types';
 import type { Layout } from 'react-grid-layout';
 
 /** v3 localStorage key —— 细粒度纵向网格（rowHeight=10, margin=6） */
@@ -332,6 +332,28 @@ export function useDashboard() {
     return persist(current);
   }, [persist, reload]);
 
+  /** 更新当前仪表板中指定图表项目的 spec（仪表板内切换图表类型后持久化）。
+   *  仅写 chart.spec 与 explicitType，保留 columns/rows/title/dataVersion 及 item 的 layout/sourceSql/addedAt/lastRefreshedAt。
+   *  原 spec 与新 spec 完全一致且 explicitType 已为 true 时跳过写入。 */
+  const updateChartSpec = useCallback((id: string, spec: ChartSpec): boolean => {
+    const current = reload();
+    const db = current.dashboards.find(d => d.id === current.currentDashboardId);
+    if (!db) return false;
+
+    const item = db.items.find(c => c.id === id);
+    if (!item || item.type !== 'chart') return false;
+
+    // 去重：spec 完全相同且已显式标记，避免重复写 localStorage
+    if (JSON.stringify(item.chart.spec) === JSON.stringify(spec) && item.chart.explicitType === true) {
+      return true;
+    }
+
+    item.chart.spec = spec;
+    item.chart.explicitType = true;
+    db.updatedAt = Date.now();
+    return persist(current);
+  }, [persist, reload]);
+
   /** 新建仪表板并立即切换 */
   const createDashboard = useCallback((): boolean => {
     const current = reload();
@@ -407,6 +429,7 @@ export function useDashboard() {
     removeItem,
     updateLayout,
     updateItemHeight,
+    updateChartSpec,
     createDashboard,
     switchDashboard,
     addItemsToDashboard,

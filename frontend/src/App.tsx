@@ -7,7 +7,7 @@ import { AddChartDialog } from './components/AddChartDialog';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
-import type { DashboardItem, DashboardChartItem, ChartData } from './types';
+import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec } from './types';
 
 type View = 'chat' | 'dashboard';
 
@@ -37,6 +37,7 @@ function App() {
     removeItem,
     updateLayout,
     updateItemHeight,
+    updateChartSpec,
     createDashboard,
     switchDashboard,
     addItemsToDashboard,
@@ -94,6 +95,14 @@ function App() {
       alert('写入失败，localStorage 可能已满。请清理部分数据后重试。');
     }
   }, [removeItem]);
+
+  // 仪表板内图表切换类型后持久化完整 spec
+  const handleUpdateChartSpec = useCallback((id: string, spec: ChartSpec) => {
+    const ok = updateChartSpec(id, spec);
+    if (!ok) {
+      alert('图表配置保存失败，localStorage 可能已满。');
+    }
+  }, [updateChartSpec]);
 
   // 聊天页"添加到仪表板"：暂存快照 + 上下文（会话 ID 在此补充），打开弹窗
   const handleRequestAddToDashboard = useCallback((payload: { chart: ChartData; messageId: string; sql: string | null }) => {
@@ -189,6 +198,7 @@ function App() {
             onAddChart={() => setShowAddDialog(true)}
             onLayoutChange={updateLayout}
             onUpdateItemHeight={updateItemHeight}
+            onUpdateChartSpec={handleUpdateChartSpec}
           />
         )}
       </div>

@@ -16,6 +16,9 @@ interface Props {
   /** 多图模式下隐藏 ECharts 内部标题（由外部卡片标题代替） */
   hideTitle?: boolean;
   onChangeType?: (type: RenderableChartType) => void;
+  /** 仪表板用：切换类型时回传 availability 返回的完整 ChartSpec，供上层持久化。
+   *  聊天页不传，仅靠 onChangeType 通知类型变化。 */
+  onChangeSpec?: (spec: ChartSpec) => void;
   /** 隐藏"图表/表格"切换，始终显示图表（仪表板和弹窗预览用） */
   hideTableToggle?: boolean;
   /** 隐藏图表下方自动生成的文字说明（仪表板精简用） */
@@ -30,7 +33,7 @@ interface Props {
 
 type ViewMode = 'chart' | 'table';
 
-export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
+export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
   const isChartOnly = !!chart.chartOnly;
 
   const [viewMode, setViewMode] = useState<ViewMode>('chart');
@@ -114,6 +117,9 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
   };
 
   const handleTypeChange = (type: RenderableChartType) => {
+    // 仅在目标类型可用（supported 且 spec 非空）时才切换，避免切到不支持的类型
+    const target = allTypes.find(t => t.type === type);
+    if (!target?.supported || !target.spec) return;
     // 切换前清空画布，避免旧图表类型配置残留
     const instance = echartsRef.current?.getEchartsInstance();
     if (instance) {
@@ -121,6 +127,8 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     }
     setLocalType(type);
     onChangeType?.(type);
+    // 回传 availability 返回的完整 Spec（含 xField/yFields/sizeField/valueField 等），供仪表板持久化
+    onChangeSpec?.(target.spec);
   };
 
   /** 清理文件名中的 Windows 非法字符 */
