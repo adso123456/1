@@ -324,28 +324,28 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
             </span>
           </button>
 
+          {/* Toast 提示：独立于下拉开关，导出失败/图表未就绪/添加失败等均能显示；data-export-exclude 避免进入整板 PNG */}
+          {toastMessage && (
+            <div data-export-exclude style={{
+              position: 'absolute',
+              bottom: 'calc(100% + 8px)',
+              left: 0,
+              padding: '6px 12px',
+              backgroundColor: '#374151',
+              color: '#fff',
+              borderRadius: 6,
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+              zIndex: 102,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            }}>
+              {toastMessage}
+            </div>
+          )}
+
           {/* 下拉面板 */}
           {dropdownOpen && (
             <>
-              {/* Toast 提示 */}
-              {toastMessage && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: 'calc(100% + 8px)',
-                  left: 0,
-                  padding: '6px 12px',
-                  backgroundColor: '#374151',
-                  color: '#fff',
-                  borderRadius: 6,
-                  fontSize: 12,
-                  whiteSpace: 'nowrap',
-                  zIndex: 102,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                }}>
-                  {toastMessage}
-                </div>
-              )}
-
               <div style={{
                 position: 'absolute',
                 top: '100%',

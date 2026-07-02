@@ -643,6 +643,8 @@ export function useSSE() {
           explicitType: true,
           chartOnly: true,
         }],
+        // 复用来源消息的 SQL，使追加图表添加到仪表板时 sourceSql 不为 null
+        sql: sourceSql,
         thinkingCollapsed: true,
         streaming: false,
       };
