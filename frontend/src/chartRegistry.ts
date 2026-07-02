@@ -223,11 +223,17 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   const specSize = spec.sizeField && columns.includes(spec.sizeField) ? spec.sizeField : null;
 
   // ── 最佳候选字段 ──
-  const bestX = specX ?? categoricalCols[0] ?? columns[0] ?? null;
-  // bestOrderedX：仅当原 specX 为有序列时才复用，否则取第一个有序列
-  const bestOrderedX = (specX && orderedCols.includes(specX)) ? specX : (orderedCols[0] ?? null);
   // 数值列：优先复用 spec 中已指定且合法的字段
   const bestNum1 = specY0 && numericCols.includes(specY0) ? specY0 : (numericCols[0] ?? null);
+  // 分类横轴候选：必须与数值指标列不同，优先复用合法 specX，其次分类列，最后任意非指标列。
+  // 防止数字型 specX（如“排污口数量”）被分类型图表无条件当作名称轴。
+  const bestX = (specX && specX !== bestNum1)
+    ? specX
+    : (categoricalCols.find(c => c !== bestNum1) ?? columns.find(c => c !== bestNum1) ?? null);
+  // 有序横轴候选：时间/月份/季度/年份/日期等真实有序维度（含数字型时间维度），
+  // 必须与数值指标列不同，避免同一数值列同时成为 xField 与 yField。
+  const orderedColsExclY = orderedCols.filter(c => c !== bestNum1);
+  const bestOrderedX = (specX && orderedColsExclY.includes(specX)) ? specX : (orderedColsExclY[0] ?? null);
   const bestNum2 = specY1 && numericCols.includes(specY1) ? specY1 : (numericCols[1] ?? null);
   const bestNum3 = numericCols[2] ?? null;
   const bestVal = specVal ?? bestNum1;
@@ -563,6 +569,8 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
   const xField = getField(chart.spec, 'xField');
   const yField = getYField(chart.spec);
   if (!hasColumn(chart.columns, xField) || !hasColumn(chart.columns, yField)) return null;
+  // 防御：xField 不得与 yField 相同，避免数值指标列同时充当名称轴
+  if (xField === yField) return null;
   if (!isNumericField(chart.rows, yField)) return null;
   if (mode === 'area' && !isOrderedField(chart.rows, xField)) return null;
   // 显式指定折线图时允许分类字段作为 category X 轴，非显式仍要求有序字段
@@ -644,6 +652,8 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
       ? { type: 'category', data: labels, axisLabel: { fontSize: 11 } }
       : { type: 'value', name: yField },
     series: [{
+      // name 设为 yField，使 tooltip 显示真实指标名而非默认的 series0
+      name: yField,
       type: line ? 'line' : 'bar',
       data: values,
       smooth: line,
@@ -659,6 +669,8 @@ function buildPieChart(chart: ChartData, donut = false): EChartsOption | null {
   const xField = getField(chart.spec, 'xField');
   const yField = getYField(chart.spec);
   if (!hasColumn(chart.columns, xField) || !hasColumn(chart.columns, yField)) return null;
+  // 防御：分类字段不得与数值字段相同
+  if (xField === yField) return null;
   if (!isNumericField(chart.rows, yField)) return null;
 
   const rows = cleanRows(chart.rows, [xField, yField]);
@@ -730,6 +742,8 @@ function buildRadarChart(chart: ChartData): EChartsOption | null {
   const xField = getField(chart.spec, 'xField');
   const yFields = (chart.spec.yFields ?? []).filter((f): f is string => typeof f === 'string' && f.trim().length > 0);
   if (!hasColumn(chart.columns, xField) || yFields.length === 0) return null;
+  // 防御：指标维度列不得与任何数值系列相同
+  if (yFields.includes(xField)) return null;
   for (const yf of yFields) {
     if (!hasColumn(chart.columns, yf) || !isNumericField(chart.rows, yf)) return null;
   }
@@ -843,6 +857,8 @@ function buildBoxplotChart(chart: ChartData): EChartsOption | null {
   const xField = getField(chart.spec, 'xField');
   const valueField = getField(chart.spec, 'valueField');
   if (!hasColumn(chart.columns, xField) || !hasColumn(chart.columns, valueField)) return null;
+  // 防御：分组字段不得与数值字段相同
+  if (xField === valueField) return null;
   if (!isNumericField(chart.rows, valueField)) return null;
 
   const rows = cleanRows(chart.rows, [xField, valueField]);
@@ -924,6 +940,8 @@ function buildComboChart(chart: ChartData): EChartsOption | null {
 
   // 从 spec.yFields 取已指定的数值字段
   const specYFields = (chart.spec.yFields ?? []).filter((f): f is string => typeof f === 'string' && f.trim().length > 0);
+  // 防御：横轴分类字段不得与任何数值系列相同
+  if (specYFields.includes(xField)) return null;
 
   // spec 已有 ≥2 个数值 yField → 直接用前两个
   if (specYFields.length >= 2) {
