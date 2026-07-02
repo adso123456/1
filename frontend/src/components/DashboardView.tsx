@@ -24,8 +24,9 @@ const TEXT_MUTED = '#9ca3af';
 const ACTIVE_TEXT = '#2563eb';
 
 const COLS = 6;
-const ROW_HEIGHT = 100;
-const GRID_MARGIN = 16;
+// 细粒度纵向网格：减少表格底部量化留白（量化误差 ≤ ROW_HEIGHT+GRID_MARGIN-1 = 15px）
+const ROW_HEIGHT = 10;
+const GRID_MARGIN = 6;
 /** 表格卡片标题栏 + 卡片边框等固定占用高度（标题栏 padding 10*2 + ×按钮 28 + borderBottom 1 + 卡片 border 2 ≈ 51）。
  *  表格内容区 padding 为 0，故不另加。 */
 const TABLE_CARD_CHROME = 51;
@@ -88,8 +89,8 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
   const layout: Layout = useMemo(
     () => items.map(di => {
       const savedH = di.layout?.h;
-      // 图表默认 h=4；新表格临时默认 h=2，挂载后由实测高度校正
-      const defaultH = di.type === 'chart' ? 4 : 2;
+      // 默认高度（细粒度网格）：图表 ≈ 原 448px → h=29；表格 ≈ 原 216px → h=14，挂载后由实测高度校正
+      const defaultH = di.type === 'chart' ? 29 : 14;
       // 表格：若已有实测内容高度，按内容换算网格高度，并设 minH 防止缩到内容以下
       if (di.type === 'table') {
         const measured = tableHeights[di.id];
@@ -243,7 +244,7 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
             width={containerWidth}
             compactType="vertical"
             preventCollision={false}
-            margin={[16, 16]}
+            margin={[16, GRID_MARGIN]}
             containerPadding={[0, 0]}
             isDraggable={true}
             isResizable={true}

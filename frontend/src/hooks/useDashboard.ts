@@ -1,22 +1,25 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { DashboardItem, DashboardMeta, DashboardChartItem } from '../types';
+import type { DashboardItem, DashboardMeta, DashboardChartItem, DashboardLayoutInfo } from '../types';
 import type { Layout } from 'react-grid-layout';
 
-/** v2 localStorage key —— 多仪表板版本化存储 */
-const STORE_KEY = 'water_qa_dashboards_v2';
+/** v3 localStorage key —— 细粒度纵向网格（rowHeight=10, margin=6） */
+const STORE_KEY = 'water_qa_dashboards_v3';
+/** v2 key（仅迁移读取，不删除）—— 旧粗粒度网格（rowHeight=100, margin=16） */
+const V2_KEY = 'water_qa_dashboards_v2';
 /** 旧版单仪表板 key（仅迁移读取，不删除） */
 const OLD_KEY = 'water_qa_dashboard';
 
-/** 网格常量 */
+/** 网格常量（细粒度纵向网格） */
 const COLS = 6;
 const DEFAULT_W = 3;
-const DEFAULT_CHART_H = 4;
-/** 新表格临时默认高度：挂载后由 TableView 实测内容高度自动校正 */
-const DEFAULT_TABLE_H = 2;
+/** 图表默认高度 ≈ 原 448px：ceil((448+6)/16)=29 */
+const DEFAULT_CHART_H = 29;
+/** 新表格临时默认高度 ≈ 原 216px：ceil((216+6)/16)=14，挂载后由 TableView 实测内容高度自动校正 */
+const DEFAULT_TABLE_H = 14;
 
 /** 内部存储结构 */
 interface StoreData {
-  version: 2;
+  version: 3;
   currentDashboardId: string;
   dashboards: DashboardMeta[];
 }
@@ -102,12 +105,51 @@ function loadOldDashboard(): DashboardItem[] | null {
    存储读写
    ================================================================ */
 
+/** v2→v3 网格坐标迁移：旧网格 rowHeight=100/margin=16（单元=116px），
+ *  新网格 rowHeight=10/margin=6（单元=16px）。仅改 y 和 h，保留 x、w。 */
+function migrateLayoutV2toV3(layout: DashboardLayoutInfo): DashboardLayoutInfo {
+  // 旧像素顶部位置 = oldY * 116
+  const oldPixelTop = layout.y * 116;
+  const newY = Math.round(oldPixelTop / 16);
+  // 旧像素高度 = oldH * 100 + (oldH - 1) * 16 = oldH * 116 - 16
+  const oldPixelHeight = layout.h * 116 - 16;
+  const newH = Math.ceil((oldPixelHeight + 6) / 16);
+  return {
+    x: layout.x,
+    y: newY,
+    w: layout.w,
+    h: newH > 0 ? newH : 1,
+  };
+}
+
+/** 读取 v2 存储并迁移到 v3（仅迁移读取，不删除 v2 key） */
+function loadV2Store(): StoreData | null {
+  try {
+    const raw = localStorage.getItem(V2_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== 2 || !Array.isArray(parsed.dashboards)) return null;
+    // 迁移每个仪表板的每个项目 layout
+    for (const db of parsed.dashboards) {
+      for (const item of db.items) {
+        if (item.layout) {
+          item.layout = migrateLayoutV2toV3(item.layout);
+        }
+      }
+    }
+    parsed.version = 3;
+    return parsed as StoreData;
+  } catch {
+    return null;
+  }
+}
+
 function loadStore(): StoreData {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.version === 2 && Array.isArray(parsed.dashboards)) {
+      if (parsed && parsed.version === 3 && Array.isArray(parsed.dashboards)) {
         return parsed as StoreData;
       }
     }
@@ -115,9 +157,22 @@ function loadStore(): StoreData {
     // 解析失败，走迁移/初始化逻辑
   }
 
+  // 迁移 v2 数据（只迁移一次：写入 v3 key 后下次直接读 v3）
+  const migrated = loadV2Store();
+  if (migrated) {
+    saveStore(migrated);
+    return migrated;
+  }
+
   // 迁移旧数据：只要旧 key 存在（含空数组[]），就包装成"默认仪表板"
   const oldItems = loadOldDashboard();
   if (oldItems !== null) {
+    // 旧单仪表板项目若带 layout（旧粗粒度网格），同样迁移到 v3 网格
+    for (const item of oldItems) {
+      if (item.layout) {
+        item.layout = migrateLayoutV2toV3(item.layout);
+      }
+    }
     generateLayout(oldItems);
     const dashboard: DashboardMeta = {
       id: generateId(),
@@ -127,7 +182,7 @@ function loadStore(): StoreData {
       items: oldItems,
     };
     const store: StoreData = {
-      version: 2,
+      version: 3,
       currentDashboardId: dashboard.id,
       dashboards: [dashboard],
     };
@@ -145,7 +200,7 @@ function loadStore(): StoreData {
     items: [],
   };
   const initialStore: StoreData = {
-    version: 2,
+    version: 3,
     currentDashboardId: newDashboard.id,
     dashboards: [newDashboard],
   };
