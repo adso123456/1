@@ -69,7 +69,6 @@ const TEXT_SECONDARY = '#6b7280';
 const TEXT_MUTED = '#9ca3af';
 const ACTIVE_BG = '#eef2ff';
 const ACTIVE_TEXT = '#2563eb';
-const HOVER_BG = 'rgba(0,0,0,0.04)';
 
 export function Sidebar({ sessions, currentSessionId, loading, currentView, onViewChange, onNewSession, onSwitchSession, onDeleteSession }: Props) {
   const disabled = loading;

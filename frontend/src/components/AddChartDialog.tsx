@@ -3,7 +3,7 @@ import type { SessionMeta, ChatMessage, ChartData, DataFrameData, DashboardItem,
 import { getSessionMessages } from '../hooks/useSSE';
 import { ChartView } from './ChartView';
 import { TableView } from './TableView';
-import { parseMarkdownTableHeaders, buildColumnLabelMap } from '../utils/tableFormatting';
+import { buildColumnLabelMap } from '../utils/tableFormatting';
 
 interface Props {
   sessions: SessionMeta[];

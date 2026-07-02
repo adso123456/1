@@ -28,9 +28,6 @@ const CASE_FIX_MAP: Record<string, string> = {
 /** ISO 日期时间正则：2025-01-15T00:00:00 或 2025-01-15T00:00:00.000Z */
 const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 
-/** 纯日期正则：2025-01-15 */
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 /**
  * 格式化单元格值
  * - null / undefined / '' → '—'
