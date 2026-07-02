@@ -36,6 +36,7 @@ function App() {
     addItems,
     removeItem,
     updateLayout,
+    updateItemHeight,
     createDashboard,
     switchDashboard,
     addItemsToDashboard,
@@ -187,6 +188,7 @@ function App() {
             onRemove={handleRemoveItem}
             onAddChart={() => setShowAddDialog(true)}
             onLayoutChange={updateLayout}
+            onUpdateItemHeight={updateItemHeight}
           />
         )}
       </div>

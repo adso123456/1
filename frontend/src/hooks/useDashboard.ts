@@ -11,7 +11,8 @@ const OLD_KEY = 'water_qa_dashboard';
 const COLS = 6;
 const DEFAULT_W = 3;
 const DEFAULT_CHART_H = 4;
-const DEFAULT_TABLE_H = 3;
+/** 新表格临时默认高度：挂载后由 TableView 实测内容高度自动校正 */
+const DEFAULT_TABLE_H = 2;
 
 /** 内部存储结构 */
 interface StoreData {
@@ -252,6 +253,30 @@ export function useDashboard() {
     return persist(current);
   }, [persist, reload]);
 
+  /** 单项高度校正：仅改当前仪表板指定项目的 layout.h，保留 x/y/w。
+   *  新高度与旧高度相同时不写 localStorage；写入失败返回 false。 */
+  const updateItemHeight = useCallback((id: string, h: number): boolean => {
+    if (!Number.isFinite(h) || h <= 0) return false;
+    const current = reload();
+    const db = current.dashboards.find(d => d.id === current.currentDashboardId);
+    if (!db) return false;
+
+    const item = db.items.find(c => c.id === id);
+    if (!item) return false;
+
+    const gridH = Math.round(h);
+    if (item.layout && item.layout.h === gridH) return true; // 高度未变，不写存储
+
+    item.layout = {
+      x: item.layout?.x ?? 0,
+      y: item.layout?.y ?? 0,
+      w: item.layout?.w ?? DEFAULT_W,
+      h: gridH,
+    };
+    db.updatedAt = Date.now();
+    return persist(current);
+  }, [persist, reload]);
+
   /** 新建仪表板并立即切换 */
   const createDashboard = useCallback((): boolean => {
     const current = reload();
@@ -326,6 +351,7 @@ export function useDashboard() {
     addItems,
     removeItem,
     updateLayout,
+    updateItemHeight,
     createDashboard,
     switchDashboard,
     addItemsToDashboard,

@@ -13,6 +13,8 @@ interface Props {
   onRemove: (id: string) => void;
   onAddChart: () => void;
   onLayoutChange: (layout: Layout) => void;
+  /** 仪表板单项高度校正：写入指定项目 layout.h（保留 x/y/w） */
+  onUpdateItemHeight?: (id: string, h: number) => void;
 }
 
 const BORDER = '#e5e7eb';
@@ -23,12 +25,37 @@ const ACTIVE_TEXT = '#2563eb';
 
 const COLS = 6;
 const ROW_HEIGHT = 100;
+const GRID_MARGIN = 16;
+/** 表格卡片标题栏 + 卡片边框等固定占用高度（标题栏 padding 10*2 + ×按钮 28 + borderBottom 1 + 卡片 border 2 ≈ 51）。
+ *  表格内容区 padding 为 0，故不另加。 */
+const TABLE_CARD_CHROME = 51;
 
-export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLayoutChange }: Props) {
+export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLayoutChange, onUpdateItemHeight }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(600);
   const [exporting, setExporting] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // 表格实测内容高度（仅 table 自然高度）：TableView 上报，用于换算网格高度
+  const [tableHeights, setTableHeights] = useState<Record<string, number>>({});
+
+  /** TableView 上报表格内容高度：更新本地状态并校正持久化的 layout.h。
+   *  幂等：相同高度不会触发持久化写入（useDashboard.updateItemHeight 内部去重）。
+   *  身份稳定（仅依赖 onUpdateItemHeight），供多个表格共享一个回调。 */
+  const handleTableHeight = useCallback((id: string, contentHeight: number) => {
+    setTableHeights(prev => {
+      if (prev[id] === contentHeight) return prev; // 未变化不重渲染
+      return { ...prev, [id]: contentHeight };
+    });
+    if (onUpdateItemHeight) {
+      // 卡片所需像素高度 = 表格内容高度 + 标题栏/边框等固定占用
+      const requiredPx = contentHeight + TABLE_CARD_CHROME;
+      // 换算为网格高度：grid 单元像素高度 = h*ROW_HEIGHT + (h-1)*MARGIN = h*(ROW_HEIGHT+MARGIN) - MARGIN
+      // 解 requiredPx <= h*(ROW_HEIGHT+MARGIN) - MARGIN 得 h >= (requiredPx + MARGIN) / (ROW_HEIGHT + MARGIN)
+      const gridH = Math.ceil((requiredPx + GRID_MARGIN) / (ROW_HEIGHT + GRID_MARGIN));
+      onUpdateItemHeight(id, gridH);
+    }
+  }, [onUpdateItemHeight]);
 
   // 通过 ResizeObserver 获取实际可用宽度，替代 window.innerWidth 硬编码减法
   useEffect(() => {
@@ -52,15 +79,41 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
   if (tableCount > 0) parts.push(`${tableCount} 张表格`);
   const summary = parts.length > 0 ? parts.join('，') : '暂无内容';
 
+  /** 把表格实测内容高度换算为网格高度（与 handleTableHeight 内公式一致） */
+  const tableGridHeight = useCallback((contentHeight: number): number => {
+    const requiredPx = contentHeight + TABLE_CARD_CHROME;
+    return Math.ceil((requiredPx + GRID_MARGIN) / (ROW_HEIGHT + GRID_MARGIN));
+  }, []);
+
   const layout: Layout = useMemo(
-    () => items.map(di => ({
-      i: di.id,
-      x: di.layout?.x ?? 0,
-      y: di.layout?.y ?? 0,
-      w: di.layout?.w ?? 3,
-      h: di.layout?.h ?? (di.type === 'chart' ? 4 : 3),
-    })),
-    [items],
+    () => items.map(di => {
+      const savedH = di.layout?.h;
+      // 图表默认 h=4；新表格临时默认 h=2，挂载后由实测高度校正
+      const defaultH = di.type === 'chart' ? 4 : 2;
+      // 表格：若已有实测内容高度，按内容换算网格高度，并设 minH 防止缩到内容以下
+      if (di.type === 'table') {
+        const measured = tableHeights[di.id];
+        if (measured && measured > 0) {
+          const contentH = tableGridHeight(measured);
+          return {
+            i: di.id,
+            x: di.layout?.x ?? 0,
+            y: di.layout?.y ?? 0,
+            w: di.layout?.w ?? 3,
+            h: contentH,
+            minH: contentH,
+          };
+        }
+      }
+      return {
+        i: di.id,
+        x: di.layout?.x ?? 0,
+        y: di.layout?.y ?? 0,
+        w: di.layout?.w ?? 3,
+        h: savedH ?? defaultH,
+      };
+    }),
+    [items, tableHeights, tableGridHeight],
   );
 
   const handleLayoutChange = useCallback((newLayout: Layout) => {
@@ -296,15 +349,21 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                     display: 'flex',
                     flexDirection: 'column',
                     minHeight: 0,
-                    overflow: 'hidden',
+                    // 表格完整展开（dashboardMode 自身 overflow:visible 不滚动），
+                    // 仅图表需要 hidden 裁切 ECharts 容器
+                    overflow: isChart ? 'hidden' : 'visible',
                     padding: isChart ? '8px 12px 12px' : 0,
                   }}>
                     {isChart ? (
                       <ChartView chart={di.chart} hideTitle hideTableToggle hideDescription fillHeight showExport />
                     ) : (
-                      <div style={{ height: '100%', overflow: 'hidden' }}>
-                        <TableView table={di.table} hideFooter fillHeight />
-                      </div>
+                      <TableView
+                        table={di.table}
+                        hideFooter
+                        dashboardMode
+                        itemId={di.id}
+                        onContentHeightChange={handleTableHeight}
+                      />
                     )}
                   </div>
                 </div>
