@@ -123,6 +123,10 @@ export interface DashboardChartItem {
   sourceMessageId: string;
   addedAt: number;
   chart: ChartData;
+  /** 添加图表时该消息实际执行的 SQL（用于后续刷新数据，可能为 null） */
+  sourceSql?: string | null;
+  /** 图表数据最近一次刷新时间戳（添加时等于 addedAt） */
+  lastRefreshedAt?: number;
   /** 网格布局坐标（x=列, y=行, w=宽度, h=高度），缺失时自动生成 */
   layout?: DashboardLayoutInfo;
 }

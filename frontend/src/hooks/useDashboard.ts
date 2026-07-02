@@ -276,6 +276,48 @@ export function useDashboard() {
     return persist(current);
   }, [persist, reload]);
 
+  /** 向指定仪表板添加项目（upsert）：更新已有卡片时保留原 layout，新卡片生成 layout */
+  const addItemsToDashboard = useCallback((dashboardId: string, newItems: DashboardItem[]): boolean => {
+    const current = reload();
+    const db = current.dashboards.find(d => d.id === dashboardId);
+    if (!db) return false;
+
+    for (const item of newItems) {
+      const idx = db.items.findIndex(c => c.id === item.id);
+      if (idx >= 0) {
+        // 更新已有卡片：保留原 layout，仅覆盖其余字段
+        const prevLayout = db.items[idx].layout;
+        db.items[idx] = { ...item, layout: prevLayout ?? item.layout };
+      } else {
+        db.items.push(item);
+      }
+    }
+
+    generateLayout(db.items);
+    db.updatedAt = Date.now();
+    return persist(current);
+  }, [persist, reload]);
+
+  /** 创建指定名称的新仪表板并初始包含传入项目；不自动切换 currentDashboardId。返回新仪表板 ID 或 null */
+  const createDashboardWithItems = useCallback((name: string, items: DashboardItem[]): string | null => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 64) return null;
+    const current = reload();
+    if (current.dashboards.some(d => d.name === trimmed)) return null;
+
+    const newDashboard: DashboardMeta = {
+      id: generateId(),
+      name: trimmed,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      items: items.map(item => ({ ...item })),
+    };
+    generateLayout(newDashboard.items);
+    current.dashboards = [...current.dashboards, newDashboard];
+    if (!persist(current)) return null;
+    return newDashboard.id;
+  }, [persist, reload]);
+
   return {
     dashboards,
     currentDashboardId,
@@ -286,5 +328,7 @@ export function useDashboard() {
     updateLayout,
     createDashboard,
     switchDashboard,
+    addItemsToDashboard,
+    createDashboardWithItems,
   };
 }

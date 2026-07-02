@@ -300,7 +300,7 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                     padding: isChart ? '8px 12px 12px' : 0,
                   }}>
                     {isChart ? (
-                      <ChartView chart={di.chart} hideTitle hideTableToggle hideDescription fillHeight />
+                      <ChartView chart={di.chart} hideTitle hideTableToggle hideDescription fillHeight showExport />
                     ) : (
                       <div style={{ height: '100%', overflow: 'auto' }}>
                         <TableView table={di.table} hideFooter />

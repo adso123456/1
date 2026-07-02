@@ -22,11 +22,15 @@ interface Props {
   hideDescription?: boolean;
   /** 撑满父容器高度（仪表板缩放用），设置后 ECharts 不再使用固定 350px */
   fillHeight?: boolean;
+  /** 显示"导出"按钮（聊天与仪表板图表用，弹窗预览不显示） */
+  showExport?: boolean;
+  /** 点击"添加到仪表板"时回调，传出当前 activeSpec 图表快照（含 explicitType=true） */
+  onAddToDashboard?: (chart: ChartData) => void;
 }
 
 type ViewMode = 'chart' | 'table';
 
-export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hideDescription, fillHeight }: Props) {
+export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
   const isChartOnly = !!chart.chartOnly;
 
   const [viewMode, setViewMode] = useState<ViewMode>('chart');
@@ -117,6 +121,48 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
     }
     setLocalType(type);
     onChangeType?.(type);
+  };
+
+  /** 清理文件名中的 Windows 非法字符 */
+  const sanitizeFileName = (raw: string): string =>
+    raw.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'chart';
+
+  /** 导出当前 activeSpec 对应图表为 PNG */
+  const handleExport = () => {
+    const instance = echartsRef.current?.getEchartsInstance();
+    if (!instance) {
+      showToast('图表尚未就绪，请稍后再试');
+      return;
+    }
+    try {
+      const dataURL = instance.getDataURL({
+        type: 'png',
+        pixelRatio: 2,
+        backgroundColor: '#fff',
+      });
+      const title = sanitizeFileName(chart.title || '');
+      const typeLabel = CHART_TYPE_LABELS[localType] || localType;
+      const fileName = `${title}_${typeLabel}.png`;
+      const link = document.createElement('a');
+      link.href = dataURL;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      showToast('导出失败，请稍后再试');
+    }
+  };
+
+  /** 把当前 activeSpec 图表快照交给上层添加到仪表板 */
+  const handleAddToDashboard = () => {
+    if (!onAddToDashboard) return;
+    if (!activeSpec) {
+      showToast('当前图表类型不可用');
+      return;
+    }
+    // 使用当前实际渲染的 activeSpec，而非原始 chart.spec；保留 columns/rows/title/dataVersion
+    onAddToDashboard({ ...chart, spec: activeSpec, explicitType: true });
   };
 
   // 图表类型或显示模式变化后，在下一帧 resize 确保图例布局正确
@@ -359,6 +405,48 @@ export function ChartView({ chart, hideTitle, onChangeType, hideTableToggle, hid
             </>
           )}
         </div>
+        )}
+
+        {/* 三级：导出 / 添加到仪表板（仅图表模式显示；data-export-exclude 确保整板 PNG 不含按钮） */}
+        {(showExport || onAddToDashboard) && (effectiveViewMode === 'chart' || isChartOnly) && (
+          <div data-export-exclude style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
+            {showExport && (
+              <button
+                onClick={handleExport}
+                title="导出当前图表为 PNG"
+                style={{
+                  padding: '4px 10px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  backgroundColor: '#fff',
+                  color: '#374151',
+                  transition: 'all .15s',
+                }}
+              >
+                导出
+              </button>
+            )}
+            {onAddToDashboard && (
+              <button
+                onClick={handleAddToDashboard}
+                title="添加到仪表板"
+                style={{
+                  padding: '4px 10px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  backgroundColor: '#fff',
+                  color: '#374151',
+                  transition: 'all .15s',
+                }}
+              >
+                添加到仪表板
+              </button>
+            )}
+          </div>
         )}
       </div>
       )}

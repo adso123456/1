@@ -19,6 +19,8 @@ interface ExtractedChart {
   sourceMessageId: string;
   dashboardId: string;
   messageText: string;
+  /** 该消息实际执行的 SQL（用于后续刷新数据，可能为 null） */
+  sourceSql: string | null;
 }
 
 interface ExtractedTable {
@@ -211,6 +213,7 @@ function extractItems(messages: ChatMessage[], sessionId: string): MessageGroup[
         sourceMessageId: msg.id,
         dashboardId: `${sessionId}::${msg.id}::${chart.id}`,
         messageText: msg.text.slice(0, 60) || '（无文本）',
+        sourceSql: msg.sql ?? null,
       });
     }
 
@@ -288,6 +291,8 @@ export function AddChartDialog({ sessions, existingIds, onAdd, onClose }: Props)
             sourceMessageId: item.sourceMessageId,
             addedAt: Date.now(),
             chart: JSON.parse(JSON.stringify(item.chart)),
+            sourceSql: item.sourceSql,
+            lastRefreshedAt: Date.now(),
           };
           items.push(ci);
         } else {

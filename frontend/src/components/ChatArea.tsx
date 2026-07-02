@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { ChatMessage, RenderableChartType } from '../types';
+import type { ChatMessage, ChartData, RenderableChartType } from '../types';
 import { MessageBubble } from './MessageBubble';
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   onCancel: () => void;
   onClear: () => void;
   onChangeChartType: (type: RenderableChartType) => void;
+  /** 透传给 MessageBubble：点击"添加到仪表板" */
+  onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
 }
 
 const SUGGESTIONS = [
@@ -17,7 +19,7 @@ const SUGGESTIONS = [
   '查询2025年1月的监测数据，只取pH值有记录的前5条',
 ];
 
-export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType }: Props) {
+export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onAddToDashboard }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -122,6 +124,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
             key={msg.id}
             message={msg}
             onChangeChartType={onChangeChartType}
+            onAddToDashboard={onAddToDashboard}
           />
         ))}
         <div ref={messagesEndRef} />

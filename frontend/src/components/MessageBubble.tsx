@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatMessage, RenderableChartType } from '../types';
+import type { ChatMessage, ChartData, RenderableChartType } from '../types';
 import { buildChartOption } from '../chartRegistry';
 import { ThinkingSteps } from './ThinkingSteps';
 import { ChartView } from './ChartView';
@@ -10,6 +10,8 @@ import { ChartErrorBoundary } from './ChartCard';
 interface Props {
   message: ChatMessage;
   onChangeChartType?: (type: RenderableChartType) => void;
+  /** 点击"添加到仪表板"时回调，携带当前 activeSpec 图表快照、消息 ID、消息 SQL（会话 ID 由 App 补充） */
+  onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
 }
 
 /** 去除图表注释标记及流式未闭合残片，避免显示在正文中 */
@@ -21,7 +23,7 @@ function cleanMarkdown(text: string): string {
     .trimEnd();
 }
 
-export function MessageBubble({ message, onChangeChartType }: Props) {
+export function MessageBubble({ message, onChangeChartType, onAddToDashboard }: Props) {
   const isUser = message.role === 'user';
   const hasSql = !!(message.sql && message.sql.trim());
   const [showSql, setShowSql] = useState(false);
@@ -240,7 +242,18 @@ export function MessageBubble({ message, onChangeChartType }: Props) {
                       </div>
                     }
                   >
-                    <ChartView chart={best} onChangeType={onChangeChartType} />
+                    <ChartView
+                      chart={best}
+                      onChangeType={onChangeChartType}
+                      showExport
+                      onAddToDashboard={onAddToDashboard
+                        ? (chart) => onAddToDashboard({
+                            chart,
+                            messageId: message.id,
+                            sql: message.sql ?? null,
+                          })
+                        : undefined}
+                    />
                   </ChartErrorBoundary>
                 </div>
               );
