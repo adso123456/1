@@ -7,13 +7,23 @@ interface Props {
   preview?: boolean;
   /** 隐藏底部统计行（仪表板精简用） */
   hideFooter?: boolean;
+  /** 填满父容器高度：由 TableView 自身作为唯一滚动容器（仪表板表格用） */
+  fillHeight?: boolean;
 }
 
-export function TableView({ table, preview, hideFooter }: Props) {
+export function TableView({ table, preview, hideFooter, fillHeight }: Props) {
   const rows = preview ? table.data.slice(0, 5) : table.data;
 
   return (
-    <div style={{
+    <div style={fillHeight ? {
+      height: '100%',
+      maxHeight: 'none',
+      minHeight: 0,
+      overflowY: 'auto',
+      overflowX: 'auto',
+      border: preview ? 'none' : '1px solid #e5e7eb',
+      borderRadius: preview ? 0 : 6,
+    } : {
       maxHeight: preview ? 160 : 400,
       overflowY: 'auto',
       overflowX: 'auto',
