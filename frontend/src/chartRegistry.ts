@@ -1,6 +1,6 @@
 import type { ChartData, ChartSpec, ChartType, ChartTypeAvailability, RenderableChartType } from './types';
 import { isSummable } from './chartDescription';
-import { formatColumnLabel } from './utils/tableFormatting';
+import { formatColumnLabel, formatCellValue } from './utils/tableFormatting';
 
 type Row = Record<string, unknown>;
 type EChartsOption = Record<string, unknown>;
@@ -167,18 +167,54 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         break;
       }
 
-      // ── 折线图：优先时间维度，其次分类列（显式切换不得优先普通数值指标） ──
+      // ── 折线图：按数据形态选择横轴（横截面对比 / 单对象趋势 / 多对象时间序列） ──
       case 'line': {
-        // 优先有序横轴，没有则回退到分类列（dropdown 选择均为显式操作）
-        const lx = bestOrderedX ?? bestCategoryX;
-        if (!lx || !bestNum1) {
+        if (!bestNum1) {
           items.push(avail(type, null, '需要横轴和数值列'));
-        } else if (!isNumericField(rows, bestNum1)) {
-          items.push(avail(type, null, '数值列必须为数字类型'));
-        } else {
-          const s = check(type, { xField: lx, yFields: [bestNum1] }, { explicitType: true });
-          items.push(avail(type, s, '该数据类型暂不支持该图表'));
+          break;
         }
+        if (!isNumericField(rows, bestNum1)) {
+          items.push(avail(type, null, '数值列必须为数字类型'));
+          break;
+        }
+
+        const entityField = findEntityNameField(columns);
+        let lineX: string | null = null;
+        let reason = '';
+
+        if (entityField) {
+          const { entityCount, maxOccur } = countEntityOccurrences(rows, entityField);
+          if (entityCount > 1 && maxOccur === 1) {
+            // A 横截面对比：每个对象仅一条记录，用对象名称作横轴，不连成时间趋势
+            lineX = entityField;
+          } else if (entityCount > 1 && maxOccur > 1 && bestOrderedX) {
+            // C 多对象时间序列：当前单系列折线会把不同对象错误连成一条线
+            reason = '多对象时间序列需要分系列展示';
+          } else if (entityCount <= 1 && bestOrderedX) {
+            // B 单对象趋势：用时间作横轴
+            lineX = bestOrderedX;
+          } else {
+            // D 无时间字段（或对象无重复但无时间）：显式切换时回退到对象字段
+            lineX = entityField;
+          }
+        } else if (bestOrderedX) {
+          // B 无对象字段的单序列时间趋势
+          lineX = bestOrderedX;
+        } else {
+          // D 无对象无时间：回退分类列（显式切换允许）
+          lineX = bestCategoryX;
+        }
+
+        if (reason) {
+          items.push(avail(type, null, reason));
+          break;
+        }
+        if (!lineX) {
+          items.push(avail(type, null, '需要横轴和数值列'));
+          break;
+        }
+        const s = check(type, { xField: lineX, yFields: [bestNum1] }, { explicitType: true });
+        items.push(avail(type, s, '该数据类型暂不支持该图表'));
         break;
       }
 
@@ -439,6 +475,35 @@ function isTemporalField(rows: Row[], field: string | null): field is string {
   return false;
 }
 
+/** 对象名称字段名关键词（排口/站点/断面/企业等实体名称）。仅匹配字段名，不匹配具体数据值 */
+const ENTITY_NAME_RE = /名称|排口|站点|监测点|断面|企业|单位|水厂|项目|name|site|station|company/i;
+/** 地区字段名关键词（区县/地区/城市等行政区划）。仅匹配字段名 */
+const REGION_RE = /区县|地区|区域|行政区|城市|city|region|district/i;
+
+/** 识别对象名称字段：返回第一个命中关键词的列，无则 null */
+function findEntityNameField(columns: string[]): string | null {
+  return columns.find(c => ENTITY_NAME_RE.test(c)) ?? null;
+}
+
+/** 识别地区字段：返回第一个命中关键词的列，无则 null */
+function findRegionField(columns: string[]): string | null {
+  return columns.find(c => REGION_RE.test(c)) ?? null;
+}
+
+/** 统计对象字段的不同值数量与单个对象最大出现次数（基于非空有效行） */
+function countEntityOccurrences(rows: Row[], entityField: string): { entityCount: number; maxOccur: number } {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const v = row[entityField];
+    if (isNullValue(v)) continue;
+    const key = String(v);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  let maxOccur = 0;
+  for (const c of counts.values()) if (c > maxOccur) maxOccur = c;
+  return { entityCount: counts.size, maxOccur };
+}
+
 /** 将 xField 值转为可比较的排序键（时间→时间戳，数值→数字，有序字符串→数值，其它→字符串） */
 function xFieldSortKey(value: unknown): number | string {
   if (typeof value === 'number') return value;
@@ -491,8 +556,19 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
   const horizontal = mode === 'horizontal_bar';
   const line = mode === 'line' || mode === 'area';
 
-  // line/area 按横轴值排序，确保折线按正确顺序连线
-  const sortedRows = line
+  // 折线图字段语义：对象名称、地区、横轴是否为时间字段
+  const entityField = findEntityNameField(chart.columns);
+  const regionField = findRegionField(chart.columns);
+  const xIsTemporal = isTemporalField(chart.rows, xField);
+  const xIsEntity = mode === 'line' && xField === entityField;
+  // 非横轴的时间字段：横轴为对象/分类时，tooltip 用它显示监测日期
+  const dateField = (mode === 'line' && !xIsTemporal)
+    ? (chart.columns.find(c => isTemporalField(chart.rows, c) && c !== xField && c !== yField) ?? null)
+    : null;
+
+  // 排序：area 始终按时间；line 仅在横轴为时间字段时按时间排序，对象/分类横轴保留 SQL 原始行顺序
+  const needSort = mode === 'area' || (mode === 'line' && xIsTemporal);
+  const sortedRows = needSort
     ? [...rows].sort((a, b) => {
         const ka = xFieldSortKey(a[xField]);
         const kb = xFieldSortKey(b[xField]);
@@ -501,7 +577,21 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
       })
     : rows;
 
-  const labels = sortedRows.map(row => String(row[xField]));
+  // 折线图横轴标签：时间值去掉 T00:00:00；对象横轴可拼接"地区 · 对象名"（不重复）
+  const makeLineLabel = (row: Row): string => {
+    if (xIsTemporal) return formatCellValue(row[xField]);
+    const nameVal = formatCellValue(row[xField]);
+    if (xIsEntity && regionField && regionField !== xField && regionField !== yField) {
+      const regionVal = formatCellValue(row[regionField]);
+      if (regionVal && regionVal !== '—' && !nameVal.includes(regionVal) && !regionVal.includes(nameVal)) {
+        return `${regionVal} · ${nameVal}`;
+      }
+    }
+    return nameVal;
+  };
+  const labels = mode === 'line'
+    ? sortedRows.map(row => makeLineLabel(row))
+    : sortedRows.map(row => String(row[xField]));
   const values = sortedRows.map(row => toNumber(row[yField]) ?? 0);
 
   const ySummable = isSummable(yField);
@@ -518,16 +608,47 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
     ? Math.max(48, Math.min(140, Math.floor(560 / labels.length)))
     : undefined;
 
+  const yLabel = formatColumnLabel(yField);
+  const xLabel = formatColumnLabel(xField);
+
   return {
     color: BLUE_PALETTE,
     title: { text: baseTitle(chart), left: 'center', textStyle: { fontSize: 14, color: '#374151' } },
     tooltip: {
       trigger: 'axis',
       formatter: line
-        ? (params: { seriesName: string; name: string; value: number }[]) => {
+        ? (params: { dataIndex: number; seriesName: string; name: string; value: number }[]) => {
             const p = params[0];
             if (!p) return '';
-            return `${p.name}<br/>${p.seriesName || yField}：${p.value}`;
+            // 通过 dataIndex 对应到实际行，按存在情况显示对象/地区/日期/指标，文本去重
+            const row = sortedRows[p.dataIndex];
+            if (!row) return '';
+            const parts: string[] = [];
+            const seen = new Set<string>();
+            // 对象名称（第一行，无前缀）
+            if (entityField && entityField !== yField) {
+              const v = formatCellValue(row[entityField]);
+              if (v && v !== '—') { parts.push(v); seen.add(v); }
+            }
+            // 地区
+            if (regionField && regionField !== yField && regionField !== entityField) {
+              const v = formatCellValue(row[regionField]);
+              if (v && v !== '—' && !seen.has(v)) {
+                parts.push(`${formatColumnLabel(regionField)}：${v}`);
+                seen.add(v);
+              }
+            }
+            // 监测日期（仅当横轴非时间时显示，避免与横轴重复）
+            if (dateField) {
+              const v = formatCellValue(row[dateField]);
+              if (v && v !== '—' && !seen.has(v)) {
+                parts.push(`${formatColumnLabel(dateField)}：${v}`);
+                seen.add(v);
+              }
+            }
+            // 指标名称与数值
+            parts.push(`${yLabel}：${formatCellValue(row[yField])}`);
+            return parts.join('<br/>');
           }
         : (params: { name: string; value: number }[]) => {
             const p = params[0];
@@ -535,14 +656,14 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
             if (showBarProportion) {
               const pctVal = ((p.value / vTotal) * 100).toFixed(1);
               const rank = values.filter((v: number) => v > p.value).length + 1;
-              return `${yField}<br/>${p.name}：${p.value}<br/>占比：${pctVal}%<br/>排名：第${rank}/${values.length}`;
+              return `${yLabel}<br/>${p.name}：${p.value}<br/>占比：${pctVal}%<br/>排名：第${rank}/${values.length}`;
             }
-            return `${yField}<br/>${p.name}：${p.value}`;
+            return `${yLabel}<br/>${p.name}：${p.value}`;
           },
     },
     grid: { bottom: horizontal ? 40 : 80, top: 50, left: horizontal ? 120 : 50, right: 24 },
     xAxis: horizontal
-      ? { type: 'value', name: yField }
+      ? { type: 'value', name: yLabel }
       : (
         mode === 'bar'
           ? {
@@ -556,14 +677,19 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
                 width: barLabelWidth,
               },
             }
-          : { type: 'category', data: labels, axisLabel: { rotate: labels.length > 6 ? 45 : 0, fontSize: 11 } }
+          : {
+              type: 'category',
+              data: labels,
+              name: xLabel,
+              axisLabel: { rotate: labels.length > 6 ? 45 : 0, fontSize: 11, overflow: 'truncate', width: barLabelWidth },
+            }
       ),
     yAxis: horizontal
       ? { type: 'category', data: labels, axisLabel: { fontSize: 11 } }
-      : { type: 'value', name: yField },
+      : { type: 'value', name: yLabel },
     series: [{
-      // name 设为 yField，使 tooltip 显示真实指标名而非默认的 series0
-      name: yField,
+      // name 设为 yLabel，使 tooltip/legend 显示真实指标名而非默认的 series0
+      name: yLabel,
       type: line ? 'line' : 'bar',
       data: values,
       smooth: line,
