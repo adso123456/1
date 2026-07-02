@@ -315,24 +315,38 @@ export function isNullValue(v: unknown): boolean {
   return v === null || v === undefined || v === '';
 }
 
-/** 比较两个 charts 数组的签名（spec 元数据），用于判断是否需要更新状态 */
+/** 提取单个图表的渲染签名：覆盖影响渲染的全部元数据，不含 rows。
+ *  数据变化由 dataVersion 代表，避免对大量 rows 反复 JSON.stringify。 */
+function chartSignature(chart: ChartData) {
+  const { spec } = chart;
+  return {
+    id: chart.id,
+    title: chart.title,
+    error: chart.error ?? null,
+    columns: chart.columns,
+    dataVersion: chart.dataVersion,
+    // 可选布尔归一化：undefined 与 false 语义等价，避免误判为不同
+    explicitType: !!chart.explicitType,
+    chartOnly: !!chart.chartOnly,
+    type: spec.type,
+    specTitle: spec.title ?? null,
+    xField: spec.xField ?? null,
+    yFields: spec.yFields ?? [],
+    seriesField: spec.seriesField ?? null,
+    sizeField: spec.sizeField ?? null,
+    valueField: spec.valueField ?? null,
+    min: spec.min ?? null,
+    max: spec.max ?? null,
+    unit: spec.unit ?? null,
+  };
+}
+
+/** 比较两个 charts 数组的签名（渲染元数据），用于判断是否需要更新状态。
+ *  数组字段（columns / yFields）经 JSON.stringify 按内容与顺序比较，而非引用。 */
 function chartsSignatureEqual(a: ChartData[], b: ChartData[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    const sa = a[i].spec;
-    const sb = b[i].spec;
-    if (
-      a[i].id !== b[i].id ||
-      a[i].title !== b[i].title ||
-      a[i].error !== b[i].error ||
-      sa.type !== sb.type ||
-      sa.title !== sb.title ||
-      sa.xField !== sb.xField ||
-      JSON.stringify(sa.yFields) !== JSON.stringify(sb.yFields) ||
-      sa.seriesField !== sb.seriesField ||
-      sa.sizeField !== sb.sizeField ||
-      sa.valueField !== sb.valueField
-    ) {
+    if (JSON.stringify(chartSignature(a[i])) !== JSON.stringify(chartSignature(b[i]))) {
       return false;
     }
   }
