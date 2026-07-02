@@ -1,5 +1,6 @@
 import type { ChartData, ChartSpec, ChartType, ChartTypeAvailability, RenderableChartType } from './types';
 import { isSummable } from './chartDescription';
+import { formatColumnLabel } from './utils/tableFormatting';
 
 type Row = Record<string, unknown>;
 type EChartsOption = Record<string, unknown>;
@@ -220,6 +221,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   const specY1 = spec.yFields?.[1] && columns.includes(spec.yFields[1]) ? spec.yFields[1] : null;
   const specVal = spec.valueField && columns.includes(spec.valueField) ? spec.valueField : null;
   const specSize = spec.sizeField && columns.includes(spec.sizeField) ? spec.sizeField : null;
+  const specSeries = spec.seriesField && columns.includes(spec.seriesField) ? spec.seriesField : null;
 
   // ── 最佳候选字段 ──
   // 数值列：优先复用 spec 中已指定且合法的字段
@@ -236,6 +238,10 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   const bestNum2 = specY1 && numericCols.includes(specY1) ? specY1 : (numericCols[1] ?? null);
   const bestNum3 = numericCols[2] ?? null;
   const bestVal = specVal ?? bestNum1;
+  // 散点/气泡点名称字段：优先复用合法非数值 seriesField，否则第一个分类列；无分类列时为空
+  const bestNameField = (specSeries && categoricalCols.includes(specSeries))
+    ? specSeries
+    : (categoricalCols[0] ?? null);
 
   // 饼图/环形图 兼容性：仅需非负（分类数量不再作为限制，仅影响可读性）
   const hasNegativeY1 = bestNum1 ? rows.some(r => (toNumber(r[bestNum1]) ?? 0) < 0) : true;
@@ -341,28 +347,41 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         break;
       }
 
-      // ── 散点图：数值 xField + 数值 yField ──
+      // ── 散点图：数值 xField + 数值 yField（优先复用 spec 合法字段，X/Y 不得相同） ──
       case 'scatter': {
-        const sx = bestNum1;
-        const sy = bestNum2;
+        // 优先复用 spec 中合法的数值 xField/yField，不合法时回退到前两个数值列（需不同）
+        const sx = (specX && numericCols.includes(specX)) ? specX : bestNum1;
+        const sy = (specY0 && numericCols.includes(specY0) && specY0 !== sx)
+          ? specY0
+          : (bestNum2 && bestNum2 !== sx ? bestNum2 : (numericCols.find(c => c !== sx) ?? null));
         if (!sx || !sy) {
           items.push(avail(type, null, '需要两个数值列'));
+        } else if (sx === sy) {
+          items.push(avail(type, null, 'X 轴与 Y 轴必须为不同的数值列'));
         } else if (!isNumericField(rows, sx) || !isNumericField(rows, sy)) {
           items.push(avail(type, null, '两个轴均需为数字类型'));
         } else {
-          const s = check(type, { xField: sx, yFields: [sy] });
+          const s = check(type, { xField: sx, yFields: [sy], seriesField: bestNameField });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
       }
 
-      // ── 气泡图：数值 xField + 数值 yField + 数值 sizeField ──
+      // ── 气泡图：数值 xField + 数值 yField + 数值 sizeField（三者必须不同） ──
       case 'bubble': {
-        const bx = bestNum1;
-        const by = bestNum2;
-        const bs = specSize && numericCols.includes(specSize) ? specSize : bestNum3;
+        const bx = (specX && numericCols.includes(specX)) ? specX : bestNum1;
+        const by = (specY0 && numericCols.includes(specY0) && specY0 !== bx)
+          ? specY0
+          : (bestNum2 && bestNum2 !== bx ? bestNum2 : (numericCols.find(c => c !== bx) ?? null));
+        const bs = (specSize && numericCols.includes(specSize) && specSize !== bx && specSize !== by)
+          ? specSize
+          : (bestNum3 && bestNum3 !== bx && bestNum3 !== by
+              ? bestNum3
+              : (numericCols.find(c => c !== bx && c !== by) ?? null));
         if (!bx || !by || !bs) {
           items.push(avail(type, null, '需要三个数值列（X/Y/大小）'));
+        } else if (bx === by || bs === bx || bs === by) {
+          items.push(avail(type, null, 'X/Y/大小必须为三个不同的数值列'));
         } else if (
           !isNumericField(rows, bx) ||
           !isNumericField(rows, by) ||
@@ -370,7 +389,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         ) {
           items.push(avail(type, null, 'X/Y/大小列均需为数字类型'));
         } else {
-          const s = check(type, { xField: bx, yFields: [by], sizeField: bs });
+          const s = check(type, { xField: bx, yFields: [by], sizeField: bs, seriesField: bestNameField });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
@@ -474,7 +493,7 @@ export function buildChartOption(chart: ChartData): EChartsOption | null {
   return builder ? builder(chart) : null;
 }
 
-function getField(spec: ChartSpec, key: 'xField' | 'sizeField' | 'valueField'): string | null {
+function getField(spec: ChartSpec, key: 'xField' | 'sizeField' | 'valueField' | 'seriesField'): string | null {
   const value = spec[key];
   return typeof value === 'string' && value.trim() ? value : null;
 }
@@ -735,31 +754,107 @@ function buildScatterChart(chart: ChartData, bubble = false): EChartsOption | nu
   const xField = getField(chart.spec, 'xField');
   const yField = getYField(chart.spec);
   const sizeField = getField(chart.spec, 'sizeField');
+  const nameField = getField(chart.spec, 'seriesField');
   if (!hasColumn(chart.columns, xField) || !hasColumn(chart.columns, yField)) return null;
+  // 防御：X/Y 不得相同；bubble 的 sizeField 不得与 X/Y 相同
+  if (xField === yField) return null;
   if (!isNumericField(chart.rows, xField) || !isNumericField(chart.rows, yField)) return null;
-  if (bubble && (!hasColumn(chart.columns, sizeField) || !isNumericField(chart.rows, sizeField))) return null;
+  if (bubble) {
+    if (!hasColumn(chart.columns, sizeField) || !isNumericField(chart.rows, sizeField)) return null;
+    if (sizeField === xField || sizeField === yField) return null;
+  }
 
   const fields = bubble && sizeField ? [xField, yField, sizeField] : [xField, yField];
+  const totalRows = chart.rows.length;
   const rows = cleanRows(chart.rows, fields);
   if (!rows.length) return null;
+
+  const xLabel = formatColumnLabel(xField);
+  const yLabel = formatColumnLabel(yField);
+  const sizeLabel = bubble && sizeField ? formatColumnLabel(sizeField) : '';
+  const nameLabel = nameField ? formatColumnLabel(nameField) : '';
+
+  // 气泡尺寸：min-max 归一化后 sqrt 平滑，范围 10~44；全部相同用固定尺寸
   const sizes = bubble && sizeField ? rows.map(row => toNumber(row[sizeField]) ?? 0) : [];
-  const maxSize = sizes.length ? Math.max(...sizes, 1) : 1;
+  const minSize = sizes.length ? Math.min(...sizes) : 0;
+  const maxSize = sizes.length ? Math.max(...sizes) : 0;
+  const sizeSpan = maxSize - minSize;
+  const MIN_BUBBLE = 10;
+  const MAX_BUBBLE = 44;
+  const symbolSize = bubble
+    ? (value: number[]) => {
+        const v = Number(value[2]);
+        if (sizeSpan <= 0) return (MIN_BUBBLE + MAX_BUBBLE) / 2; // 全部相同 → 固定尺寸
+        const normalized = (v - minSize) / sizeSpan; // 0~1
+        return MIN_BUBBLE + Math.sqrt(normalized) * (MAX_BUBBLE - MIN_BUBBLE);
+      }
+    : 10;
+
+  // 点数据：携带名称（用于标签与 tooltip）
+  const data = rows.map(row => {
+    const x = toNumber(row[xField]) ?? 0;
+    const y = toNumber(row[yField]) ?? 0;
+    const name = nameField ? String(row[nameField] ?? '') : '';
+    const value = bubble && sizeField ? [x, y, toNumber(row[sizeField]) ?? 0] : [x, y];
+    return { name, value };
+  });
+
+  // 标题：散点"Y 与 X 关系"，气泡"Y 与 X 关系（气泡大小：SIZE）"
+  const relationText = `${yLabel} 与 ${xLabel} 关系`;
+  const titleText = bubble ? `${relationText}（气泡大小：${sizeLabel}）` : relationText;
+  // 有效行少于原始行数时，subtext 提示缺失
+  const subtext = rows.length < totalRows ? `有效数据 ${rows.length}/${totalRows}，缺失坐标已忽略` : '';
+
+  // 数据点不多且存在名称字段时默认显示标签，较多则仅 emphasis 显示
+  const showLabel = !!nameField && data.length <= 12;
 
   return {
     color: BLUE_PALETTE,
-    title: { text: baseTitle(chart), left: 'center', textStyle: { fontSize: 14, color: '#374151' } },
-    tooltip: { trigger: 'item' },
-    grid: { bottom: 60, top: 50, left: 60, right: 24 },
-    xAxis: { type: 'value', name: xField },
-    yAxis: { type: 'value', name: yField },
+    title: {
+      text: titleText,
+      subtext,
+      left: 'center',
+      textStyle: { fontSize: 14, color: '#374151' },
+      subtextStyle: { fontSize: 11, color: '#9ca3af' },
+    },
+    tooltip: {
+      trigger: 'item',
+      formatter: (p: { name: string; value: number[] }) => {
+        const v = p.value;
+        const parts: string[] = [];
+        if (nameField && p.name) parts.push(`${nameLabel || '名称'}：${p.name}`);
+        parts.push(`${xLabel}：${v[0]}`);
+        parts.push(`${yLabel}：${v[1]}`);
+        if (bubble && sizeField) parts.push(`${sizeLabel}：${v[2]}`);
+        return parts.join('<br/>');
+      },
+    },
+    grid: { bottom: 60, top: 60, left: 60, right: 24 },
+    xAxis: { type: 'value', name: xLabel, nameTextStyle: { fontSize: 11, color: '#6b7280' } },
+    yAxis: { type: 'value', name: yLabel, nameTextStyle: { fontSize: 11, color: '#6b7280' } },
     series: [{
       type: 'scatter',
-      data: rows.map(row => {
-        const point = [toNumber(row[xField]) ?? 0, toNumber(row[yField]) ?? 0];
-        return bubble && sizeField ? [...point, toNumber(row[sizeField]) ?? 0] : point;
-      }),
-      symbolSize: bubble ? (value: number[]) => Math.max(8, Math.min(48, (Number(value[2]) / maxSize) * 42)) : 10,
+      data,
+      symbolSize,
       itemStyle: { color: '#2563eb', opacity: 0.78 },
+      label: {
+        show: showLabel,
+        position: 'top',
+        fontSize: 11,
+        color: '#374151',
+        formatter: (p: { name: string }) => p.name,
+        overflow: 'truncate',
+        width: 80,
+      },
+      emphasis: {
+        label: {
+          show: !!nameField,
+          position: 'top',
+          fontSize: 12,
+          formatter: (p: { name: string }) => p.name,
+        },
+        itemStyle: { shadowBlur: 6, shadowColor: 'rgba(37,99,235,0.35)' },
+      },
     }],
   };
 }
