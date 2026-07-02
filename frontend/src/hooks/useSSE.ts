@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { SSEEvent, ChatMessage, SessionMeta, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
-import { fallbackSpecFromColumns, isRenderableChartType, getCompatibleChartTypes, buildChartOption, normalizeChartSpec, CHART_TYPE_LABELS } from '../chartRegistry';
+import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability, buildChartOption, normalizeChartSpec, CHART_TYPE_LABELS } from '../chartRegistry';
 
 /* ======== 本地会话持久化（localStorage） ======== */
 
@@ -480,18 +480,19 @@ export function useSSE() {
   const sendMessage = useCallback(async (userText: string) => {
     const switchType = isPureChartSwitch(userText);
 
-    // 纯图表切换：仅对单图消息生效，且目标类型必须兼容
+    // 纯图表切换：仅对单图消息生效，且目标类型必须可用
     if (switchType && lastDataRef.current) {
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.role === 'assistant' && lastMsg.charts.length === 1) {
         const oldChart = lastMsg.charts[0];
-        // 检查目标类型是否兼容当前图表数据
-        const compatTypes = getCompatibleChartTypes(oldChart);
-        if (compatTypes.includes(switchType)) {
+        // 复用与图表下拉同一套可用性评估，返回通过验证的完整 spec
+        const avail = getChartTypeAvailability(oldChart)
+          .find(a => a.type === switchType);
+        if (avail?.supported && avail.spec) {
           const newChart: ChartData = {
             ...oldChart,
             id: oldChart.id,
-            spec: { ...oldChart.spec, type: switchType },
+            spec: avail.spec,
             explicitType: true,
           };
           setMessages(prev =>
@@ -503,9 +504,9 @@ export function useSSE() {
           );
           return;
         }
-        // 类型不兼容 → 不吞消息，继续走正常请求
+        // 类型不可用 → 不吞消息，继续走正常请求
       }
-      // 多图消息 / 无数据 / 不兼容 → 走正常请求
+      // 多图消息 / 无数据 / 不可用 → 走正常请求
     }
 
     // === 本地追加图表：基于上一条查询结果新增图表类型 ===

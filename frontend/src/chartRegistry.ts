@@ -73,135 +73,6 @@ export function fallbackSpecFromColumns(
   };
 }
 
-/** 分类字段 + 单个数值字段时的占比条件：分类数≤6、无非负数 */
-function isProportionCompatible(chart: ChartData, categoryCount: number): boolean {
-  const yField = getYField(chart.spec);
-  if (!yField || !isNumericField(chart.rows, yField)) return false;
-  if (chart.rows.some(r => (toNumber(r[yField]) ?? 0) < 0)) return false;
-  return categoryCount >= 1 && categoryCount <= 6;
-}
-
-export function getCompatibleChartTypes(chart: ChartData): RenderableChartType[] {
-  const { columns, rows, spec } = chart;
-  const xField = getField(spec, 'xField');
-  const yField = getYField(spec);
-  const yFieldsAll = (spec.yFields ?? []).filter((f): f is string => typeof f === 'string' && f.trim().length > 0);
-  const valueField = getField(spec, 'valueField');
-  const sizeField = getField(spec, 'sizeField');
-
-  // xField 是否有序（时间/月份/季度/年份等）
-  const xOrdered = isOrderedField(rows, xField);
-
-  // 分类相关
-  const rawCats = xField
-    ? [...new Set(rows.map(r => String(r[xField])).filter(v => v !== ''))]
-    : [];
-  const categoryCount = rawCats.length;
-  const maxCategoryLen = rawCats.length > 0 ? Math.max(...rawCats.map(s => s.length)) : 0;
-
-  // yField 是否为数值列
-  const yNumeric = yField ? isNumericField(rows, yField) : false;
-
-  // yFields 中数值列的个数
-  const numericYFieldCount = yFieldsAll.filter(f => isNumericField(rows, f)).length;
-
-  // 推荐类型（来自 LLM）
-  const recommended: RenderableChartType | null = isRenderableChartType(spec.type) ? spec.type : null;
-
-  // 构建器兼容性验证
-  const canBuild = (type: RenderableChartType) =>
-    buildChartOption({ ...chart, spec: normalizeChartSpec(spec, type) }) !== null;
-
-  // 收集候选（去重）
-  const set = new Set<RenderableChartType>();
-
-  const add = (t: RenderableChartType) => { set.add(t); };
-
-  // ---- 柱状图 / 横向柱状图（基础安全类型） ----
-  if (yNumeric && xField && hasColumn(columns, xField) && hasColumn(columns, yField)) {
-    add('bar');
-    add('horizontal_bar');
-  }
-
-  // ---- 折线图 / 面积图（仅有序 xField） ----
-  if (xOrdered && yNumeric && canBuild('line')) {
-    add('line');
-    add('area');
-  }
-
-  // ---- 饼图 / 环形图 ----
-  // 前端无法判断“是否属于整体”，只在 LLM 推荐饼图/环形图时提供候选
-  if (
-    (recommended === 'pie' || recommended === 'donut') &&
-    yNumeric &&
-    numericYFieldCount === 1 &&
-    isProportionCompatible(chart, categoryCount)
-  ) {
-    add('pie');
-    add('donut');
-  }
-
-  // ---- 雷达图（≥2 个数值 yFields + 少量比较对象） ----
-  if (numericYFieldCount >= 2 && categoryCount >= 3 && categoryCount <= 12 && canBuild('radar')) {
-    add('radar');
-  }
-
-  // ---- 组合图（xField + ≥2 数值 yFields，柱状+折线双轴） ----
-  if (xField && numericYFieldCount >= 2 && canBuild('combo')) {
-    add('combo');
-  }
-
-  // ---- 散点图（xField 和 yField 都是数值列） ----
-  if (xField && isNumericField(rows, xField) && yNumeric && canBuild('scatter')) {
-    add('scatter');
-  }
-
-  // ---- 气泡图（散点 + sizeField 是数值列） ----
-  if (sizeField && canBuild('bubble')) {
-    add('bubble');
-  }
-
-  // ---- 热力图（两个类别字段 + valueField） ----
-  if (valueField && canBuild('heatmap')) {
-    add('heatmap');
-  }
-
-  // ---- 箱线图（类别 xField + 数值 valueField） ----
-  if (valueField && canBuild('boxplot')) {
-    add('boxplot');
-  }
-
-  // ---- 仪表盘（单个 KPI 值） ----
-  if (valueField && canBuild('gauge')) {
-    add('gauge');
-  }
-
-  const candidates = [...set];
-
-  // 兜底：至少保留一个安全类型
-  if (candidates.length === 0 && canBuild('bar')) {
-    candidates.push('bar');
-  }
-
-  // 排序：推荐类型 → 横向柱状图（类别多/名称长）→ 普通柱状图 → 其余按优先级
-  const priority: Record<RenderableChartType, number> = {
-    bar: 0, horizontal_bar: 1, line: 2, area: 3,
-    pie: 4, donut: 5, scatter: 6, bubble: 7,
-    radar: 8, heatmap: 9, boxplot: 10, gauge: 11, combo: 12,
-  };
-
-  candidates.sort((a, b) => {
-    if (a === recommended) return -1;
-    if (b === recommended) return 1;
-    // 类别多或名称长 → 横向柱状图优先于普通柱状图
-    if (a === 'horizontal_bar' && b === 'bar' && (categoryCount > 8 || maxCategoryLen > 6)) return -1;
-    if (b === 'horizontal_bar' && a === 'bar' && (categoryCount > 8 || maxCategoryLen > 6)) return 1;
-    return (priority[a] ?? 99) - (priority[b] ?? 99);
-  });
-
-  return candidates.slice(0, 4);
-}
-
 /**
  * 评估全部 13 种图表类型对当前数据的可用性。
  * 为每种类型构造最佳 spec（补全必要字段映射），再通过 buildChartOption 验证。
@@ -325,7 +196,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
       }
 
       // ── 饼图 / 环形图：分类字段 + 数值字段 + 非负 + 合计>0 ──
-      // 注：分类数量多仅影响可读性，不再作为 supported 判定条件（≤6 限制仅保留在旧自动推荐 isProportionCompatible 中）
+      // 注：分类数量多仅影响可读性，不作为 supported 判定条件
       case 'pie':
       case 'donut': {
         if (!bestCategoryX || !bestNum1) {
@@ -541,13 +412,6 @@ function isOrderedStringValue(value: unknown): boolean {
   return false;
 }
 
-function isOrderedField(rows: Row[], field: string | null): field is string {
-  if (!field) return false;
-  const values = rows.map(row => row[field]).filter(value => !isNullValue(value));
-  if (!values.length) return false;
-  return values.every(value => typeof value === 'number' || isOrderedStringValue(value));
-}
-
 /** 字段名是否暗示为年份维度（年/年份/年度/year） */
 function isYearLikeFieldName(field: string): boolean {
   return /年|year/i.test(field);
@@ -561,7 +425,7 @@ function isFourDigitYearValues(rows: Row[], field: string): boolean {
 }
 
 /** 识别真实时间/顺序维度：字符串日期/月份/季度，或数字年份。
- *  区别于 isOrderedField：后者把所有数字列视为有序，本函数排除 COD/BOD/温度/浓度/金额等普通数值指标。 */
+ *  排除 COD/BOD/温度/浓度/金额等普通数值指标，避免它们被当作时间横轴。 */
 function isTemporalField(rows: Row[], field: string | null): field is string {
   if (!field) return false;
   const values = rows.map(row => row[field]).filter(value => !isNullValue(value));
