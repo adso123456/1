@@ -3,6 +3,8 @@
 // 本模块从 chartRegistry.ts 与 chartDescription.ts 复制现有判断逻辑，
 // 最终将替代两处的分散实现。当前阶段仅新增，不修改旧文件。
 
+import type { ChartSpec, RenderableChartType } from './types';
+
 // ============================================================
 // 类型定义
 // ============================================================
@@ -482,4 +484,194 @@ export function analyzeDataset(columns: string[], rows: Row[]): DatasetProfile {
     rowCount: rows.length,
     shape,
   };
+}
+
+// ============================================================
+// 核心图表语义计划
+// ============================================================
+
+export type ChartSuitability =
+  | 'recommended'
+  | 'allowed_explicit'
+  | 'unsupported';
+
+export type ChartSemanticMode =
+  | 'comparison'
+  | 'trend'
+  | 'part_to_whole'
+  | 'relationship'
+  | 'distribution'
+  | 'kpi';
+
+export type AggregationMode =
+  | 'none'
+  | 'sum'
+  | 'average'
+  | 'count'
+  | 'distribution';
+
+export interface ChartPlan {
+  type: RenderableChartType;
+  suitability: ChartSuitability;
+  reasonCode: string;
+  reason: string;
+  spec: ChartSpec | null;
+  semanticMode: ChartSemanticMode;
+  aggregation: AggregationMode;
+}
+
+/** 根据数据集画像生成四种核心图表（bar/horizontal_bar/line/area）的语义计划。
+ *  内部调用 analyzeDataset() 获取完整画像，按 DatasetShape 决定推荐优先级。
+ *  preferredSpec 仅在字段符合语义约束时复用，不会改变 shape 判定。 */
+export function resolveCoreChartPlans(
+  columns: string[],
+  rows: Row[],
+  preferredSpec?: ChartSpec,
+): ChartPlan[] {
+  const profile = analyzeDataset(columns, rows);
+  const { shape, entityField, regionField, categoricalFields, temporalFields, measureFields } = profile;
+
+  /** 构造 ChartSpec（字段缺失时返回 null） */
+  function makeSpec(
+    type: RenderableChartType,
+    xField: string | null,
+    yField: string | null,
+  ): ChartSpec | null {
+    if (!xField || !yField) return null;
+    return {
+      type,
+      xField,
+      yFields: [yField],
+      seriesField: null,
+      sizeField: null,
+      valueField: null,
+    };
+  }
+
+  /** 尝试复用 preferredSpec.xField：仅当语义匹配时才采纳 */
+  function resolveXField(chartType: RenderableChartType, defaultX: string | null): string | null {
+    if (!preferredSpec?.xField || !columns.includes(preferredSpec.xField)) return defaultX;
+    const px = preferredSpec.xField;
+    // 趋势图（line/area）：xField 必须在 temporalFields
+    if (chartType === 'line' || chartType === 'area') {
+      return temporalFields.includes(px) ? px : defaultX;
+    }
+    // 对比图（bar/horizontal_bar）：xField 必须是 entityField、regionField 或分类字段
+    if (px === entityField || px === regionField || categoricalFields.includes(px)) return px;
+    return defaultX;
+  }
+
+  /** 尝试复用 preferredSpec.yFields[0]：仅当存在于 measureFields 时采纳 */
+  function resolveYField(defaultY: string | null): string | null {
+    if (!preferredSpec?.yFields?.[0]) return defaultY;
+    const py = preferredSpec.yFields[0];
+    return columns.includes(py) && measureFields.includes(py) ? py : defaultY;
+  }
+
+  /** 快捷构造 ChartPlan */
+  function plan(
+    type: RenderableChartType,
+    suitability: ChartSuitability,
+    reasonCode: string,
+    reason: string,
+    xField: string | null,
+    yField: string | null,
+    semanticMode: ChartSemanticMode,
+    aggregation: AggregationMode,
+  ): ChartPlan {
+    return {
+      type,
+      suitability,
+      reasonCode,
+      reason,
+      spec: suitability !== 'unsupported' ? makeSpec(type, xField, yField) : null,
+      semanticMode,
+      aggregation,
+    };
+  }
+
+  const TYPES: RenderableChartType[] = ['bar', 'horizontal_bar', 'line', 'area'];
+  const cmpY = measureFields[0] ?? null; // 默认数值字段
+  const plans: ChartPlan[] = [];
+
+  switch (shape) {
+
+    // ── 横截面对比：bar / horizontal_bar 推荐，line / area 不支持 ──
+    case 'cross_section': {
+      const cmpX = resolveXField('bar', entityField ?? regionField ?? categoricalFields[0] ?? null);
+      const y = resolveYField(cmpY);
+      for (const t of TYPES) {
+        if (t === 'bar' || t === 'horizontal_bar') {
+          plans.push(plan(t, 'recommended', 'cross_section', '横截面对比数据，适合柱状图展示各实体指标', cmpX, y, 'comparison', 'sum'));
+        } else {
+          plans.push(plan(t, 'unsupported', 'cross_section_no_trend', '横截面对比数据不适合折线图或面积图', null, null, 'comparison', 'none'));
+        }
+      }
+      break;
+    }
+
+    // ── 单对象时间序列：line 推荐，area/bar 显式切换，horizontal_bar 不支持 ──
+    case 'single_entity_time_series': {
+      const trendX = resolveXField('line', temporalFields[0] ?? null);
+      const y = resolveYField(cmpY);
+      for (const t of TYPES) {
+        if (t === 'line') {
+          plans.push(plan(t, 'recommended', 'single_entity_trend', '单对象时间序列，适合折线图展示趋势变化', trendX, y, 'trend', 'none'));
+        } else if (t === 'area') {
+          plans.push(plan(t, 'allowed_explicit', 'single_entity_trend_area', '单对象时间序列也可用面积图，需用户显式选择', trendX, y, 'trend', 'none'));
+        } else if (t === 'bar') {
+          plans.push(plan(t, 'allowed_explicit', 'trend_secondary', '时间序列也可用柱状图，但折线图更直观', trendX, y, 'comparison', 'none'));
+        } else {
+          plans.push(plan(t, 'unsupported', 'trend_no_horizontal', '时间序列不适合横向柱状图', null, null, 'comparison', 'none'));
+        }
+      }
+      break;
+    }
+
+    // ── 多对象时间序列：四种图表均不支持（渲染器尚无分系列能力） ──
+    case 'multi_entity_time_series': {
+      for (const t of TYPES) {
+        plans.push(plan(t, 'unsupported', 'multi_entity_unsupported', '当前渲染器尚不支持分系列，禁止把多个实体连接为一条线', null, null, 'trend', 'none'));
+      }
+      break;
+    }
+
+    // ── 空数据 / 单值 / 关系型：四种图表均不支持 ──
+    case 'empty':
+    case 'single_value':
+    case 'relationship': {
+      const reasonMap: Record<string, string> = {
+        empty: '数据集为空',
+        single_value: '单值数据，不适合此类图表',
+        relationship: '关系型数据，不适合此类图表',
+      };
+      for (const t of TYPES) {
+        plans.push(plan(t, 'unsupported', shape, reasonMap[shape], null, null, 'comparison', 'none'));
+      }
+      break;
+    }
+
+    // ── 未知形态：有分类 + 指标时 bar/horizontal_bar 允许显式切换 ──
+    case 'unknown': {
+      const hasCatAndMeasure = categoricalFields.length > 0 && measureFields.length > 0;
+      if (hasCatAndMeasure) {
+        const ux = resolveXField('bar', entityField ?? categoricalFields[0] ?? null);
+        const y = resolveYField(cmpY);
+        for (const t of TYPES) {
+          if (t === 'bar' || t === 'horizontal_bar') {
+            plans.push(plan(t, 'allowed_explicit', 'unknown_shape', '数据形态未知，可尝试柱状图', ux, y, 'comparison', 'none'));
+          } else {
+            plans.push(plan(t, 'unsupported', 'unknown_shape_no_trend', '数据形态未知，不适合折线图或面积图', null, null, 'comparison', 'none'));
+          }
+        }
+      } else {
+        for (const t of TYPES) {
+          plans.push(plan(t, 'unsupported', 'insufficient_fields', '缺少必要的分类字段或指标字段', null, null, 'comparison', 'none'));
+        }
+      }
+      break;
+    }
+  }
+
+  return plans;
 }
