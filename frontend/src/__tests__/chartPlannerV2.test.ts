@@ -326,30 +326,58 @@ test('preferredSpec with invalid fields does not corrupt Profiler-based specs', 
 // 11. intent 不能突破 maxSuitability
 // ============================================================
 
-test('intent cannot exceed maxSuitability', () => {
-  // bar_categorical_aggregated 在 unknown archetype 下 base=allowed_explicit, max=allowed_explicit
-  // 即使 intent 匹配 semanticMode(comparison)，也不能提升到 recommended
+test('intent cannot exceed maxSuitability (line_categorical_comparison, max=allowed_explicit)', () => {
+  // line_categorical_comparison: base=allowed_explicit, maxSuitability=allowed_explicit
+  // 即使 intent='comparison' 匹配 semanticMode，也不能提升到 recommended
   const result = planChartsV2({
-    columns: DETAIL_DUPLICATE_DATA.columns,
-    rows: DETAIL_DUPLICATE_DATA.rows,
+    columns: CATEGORICAL_DATA.columns,
+    rows: CATEGORICAL_DATA.rows,
     source: 'auto',
-    intent: 'comparison',  // 匹配 bar 的 semanticMode
+    intent: 'comparison',  // 匹配 line_categorical_comparison 的 semanticMode
   });
 
-  const plan = findPlan(result, 'bar_categorical_aggregated');
-  if (plan && plan.resolvedSuitability !== 'unsupported') {
-    // 如果它 supported，也不能超过 maxSuitability
-    assertEqual(
-      plan.resolvedSuitability,
-      'allowed_explicit',
-      'maxSuitability=allowed_explicit should cap intent boost',
-    );
-  }
-  // 如果它是 unsupported（renderer gate），也是正确的——intent 不能复活 unsupported
+  const plan = findPlan(result, 'line_categorical_comparison');
+  assertOk(plan !== undefined, 'line_categorical_comparison should exist');
+  assertEqual(plan!.baseSuitability, 'allowed_explicit');
+  assertEqual(plan!.maxSuitability, 'allowed_explicit');
+  // 直接断言——禁用跳过断言的 if
+  assertEqual(
+    plan!.resolvedSuitability,
+    'allowed_explicit',
+    'maxSuitability=allowed_explicit should cap intent boost',
+  );
+  assertOk(plan!.spec !== null, 'spec should not be null');
 });
 
 // ============================================================
-// 12. input 不被修改
+// 12. intent 匹配时可提升 allowed_explicit → recommended
+// ============================================================
+
+test('intent match promotes allowed_explicit to recommended when maxSuitability=recommended', () => {
+  // bar_categorical_comparison 在 temporal_series 下:
+  //   base=allowed_explicit, maxSuitability=recommended, semanticMode=comparison
+  // intent='comparison' 匹配 → 应提升为 recommended
+  const result = planChartsV2({
+    columns: TEMPORAL_DATA.columns,
+    rows: TEMPORAL_DATA.rows,
+    source: 'auto',
+    intent: 'comparison',
+  });
+
+  const plan = findPlan(result, 'bar_categorical_comparison');
+  assertOk(plan !== undefined, 'bar_categorical_comparison should exist');
+  assertEqual(plan!.baseSuitability, 'allowed_explicit');
+  assertEqual(plan!.maxSuitability, 'recommended');
+  assertEqual(
+    plan!.resolvedSuitability,
+    'recommended',
+    'intent match should promote allowed_explicit to recommended',
+  );
+  assertOk(plan!.spec !== null, 'spec should not be null');
+});
+
+// ============================================================
+// 13. input 不被修改
 // ============================================================
 
 test('planChartsV2 does not mutate input', () => {
@@ -365,7 +393,7 @@ test('planChartsV2 does not mutate input', () => {
 });
 
 // ============================================================
-// 13. 补充：无维度字段时 spec=null
+// 14. 补充：无维度字段时 spec=null
 // ============================================================
 
 test('measure-only data: primary dimension null → field resolution fails → spec null', () => {
@@ -388,7 +416,7 @@ test('measure-only data: primary dimension null → field resolution fails → s
 });
 
 // ============================================================
-// 14. 补充：switchablePlans 包含所有 supported 且 spec 非 null 的计划
+// 15. 补充：switchablePlans 包含所有 supported 且 spec 非 null 的计划
 // ============================================================
 
 test('switchablePlans contains only supported plans with spec', () => {
@@ -408,6 +436,37 @@ test('switchablePlans contains only supported plans with spec', () => {
   }
 
   assertOk(result.switchablePlans.length >= 2, 'should have at least bar and line');
+});
+
+// ============================================================
+// 16. 全部计划 unsupported 时 defaultPlan=null, noChartReason, fallbackNotice=null
+// ============================================================
+
+test('all plans unsupported: defaultPlan=null, noChartReason set, fallbackNotice=null', () => {
+  // DETAIL_DUPLICATE_DATA 下全部 6 个 variant 均 unsupported
+  const result = planChartsV2({
+    columns: DETAIL_DUPLICATE_DATA.columns,
+    rows: DETAIL_DUPLICATE_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+  });
+
+  assertEqual(result.defaultPlan, null, 'defaultPlan should be null');
+  assertOk(result.noChartReason !== null, 'noChartReason should be set');
+  assertOk(result.noChartReason!.length > 0, 'noChartReason should not be empty');
+  assertEqual(result.fallbackNotice, null, 'fallbackNotice should be null');
+  assertEqual(result.switchablePlans.length, 0, 'switchablePlans should be empty');
+
+  // 验证所有 plan 确实都是 unsupported
+  assertOk(result.plans.length > 0, 'should have plans');
+  for (const plan of result.plans) {
+    assertEqual(
+      plan.resolvedSuitability,
+      'unsupported',
+      `${plan.variantId}: should be unsupported`,
+    );
+    assertEqual(plan.spec, null, `${plan.variantId}: spec should be null`);
+  }
 });
 
 // ============================================================

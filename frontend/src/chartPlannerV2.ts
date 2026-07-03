@@ -46,8 +46,8 @@ export interface PlanChartsInputV2 {
 export interface ChartPlanV2 {
   type: RenderableChartType;
   variantId: string;
-  /** archetype 匹配的初始适用性 */
-  baseSuitability: SupportedSuitability;
+  /** archetype 匹配的初始适用性（archetype 不匹配时为 null） */
+  baseSuitability: SupportedSuitability | null;
   /** variant 定义的适用性上限 */
   maxSuitability: SupportedSuitability;
   /** 经过 gate + intent 调整后的最终适用性 */
@@ -157,7 +157,7 @@ function evaluateVariant(
   const baseSuitability = variant.archetypeSuitability[profile.archetype];
   if (!baseSuitability) {
     return makeUnsupportedPlan(
-      chartType, variant, 'allowed_explicit', // placeholder，不会用于排序
+      chartType, variant, null,
       `archetype_${profile.archetype}_not_in_variant`,
     );
   }
@@ -208,7 +208,7 @@ function evaluateVariant(
 function makeUnsupportedPlan(
   chartType: RenderableChartType,
   variant: ChartCapabilityVariant,
-  baseSuitability: SupportedSuitability,
+  baseSuitability: SupportedSuitability | null,
   reasonCode: string,
 ): ChartPlanV2 {
   return {
