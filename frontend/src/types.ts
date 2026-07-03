@@ -53,6 +53,12 @@ export type ChartType =
 
 export type RenderableChartType = Exclude<ChartType, 'none'>;
 
+/** 图表对当前数据的适用性分级 */
+export type ChartSuitability =
+  | 'recommended'
+  | 'allowed_explicit'
+  | 'unsupported';
+
 /** 单个图表类型的可用性评估结果 */
 export interface ChartTypeAvailability {
   type: RenderableChartType;
@@ -62,6 +68,8 @@ export interface ChartTypeAvailability {
   reason: string;
   /** 通过 buildChartOption 验证的完整 Spec（supported=true 时非 null） */
   spec: ChartSpec | null;
+  /** 图表适用性分级：recommended=推荐, allowed_explicit=用户可显式切换, unsupported=不支持 */
+  suitability: ChartSuitability;
 }
 
 export interface ChartSpec {

@@ -81,26 +81,41 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
 
   /** 从 allTypes 中按优先级选取默认类型 */
   function pickDefault(): RenderableChartType {
-    const recommended = isRenderableChartType(chart.spec.type) ? chart.spec.type : null;
-
-    // 1. LLM 推荐类型可用（包括 combo）
-    if (recommended) {
-      const rec = allTypes.find(t => t.type === recommended && t.supported);
-      if (rec) return rec.type;
+    // 1. explicitType 且当前类型 supported → 保留用户选择
+    if (chart.explicitType) {
+      const current = allTypes.find(t => t.type === chart.spec.type && t.supported);
+      if (current) return current.type;
     }
 
-    // 2. 柱状图可用
-    const bar = allTypes.find(t => t.type === 'bar' && t.supported);
-    if (bar) return bar.type;
+    // 2. 模型指定类型仅在 suitability=recommended 时作为默认
+    const modelType = chart.spec.type;
+    if (isRenderableChartType(modelType)) {
+      const modelRec = allTypes.find(t => t.type === modelType && t.supported && t.suitability === 'recommended');
+      if (modelRec) return modelRec.type;
+    }
 
-    // 3. 第一个可用类型
-    const first = allTypes.find(t => t.supported);
-    if (first) return first.type;
+    // 3. 第一个 supported 且 recommended 的类型
+    const firstRecommended = allTypes.find(t => t.supported && t.suitability === 'recommended');
+    if (firstRecommended) return firstRecommended.type;
+
+    // 4. 没有 recommended → 模型指定且 supported 的类型
+    if (isRenderableChartType(modelType)) {
+      const modelSupported = allTypes.find(t => t.type === modelType && t.supported);
+      if (modelSupported) return modelSupported.type;
+    }
+
+    // 5. 第一个 supported 类型
+    const firstSupported = allTypes.find(t => t.supported);
+    if (firstSupported) return firstSupported.type;
 
     return 'bar';
   }
 
   const [localType, setLocalType] = useState<RenderableChartType>(() => pickDefault());
+
+  /** 核心图表类型（bar/horizontal_bar/line/area），用于下拉过滤 */
+  const CORE_CHART_TYPES: RenderableChartType[] = ['bar', 'horizontal_bar', 'line', 'area'];
+  const isCoreChart = CORE_CHART_TYPES.includes(localType);
 
   // 跟踪上次 dataVersion 和 spec.type，用于判断数据/推荐类型是否真正变化
   const prevDataVersionRef = useRef(chart.dataVersion);
@@ -394,7 +409,10 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
                 overflowY: 'auto',
                 padding: '4px 0',
               }}>
-                {allTypes.map(t => {
+                {(isCoreChart
+                  ? allTypes.filter(t => CORE_CHART_TYPES.includes(t.type) && t.supported)
+                  : allTypes
+                ).map(t => {
                   const isCurrent = t.type === localType;
                   return (
                     <button

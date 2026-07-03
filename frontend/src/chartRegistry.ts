@@ -1,4 +1,4 @@
-import type { ChartData, ChartSpec, ChartType, ChartTypeAvailability, RenderableChartType } from './types';
+import type { ChartData, ChartSpec, ChartSuitability, ChartType, ChartTypeAvailability, RenderableChartType } from './types';
 import type { Row } from './chartSemantics';
 import {
   isNullValue,
@@ -147,14 +147,21 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
     return buildChartOption(testChart) !== null ? testSpec : null;
   }
 
-  /** 生成结果项 */
-  function avail(type: RenderableChartType, checked: ChartSpec | null, fallbackReason: string): ChartTypeAvailability {
+  /** 生成结果项。suitabilityOverride 仅在 checked 非 null 时生效，checked 为 null 时强制 unsupported。 */
+  function avail(
+    type: RenderableChartType,
+    checked: ChartSpec | null,
+    fallbackReason: string,
+    suitabilityOverride?: ChartSuitability,
+  ): ChartTypeAvailability {
+    const supported = checked !== null;
     return {
       type,
       label: CHART_TYPE_LABELS[type],
-      supported: checked !== null,
+      supported,
       spec: checked,
-      reason: checked !== null ? '' : fallbackReason,
+      reason: supported ? '' : fallbackReason,
+      suitability: supported ? (suitabilityOverride ?? 'allowed_explicit') : 'unsupported',
     };
   }
 
@@ -177,7 +184,7 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
           plan.spec,
           { explicitType: plan.suitability === 'allowed_explicit' },
         );
-        items.push(avail(type, checked, '该数据结构无法生成此图表'));
+        items.push(avail(type, checked, '该数据结构无法生成此图表', plan.suitability));
         break;
       }
 
@@ -338,6 +345,16 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
 
       default:
         items.push(avail(type, null, '未知图表类型'));
+    }
+  }
+
+  // ── 非核心图表 suitability 后处理：模型指定且可用 → recommended ──
+  const CORE_TYPES = new Set<RenderableChartType>(['bar', 'horizontal_bar', 'line', 'area']);
+  const modelType: ChartType = spec.type;
+  for (const item of items) {
+    if (CORE_TYPES.has(item.type)) continue;
+    if (item.supported && item.type === modelType) {
+      item.suitability = 'recommended';
     }
   }
 

@@ -3,7 +3,7 @@
 // 本模块从 chartRegistry.ts 与 chartDescription.ts 复制现有判断逻辑，
 // 最终将替代两处的分散实现。当前阶段仅新增，不修改旧文件。
 
-import type { ChartSpec, RenderableChartType } from './types';
+import type { ChartSpec, ChartSuitability, RenderableChartType } from './types';
 
 // ============================================================
 // 类型定义
@@ -305,11 +305,14 @@ function hasMultipleTimePoints(rows: Row[], temporalFields: string[]): boolean {
   return false;
 }
 
-/** 根据实体、时间、指标字段推断数据集形态 */
+/** 根据实体、时间、指标字段推断数据集形态。
+ *  cross_section 检测优先级：entityField → regionField → categoricalFields[0] */
 function determineShape(
   columns: string[],
   rows: Row[],
   entityField: string | null,
+  regionField: string | null,
+  categoricalFields: string[],
   temporalFields: string[],
   measureFields: string[],
 ): DatasetShape {
@@ -321,35 +324,38 @@ function determineShape(
   // 单行且有指标 → single_value
   if (rows.length === 1 && hasMeasure) return 'single_value';
 
-  if (entityField) {
-    const { entityCount, maxOccur } = countEntityOccurrences(rows, entityField);
+  // 分类对比维度：entityField → regionField → categoricalFields[0]
+  const comparisonField = entityField ?? regionField ?? (categoricalFields.length > 0 ? categoricalFields[0] : null);
 
-    // 多实体各一条且有指标 → cross_section
-    if (entityCount > 1 && maxOccur === 1 && hasMeasure) return 'cross_section';
+  if (comparisonField && hasMeasure) {
+    const { entityCount, maxOccur } = countEntityOccurrences(rows, comparisonField);
+    // 至少 2 个不同值且每个值仅出现一次 → cross_section
+    if (entityCount > 1 && maxOccur === 1) return 'cross_section';
 
-    // 单实体，至少两个不同时间点，且有指标 → single_entity_time_series
-    if (
-      entityCount <= 1 &&
-      hasMultipleTimePoints(rows, temporalFields) &&
-      hasMeasure
-    ) {
-      return 'single_entity_time_series';
-    }
+    // 仅当对比维度是 entityField 且非 cross_section 时，继续检查时间序列形态
+    if (comparisonField === entityField) {
+      if (
+        entityCount <= 1 &&
+        hasMultipleTimePoints(rows, temporalFields) &&
+        hasMeasure
+      ) {
+        return 'single_entity_time_series';
+      }
 
-    // 多实体有重复记录，至少两个不同时间点，且有指标 → multi_entity_time_series
-    if (
-      entityCount > 1 &&
-      maxOccur > 1 &&
-      hasMultipleTimePoints(rows, temporalFields) &&
-      hasMeasure
-    ) {
-      return 'multi_entity_time_series';
+      if (
+        entityCount > 1 &&
+        maxOccur > 1 &&
+        hasMultipleTimePoints(rows, temporalFields) &&
+        hasMeasure
+      ) {
+        return 'multi_entity_time_series';
+      }
     }
-  } else {
-    // 无实体字段，至少两个不同时间点，且有指标 → single_entity_time_series
-    if (hasMultipleTimePoints(rows, temporalFields) && hasMeasure) {
-      return 'single_entity_time_series';
-    }
+  }
+
+  // 无实体字段但存在多个时间点 → 单序列时间趋势
+  if (!entityField && hasMultipleTimePoints(rows, temporalFields) && hasMeasure) {
+    return 'single_entity_time_series';
   }
 
   // 至少两个指标 → relationship（散点/气泡图候选）
@@ -470,7 +476,7 @@ export function analyzeDataset(columns: string[], rows: Row[]): DatasetProfile {
 
   // ── 阶段 5：数据集形态 ──
 
-  const shape = determineShape(columns, rows, entityField, temporalFields, measureFields);
+  const shape = determineShape(columns, rows, entityField, regionField, categoricalFields, temporalFields, measureFields);
 
   return {
     numericFields,
@@ -489,11 +495,6 @@ export function analyzeDataset(columns: string[], rows: Row[]): DatasetProfile {
 // ============================================================
 // 核心图表语义计划
 // ============================================================
-
-export type ChartSuitability =
-  | 'recommended'
-  | 'allowed_explicit'
-  | 'unsupported';
 
 export type ChartSemanticMode =
   | 'comparison'
@@ -610,33 +611,31 @@ export function resolveCoreChartPlans(
 
   switch (shape) {
 
-    // ── 横截面对比：bar / horizontal_bar 推荐，line / area 不支持 ──
+    // ── 横截面对比：bar/horizontal_bar 推荐，line 可显式切换，area 不支持 ──
     case 'cross_section': {
       const cmpX = resolveXField('bar', entityField ?? regionField ?? categoricalFields[0] ?? null);
       const y = resolveYField(cmpY);
       for (const t of TYPES) {
         if (t === 'bar' || t === 'horizontal_bar') {
           plans.push(plan(t, 'recommended', 'cross_section', '横截面对比数据，适合柱状图展示各实体指标', cmpX, y, 'comparison', 'none'));
+        } else if (t === 'line') {
+          plans.push(plan(t, 'allowed_explicit', 'cross_section_line', '横截面对比数据也可用折线图展示，需用户显式选择', cmpX, y, 'comparison', 'none'));
         } else {
-          plans.push(plan(t, 'unsupported', 'cross_section_no_trend', '横截面对比数据不适合折线图或面积图', null, null, 'comparison', 'none'));
+          plans.push(plan(t, 'unsupported', 'cross_section_no_area', '横截面对比数据不适合面积图', null, null, 'comparison', 'none'));
         }
       }
       break;
     }
 
-    // ── 单对象时间序列：line 推荐，area/bar 显式切换，horizontal_bar 不支持 ──
+    // ── 单对象时间序列：line 推荐，其余允许显式切换 ──
     case 'single_entity_time_series': {
       const trendX = resolveXField('line', temporalFields[0] ?? null);
       const y = resolveYField(cmpY);
       for (const t of TYPES) {
         if (t === 'line') {
           plans.push(plan(t, 'recommended', 'single_entity_trend', '单对象时间序列，适合折线图展示趋势变化', trendX, y, 'trend', 'none'));
-        } else if (t === 'area') {
-          plans.push(plan(t, 'allowed_explicit', 'single_entity_trend_area', '单对象时间序列也可用面积图，需用户显式选择', trendX, y, 'trend', 'none'));
-        } else if (t === 'bar') {
-          plans.push(plan(t, 'allowed_explicit', 'trend_secondary', '时间序列也可用柱状图，但折线图更直观', trendX, y, 'trend', 'none'));
         } else {
-          plans.push(plan(t, 'unsupported', 'trend_no_horizontal', '时间序列不适合横向柱状图', null, null, 'trend', 'none'));
+          plans.push(plan(t, 'allowed_explicit', 'single_entity_secondary', '时间序列也可用此图表，但折线图更直观', trendX, y, 'trend', 'none'));
         }
       }
       break;
