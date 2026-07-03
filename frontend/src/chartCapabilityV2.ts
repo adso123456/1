@@ -1,11 +1,10 @@
 // chartCapabilityV2.ts — V2 图表能力契约（最小试点：bar / line / boxplot）
 //
 // 阶段 B：仅新增契约定义，不接入运行时。
-// 每个 ChartCapability 包含多个 ChartCapabilityVariant，各自独立定义 archetype 匹配、
-// trait 要求、语义模式、字段映射、数据转换和 renderer 门槛。
 
 import type { DatasetArchetype } from './datasetProfilerV2.js';
 import type { DatasetTraitsV2 } from './datasetProfilerV2.js';
+import type { RenderableChartType, ChartSuitability } from './types.js';
 
 // ============================================================
 // 语义模式
@@ -17,14 +16,15 @@ export type ChartSemanticMode =
   | 'part_to_whole'
   | 'relationship'
   | 'distribution'
+  | 'profile'
   | 'kpi';
 
 // ============================================================
 // 适用性等级
 // ============================================================
 
-/** variant 级别的适用性（不含 unsupported——archetype 不匹配时根本不会进入该 variant） */
-export type SupportedSuitability = 'recommended' | 'allowed_explicit';
+/** variant 级别的适用性（不含 unsupported） */
+export type SupportedSuitability = Exclude<ChartSuitability, 'unsupported'>;
 
 /** 每个 archetype → 基础适用性映射 */
 export type ArchetypeSuitability = Partial<Record<DatasetArchetype, SupportedSuitability>>;
@@ -44,23 +44,24 @@ type NumericTraitName = {
 }[keyof DatasetTraitsV2];
 
 /**
- * 类型安全的 trait 要求：
- * - boolean trait：只能用 required / forbidden
- * - numeric trait：只能用 min / max / equals
- * 错误的组合会在编译期被拒绝。
+ * 类型安全的 trait 要求。
+ *
+ * boolean trait — 严格互斥，必须恰好使用一种：
+ *   - equals: boolean
+ *   - required: true
+ *   - forbidden: true
+ *
+ * numeric trait — 必须至少包含 equals / min / max 之一。
  */
 export type TraitRequirement =
-  | {
-      trait: BooleanTraitName;
-      required?: boolean;
-      forbidden?: boolean;
-    }
-  | {
-      trait: NumericTraitName;
-      min?: number | null;
-      max?: number | null;
-      equals?: number;
-    };
+  // ── boolean（严格互斥：恰好一种） ──
+  | { trait: BooleanTraitName; equals: boolean; required?: never; forbidden?: never }
+  | { trait: BooleanTraitName; required: true; equals?: never; forbidden?: never }
+  | { trait: BooleanTraitName; forbidden: true; equals?: never; required?: never }
+  // ── numeric（必须至少包含 equals / min / max 之一） ──
+  | { trait: NumericTraitName; equals: number }
+  | { trait: NumericTraitName; min: number | null; max?: number | null }
+  | { trait: NumericTraitName; max: number | null; min?: number | null };
 
 // ============================================================
 // 字段选择器
@@ -75,14 +76,22 @@ export type ScalarFieldSelector =
   | { source: 'measureField'; index: number }
   | { source: 'additiveMeasureField'; index: number }
   | { source: 'nonAdditiveMeasureField'; index: number }
-  | { source: 'numericField'; exclude?: string[] };
+  | { source: 'numericField'; exclude?: string[] }
+  // ── preferredSpec 字段 ──
+  | { source: 'preferredXField' }
+  | { source: 'preferredYField'; index: number }
+  | { source: 'preferredSeriesField' }
+  | { source: 'preferredSizeField' }
+  | { source: 'preferredValueField' };
 
 export type MultiFieldSelector =
   | { source: 'measureFields'; maxCount?: number }
   | { source: 'additiveMeasureFields'; maxCount?: number }
   | { source: 'nonAdditiveMeasureFields'; maxCount?: number }
   | { source: 'dimensionFields'; maxCount?: number }
-  | { source: 'temporalFields'; maxCount?: number };
+  | { source: 'temporalFields'; maxCount?: number }
+  // ── preferredSpec 字段 ──
+  | { source: 'preferredYFields' };
 
 /** 字段映射——所有字段均为可选 */
 export interface VariantFieldMapping {
@@ -110,11 +119,8 @@ export type DataTransformPlan =
 // ============================================================
 
 export interface RendererRequirement {
-  /** 能力标识 */
   capability: string;
-  /** 人类可读说明 */
   description: string;
-  /** 当前 renderer 是否已支持 */
   currentlySupported: boolean;
 }
 
@@ -123,37 +129,28 @@ export interface RendererRequirement {
 // ============================================================
 
 export interface ChartCapabilityVariant {
-  /** 变体标识（全局唯一，如 'temporal_trend_single'） */
   id: string;
-  /** archetype → 基础适用性 */
   archetypeSuitability: ArchetypeSuitability;
-  /** trait 要求（全部必须满足） */
-  traitRequirements: TraitRequirement[];
-  /** 语义模式 */
+  traitRequirements: readonly TraitRequirement[];
   semanticMode: ChartSemanticMode;
-  /** 此 variant 允许的最高 suitability */
   maxSuitability: SupportedSuitability;
-  /** 字段映射 */
   fieldMapping: VariantFieldMapping;
-  /** 数据转换计划 */
   transform: DataTransformPlan;
-  /** renderer 能力要求（全部必须满足） */
-  rendererRequirements: RendererRequirement[];
-  /** 当此 variant 不可用时的原因代码 */
+  rendererRequirements: readonly RendererRequirement[];
   unsupportedReasonCode: string;
 }
 
 export interface ChartCapability {
-  type: string;
+  type: RenderableChartType;
   label: string;
-  variants: ChartCapabilityVariant[];
+  variants: readonly ChartCapabilityVariant[];
 }
 
 // ============================================================
 // 试点能力清单
 // ============================================================
 
-export const PILOT_CAPABILITIES_V2: ChartCapability[] = [
+export const PILOT_CAPABILITIES_V2 = [
   // ── bar ──
   {
     type: 'bar',
@@ -163,7 +160,7 @@ export const PILOT_CAPABILITIES_V2: ChartCapability[] = [
         id: 'bar_categorical_comparison',
         archetypeSuitability: {
           categorical_series: 'recommended',
-          temporal_series: 'recommended',
+          temporal_series: 'allowed_explicit',
         },
         traitRequirements: [
           { trait: 'measureCount', equals: 1 },
@@ -323,4 +320,4 @@ export const PILOT_CAPABILITIES_V2: ChartCapability[] = [
       },
     ],
   },
-];
+] as const satisfies readonly ChartCapability[];
