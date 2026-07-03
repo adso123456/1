@@ -45,6 +45,22 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // ECharts 实际渲染 DOM 的 ResizeObserver（fillHeight 模式，替代 echarts-for-react 内置 autoResize）
+  const echartsDomObserverRef = useRef<ResizeObserver | null>(null);
+  const echartsRafRef = useRef<number | null>(null);
+
+  /** 清理 ECharts DOM observer 与未执行的 animation frame */
+  const cleanupEchartsObserver = () => {
+    if (echartsDomObserverRef.current) {
+      echartsDomObserverRef.current.disconnect();
+      echartsDomObserverRef.current = null;
+    }
+    if (echartsRafRef.current !== null) {
+      cancelAnimationFrame(echartsRafRef.current);
+      echartsRafRef.current = null;
+    }
+  };
+
   // 下拉菜单状态
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -108,12 +124,40 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
     return item?.spec ?? null;
   }, [allTypes, localType]);
 
-  // 首次初始化完成后 resize，解决 container 宽度未定导致图例错位的问题
+  // 图表实例就绪后：初始 resize + fillHeight 模式下建立 ECharts 实际 DOM 的 ResizeObserver
   const handleChartReady = () => {
     const instance = echartsRef.current?.getEchartsInstance();
-    if (instance) {
-      requestAnimationFrame(() => instance.resize());
-    }
+    if (!instance) return;
+
+    // 清理上一次的 observer（切换图表类型时实例可能重建）
+    cleanupEchartsObserver();
+
+    // 初始 resize：覆盖 Dashboard 初始 containerWidth=600 → GridLayout 重新计算 → flex 稳定的全时序
+    requestAnimationFrame(() => {
+      if (instance && !instance.isDisposed()) {
+        instance.resize({ width: 'auto', height: 'auto' });
+      }
+    });
+
+    // 非 fillHeight 模式不需要自定义 observer（由 echarts-for-react 内置 autoResize 处理）
+    if (!fillHeight) return;
+
+    const dom = instance.getDom();
+    if (!dom) return;
+
+    const observer = new ResizeObserver(() => {
+      if (echartsRafRef.current !== null) return; // 合并同一帧内的多次回调
+      echartsRafRef.current = requestAnimationFrame(() => {
+        echartsRafRef.current = null;
+        const inst = echartsRef.current?.getEchartsInstance();
+        if (inst && !inst.isDisposed()) {
+          inst.resize({ width: 'auto', height: 'auto' });
+        }
+      });
+    });
+
+    observer.observe(dom);
+    echartsDomObserverRef.current = observer;
   };
 
   const handleTypeChange = (type: RenderableChartType) => {
@@ -183,29 +227,10 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
     }
   }, [effectiveViewMode, localType, isChartOnly]);
 
-  // fillHeight 模式下监听容器尺寸变化，驱动 ECharts resize
+  // 组件卸载时清理 ECharts DOM observer
   useEffect(() => {
-    if (!fillHeight) return;
-    const el = containerRef.current;
-    if (!el) return;
-
-    let rafId: number | null = null;
-
-    const observer = new ResizeObserver(() => {
-      if (rafId !== null) return; // 合并同一帧
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        const instance = echartsRef.current?.getEchartsInstance();
-        if (instance) instance.resize();
-      });
-    });
-
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [fillHeight]);
+    return () => cleanupEchartsObserver();
+  }, []);
 
   // 下拉菜单：点击外部或按 Escape 关闭
   useEffect(() => {
@@ -258,7 +283,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
     <div
       ref={containerRef}
       style={{
-        ...(fillHeight ? { height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' } : {}),
+        ...(fillHeight ? { height: '100%', minHeight: 0, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' } : {}),
         marginTop: isChartOnly ? 0 : (fillHeight ? 0 : 12),
       }}
     >
@@ -465,8 +490,9 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
           ref={echartsRef}
           option={option}
           notMerge={true}
+          autoResize={!fillHeight}
           onChartReady={handleChartReady}
-          style={fillHeight ? { flex: 1, minHeight: 0, width: '100%' } : { height: 350 }}
+          style={fillHeight ? { flex: 1, minHeight: 0, minWidth: 0, width: '100%' } : { height: 350 }}
         />
       ) : !isChartOnly && effectiveViewMode === 'chart' && !option ? (
         <div

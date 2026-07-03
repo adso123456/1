@@ -276,6 +276,7 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                     display: 'flex',
                     flexDirection: 'column',
                     height: '100%',
+                    minWidth: 0,
                   }}
                 >
                   {/* 卡片标题栏（可拖拽） */}
@@ -352,6 +353,7 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                     display: 'flex',
                     flexDirection: 'column',
                     minHeight: 0,
+                    minWidth: 0,
                     // 表格完整展开（dashboardMode 自身 overflow:visible 不滚动），
                     // 仅图表需要 hidden 裁切 ECharts 容器
                     overflow: isChart ? 'hidden' : 'visible',
