@@ -543,6 +543,141 @@ test('unsupported transform returns error', () => {
 });
 
 // ============================================================
+// 5. spec 引用隔离：修改结果不影响输入
+// ============================================================
+
+test('spec isolation: mutating result spec.yFields does not affect input (success)', () => {
+  const yFields = ['sales'];
+  const input: DataTransformInputV2 = {
+    columns: ['city', 'sales'],
+    rows: [{ city: '北京', sales: 100 }],
+    spec: { type: 'bar', xField: 'city', yFields },
+    transform: 'group_by_sum',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok);
+  // 修改结果 spec.yFields
+  result.spec.yFields!.push('profit');
+  // 输入 spec.yFields 不受影响
+  assertEqual(input.spec.yFields!.length, 1);
+  assertEqual(input.spec.yFields![0], 'sales');
+});
+
+test('spec isolation: failure result does not share yFields with input', () => {
+  const yFields = ['sales'];
+  const input: DataTransformInputV2 = {
+    columns: ['city', 'sales'],
+    rows: [],
+    spec: { type: 'bar', xField: 'city', yFields },
+    transform: 'group_by_sum',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertEqual(result.ok, false);
+  // 失败结果也有自己的 spec，修改不影响输入
+  result.spec.yFields = ['modified'];
+  assertEqual(input.spec.yFields!.length, 1);
+  assertEqual(input.spec.yFields![0], 'sales');
+});
+
+// ============================================================
+// 6. group_by_sum：去重与边界
+// ============================================================
+
+test('group_by_sum: duplicate yFields are deduplicated and not double-summed', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['city', 'sales'],
+    rows: [{ city: '北京', sales: 100 }],
+    spec: { type: 'bar', xField: 'city', yFields: ['sales', 'sales', 'sales'] },
+    transform: 'group_by_sum',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok);
+  // 去重后 columns 仅一个 sales
+  assertDeepEqual(result.columns, ['city', 'sales']);
+  // 求和结果不应翻倍
+  assertEqual(result.rows[0].sales, 100);
+});
+
+test('group_by_sum: all-invalid rows do not produce zero-value row', () => {
+  // 北京行全部为 null / 非数值 → 不应输出北京分组
+  const input: DataTransformInputV2 = {
+    columns: ['city', 'sales'],
+    rows: [
+      { city: '北京', sales: null },
+      { city: '北京', sales: 'N/A' },
+      { city: '上海', sales: 50 },
+    ] as Row[],
+    spec: { type: 'bar', xField: 'city', yFields: ['sales'] },
+    transform: 'group_by_sum',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok);
+  assertEqual(result.rows.length, 1, 'only Shanghai should be output');
+  assertEqual(result.rows[0].city, '上海');
+  assertEqual(result.rows[0].sales, 50);
+});
+
+test('group_by_sum: null xField rows are skipped', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['city', 'sales'],
+    rows: [
+      { city: null, sales: 100 },
+      { city: '上海', sales: 50 },
+    ] as Row[],
+    spec: { type: 'bar', xField: 'city', yFields: ['sales'] },
+    transform: 'group_by_sum',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok);
+  assertEqual(result.rows.length, 1, 'null xField should be skipped');
+  assertEqual(result.rows[0].city, '上海');
+});
+
+test('group_by_sum: empty string xField rows are skipped', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['city', 'sales'],
+    rows: [
+      { city: '', sales: 100 },
+      { city: '上海', sales: 50 },
+    ],
+    spec: { type: 'bar', xField: 'city', yFields: ['sales'] },
+    transform: 'group_by_sum',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok);
+  assertEqual(result.rows.length, 1, 'empty string xField should be skipped');
+  assertEqual(result.rows[0].city, '上海');
+});
+
+// ============================================================
+// 7. boxplot_summary：xField 冲突
+// ============================================================
+
+test('boxplot: xField conflicts with stat fields → error', () => {
+  // xField='median' 与输出统计字段冲突
+  const input: DataTransformInputV2 = {
+    columns: ['median', 'score'],
+    rows: [
+      { median: 'A', score: 10 },
+      { median: 'A', score: 20 },
+      { median: 'A', score: 30 },
+    ],
+    spec: { type: 'boxplot', xField: 'median', valueField: 'score' },
+    transform: 'boxplot_summary',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'xField_conflicts_with_stat_fields');
+});
+
+// ============================================================
 // 结果汇总
 // ============================================================
 console.log(`\n${'='.repeat(60)}`);

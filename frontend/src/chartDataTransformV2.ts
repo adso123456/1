@@ -32,6 +32,21 @@ export interface DataTransformResultV2 {
 }
 
 // ============================================================
+// 内部工具
+// ============================================================
+
+/**
+ * 克隆 ChartSpec，确保 yFields 为新数组。
+ * 成功和失败结果均通过此函数生成 spec，不得复用输入 spec 的数组引用。
+ */
+function cloneSpec(spec: ChartSpec): ChartSpec {
+  return {
+    ...spec,
+    yFields: spec.yFields ? [...spec.yFields] : spec.yFields,
+  };
+}
+
+// ============================================================
 // 主入口
 // ============================================================
 
@@ -60,7 +75,7 @@ export function executeDataTransformV2(
         ok: false,
         columns: [],
         rows: [],
-        spec: { ...input.spec },
+        spec: cloneSpec(input.spec),
         errorCode: `unsupported_transform_${input.transform}`,
       };
   }
@@ -75,7 +90,7 @@ function executeNone(input: DataTransformInputV2): DataTransformResultV2 {
     ok: true,
     columns: [...input.columns],
     rows: input.rows.map(row => ({ ...row })),
-    spec: { ...input.spec },
+    spec: cloneSpec(input.spec),
     errorCode: null,
   };
 }
@@ -92,7 +107,7 @@ function executeGroupBySum(input: DataTransformInputV2): DataTransformResultV2 {
   if (!xField || !columns.includes(xField)) {
     return {
       ok: false, columns: [], rows: [],
-      spec: { ...spec }, errorCode: 'missing_xField',
+      spec: cloneSpec(spec), errorCode: 'missing_xField',
     };
   }
 
@@ -101,29 +116,55 @@ function executeGroupBySum(input: DataTransformInputV2): DataTransformResultV2 {
   if (!yFields || yFields.length === 0) {
     return {
       ok: false, columns: [], rows: [],
-      spec: { ...spec }, errorCode: 'missing_yFields',
+      spec: cloneSpec(spec), errorCode: 'missing_yFields',
     };
   }
 
-  const validYFields = yFields.filter(f => columns.includes(f));
+  // 去重并保持原顺序，再过滤仅存在于 columns 中的字段
+  const seen = new Set<string>();
+  const dedupedYFields: string[] = [];
+  for (const f of yFields) {
+    if (!seen.has(f)) {
+      seen.add(f);
+      dedupedYFields.push(f);
+    }
+  }
+  const validYFields = dedupedYFields.filter(f => columns.includes(f));
   if (validYFields.length === 0) {
     return {
       ok: false, columns: [], rows: [],
-      spec: { ...spec }, errorCode: 'no_valid_yFields',
+      spec: cloneSpec(spec), errorCode: 'no_valid_yFields',
     };
   }
 
-  // 分组求和
+  // 分组求和（懒初始化：仅当行中有有效数值时才创建分组）
   const groupSums = new Map<string, Record<string, number>>();
   let hasValidData = false;
 
   for (const row of rows) {
-    const key = String(row[xField] ?? '');
+    // 跳过无效 xField（null / undefined / 空字符串）
+    const xVal = row[xField];
+    if (xVal === null || xVal === undefined || xVal === '') continue;
+
+    const key = String(xVal);
+
+    // 检查此行是否有任何有效数值
+    let rowHasValid = false;
+    for (const yf of validYFields) {
+      if (toNumber(row[yf]) !== null) {
+        rowHasValid = true;
+        break;
+      }
+    }
+    if (!rowHasValid) continue;
+
+    // 懒初始化分组
     if (!groupSums.has(key)) {
       const init: Record<string, number> = {};
       for (const yf of validYFields) init[yf] = 0;
       groupSums.set(key, init);
     }
+
     const acc = groupSums.get(key)!;
     for (const yf of validYFields) {
       const n = toNumber(row[yf]);
@@ -137,7 +178,7 @@ function executeGroupBySum(input: DataTransformInputV2): DataTransformResultV2 {
   if (!hasValidData || groupSums.size === 0) {
     return {
       ok: false, columns: [], rows: [],
-      spec: { ...spec }, errorCode: 'no_valid_data',
+      spec: cloneSpec(spec), errorCode: 'no_valid_data',
     };
   }
 
@@ -154,7 +195,7 @@ function executeGroupBySum(input: DataTransformInputV2): DataTransformResultV2 {
     ok: true,
     columns: outputColumns,
     rows: outputRows,
-    spec: { ...spec, xField, yFields: validYFields },
+    spec: { ...cloneSpec(spec), xField, yFields: validYFields },
     errorCode: null,
   };
 }
@@ -174,6 +215,9 @@ function median(sorted: number[]): number {
   return (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/** 五数概括字段名（不可被 xField 占用） */
+const STAT_FIELDS = ['min', 'q1', 'median', 'q3', 'max'] as const;
+
 function executeBoxplotSummary(input: DataTransformInputV2): DataTransformResultV2 {
   const { columns, rows, spec } = input;
   const xField = spec.xField;
@@ -183,7 +227,7 @@ function executeBoxplotSummary(input: DataTransformInputV2): DataTransformResult
   if (!xField || !columns.includes(xField)) {
     return {
       ok: false, columns: [], rows: [],
-      spec: { ...spec }, errorCode: 'missing_xField',
+      spec: cloneSpec(spec), errorCode: 'missing_xField',
     };
   }
 
@@ -191,14 +235,25 @@ function executeBoxplotSummary(input: DataTransformInputV2): DataTransformResult
   if (!valueField || !columns.includes(valueField)) {
     return {
       ok: false, columns: [], rows: [],
-      spec: { ...spec }, errorCode: 'missing_valueField',
+      spec: cloneSpec(spec), errorCode: 'missing_valueField',
     };
   }
 
-  // 分组收集数值
+  // 检查 xField 是否与统计字段名冲突（禁止覆盖分组字段）
+  if ((STAT_FIELDS as readonly string[]).includes(xField)) {
+    return {
+      ok: false, columns: [], rows: [],
+      spec: cloneSpec(spec), errorCode: 'xField_conflicts_with_stat_fields',
+    };
+  }
+
+  // 分组收集数值（跳过无效 xField）
   const groups = new Map<string, number[]>();
   for (const row of rows) {
-    const key = String(row[xField] ?? '');
+    const xVal = row[xField];
+    if (xVal === null || xVal === undefined || xVal === '') continue;
+
+    const key = String(xVal);
     const n = toNumber(row[valueField]);
     if (n === null) continue;
     if (!groups.has(key)) groups.set(key, []);
@@ -208,7 +263,7 @@ function executeBoxplotSummary(input: DataTransformInputV2): DataTransformResult
   if (groups.size === 0) {
     return {
       ok: false, columns: [], rows: [],
-      spec: { ...spec }, errorCode: 'no_valid_data',
+      spec: cloneSpec(spec), errorCode: 'no_valid_data',
     };
   }
 
@@ -217,13 +272,13 @@ function executeBoxplotSummary(input: DataTransformInputV2): DataTransformResult
     if (vals.length < 2) {
       return {
         ok: false, columns: [], rows: [],
-        spec: { ...spec }, errorCode: `insufficient_samples_${key}`,
+        spec: cloneSpec(spec), errorCode: `insufficient_samples_${key}`,
       };
     }
   }
 
   // 计算五数概括（exclusive / Tukey's hinges 分位数）
-  const statFields = ['min', 'q1', 'median', 'q3', 'max'];
+  const statFields = [...STAT_FIELDS];
   const outputColumns = [xField, ...statFields];
   const outputRows: Row[] = [];
 
@@ -257,8 +312,8 @@ function executeBoxplotSummary(input: DataTransformInputV2): DataTransformResult
     });
   }
 
-  // spec: 移除 valueField，yFields 置为五数概括字段
-  const { valueField: _vf, ...restSpec } = spec;
+  // spec: 移除 valueField，yFields 置为五数概括字段（新数组）
+  const { valueField: _vf, ...restSpec } = cloneSpec(spec);
   const outputSpec: ChartSpec = {
     ...restSpec,
     xField,
