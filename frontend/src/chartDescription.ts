@@ -1,20 +1,14 @@
 import type { ChartData, RenderableChartType } from './types';
+import {
+  toNumber as toNum,
+  isOrderedField,
+  isSummable,
+} from './chartSemantics';
 import { formatColumnLabel } from './utils/tableFormatting';
 
+export { isSummable };
+
 /* ---- 工具函数 ---- */
-
-function isNull(v: unknown): boolean {
-  return v === null || v === undefined || v === '';
-}
-
-function toNum(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
 
 function getYFields(spec: ChartData['spec']): string[] {
   return (spec.yFields ?? []).filter((f): f is string => typeof f === 'string' && f.trim().length > 0);
@@ -52,67 +46,6 @@ function ratio(a: number, b: number): string | null {
   const r = Math.max(absA, absB) / Math.min(absA, absB);
   if (r < 1.05) return null;
   return r.toFixed(1) + '倍';
-}
-
-/* ---- 指标语义判断（说明文本和 Tooltip 共用） ---- */
-
-/** 可加总指标：明确计数或累计量 */
-const SUMMABLE_PATTERNS = [
-  /数量/, /个数/, /总数/,
-  /次数/, /人数/,
-  /金额/, /收入/, /支出/,
-  /排放总量/,
-];
-
-/** 不可加总指标：比例、浓度、指数、物理量等 */
-const NON_SUMMABLE_PATTERNS = [
-  /pH/i,
-  /水位/, /高程/, /标高/,
-  /温度/, /气温/, /水温/,
-  /浓度/, /含量/, /密度/,
-  /流量/, /排放量/, /用水量/, /供水量/, /发电量/,
-  /速度/, /速率/, /流速/,
-  /沉降/, /位移/, /变形/,
-  /面积/, /长度/, /容积/, /库容/,
-  /比例/, /占比/, /百分比/, /比率/,
-  /平均值/, /均值/, /平均/,
-  /指数/, /系数/, /等级/, /评分/, /得分/,
-  /率$/,
-];
-
-/**
- * 判断是否可加总指标。
- * 默认不可加，仅明确匹配 SUMMABLE 且不匹配 NON_SUMMABLE 时返回 true。
- */
-export function isSummable(yField: string): boolean {
-  const r = readableField(yField);
-  for (const p of NON_SUMMABLE_PATTERNS) {
-    if (p.test(r)) return false;
-  }
-  for (const p of SUMMABLE_PATTERNS) {
-    if (p.test(r)) return true;
-  }
-  return false;
-}
-
-/* ---- 识别有序字符串 ---- */
-
-function isOrderedStringValue(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  if (!isNaN(new Date(value).getTime())) return true;
-  if (/^\d{4}年\d{1,2}月$/.test(value)) return true;
-  if (/^\d{4}年第\d{1,2}季度$/.test(value)) return true;
-  if (/^\d{1,2}月$/.test(value)) return true;
-  if (/^Q[1-4]$/i.test(value)) return true;
-  if (/^\d{4}$/.test(value)) return true;
-  return false;
-}
-
-function isOrderedField(rows: Array<Record<string, unknown>>, field: string | null): boolean {
-  if (!field) return false;
-  const values = rows.map(r => r[field]).filter(v => !isNull(v));
-  if (!values.length) return false;
-  return values.every(v => typeof v === 'number' || isOrderedStringValue(v));
 }
 
 /* ---- 共享数据模型 ---- */
