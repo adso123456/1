@@ -1,8 +1,18 @@
 import type { ChartData, ChartSpec, ChartType, ChartTypeAvailability, RenderableChartType } from './types';
-import { isSummable } from './chartDescription';
+import type { Row } from './chartSemantics';
+import {
+  isNullValue,
+  toNumber,
+  isNumericField,
+  isTemporalField,
+  findEntityNameField,
+  findRegionField,
+  countEntityOccurrences,
+  isSummable,
+} from './chartSemantics';
 import { formatColumnLabel, formatCellValue } from './utils/tableFormatting';
 
-type Row = Record<string, unknown>;
+export { isNullValue };
 type EChartsOption = Record<string, unknown>;
 
 export const RENDERABLE_TYPES: RenderableChartType[] = [
@@ -42,10 +52,6 @@ const BLUE_PALETTE = [
   '#1d4ed8', '#1e40af', '#7dd3fc', '#38bdf8',
   '#0ea5e9', '#0284c7', '#0369a1', '#075985',
 ];
-
-export function isNullValue(v: unknown): boolean {
-  return v === null || v === undefined || v === '';
-}
 
 export function isRenderableChartType(type: ChartType | undefined): type is RenderableChartType {
   return !!type && RENDERABLE_TYPES.includes(type as RenderableChartType);
@@ -426,127 +432,6 @@ function getYField(spec: ChartSpec): string | null {
 
 function hasColumn(columns: string[], field: string | null): field is string {
   return !!field && columns.includes(field);
-}
-
-function toNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function isNumericField(rows: Row[], field: string | null): field is string {
-  if (!field) return false;
-  const values = rows.map(row => row[field]).filter(value => !isNullValue(value));
-  if (!values.length) return false;
-  return values.every(value => toNumber(value) !== null);
-}
-
-/** 识别具有自然顺序的字符串：月份/季度/年份/日期，用于 line/area 横轴兼容判断 */
-function isOrderedStringValue(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  // ISO 日期
-  if (!isNaN(new Date(value).getTime())) return true;
-  // 中文日期：2024年1月
-  if (/^\d{4}年\d{1,2}月$/.test(value)) return true;
-  // 中文季度：2024年第1季度
-  if (/^\d{4}年第\d{1,2}季度$/.test(value)) return true;
-  // 月份：1月 ~ 12月
-  if (/^\d{1,2}月$/.test(value)) return true;
-  // 季度：Q1 ~ Q4
-  if (/^Q[1-4]$/i.test(value)) return true;
-  // 纯年份：2020
-  if (/^\d{4}$/.test(value)) return true;
-  return false;
-}
-
-/** 字段名是否暗示为年份维度（年/年份/年度/year） */
-function isYearLikeFieldName(field: string): boolean {
-  return /年|year/i.test(field);
-}
-
-/** 数字值是否全部为合理四位年份（1900~2100） */
-function isFourDigitYearValues(rows: Row[], field: string): boolean {
-  const values = rows.map(r => r[field]).filter(v => !isNullValue(v));
-  if (!values.length) return false;
-  return values.every(v => typeof v === 'number' && Number.isInteger(v) && v >= 1900 && v <= 2100);
-}
-
-/** 识别真实时间/顺序维度：字符串日期/月份/季度，或数字年份。
- *  排除 COD/BOD/温度/浓度/金额等普通数值指标，避免它们被当作时间横轴。 */
-function isTemporalField(rows: Row[], field: string | null): field is string {
-  if (!field) return false;
-  const values = rows.map(row => row[field]).filter(value => !isNullValue(value));
-  if (!values.length) return false;
-  // 全为有序字符串（日期/月份/季度/年份字符串）
-  if (values.every(value => isOrderedStringValue(value))) return true;
-  // 数字列：仅当字段名暗示年份，或值域为合理四位年份时才视为时间维度
-  if (values.every(value => typeof value === 'number')) {
-    return isYearLikeFieldName(field) || isFourDigitYearValues(rows, field);
-  }
-  return false;
-}
-
-/** 对象名称字段优先级（仅匹配字段名，不匹配具体数据值）。
- *  裸“单位”不作为关键词（可能表示 mg/L 等计量单位）；“单位名称”通过第 2 层识别。 */
-const ENTITY_PRIORITY: string[][] = [
-  ['排口名称', '监测点名称', '站点名称', '断面名称', '水厂名称'],
-  ['企业名称', '公司名称', '单位名称', '项目名称'],
-  ['名称', 'name'],
-  ['排口', '监测点', '站点', '断面', '企业', '公司', '水厂', '项目', 'site', 'station', 'company'],
-];
-/** 对象字段需排除的指标/标识词（字段名包含即排除） */
-const ENTITY_METRIC_WORDS = ['数量', '个数', '总数', '次数', '金额', '浓度', '含量', '值', '比例', '占比', '平均', '均值', '总量', '排放量', '面积', '长度', '编号', '编码', 'id'];
-/** 地区字段名关键词 */
-const REGION_KEYWORDS = ['区县', '地区', '区域', '行政区', '城市', 'city', 'region', 'district'];
-/** 地区字段需排除的指标/标识词 */
-const REGION_METRIC_WORDS = ['数量', '面积', '金额', '值', '率', '比例', '占比', '编号', '编码', 'id'];
-
-/** 字段名是否包含任一排除词（大小写不敏感） */
-function containsAnyWord(field: string, words: string[]): boolean {
-  const lower = field.toLowerCase();
-  return words.some(w => lower.includes(w.toLowerCase()));
-}
-
-/** 识别对象名称字段：仅选非数值分类列，排除指标/标识字段，按优先级返回第一个合法字段，无则 null */
-function findEntityNameField(columns: string[], rows: Row[]): string | null {
-  // 用 Set 缓存数值列，避免 isNumericField 类型谓词把 col 收窄为 never
-  const numericCols = new Set(columns.filter(c => isNumericField(rows, c)));
-  for (const layer of ENTITY_PRIORITY) {
-    for (const col of columns) {
-      if (numericCols.has(col)) continue;
-      if (containsAnyWord(col, ENTITY_METRIC_WORDS)) continue;
-      if (layer.some(kw => col.toLowerCase().includes(kw.toLowerCase()))) return col;
-    }
-  }
-  return null;
-}
-
-/** 识别地区字段：仅选非数值分类列，排除指标/标识字段，返回第一个合法字段，无则 null */
-function findRegionField(columns: string[], rows: Row[]): string | null {
-  const numericCols = new Set(columns.filter(c => isNumericField(rows, c)));
-  for (const col of columns) {
-    if (numericCols.has(col)) continue;
-    if (containsAnyWord(col, REGION_METRIC_WORDS)) continue;
-    if (REGION_KEYWORDS.some(kw => col.toLowerCase().includes(kw.toLowerCase()))) return col;
-  }
-  return null;
-}
-
-/** 统计对象字段的不同值数量与单个对象最大出现次数（基于非空有效行） */
-function countEntityOccurrences(rows: Row[], entityField: string): { entityCount: number; maxOccur: number } {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    const v = row[entityField];
-    if (isNullValue(v)) continue;
-    const key = String(v);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  let maxOccur = 0;
-  for (const c of counts.values()) if (c > maxOccur) maxOccur = c;
-  return { entityCount: counts.size, maxOccur };
 }
 
 /** 面积图单序列真实时间趋势结构校验结果 */
