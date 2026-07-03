@@ -1,8 +1,9 @@
-// datasetProfilerV2.test.ts — V2 Dataset Profiler 的 15 个 Golden 测试
+// datasetProfilerV2.test.ts — V2 Dataset Profiler 的 Golden 测试 + 确定性补充测试
 //
 // 使用内联断言，无外部测试框架依赖。
 
-import { analyzeDatasetV2, type DatasetProfileV2 } from '../datasetProfilerV2.js';
+import { analyzeDatasetV2, classifyMeasureKindV2, type DatasetProfileV2 } from '../datasetProfilerV2.js';
+import type { Row } from '../datasetProfilerV2.js';
 import { FIXTURES } from './goldenFixtures.js';
 
 let passed = 0;
@@ -37,6 +38,11 @@ function profile(name: string): DatasetProfileV2 {
   const f = FIXTURES.find(x => x.name === name);
   if (!f) throw new Error(`Fixture not found: ${name}`);
   return analyzeDatasetV2(f.columns, f.rows);
+}
+
+/** 使用内联数据快速创建画像 */
+function profileInline(columns: string[], rows: Row[]): DatasetProfileV2 {
+  return analyzeDatasetV2(columns, rows);
 }
 
 // ============================================================
@@ -109,7 +115,8 @@ test('region_count → archetype=categorical_series', () => {
 });
 
 // ============================================================
-// 6. month + discharge (单序列时间趋势)
+// 6. month + discharge（单序列时间趋势）
+// 修正：discharge = unknown → partToWholeEligible = false
 // ============================================================
 test('month_discharge → archetype=temporal_series', () => {
   const p = profile('month_discharge');
@@ -122,10 +129,10 @@ test('month_discharge → archetype=temporal_series', () => {
   assertEqual(p.traits.entityCount, 0);
   assertEqual(p.traits.duplicateDimensionKeys, false);
   assertEqual(p.traits.aggregationState, 'aggregated');
-  // discharge 英文名不命中中文 non_additive 规则，classifyMeasureKindV2 返回 unknown
+  // discharge 不命中中文或英文规则 → unknown
   assertEqual(p.traits.measureKinds['discharge'], 'unknown');
-  // unknown kind 不阻止 partToWhole（只有 non_additive 阻止）
-  assertEqual(p.traits.partToWholeEligible, true);
+  // 严格规则：只有 additive 才能 partToWhole → unknown 必须 false
+  assertEqual(p.traits.partToWholeEligible, false);
 });
 
 // ============================================================
@@ -184,7 +191,7 @@ test('three_numeric → archetype=numeric_relationship', () => {
 });
 
 // ============================================================
-// 11. region + month + value (二维矩阵)
+// 11. region + month + value（二维矩阵）
 // ============================================================
 test('region_month_matrix → archetype=categorical_matrix', () => {
   const p = profile('region_month_matrix');
@@ -299,6 +306,98 @@ test('cross: ph_value is non_additive', () => {
 test('cross: count is additive for region_count', () => {
   const p = profile('region_count');
   assertEqual(p.traits.measureKinds['count'], 'additive');
+});
+
+// ============================================================
+// 补充测试 1：classifyMeasureKindV2 英文 token 规则
+// ============================================================
+test('classifyMeasureKindV2: station_count → additive', () => {
+  assertEqual(classifyMeasureKindV2('station_count'), 'additive');
+});
+
+test('classifyMeasureKindV2: total_count → additive', () => {
+  assertEqual(classifyMeasureKindV2('total_count'), 'additive');
+});
+
+test('classifyMeasureKindV2: avg_discharge → non_additive', () => {
+  assertEqual(classifyMeasureKindV2('avg_discharge'), 'non_additive');
+});
+
+test('classifyMeasureKindV2: temperature_avg → non_additive', () => {
+  assertEqual(classifyMeasureKindV2('temperature_avg'), 'non_additive');
+});
+
+test('classifyMeasureKindV2: unknown_value → unknown', () => {
+  assertEqual(classifyMeasureKindV2('unknown_value'), 'unknown');
+});
+
+test('classifyMeasureKindV2: total_outlet_count → additive (middle token)', () => {
+  assertEqual(classifyMeasureKindV2('total_outlet_count'), 'additive');
+});
+
+// ============================================================
+// 补充测试 2：unknown 指标 + 分类字段 → partToWholeEligible = false
+// ============================================================
+test('unknown measure with category → partToWholeEligible=false', () => {
+  const p = profileInline(
+    ['category', 'unknown_value'],
+    [
+      { category: 'A', unknown_value: 10 },
+      { category: 'B', unknown_value: 20 },
+      { category: 'C', unknown_value: 30 },
+    ],
+  );
+  assertEqual(p.traits.measureKinds['unknown_value'], 'unknown');
+  assertEqual(p.traits.partToWholeEligible, false);
+});
+
+// ============================================================
+// 补充测试 3：3 维度 uniqueDimensionPairRatio 边界
+// ============================================================
+test('3 dimensions → uniqueDimensionPairRatio in [0,1], uses first two dims', () => {
+  const p = profileInline(
+    ['region', 'month', 'category', 'value'],
+    [
+      { region: '城北', month: '1月', category: 'X', value: 10 },
+      { region: '城北', month: '1月', category: 'Y', value: 20 },
+      { region: '城南', month: '1月', category: 'X', value: 30 },
+      { region: '城南', month: '1月', category: 'Y', value: 40 },
+      { region: '城北', month: '2月', category: 'X', value: 50 },
+      { region: '城北', month: '2月', category: 'Y', value: 60 },
+      { region: '城南', month: '2月', category: 'X', value: 70 },
+      { region: '城南', month: '2月', category: 'Y', value: 80 },
+    ],
+  );
+  // 只用前两个维度 region(2) × month(2) 计算
+  assertOk(p.traits.uniqueDimensionPairRatio >= 0,
+    `uniqueDimensionPairRatio=${p.traits.uniqueDimensionPairRatio} should be >= 0`);
+  assertOk(p.traits.uniqueDimensionPairRatio <= 1,
+    `uniqueDimensionPairRatio=${p.traits.uniqueDimensionPairRatio} should be <= 1`);
+  // 3 个 dimensionFields（category 也是维度）
+  assertEqual(p.traits.dimensionFieldCount, 3);
+  // 完整维度键无重复
+  assertEqual(p.traits.duplicateDimensionKeys, false);
+});
+
+// ============================================================
+// 补充测试 4：全空列不得进入 dimensionFields
+// ============================================================
+test('all-null column excluded from dimensionFields', () => {
+  const p = profileInline(
+    ['name', 'all_null', 'value'],
+    [
+      { name: 'A', all_null: null, value: 100 },
+      { name: 'B', all_null: null, value: 200 },
+      { name: 'C', all_null: null, value: 300 },
+    ],
+  );
+  // all_null 列不应出现在 dimensionFields 中
+  assertOk(!p.traits.dimensionFields.includes('all_null'),
+    `dimensionFields=${JSON.stringify(p.traits.dimensionFields)} should not include 'all_null'`);
+  // name 是维度
+  assertOk(p.traits.dimensionFields.includes('name'));
+  // dimensionFieldCount 应为 1（只有 name）
+  assertEqual(p.traits.dimensionFieldCount, 1);
 });
 
 // ============================================================

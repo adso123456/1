@@ -1,17 +1,43 @@
 // datasetProfilerV2.ts — V2 数据集画像分析模块
 //
-// 与 chartSemantics.ts 并行存在，不修改旧文件。
-// 复用旧模块的算法逻辑，但独立实现以避免 NodeNext 模块解析问题。
+// 从 chartSemantics.ts 复用基础实现，仅保留 V2 新增逻辑。
 // 阶段 A：仅新增，不接入运行时。
 
 // ============================================================
-// 基础类型
+// 从 chartSemantics 复用基础类型与工具函数
 // ============================================================
 
-export type Row = Record<string, unknown>;
+import type {
+  Row,
+  MeasureKind,
+} from './chartSemantics.js';
 
-/** 指标语义分类 */
-export type MeasureKind = 'additive' | 'non_additive' | 'unknown';
+import {
+  isNullValue,
+  toNumber,
+  isNumericField,
+  isTemporalField,
+  findEntityNameField,
+  findRegionField,
+  countEntityOccurrences,
+  classifyMeasureKind,
+} from './chartSemantics.js';
+
+// 重导出，供 goldenFixtures.ts 等外部消费者使用
+export type { Row, MeasureKind };
+export {
+  isNullValue,
+  toNumber,
+  isNumericField,
+  isTemporalField,
+  findEntityNameField,
+  findRegionField,
+  countEntityOccurrences,
+};
+
+// ============================================================
+// V2 自有类型（不依赖 chartSemantics）
+// ============================================================
 
 /** 聚合状态 */
 export type AggregationState = 'aggregated' | 'raw' | 'unknown';
@@ -31,70 +57,7 @@ export type DatasetArchetype =
   | 'unknown';
 
 // ============================================================
-// 基础工具函数（逻辑与 chartSemantics.ts 一致）
-// ============================================================
-
-export function isNullValue(v: unknown): boolean {
-  return v === null || v === undefined || v === '';
-}
-
-export function toNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-// ============================================================
-// 字段类型判断
-// ============================================================
-
-export function isNumericField(rows: Row[], field: string | null): field is string {
-  if (!field) return false;
-  const values = rows.map(row => row[field]).filter(v => !isNullValue(v));
-  if (!values.length) return false;
-  return values.every(v => toNumber(v) !== null);
-}
-
-/** 识别具有自然顺序的字符串 */
-function isOrderedStringValue(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  if (!isNaN(new Date(value).getTime())) return true;
-  if (/^\d{4}年\d{1,2}月$/.test(value)) return true;
-  if (/^\d{4}年第\d{1,2}季度$/.test(value)) return true;
-  if (/^\d{1,2}月$/.test(value)) return true;
-  if (/^Q[1-4]$/i.test(value)) return true;
-  if (/^\d{4}$/.test(value)) return true;
-  return false;
-}
-
-function isYearLikeFieldName(field: string): boolean {
-  return /年|year/i.test(field);
-}
-
-function isFourDigitYearValues(rows: Row[], field: string): boolean {
-  const values = rows.map(r => r[field]).filter(v => !isNullValue(v));
-  if (!values.length) return false;
-  return values.every(
-    v => typeof v === 'number' && Number.isInteger(v) && v >= 1900 && v <= 2100,
-  );
-}
-
-export function isTemporalField(rows: Row[], field: string | null): field is string {
-  if (!field) return false;
-  const values = rows.map(r => r[field]).filter(v => !isNullValue(v));
-  if (!values.length) return false;
-  if (values.every(v => isOrderedStringValue(v))) return true;
-  if (values.every(v => typeof v === 'number')) {
-    return isYearLikeFieldName(field) || isFourDigitYearValues(rows, field);
-  }
-  return false;
-}
-
-// ============================================================
-// 标识字段识别
+// V2 自有：标识字段识别（保留 V2 独立实现）
 // ============================================================
 
 const IDENTIFIER_PATTERNS = [/^id$/i, /_id$/i, /编号/, /编码/, /code/i];
@@ -104,127 +67,52 @@ function isIdentifierField(fieldName: string): boolean {
 }
 
 // ============================================================
-// 实体与地区字段识别
+// classifyMeasureKindV2：先复用旧逻辑，再补充英文 token
 // ============================================================
 
-const ENTITY_PRIORITY: string[][] = [
-  ['排口名称', '监测点名称', '站点名称', '断面名称', '水厂名称'],
-  ['企业名称', '公司名称', '单位名称', '项目名称'],
-  ['名称', 'name'],
-  ['排口', '监测点', '站点', '断面', '企业', '公司', '水厂', '项目', 'site', 'station', 'company'],
-];
-
-const ENTITY_METRIC_WORDS = [
-  '数量', '个数', '总数', '次数', '金额', '浓度', '含量', '值',
-  '比例', '占比', '平均', '均值', '总量', '排放量', '面积', '长度', '编号', '编码', 'id',
-];
-
-const REGION_KEYWORDS = ['区县', '地区', '区域', '行政区', '城市', 'city', 'region', 'district'];
-
-const REGION_METRIC_WORDS = ['数量', '面积', '金额', '值', '率', '比例', '占比', '编号', '编码', 'id'];
-
-function containsAnyWord(field: string, words: string[]): boolean {
-  const lower = field.toLowerCase();
-  return words.some(w => lower.includes(w.toLowerCase()));
+/** 检查字段名是否包含指定的英文 token（支持完整、前缀、后缀、中间位置） */
+function hasToken(fieldName: string, token: string): boolean {
+  const lower = fieldName.toLowerCase();
+  const t = token.toLowerCase();
+  // 完整匹配
+  if (lower === t) return true;
+  // 下划线前缀：token_xxx
+  if (lower.startsWith(t + '_')) return true;
+  // 下划线后缀：xxx_token
+  if (lower.endsWith('_' + t)) return true;
+  // 中间 token：xxx_token_xxx
+  if (lower.includes('_' + t + '_')) return true;
+  return false;
 }
 
-export function findEntityNameField(columns: string[], rows: Row[]): string | null {
-  const numericCols = new Set(columns.filter(c => isNumericField(rows, c)));
-  for (const layer of ENTITY_PRIORITY) {
-    for (const col of columns) {
-      if (numericCols.has(col)) continue;
-      if (containsAnyWord(col, ENTITY_METRIC_WORDS)) continue;
-      if (layer.some(kw => col.toLowerCase().includes(kw.toLowerCase()))) return col;
-    }
-  }
-  return null;
-}
-
-export function findRegionField(columns: string[], rows: Row[]): string | null {
-  const numericCols = new Set(columns.filter(c => isNumericField(rows, c)));
-  for (const col of columns) {
-    if (numericCols.has(col)) continue;
-    if (containsAnyWord(col, REGION_METRIC_WORDS)) continue;
-    if (REGION_KEYWORDS.some(kw => col.toLowerCase().includes(kw.toLowerCase()))) return col;
-  }
-  return null;
-}
-
-export function countEntityOccurrences(
-  rows: Row[],
-  entityField: string,
-): { entityCount: number; maxOccur: number } {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    const v = row[entityField];
-    if (isNullValue(v)) continue;
-    const key = String(v);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  let maxOccur = 0;
-  for (const c of counts.values()) if (c > maxOccur) maxOccur = c;
-  return { entityCount: counts.size, maxOccur };
-}
-
-// ============================================================
-// 指标语义分类 V2
-// ============================================================
-
-/** 可加总指标：中文关键词 */
-const SUMMABLE_PATTERNS = [
-  /数量/, /个数/, /总数/,
-  /次数/, /人数/,
-  /金额/, /收入/, /支出/,
-  /排放总量/,
+/** 不可加总的英文 token */
+const NON_ADDITIVE_TOKENS = [
+  'avg', 'average', 'mean',
+  'rate', 'ratio', 'percent', 'percentage',
+  'min', 'max',
 ];
 
-/** 不可加总指标：中文关键词 */
-const NON_SUMMABLE_PATTERNS = [
-  /pH/i,
-  /水位/, /高程/, /标高/,
-  /温度/, /气温/, /水温/,
-  /浓度/, /含量/, /密度/,
-  /流量/, /排放量/, /用水量/, /供水量/, /发电量/,
-  /速度/, /速率/, /流速/,
-  /沉降/, /位移/, /变形/,
-  /面积/, /长度/, /容积/, /库容/,
-  /比例/, /占比/, /百分比/, /比率/,
-  /平均值/, /均值/, /平均/,
-  /指数/, /系数/, /等级/, /评分/, /得分/,
-  /率$/,
-];
+/** 可加总的英文 token */
+const ADDITIVE_TOKENS = ['count', 'sum', 'total'];
 
-/** classifyMeasureKind V2：先复用旧逻辑，再补充英文聚合名称 */
+/**
+ * V2 指标语义分类：
+ * 1. 先调用旧 classifyMeasureKind(fieldName)
+ * 2. 旧结果不是 unknown 时直接返回
+ * 3. 再检查英文 token（non_additive 优先于 additive）
+ */
 export function classifyMeasureKindV2(fieldName: string): MeasureKind {
-  // 去掉常见聚合后缀
-  const r = fieldName.replace(/_(avg|sum|count|min|max|total)$/, '');
+  // Step 1: 先调用旧 classifyMeasureKind
+  const oldResult = classifyMeasureKind(fieldName);
+  if (oldResult !== 'unknown') return oldResult;
 
-  // Step 1: 旧中文规则
-  for (const p of NON_SUMMABLE_PATTERNS) {
-    if (p.test(r)) return 'non_additive';
+  // Step 2: 英文 token 检查（non_additive 优先）
+  for (const token of NON_ADDITIVE_TOKENS) {
+    if (hasToken(fieldName, token)) return 'non_additive';
   }
-  for (const p of SUMMABLE_PATTERNS) {
-    if (p.test(r)) return 'additive';
+  for (const token of ADDITIVE_TOKENS) {
+    if (hasToken(fieldName, token)) return 'additive';
   }
-
-  // Step 2: 补充英文聚合名称
-  // additive: count, sum, total
-  if (/^(count|sum|total)$/i.test(r)) return 'additive';
-  if (/_(count|sum|total)$/i.test(r)) return 'additive';
-  if (/^(.*_)?count$/i.test(r)) return 'additive';
-  if (/^(.*_)?sum$/i.test(r)) return 'additive';
-  if (/^(.*_)?total$/i.test(r)) return 'additive';
-
-  // non_additive: avg, average, mean, rate, ratio, percent, percentage, min, max
-  if (/^(avg|average|mean|rate|ratio|percent|percentage|min|max)$/i.test(r)) return 'non_additive';
-  if (/_(avg|average|mean|rate|ratio|percent|percentage|min|max)$/i.test(r)) return 'non_additive';
-  if (/^(.*_)?avg$/i.test(r)) return 'non_additive';
-  if (/^(.*_)?average$/i.test(r)) return 'non_additive';
-  if (/^(.*_)?mean$/i.test(r)) return 'non_additive';
-  if (/^(.*_)?rate$/i.test(r)) return 'non_additive';
-  if (/^(.*_)?ratio$/i.test(r)) return 'non_additive';
-  if (/^(.*_)?percent$/i.test(r)) return 'non_additive';
-  if (/^(.*_)?percentage$/i.test(r)) return 'non_additive';
 
   return 'unknown';
 }
@@ -316,9 +204,9 @@ export interface DatasetProfileV2 {
 function computeDimensionDuplicates(
   rows: Row[],
   dimensionFields: string[],
-): { fullKeyHasDuplicates: boolean; uniquePairCount: number; totalPairs: number } {
+): { fullKeyHasDuplicates: boolean } {
   if (dimensionFields.length === 0) {
-    return { fullKeyHasDuplicates: false, uniquePairCount: 0, totalPairs: 0 };
+    return { fullKeyHasDuplicates: false };
   }
 
   const seen = new Map<string, number>();
@@ -330,7 +218,7 @@ function computeDimensionDuplicates(
   }
 
   const fullKeyHasDuplicates = [...seen.values()].some(c => c > 1);
-  return { fullKeyHasDuplicates, uniquePairCount: seen.size, totalPairs: [...seen.values()].reduce((s, c) => s + c, 0) };
+  return { fullKeyHasDuplicates };
 }
 
 // ============================================================
@@ -389,8 +277,8 @@ function computePartToWholeEligible(
   if (measureFields.length !== 1) return false;
   const m = measureFields[0];
   const kind = measureKinds[m] ?? 'unknown';
-  // 可加或 unknown（保守允许）
-  if (kind === 'non_additive') return false;
+  // 严格要求：只有 additive 才能返回 true
+  if (kind !== 'additive') return false;
   if (hasNegativeValues) return false;
   const total = measureTotals[m] ?? 0;
   if (total <= 0) return false;
@@ -779,9 +667,9 @@ export function analyzeDatasetV2(
     c => !temporalFields.includes(c) && !identifierFields.includes(c),
   );
 
-  // dimensionFields：非 measure、非 identifier
+  // dimensionFields：非 measure、非 identifier，且至少有一个非空值
   const dimensionFields = columns.filter(
-    c => !measureFields.includes(c) && !identifierFields.includes(c),
+    c => !measureFields.includes(c) && !identifierFields.includes(c) && rows.some(r => !isNullValue(r[c])),
   );
 
   // ── 阶段 2：实体和地区识别 ──
@@ -834,17 +722,22 @@ export function analyzeDatasetV2(
     measureTotals[m] = total;
   }
 
-  // ── 阶段 7：uniqueDimensionPairRatio ──
+  // ── 阶段 7：uniqueDimensionPairRatio（严格只用前两个维度） ──
   let uniqueDimensionPairRatio = 0;
   if (dimensionFields.length >= 2) {
-    // 计算两个主要维度的基数乘积
     const dim1 = dimensionFields[0];
     const dim2 = dimensionFields[1];
     const card1 = new Set(rows.map(r => String(r[dim1] ?? ''))).size;
     const card2 = new Set(rows.map(r => String(r[dim2] ?? ''))).size;
     const product = card1 * card2;
     if (product > 0) {
-      uniqueDimensionPairRatio = dimDupResult.uniquePairCount / product;
+      // 只用前两个维度计算唯一组合数
+      const pairSet = new Set<string>();
+      for (const row of rows) {
+        if (isNullValue(row[dim1]) || isNullValue(row[dim2])) continue;
+        pairSet.add(String(row[dim1]) + '\x00' + String(row[dim2]));
+      }
+      uniqueDimensionPairRatio = Math.max(0, Math.min(1, pairSet.size / product));
     }
   }
 
