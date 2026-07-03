@@ -49,10 +49,12 @@ export function matchTraitRequirement(
 
   // ── numeric trait ──
   if (typeof value === 'number') {
-    if ('equals' in requirement) return value === requirement.equals;
+    // NaN 或非有限数 → 不匹配
+    if (!Number.isFinite(value)) return false;
 
-    // 从两种 numeric 变体中提取 min/max（它们都是 number|null|undefined）
-    const req = requirement as { min?: number | null; max?: number | null };
+    // 所有存在的条件必须全部满足（不因 equals 存在就跳过范围检查）
+    const req = requirement as { equals?: number; min?: number | null; max?: number | null };
+    if (req.equals !== undefined && value !== req.equals) return false;
     if (req.min != null && value < req.min) return false;
     if (req.max != null && value > req.max) return false;
     return true;
@@ -138,21 +140,24 @@ export function resolveScalarSelector(
       return filtered[0] ?? null;
     }
 
-    // ── preferredSpec 字段 ──
+    // ── preferredSpec 字段（必须同时存在于 profile.columns）──
     case 'preferredXField':
-      return preferredSpec?.xField ?? null;
+      return validatePreferredColumn(preferredSpec?.xField, profile.columns);
 
     case 'preferredYField':
-      return preferredSpec?.yFields?.[selector.index] ?? null;
+      return validatePreferredColumn(
+        preferredSpec?.yFields?.[selector.index],
+        profile.columns,
+      );
 
     case 'preferredSeriesField':
-      return preferredSpec?.seriesField ?? null;
+      return validatePreferredColumn(preferredSpec?.seriesField, profile.columns);
 
     case 'preferredSizeField':
-      return preferredSpec?.sizeField ?? null;
+      return validatePreferredColumn(preferredSpec?.sizeField, profile.columns);
 
     case 'preferredValueField':
-      return preferredSpec?.valueField ?? null;
+      return validatePreferredColumn(preferredSpec?.valueField, profile.columns);
   }
 }
 
@@ -199,8 +204,13 @@ export function resolveMultiSelector(
     }
 
     // ── preferredSpec 字段 ──
-    case 'preferredYFields':
-      return preferredSpec?.yFields ?? [];
+    case 'preferredYFields': {
+      const raw = preferredSpec?.yFields;
+      if (!raw || raw.length === 0) return [];
+      return raw.filter(
+        f => typeof f === 'string' && f.length > 0 && profile.columns.includes(f),
+      );
+    }
   }
 }
 
@@ -211,4 +221,20 @@ export function resolveMultiSelector(
 function limitMax<T>(arr: readonly T[], maxCount?: number): T[] {
   if (maxCount === undefined) return [...arr];
   return arr.slice(0, maxCount);
+}
+
+/**
+ * 校验 preferredSpec 中的字段引用：
+ * - 必须是非空字符串（排除 null / undefined / ""）
+ * - 必须存在于 profile.columns 中
+ * 不满足任一条件返回 null。
+ * 不回退到 Profiler 字段。
+ */
+function validatePreferredColumn(
+  field: string | null | undefined,
+  columns: readonly string[],
+): string | null {
+  if (!field) return null;
+  if (!columns.includes(field)) return null;
+  return field;
 }

@@ -269,6 +269,49 @@ test('numeric max+min → value above max fails', () => {
 });
 
 // ============================================================
+// 7b. Numeric Trait Matcher — equals + min + max 运行时组合
+// （TraitRequirement 类型层面不允许三者共存，但运行时需防御）
+// ============================================================
+
+test('numeric equals+min+max all satisfied → passes', () => {
+  const t = traits({ dimensionCardinality: 5 });
+  // 运行时对象包含 equals + min + max 三字段（通过类型断言绕过编译检查）
+  const req = { trait: 'dimensionCardinality' as const, equals: 5, min: 2, max: 20 };
+  assertOk(matchTraitRequirement(req as TraitRequirement, t));
+});
+
+test('numeric equals satisfied but min fails → fails', () => {
+  const t = traits({ dimensionCardinality: 1 });
+  const req = { trait: 'dimensionCardinality' as const, equals: 1, min: 2 };
+  assertOk(!matchTraitRequirement(req as TraitRequirement, t));
+});
+
+test('numeric equals satisfied but max fails → fails', () => {
+  const t = traits({ dimensionCardinality: 30 });
+  const req = { trait: 'dimensionCardinality' as const, equals: 30, max: 20 };
+  assertOk(!matchTraitRequirement(req as TraitRequirement, t));
+});
+
+// ============================================================
+// 7c. Numeric Trait Matcher — NaN / 非有限数
+// ============================================================
+
+test('numeric trait value NaN → fails', () => {
+  const t = traits({ measureCount: NaN });
+  assertOk(!matchTraitRequirement({ trait: 'measureCount', equals: 1 }, t));
+});
+
+test('numeric trait value Infinity → fails', () => {
+  const t = traits({ measureCount: Infinity });
+  assertOk(!matchTraitRequirement({ trait: 'measureCount', min: 1 }, t));
+});
+
+test('numeric trait value -Infinity → fails', () => {
+  const t = traits({ measureCount: -Infinity });
+  assertOk(!matchTraitRequirement({ trait: 'measureCount', max: 100 }, t));
+});
+
+// ============================================================
 // 8. 其他 boolean trait 交叉验证
 // ============================================================
 
@@ -600,9 +643,9 @@ test('numericField empty array → null', () => {
 // 16. resolveScalarSelector — preferredSpec
 // ============================================================
 
-test('preferredXField returns spec xField', () => {
+test('preferredXField returns spec xField when in columns', () => {
   const spec: ChartSpec = { type: 'bar', xField: 'category' };
-  const p = profile({});
+  const p = profile({ columns: ['category', 'value'] });
   assertEqual(
     resolveScalarSelector({ source: 'preferredXField' }, ctx(p, spec)),
     'category',
@@ -617,9 +660,9 @@ test('preferredXField returns null when no preferredSpec', () => {
   );
 });
 
-test('preferredYField with index 0 returns first yField', () => {
+test('preferredYField with index 1 returns second yField', () => {
   const spec: ChartSpec = { type: 'line', yFields: ['sales', 'profit'] };
-  const p = profile({});
+  const p = profile({ columns: ['sales', 'profit'] });
   assertEqual(
     resolveScalarSelector({ source: 'preferredYField', index: 1 }, ctx(p, spec)),
     'profit',
@@ -635,30 +678,71 @@ test('preferredYField index out of bounds → null', () => {
   );
 });
 
-test('preferredSeriesField returns spec seriesField', () => {
+test('preferredSeriesField returns spec seriesField when in columns', () => {
   const spec: ChartSpec = { type: 'line', seriesField: 'region' };
-  const p = profile({});
+  const p = profile({ columns: ['region', 'year'] });
   assertEqual(
     resolveScalarSelector({ source: 'preferredSeriesField' }, ctx(p, spec)),
     'region',
   );
 });
 
-test('preferredSizeField returns spec sizeField', () => {
+test('preferredSizeField returns spec sizeField when in columns', () => {
   const spec: ChartSpec = { type: 'scatter', sizeField: 'revenue' };
-  const p = profile({});
+  const p = profile({ columns: ['revenue', 'x', 'y'] });
   assertEqual(
     resolveScalarSelector({ source: 'preferredSizeField' }, ctx(p, spec)),
     'revenue',
   );
 });
 
-test('preferredValueField returns spec valueField', () => {
+test('preferredValueField returns spec valueField when in columns', () => {
   const spec: ChartSpec = { type: 'boxplot', valueField: 'temperature' };
-  const p = profile({});
+  const p = profile({ columns: ['temperature', 'city'] });
   assertEqual(
     resolveScalarSelector({ source: 'preferredValueField' }, ctx(p, spec)),
     'temperature',
+  );
+});
+
+// ============================================================
+// 16b. resolveScalarSelector — preferred field 不在 columns
+// ============================================================
+
+test('preferredXField returns null when not in columns', () => {
+  const spec: ChartSpec = { type: 'bar', xField: 'missing' };
+  const p = profile({ columns: ['category', 'value'] });
+  assertEqual(
+    resolveScalarSelector({ source: 'preferredXField' }, ctx(p, spec)),
+    null,
+  );
+});
+
+test('preferredYField returns null when field not in columns', () => {
+  const spec: ChartSpec = { type: 'line', yFields: ['missing', 'profit'] };
+  const p = profile({ columns: ['sales', 'profit'] });
+  // index 0 → 'missing' 不在 columns
+  assertEqual(
+    resolveScalarSelector({ source: 'preferredYField', index: 0 }, ctx(p, spec)),
+    null,
+  );
+});
+
+test('preferredSeriesField returns null when not in columns', () => {
+  const spec: ChartSpec = { type: 'line', seriesField: 'unknown' };
+  const p = profile({ columns: ['year', 'sales'] });
+  assertEqual(
+    resolveScalarSelector({ source: 'preferredSeriesField' }, ctx(p, spec)),
+    null,
+  );
+});
+
+test('preferredXField returns null for empty string', () => {
+  const spec: ChartSpec = { type: 'bar', xField: '' };
+  const p = profile({ columns: ['', 'value'] });
+  assertEqual(
+    resolveScalarSelector({ source: 'preferredXField' }, ctx(p, spec)),
+    null,
   );
 });
 
@@ -758,9 +842,9 @@ test('nonAdditiveMeasureFields filters by measureKind', () => {
 // 19. resolveMultiSelector — preferredSpec
 // ============================================================
 
-test('preferredYFields returns spec yFields', () => {
+test('preferredYFields returns spec yFields filtered to columns', () => {
   const spec: ChartSpec = { type: 'bar', yFields: ['sales', 'profit'] };
-  const p = profile({});
+  const p = profile({ columns: ['sales', 'profit', 'year'] });
   assertDeepEqual(
     resolveMultiSelector({ source: 'preferredYFields' }, ctx(p, spec)),
     ['sales', 'profit'],
@@ -773,6 +857,35 @@ test('preferredYFields returns empty array when no preferredSpec', () => {
     resolveMultiSelector({ source: 'preferredYFields' }, ctx(p)),
     [],
   );
+});
+
+test('preferredYFields filters: mixed valid and invalid fields', () => {
+  const spec: ChartSpec = { type: 'bar', yFields: ['sales', 'missing', 'profit', 'also_missing'] };
+  const p = profile({ columns: ['sales', 'profit', 'year'] });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'preferredYFields' }, ctx(p, spec)),
+    ['sales', 'profit'],
+  );
+});
+
+test('preferredYFields all invalid → empty array', () => {
+  const spec: ChartSpec = { type: 'bar', yFields: ['a', 'b'] };
+  const p = profile({ columns: ['sales', 'profit'] });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'preferredYFields' }, ctx(p, spec)),
+    [],
+  );
+});
+
+test('preferredYFields returns new array (not spec array reference)', () => {
+  const yFields: string[] = ['sales', 'profit'];
+  const spec: ChartSpec = { type: 'bar', yFields };
+  const p = profile({ columns: ['sales', 'profit'] });
+  const result = resolveMultiSelector({ source: 'preferredYFields' }, ctx(p, spec));
+  // 值相同
+  assertDeepEqual(result, ['sales', 'profit']);
+  // 但不是同一个数组引用
+  assertOk(result !== yFields, 'should return new array, not spec.yFields reference');
 });
 
 // ============================================================
