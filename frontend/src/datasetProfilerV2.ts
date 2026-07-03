@@ -759,7 +759,8 @@ export function analyzeDatasetV2(
     entityOccurrence.entityCount >= 2 &&
     temporalFields.length >= 1 &&
     timePointCount >= 2 &&
-    entityOccurrence.maxOccur >= 2;
+    entityOccurrence.maxOccur >= 2 &&
+    measureFields.length >= 1;
 
   const multiSeriesCompleteness = computeMultiSeriesCompleteness(rows, entityField, temporalFields);
 
@@ -778,7 +779,18 @@ export function analyzeDatasetV2(
     rows, primaryDimensionField, dimensionFields, measureFields, dimensionCardinality,
   );
 
-  // ── 阶段 11：组装 traits ──
+  // ── 阶段 11：categoryCardinality（排除 entityField 和 temporalFields） ──
+  // 候选优先级：regionField → dimensionFields 中第一个非 entity 非 temporal 字段 → 0
+  const categoryField: string | null =
+    (regionField !== null && regionField !== entityField && !temporalFields.includes(regionField))
+      ? regionField
+      : dimensionFields.find(f => f !== entityField && !temporalFields.includes(f)) ?? null;
+
+  const categoryCardinality = categoryField
+    ? new Set(rows.map(r => r[categoryField]).filter(v => !isNullValue(v)).map(String)).size
+    : 0;
+
+  // ── 阶段 12：组装 traits ──
   const traits: DatasetTraitsV2 = {
     dimensionFields,
     primaryDimensionField,
@@ -794,7 +806,7 @@ export function analyzeDatasetV2(
     entityFieldCount: entityField ? 1 : 0,
     numericFieldCount: numericFields.length,
     rowCount: rows.length,
-    categoryCardinality: dimensionCardinality,
+    categoryCardinality,
     entityCount: entityOccurrence.entityCount,
     timePointCount,
     maxEntityOccurrence: entityOccurrence.maxOccur,
@@ -812,7 +824,7 @@ export function analyzeDatasetV2(
     heterogeneousEvidence: heteroResult.evidence,
   };
 
-  // ── 阶段 12：archetype ──
+  // ── 阶段 13：archetype ──
   const archetype = determineArchetype(
     columns, rows, traits, entityField, measureFields, dimensionFields, temporalFields,
   );

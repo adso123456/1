@@ -401,6 +401,67 @@ test('all-null column excluded from dimensionFields', () => {
 });
 
 // ============================================================
+// 补充测试 5：multiSeriesEligible 收紧 —— 无 measure 时必须 false
+// ============================================================
+test('multi-entity + temporal + no measure → multiSeriesEligible=false', () => {
+  const p = profileInline(
+    ['station_name', 'month'],
+    [
+      { station_name: '站点A', month: '1月' },
+      { station_name: '站点A', month: '2月' },
+      { station_name: '站点B', month: '1月' },
+      { station_name: '站点B', month: '2月' },
+    ],
+  );
+  // 数据有实体+时间，但无 measure
+  assertEqual(p.archetype, 'multi_entity_temporal');
+  assertEqual(p.traits.multiSeriesEligible, false);
+});
+
+// ============================================================
+// 补充测试 6：entity 与普通分类共存 → 两个基数不同
+// ============================================================
+test('entity + category coexisting → dimensionCardinality ≠ categoryCardinality', () => {
+  const p = profileInline(
+    ['station_name', 'region', 'value'],
+    [
+      { station_name: '站点A', region: '城北', value: 10 },
+      { station_name: '站点B', region: '城北', value: 20 },
+      { station_name: '站点C', region: '城南', value: 30 },
+    ],
+  );
+  // dimensionCardinality 基于 primaryDimensionField（entityField=station_name）= 3
+  assertEqual(p.traits.dimensionCardinality, 3);
+  assertEqual(p.entityField, 'station_name');
+  // categoryCardinality 基于 region（regionField），排除 entityField = 2
+  assertEqual(p.traits.categoryCardinality, 2);
+  // 两者应不同
+  assertOk(p.traits.dimensionCardinality !== p.traits.categoryCardinality,
+    `dimCard=${p.traits.dimensionCardinality}, catCard=${p.traits.categoryCardinality} should differ`);
+});
+
+// ============================================================
+// 补充测试 7：仅 entity + temporal，无普通分类 → categoryCardinality=0
+// ============================================================
+test('only entity + temporal, no category → categoryCardinality=0', () => {
+  const p = profileInline(
+    ['station_name', 'month', 'value'],
+    [
+      { station_name: '站点A', month: '1月', value: 10 },
+      { station_name: '站点A', month: '2月', value: 12 },
+      { station_name: '站点B', month: '1月', value: 8 },
+    ],
+  );
+  // entityField + temporalField 都在 dimensionFields 中，但都被排除
+  assertEqual(p.entityField, 'station_name');
+  assertOk(p.traits.temporalFieldCount >= 1);
+  // 没有普通的分类维度
+  assertEqual(p.traits.categoryCardinality, 0);
+  // dimensionCardinality 可以大于 0
+  assertOk(p.traits.dimensionCardinality > 0);
+});
+
+// ============================================================
 // 结果汇总
 // ============================================================
 console.log(`\n${'='.repeat(60)}`);
