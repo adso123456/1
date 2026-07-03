@@ -144,12 +144,12 @@ test('boxplot_grouped_distribution transform is boxplot_summary', () => {
 // 5. renderer 门槛正确性
 // ============================================================
 
-test('bar_categorical_aggregated renderer gate is group_by_sum: false', () => {
+test('bar_categorical_aggregated renderer gate is group_by_sum: true', () => {
   const v = allVariants().find(x => x.id === 'bar_categorical_aggregated');
   assertOk(v !== undefined);
   const req = v!.rendererRequirements.find(r => r.capability === 'group_by_sum');
   assertOk(req !== undefined, 'should have group_by_sum renderer requirement');
-  assertEqual(req!.currentlySupported, false);
+  assertEqual(req!.currentlySupported, true);
 });
 
 test('line_temporal_trend_multi renderer gate is multi_series_line: false', () => {

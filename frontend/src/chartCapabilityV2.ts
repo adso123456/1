@@ -199,7 +199,7 @@ export const PILOT_CAPABILITIES_V2 = [
           {
             capability: 'group_by_sum',
             description: '按 xField 分组对 yField 执行 SUM 聚合',
-            currentlySupported: false,
+            currentlySupported: true,
           },
         ],
         unsupportedReasonCode: 'bar_needs_aggregation',
