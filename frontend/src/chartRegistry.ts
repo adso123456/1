@@ -9,6 +9,7 @@ import {
   findRegionField,
   countEntityOccurrences,
   isSummable,
+  resolveCoreChartPlans,
 } from './chartSemantics';
 import { formatColumnLabel, formatCellValue } from './utils/tableFormatting';
 
@@ -108,10 +109,6 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   const bestCategoryX = (specX && categoricalCols.includes(specX))
     ? specX
     : (categoricalCols.find(c => c !== bestNum1) ?? columns.find(c => c !== bestNum1) ?? null);
-  // 有序横轴候选：仅真实时间/顺序维度（字符串日期/月份/季度 + 数字年份），
-  // 排除 COD/BOD/温度/浓度/金额等普通数值指标。
-  const temporalCols = columns.filter(c => isTemporalField(rows, c) && c !== bestNum1);
-  const bestOrderedX = (specX && temporalCols.includes(specX)) ? specX : (temporalCols[0] ?? null);
   const bestNum2 = specY1 && numericCols.includes(specY1) ? specY1 : (numericCols[1] ?? null);
   const bestNum3 = numericCols[2] ?? null;
   const bestVal = specVal ?? bestNum1;
@@ -122,6 +119,12 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
 
   // 饼图/环形图 兼容性：仅需非负（分类数量不再作为限制，仅影响可读性）
   const hasNegativeY1 = bestNum1 ? rows.some(r => (toNumber(r[bestNum1]) ?? 0) < 0) : true;
+
+  // ── 核心图表语义计划（bar/horizontal_bar/line/area） ──
+  const corePlanMap = new Map(
+    resolveCoreChartPlans(columns, rows, spec)
+      .map(plan => [plan.type, plan]),
+  );
 
   /** 构造测试 spec（继承原 spec.title） */
   function buildSpec(type: RenderableChartType, overrides: Partial<ChartSpec>): ChartSpec {
@@ -159,95 +162,22 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
 
   for (const type of RENDERABLE_TYPES) {
     switch (type) {
-      // ── 柱状图 / 横向柱状图：类别 xField + 数值 yField ──
-      // 横截面对比数据（多实体各一条记录）时，优先使用实体字段作为分类轴
+      // ── 柱状图 / 横向柱状图 / 折线图 / 面积图：语义计划统一驱动 ──
       case 'bar':
-      case 'horizontal_bar': {
-        const entityField = findEntityNameField(columns, rows);
-        let barX = bestCategoryX;
-        if (entityField && entityField !== bestNum1) {
-          const { entityCount, maxOccur } = countEntityOccurrences(rows, entityField);
-          if (entityCount > 1 && maxOccur === 1) {
-            // 多个对象的一次性横截面对比：用实体名称作横轴，不把时间当作分类轴
-            barX = entityField;
-          }
-        }
-        if (!barX || !bestNum1) {
-          items.push(avail(type, null, '需要分类列和数值列'));
-        } else if (!isNumericField(rows, bestNum1)) {
-          items.push(avail(type, null, '数值列必须为数字类型'));
-        } else {
-          const s = check(type, { xField: barX, yFields: [bestNum1] });
-          items.push(avail(type, s, '该数据类型暂不支持该图表'));
-        }
-        break;
-      }
-
-      // ── 折线图：按数据形态选择横轴（横截面对比 / 单对象趋势 / 多对象时间序列） ──
-      case 'line': {
-        if (!bestNum1) {
-          items.push(avail(type, null, '需要横轴和数值列'));
-          break;
-        }
-        if (!isNumericField(rows, bestNum1)) {
-          items.push(avail(type, null, '数值列必须为数字类型'));
-          break;
-        }
-
-        const entityField = findEntityNameField(columns, rows);
-        let lineX: string | null = null;
-        let reason = '';
-
-        if (entityField) {
-          const { entityCount, maxOccur } = countEntityOccurrences(rows, entityField);
-          if (entityCount > 1 && maxOccur === 1) {
-            // A 横截面对比：每个对象仅一条记录，用对象名称作横轴，不连成时间趋势
-            lineX = entityField;
-          } else if (entityCount > 1 && maxOccur > 1 && bestOrderedX) {
-            // C 多对象时间序列：当前单系列折线会把不同对象错误连成一条线
-            reason = '多对象时间序列需要分系列展示';
-          } else if (entityCount <= 1 && bestOrderedX) {
-            // B 单对象趋势：用时间作横轴
-            lineX = bestOrderedX;
-          } else {
-            // D 无时间字段（或对象无重复但无时间）：显式切换时回退到对象字段
-            lineX = entityField;
-          }
-        } else if (bestOrderedX) {
-          // B 无对象字段的单序列时间趋势
-          lineX = bestOrderedX;
-        } else {
-          // D 无对象无时间：回退分类列（显式切换允许）
-          lineX = bestCategoryX;
-        }
-
-        if (reason) {
-          items.push(avail(type, null, reason));
-          break;
-        }
-        if (!lineX) {
-          items.push(avail(type, null, '需要横轴和数值列'));
-          break;
-        }
-        // 防御：横轴不得与数值指标相同（正常规则下不应触发，但必须保留）
-        if (lineX === bestNum1) {
-          items.push(avail(type, null, '横轴不能与数值指标相同'));
-          break;
-        }
-        const s = check(type, { xField: lineX, yFields: [bestNum1] }, { explicitType: true });
-        items.push(avail(type, s, '该数据类型暂不支持该图表'));
-        break;
-      }
-
-      // ── 面积图：单序列真实时间趋势结构校验（时间维度 + 去重时间点 + 实体数量限制）──
+      case 'horizontal_bar':
+      case 'line':
       case 'area': {
-        const areaCheck = validateAreaStructure(columns, rows, bestOrderedX, bestNum1);
-        if (!areaCheck.supported) {
-          items.push(avail(type, null, areaCheck.reason));
-        } else {
-          const s = check(type, { xField: bestOrderedX!, yFields: [bestNum1!] });
-          items.push(avail(type, s, '该数据类型暂不支持该图表'));
+        const plan = corePlanMap.get(type);
+        if (!plan || plan.suitability === 'unsupported' || plan.spec === null) {
+          items.push(avail(type, null, plan?.reason || '该数据类型暂不支持该图表'));
+          break;
         }
+        const checked = check(
+          type,
+          plan.spec,
+          { explicitType: plan.suitability === 'allowed_explicit' },
+        );
+        items.push(avail(type, checked, '该数据结构无法生成此图表'));
         break;
       }
 
