@@ -668,6 +668,8 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
   const regionField = findRegionField(chart.columns, chart.rows);
   const xIsTemporal = isTemporalField(chart.rows, xField);
   const xIsEntity = mode === 'line' && xField === entityField;
+  // 分类折线图（横轴为对象名称等非时间字段）：需强制显示所有标签
+  const isCategoricalLine = mode === 'line' && !xIsTemporal;
   // 非横轴的时间字段：横轴为对象/分类时，tooltip 用它显示监测日期
   const dateField = (mode === 'line' && !xIsTemporal)
     ? (chart.columns.find(c => isTemporalField(chart.rows, c) && c !== xField && c !== yField) ?? null)
@@ -768,7 +770,14 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
             return `${yLabel}<br/>${p.name}：${p.value}`;
           },
     },
-    grid: { bottom: horizontal ? 40 : 80, top: 50, left: horizontal ? 120 : 50, right: 24 },
+    grid: {
+      bottom: horizontal ? 40
+        : (isCategoricalLine && barNeedsRotate) ? 120
+        : 80,
+      top: 50,
+      left: horizontal ? 120 : 50,
+      right: 24,
+    },
     xAxis: horizontal
       ? { type: 'value', name: yLabel }
       : (
@@ -788,7 +797,22 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
               type: 'category',
               data: labels,
               name: xLabel,
-              axisLabel: { rotate: labels.length > 6 ? 45 : 0, fontSize: 11, overflow: 'truncate', width: barLabelWidth },
+              ...(isCategoricalLine ? {
+                axisLabel: {
+                  interval: 0,
+                  rotate: barNeedsRotate ? 45 : 0,
+                  fontSize: 11,
+                  overflow: 'truncate',
+                  width: barLabelWidth,
+                },
+              } : {
+                axisLabel: {
+                  rotate: labels.length > 6 ? 45 : 0,
+                  fontSize: 11,
+                  overflow: 'truncate',
+                  width: barLabelWidth,
+                },
+              }),
             }
       ),
     yAxis: horizontal
