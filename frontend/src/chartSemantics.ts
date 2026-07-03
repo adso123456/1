@@ -531,7 +531,7 @@ export function resolveCoreChartPlans(
   const profile = analyzeDataset(columns, rows);
   const { shape, entityField, regionField, categoricalFields, temporalFields, measureFields } = profile;
 
-  /** 构造 ChartSpec（字段缺失时返回 null） */
+  /** 构造 ChartSpec（字段缺失时返回 null，title 从 preferredSpec 继承） */
   function makeSpec(
     type: RenderableChartType,
     xField: string | null,
@@ -540,6 +540,7 @@ export function resolveCoreChartPlans(
     if (!xField || !yField) return null;
     return {
       type,
+      title: preferredSpec?.title,
       xField,
       yFields: [yField],
       seriesField: null,
@@ -568,7 +569,8 @@ export function resolveCoreChartPlans(
     return columns.includes(py) && measureFields.includes(py) ? py : defaultY;
   }
 
-  /** 快捷构造 ChartPlan */
+  /** 快捷构造 ChartPlan。
+   *  不变量：非 unsupported 计划必须有有效 spec，否则自动降级为 unsupported。 */
   function plan(
     type: RenderableChartType,
     suitability: ChartSuitability,
@@ -579,12 +581,24 @@ export function resolveCoreChartPlans(
     semanticMode: ChartSemanticMode,
     aggregation: AggregationMode,
   ): ChartPlan {
+    const spec = suitability !== 'unsupported' ? makeSpec(type, xField, yField) : null;
+    if (suitability !== 'unsupported' && spec === null) {
+      return {
+        type,
+        suitability: 'unsupported',
+        reasonCode: 'invalid_plan_fields',
+        reason: '缺少生成图表所需的有效字段',
+        spec: null,
+        semanticMode,
+        aggregation,
+      };
+    }
     return {
       type,
       suitability,
       reasonCode,
       reason,
-      spec: suitability !== 'unsupported' ? makeSpec(type, xField, yField) : null,
+      spec,
       semanticMode,
       aggregation,
     };
@@ -602,7 +616,7 @@ export function resolveCoreChartPlans(
       const y = resolveYField(cmpY);
       for (const t of TYPES) {
         if (t === 'bar' || t === 'horizontal_bar') {
-          plans.push(plan(t, 'recommended', 'cross_section', '横截面对比数据，适合柱状图展示各实体指标', cmpX, y, 'comparison', 'sum'));
+          plans.push(plan(t, 'recommended', 'cross_section', '横截面对比数据，适合柱状图展示各实体指标', cmpX, y, 'comparison', 'none'));
         } else {
           plans.push(plan(t, 'unsupported', 'cross_section_no_trend', '横截面对比数据不适合折线图或面积图', null, null, 'comparison', 'none'));
         }
@@ -620,9 +634,9 @@ export function resolveCoreChartPlans(
         } else if (t === 'area') {
           plans.push(plan(t, 'allowed_explicit', 'single_entity_trend_area', '单对象时间序列也可用面积图，需用户显式选择', trendX, y, 'trend', 'none'));
         } else if (t === 'bar') {
-          plans.push(plan(t, 'allowed_explicit', 'trend_secondary', '时间序列也可用柱状图，但折线图更直观', trendX, y, 'comparison', 'none'));
+          plans.push(plan(t, 'allowed_explicit', 'trend_secondary', '时间序列也可用柱状图，但折线图更直观', trendX, y, 'trend', 'none'));
         } else {
-          plans.push(plan(t, 'unsupported', 'trend_no_horizontal', '时间序列不适合横向柱状图', null, null, 'comparison', 'none'));
+          plans.push(plan(t, 'unsupported', 'trend_no_horizontal', '时间序列不适合横向柱状图', null, null, 'trend', 'none'));
         }
       }
       break;
@@ -636,17 +650,26 @@ export function resolveCoreChartPlans(
       break;
     }
 
-    // ── 空数据 / 单值 / 关系型：四种图表均不支持 ──
-    case 'empty':
-    case 'single_value':
-    case 'relationship': {
-      const reasonMap: Record<string, string> = {
-        empty: '数据集为空',
-        single_value: '单值数据，不适合此类图表',
-        relationship: '关系型数据，不适合此类图表',
-      };
+    // ── 空数据：四种图表均不支持 ──
+    case 'empty': {
       for (const t of TYPES) {
-        plans.push(plan(t, 'unsupported', shape, reasonMap[shape], null, null, 'comparison', 'none'));
+        plans.push(plan(t, 'unsupported', 'empty', '数据集为空', null, null, 'comparison', 'none'));
+      }
+      break;
+    }
+
+    // ── 单值：四种图表均不支持 ──
+    case 'single_value': {
+      for (const t of TYPES) {
+        plans.push(plan(t, 'unsupported', 'single_value', '单值数据，不适合此类图表', null, null, 'kpi', 'none'));
+      }
+      break;
+    }
+
+    // ── 关系型：四种图表均不支持 ──
+    case 'relationship': {
+      for (const t of TYPES) {
+        plans.push(plan(t, 'unsupported', 'relationship', '关系型数据，不适合此类图表', null, null, 'relationship', 'none'));
       }
       break;
     }
