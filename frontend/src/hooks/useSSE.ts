@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { SSEEvent, ChatMessage, SessionMeta, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
 import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability, buildChartOption, normalizeChartSpec, CHART_TYPE_LABELS } from '../chartRegistry';
+import { prepareChartV2 } from '../chartPipelineV2';
 
 /* ======== 本地会话持久化（localStorage） ======== */
 
@@ -829,25 +830,47 @@ export function useSSE() {
                         )
                       );
                     }
-                  } else if (!ct && isChartWorthy(columns, rows)) {
-                    // 模型没标注但数据适合出图 → 自动推断柱状图
-                    const fallbackChart: ChartData = {
-                      id: `${assistantMsgId}-chart-0`,
+                  } else if (!ct) {
+                    // V2 Pipeline：自动推荐图表（替代 isChartWorthy + fallbackSpecFromColumns）
+                    const v2Result = prepareChartV2({
                       columns,
                       rows,
-                      spec: fallbackSpecFromColumns('bar', columns),
+                      source: 'auto',
+                      intent: 'auto',
+                      id: `${assistantMsgId}-chart-0`,
                       title: '数据可视化',
                       dataVersion: dataVersionRef.current,
-                    };
-                    const newCharts = [fallbackChart];
-                    if (!chartsSignatureEqual(
-                      messages.find(m => m.id === assistantMsgId)?.charts ?? [],
-                      newCharts
-                    )) {
+                    });
+
+                    if (v2Result.ok && v2Result.chart) {
+                      // V2 成功 → 使用完整 ChartData（含 transform 后的 columns/rows/spec）
+                      const nextCharts = [v2Result.chart];
+                      setMessages(prev =>
+                        prev.map(m => {
+                          if (m.id !== assistantMsgId) return m;
+                          if (chartsSignatureEqual(m.charts, nextCharts)) {
+                            // 图表签名未变，但仍需更新 text 和 dataframes
+                            return { ...m, text: finalText, dataframes: [...dataframes] };
+                          }
+                          return { ...m, text: finalText, charts: nextCharts, dataframes: [...dataframes] };
+                        })
+                      );
+                    } else if (v2Result.errorCode === 'no_default_plan') {
+                      // Planner 判断不应生成图表 → 明确清空 charts
                       setMessages(prev =>
                         prev.map(m =>
                           m.id === assistantMsgId
-                            ? { ...m, text: finalText, charts: newCharts, dataframes: [...dataframes] }
+                            ? { ...m, text: finalText, charts: [], dataframes: [...dataframes] }
+                            : m
+                        )
+                      );
+                    } else {
+                      // 其他 Pipeline 错误 → 记录 warning，清空 charts
+                      console.warn(`[useSSE] V2 pipeline error: ${v2Result.errorCode}`);
+                      setMessages(prev =>
+                        prev.map(m =>
+                          m.id === assistantMsgId
+                            ? { ...m, text: finalText, charts: [], dataframes: [...dataframes] }
                             : m
                         )
                       );
