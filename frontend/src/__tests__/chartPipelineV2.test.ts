@@ -317,12 +317,13 @@ test('auto with no recommended → no_default_plan', () => {
 });
 
 // ============================================================
-// 9. Renderer 拒绝 → renderer_rejected_plan
+// 9. 分类折线图：Planner 已审批，Renderer 不再否决
 // ============================================================
 
-test('categorical line: renderer rejects non-explicit categorical line', () => {
+test('categorical line: V2 Planner allows it, Pipeline must succeed', () => {
   // CATEGORICAL_DATA + user selects line → planner picks line_categorical_comparison
-  // but buildAxisChart in line mode requires explicitType or temporal xField
+  // resolvedSuitability='allowed_explicit' → Planner 已明确允许
+  // Pipeline 以 explicitType:true 调用 Renderer → Renderer 不再否决
   const input: PrepareChartInputV2 = {
     columns: CATEGORICAL_DATA.columns,
     rows: CATEGORICAL_DATA.rows,
@@ -336,13 +337,14 @@ test('categorical line: renderer rejects non-explicit categorical line', () => {
 
   const result = prepareChartV2(input);
 
-  // selectedPlan 存在但 renderer 拒绝
   assertOk(result.selectedPlan !== null, 'should have selected plan');
   assertEqual(result.selectedPlan!.variantId, 'line_categorical_comparison');
+  assertEqual(result.selectedPlan!.resolvedSuitability, 'allowed_explicit');
   assertOk(result.transformResult!.ok, 'transform should succeed');
-  assertEqual(result.ok, false);
-  assertEqual(result.errorCode, 'renderer_rejected_plan');
-  assertEqual(result.chart, null);
+  assertEqual(result.ok, true);
+  assertEqual(result.errorCode, null);
+  assertEqual(result.chart!.spec.type, 'line');
+  assertOk(result.chart !== null, 'renderer should accept the plan');
 });
 
 // ============================================================
@@ -432,6 +434,29 @@ test('ChartData does not mix raw rows with transformed spec', () => {
     'chart.rows should reference transformResult.rows',
   );
 });
+
+// ============================================================
+// 防御分支说明
+// ============================================================
+//
+// 以下错误码在当前 pilot 无法通过公开输入真实触发，但保留在生产代码中：
+//
+//   selected_plan_missing_spec
+//     → 仅在 defaultPlan.spec===null 时触发。当前 Planner 在 spec===null
+//       时 resolvedSuitability 为 'unsupported'，不会被选为 defaultPlan。
+//       待后续支持"无 spec 但有语义标记"的 capability 时可测试。
+//
+//   transform_failed_<code>
+//     → 当前 pilot transform（none/group_by_sum）对于 Planner 输出的 spec
+//       不会失败：none 始终成功，group_by_sum 的输入已通过 trait 校验。
+//       待后续引入可能失败的 transform（如 boxplot_summary 样本不足）时可测试。
+//
+//   renderer_rejected_plan
+//     → Pipeline 以 explicitType:true 调用 Renderer，跳过旧推荐逻辑的二次判断。
+//       当前 pilot 的 bar/line 输出结构均与 buildAxisChart 兼容。
+//       待后续引入新 renderer（如预计算 boxplot）或 schema 不兼容的输出时可测试。
+//
+// 以上分支不得通过类型断言、伪造 Planner 结果或修改生产接口制造覆盖。
 
 // ============================================================
 // 结果汇总

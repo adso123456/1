@@ -141,7 +141,8 @@ export function prepareChartV2(
   };
 
   // ── 6. Renderer 验证 ──
-  const option = buildChartOption(chart);
+  // explicitType: true — 该 spec 已由 V2 Planner 审批通过，旧 Renderer 不得再做推荐判断
+  const option = buildChartOption({ ...chart, explicitType: true });
   if (!option) {
     return {
       ok: false,
