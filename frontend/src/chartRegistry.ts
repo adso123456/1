@@ -154,14 +154,24 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
   for (const type of RENDERABLE_TYPES) {
     switch (type) {
       // ── 柱状图 / 横向柱状图：类别 xField + 数值 yField ──
+      // 横截面对比数据（多实体各一条记录）时，优先使用实体字段作为分类轴
       case 'bar':
       case 'horizontal_bar': {
-        if (!bestCategoryX || !bestNum1) {
+        const entityField = findEntityNameField(columns, rows);
+        let barX = bestCategoryX;
+        if (entityField && entityField !== bestNum1) {
+          const { entityCount, maxOccur } = countEntityOccurrences(rows, entityField);
+          if (entityCount > 1 && maxOccur === 1) {
+            // 多个对象的一次性横截面对比：用实体名称作横轴，不把时间当作分类轴
+            barX = entityField;
+          }
+        }
+        if (!barX || !bestNum1) {
           items.push(avail(type, null, '需要分类列和数值列'));
         } else if (!isNumericField(rows, bestNum1)) {
           items.push(avail(type, null, '数值列必须为数字类型'));
         } else {
-          const s = check(type, { xField: bestCategoryX, yFields: [bestNum1] });
+          const s = check(type, { xField: barX, yFields: [bestNum1] });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
@@ -223,14 +233,13 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         break;
       }
 
-      // ── 面积图：只允许真实时间/顺序维度，不得用普通数值指标作横轴 ──
+      // ── 面积图：单序列真实时间趋势结构校验（时间维度 + 去重时间点 + 实体数量限制）──
       case 'area': {
-        if (!bestOrderedX || !bestNum1) {
-          items.push(avail(type, null, '需要有序横轴（时间/月份等）和数值列'));
-        } else if (!isNumericField(rows, bestNum1)) {
-          items.push(avail(type, null, '数值列必须为数字类型'));
+        const areaCheck = validateAreaStructure(columns, rows, bestOrderedX, bestNum1);
+        if (!areaCheck.supported) {
+          items.push(avail(type, null, areaCheck.reason));
         } else {
-          const s = check(type, { xField: bestOrderedX, yFields: [bestNum1] });
+          const s = check(type, { xField: bestOrderedX!, yFields: [bestNum1!] });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
         }
         break;
@@ -540,6 +549,65 @@ function countEntityOccurrences(rows: Row[], entityField: string): { entityCount
   return { entityCount: counts.size, maxOccur };
 }
 
+/** 面积图单序列真实时间趋势结构校验结果 */
+interface AreaStructureResult {
+  supported: boolean;
+  reason: string;
+}
+
+/** 面积图单序列真实时间趋势结构校验。
+ *  面积图仅在以下条件全部满足时才允许：
+ *  - xField 是 isTemporalField 认可的时间/顺序字段
+ *  - yField 是数值字段
+ *  - 清理空值后至少存在 2 条有效记录
+ *  - 至少存在 2 个不同的时间点
+ *  - 如果能识别到实体字段：数据中只能有 1 个不同实体，且该实体有多个不同时间点
+ *
+ *  该函数同时用于 getChartTypeAvailability 的可用性判断和 buildAxisChart 的防御性校验，
+ *  避免已有 ChartSpec 绕过下拉判断直接渲染错误面积图。 */
+function validateAreaStructure(
+  columns: string[],
+  rows: Row[],
+  xField: string | null,
+  yField: string | null,
+): AreaStructureResult {
+  if (!xField || !yField) {
+    return { supported: false, reason: '需要有序横轴（时间/月份等）和数值列' };
+  }
+  if (!isTemporalField(rows, xField)) {
+    return { supported: false, reason: '需要有序横轴（时间/月份等）和数值列' };
+  }
+  if (!isNumericField(rows, yField)) {
+    return { supported: false, reason: '数值列必须为数字类型' };
+  }
+
+  // 清理空值后的有效记录
+  const validRows = rows.filter(r => !isNullValue(r[xField]) && !isNullValue(r[yField]));
+  if (validRows.length < 2) {
+    return { supported: false, reason: '有效数据不足（至少需要 2 条记录）' };
+  }
+
+  // 至少 2 个不同的时间点（单时间点的面积图无意义）
+  const distinctTimes = new Set(validRows.map(r => String(r[xField])));
+  if (distinctTimes.size < 2) {
+    return { supported: false, reason: '至少需要 2 个不同的时间点' };
+  }
+
+  // 实体字段校验：面积图是单序列时间趋势，不能混入多个实体
+  const entityField = findEntityNameField(columns, rows);
+  if (entityField) {
+    const { entityCount } = countEntityOccurrences(validRows, entityField);
+    if (entityCount > 1) {
+      // 多个不同实体 → 单序列面积图无法区分，不支持
+      return { supported: false, reason: '多个不同对象不适合单序列面积图' };
+    }
+    // entityCount <= 1：需确认该实体确实有多个不同时间点
+    // （distinctTimes 已全局校验 ≥2，单实体时即覆盖该实体）
+  }
+
+  return { supported: true, reason: '' };
+}
+
 /** 将 xField 值转为可比较的排序键（时间→时间戳，数值→数字，有序字符串→数值，其它→字符串） */
 function xFieldSortKey(value: unknown): number | string {
   if (typeof value === 'number') return value;
@@ -582,8 +650,11 @@ function buildAxisChart(chart: ChartData, mode: 'bar' | 'horizontal_bar' | 'line
   // 防御：xField 不得与 yField 相同，避免数值指标列同时充当名称轴
   if (xField === yField) return null;
   if (!isNumericField(chart.rows, yField)) return null;
-  // area 必须为真实时间/顺序维度，不得用普通数值指标（COD/温度等）作横轴
-  if (mode === 'area' && !isTemporalField(chart.rows, xField)) return null;
+  // area 单序列真实时间趋势结构校验：时间维度 + 有效记录数 + 时间点去重 + 实体数量限制
+  if (mode === 'area') {
+    const areaCheck = validateAreaStructure(chart.columns, chart.rows, xField, yField);
+    if (!areaCheck.supported) return null;
+  }
   // 显式指定折线图时允许分类字段作为 category X 轴，非显式仍要求真实时间维度
   if (mode === 'line' && !chart.explicitType && !isTemporalField(chart.rows, xField)) return null;
 
