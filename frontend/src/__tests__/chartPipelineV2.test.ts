@@ -684,6 +684,119 @@ test('successful ChartData has explicitType=true (preserve V2 selection)', () =>
 });
 
 // ============================================================
+// 13b. V2 Pipeline 产出的 ChartData 携带 v2Meta（B-8B）
+// ============================================================
+
+test('B-8B: prepareChartV2 success → chart.v2Meta populated', () => {
+  const input: PrepareChartInputV2 = {
+    columns: CATEGORICAL_DATA.columns,
+    rows: CATEGORICAL_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-14a',
+    title: 'Test 14a',
+    dataVersion: 1,
+  };
+  const result = prepareChartV2(input);
+  assertOk(result.ok, `should succeed, got: ${result.errorCode}`);
+  const meta = result.chart!.v2Meta;
+  assertOk(meta !== undefined, 'v2Meta should be defined');
+  assertEqual(meta!.semanticMode, 'comparison');
+  assertEqual(meta!.transform, 'none');
+  assertEqual(meta!.archetype, 'categorical_series');
+  assertEqual(meta!.variantId, 'bar_categorical_comparison');
+  assertEqual(meta!.fallbackNotice, null);
+  assertEqual(meta!.noChartReason, null);
+});
+
+test('B-8B: prepareChartV2All success → chart.v2Meta populated', () => {
+  const input: PrepareChartInputV2 = {
+    columns: ['rainfall', 'runoff'] as string[],
+    rows: Array.from({ length: 10 }, (_, i) => ({ rainfall: 10 + i, runoff: 2 + i })),
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-14b',
+    title: 'Test 14b',
+    dataVersion: 1,
+  };
+  const result = prepareChartV2All(input);
+  assertOk(result.ok, `should succeed, got: ${result.errorCode}`);
+  const meta = result.chart!.v2Meta;
+  assertOk(meta !== undefined, 'v2Meta should be defined');
+  assertEqual(meta!.semanticMode, 'relationship');
+  assertEqual(meta!.transform, 'none');
+  assertEqual(meta!.archetype, 'numeric_relationship');
+  assertEqual(meta!.variantId, 'scatter_numeric_relationship');
+});
+
+test('B-8B: prepareChartV2All boxplot → v2Meta reflects boxplot_summary', () => {
+  const input: PrepareChartInputV2 = {
+    columns: ['station', 'ph_value'],
+    rows: [
+      { station: '站点A', ph_value: 7.2 },
+      { station: '站点A', ph_value: 7.5 },
+      { station: '站点A', ph_value: 6.8 },
+      { station: '站点B', ph_value: 8.1 },
+      { station: '站点B', ph_value: 7.9 },
+      { station: '站点B', ph_value: 7.4 },
+    ] as Row[],
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'boxplot',
+    id: 'test-14c',
+    title: 'Test 14c',
+    dataVersion: 1,
+  };
+  const result = prepareChartV2All(input);
+  assertOk(result.ok, `should succeed: ${result.errorCode}`);
+  const meta = result.chart!.v2Meta;
+  assertOk(meta !== undefined, 'v2Meta should be defined');
+  assertEqual(meta!.semanticMode, 'distribution');
+  assertEqual(meta!.transform, 'boxplot_summary');
+  assertEqual(meta!.variantId, 'boxplot_grouped_distribution');
+});
+
+test('B-8B: prepareChartV2All heatmap → v2Meta reflects matrix_aggregate', () => {
+  const input: PrepareChartInputV2 = {
+    columns: ['region', 'month', 'avg_temp'],
+    rows: [
+      { region: '城北', month: '1月', avg_temp: 5.2 },
+      { region: '城南', month: '1月', avg_temp: 6.0 },
+      { region: '城北', month: '2月', avg_temp: 7.1 },
+      { region: '城南', month: '2月', avg_temp: 8.3 },
+    ] as Row[],
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'heatmap',
+    id: 'test-14d',
+    title: 'Test 14d',
+    dataVersion: 1,
+  };
+  const result = prepareChartV2All(input);
+  assertOk(result.ok, `should succeed: ${result.errorCode}`);
+  const meta = result.chart!.v2Meta;
+  assertOk(meta !== undefined, 'v2Meta should be defined');
+  assertEqual(meta!.semanticMode, 'distribution');
+  assertEqual(meta!.transform, 'matrix_aggregate');
+});
+
+test('B-8B: failed pipeline → no chart, no v2Meta needed', () => {
+  const input: PrepareChartInputV2 = {
+    columns: ['total'] as string[],
+    rows: [{ total: 100 }] as Row[],
+    source: 'auto',
+    intent: 'distribution',
+    id: 'test-14e',
+    title: 'Test 14e',
+    dataVersion: 1,
+  };
+  const result = prepareChartV2(input);
+  assertEqual(result.ok, false);
+  assertEqual(result.chart, null);
+  // 失败时 chart 为 null，v2Meta 本就不应有
+});
+
+// ============================================================
 // 防御分支说明
 // ============================================================
 //

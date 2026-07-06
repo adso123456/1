@@ -105,6 +105,24 @@ export interface ChartData {
   explicitType?: boolean;
   /** 仅图表模式（追加图表）：隐藏工具栏，固定使用 spec.type */
   chartOnly?: boolean;
+  /** V2 Pipeline 元数据（仅 V2 路径填充，旧路径为 undefined） */
+  v2Meta?: ChartMetaV2;
+}
+
+/** V2 Pipeline 产出的图表元数据 */
+export interface ChartMetaV2 {
+  /** 语义模式：comparison / trend / relationship / distribution / kpi 等 */
+  semanticMode: string;
+  /** 应用的 transform：none / group_by_sum / boxplot_summary / matrix_aggregate */
+  transform: string;
+  /** 数据集形态 */
+  archetype: string;
+  /** variant ID（调试追踪用） */
+  variantId: string;
+  /** 回退提示（user 请求类型不可用时的说明） */
+  fallbackNotice?: string | null;
+  /** 不出图原因（auto 无 defaultPlan 时） */
+  noChartReason?: string | null;
 }
 
 /** 会话元数据 */

@@ -143,6 +143,14 @@ export function prepareChartV2(
     // explicitType: true — V2 Planner 已审批该 spec，进入 ChartView 后应保留 V2 选择，
     // 阻止旧 pickDefault() 用 getChartTypeAvailability() 二次推荐覆盖
     explicitType: true,
+    v2Meta: {
+      semanticMode: selectedPlan.semanticMode,
+      transform: selectedPlan.transform,
+      archetype: planning.profile.archetype,
+      variantId: selectedPlan.variantId,
+      fallbackNotice: planning.fallbackNotice,
+      noChartReason: planning.noChartReason,
+    },
   };
 
   // ── 6. Renderer 验证 ──
@@ -251,6 +259,14 @@ export function prepareChartV2All(
     rows: transformResult.rows,
     spec: transformResult.spec,
     explicitType: true,
+    v2Meta: {
+      semanticMode: selectedPlan.semanticMode,
+      transform: selectedPlan.transform,
+      archetype: planning.profile.archetype,
+      variantId: selectedPlan.variantId,
+      fallbackNotice: planning.fallbackNotice,
+      noChartReason: planning.noChartReason,
+    },
   };
 
   // ── 6. Renderer 验证 ──

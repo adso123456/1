@@ -110,6 +110,205 @@ function buildModel(
   };
 }
 
+/* ---- V2 语义描述 ---- */
+
+/**
+ * V2 路径的图表描述生成。
+ * 根据 v2Meta.semanticMode / transform / archetype 组合选择文案，
+ * 对旧代码 return null 的类型补全描述。
+ */
+function generateV2Description(
+  chart: ChartData,
+  renderedType: RenderableChartType,
+  xField: string | null,
+  yFields: string[],
+  valueField: string | null,
+): string | null {
+  const { rows, spec, v2Meta } = chart;
+  const meta = v2Meta!;
+
+  switch (renderedType) {
+
+    // ── 复用旧描述逻辑的类型（bar / horizontal_bar / line / area / pie / donut / combo）──
+    case 'bar':
+    case 'horizontal_bar': {
+      if (!xField) return null;
+      const y1 = yFields[0] ?? null;
+      if (!y1) return null;
+      const m = buildModel(rows, xField, y1, true);
+      if (!m) return null;
+      const body = buildCategoryDescription(m, m.summable);
+      if (!body) return null;
+      // group_by_sum 时追加聚合说明
+      if (meta.transform === 'group_by_sum') {
+        return body + `已按${m.dim}对${m.metric}进行求和聚合。` + interactionHint(m);
+      }
+      return body + interactionHint(m);
+    }
+
+    case 'pie':
+    case 'donut': {
+      if (!xField) return null;
+      const y1 = yFields[0] ?? null;
+      if (!y1) return null;
+      const m = buildModel(rows, xField, y1, false);
+      if (!m) return null;
+      const mProportion = { ...m, summable: true, hasNegative: false };
+      const body = buildCategoryDescription(mProportion, true);
+      return body ? body + interactionHint(mProportion) : null;
+    }
+
+    case 'line':
+    case 'area': {
+      if (!xField) return null;
+      const y1 = yFields[0] ?? null;
+      if (!y1) return null;
+      const m = buildModel(rows, xField, y1, true);
+      if (!m) return null;
+
+      const parts: string[] = [];
+      if (m.summable) {
+        parts.push(`共${m.count}个${m.dim}，${m.metric}合计${num(m.total)}，均值${num(m.average)}。`);
+      } else {
+        parts.push(`共${m.count}个${m.dim}，${m.metric}均值${num(m.average)}。`);
+      }
+      parts.push(`最高为${m.maxItem.name}（${num(m.maxItem.value)}），最低为${m.minItem.name}（${num(m.minItem.value)}）。`);
+
+      if (m.ordered && rows.length >= 2) {
+        const rawFirst = toNum(rows[0][y1]);
+        const rawLast = toNum(rows[rows.length - 1][y1]);
+        if (rawFirst !== null && rawLast !== null && rawFirst > 0 && rawLast > 0) {
+          const changePct = Math.abs(((rawLast - rawFirst) / rawFirst) * 100).toFixed(1);
+          if (rawLast > rawFirst * 1.05) {
+            parts.push(`末值（${num(rawLast)}）较初值（${num(rawFirst)}）增加${changePct}%。`);
+          } else if (rawLast < rawFirst * 0.95) {
+            parts.push(`末值（${num(rawLast)}）较初值（${num(rawFirst)}）减少${changePct}%。`);
+          } else {
+            parts.push('首尾变化较小。');
+          }
+        }
+      }
+
+      if (m.summable && m.maxMinRatio) {
+        parts.push(`${m.maxItem.name}约为${m.minItem.name}的${m.maxMinRatio}。`);
+      }
+
+      parts.push(interactionHint(m));
+      return parts.join('');
+    }
+
+    case 'combo': {
+      if (!xField) return null;
+      const y1 = yFields[0] ?? null;
+      const y2 = yFields[1] ?? null;
+      if (!y1 || !y2) return null;
+      const m1 = buildModel(rows, xField, y1, true);
+      if (!m1) return null;
+      const barLabel = displayField(y1);
+      const lineLabel = displayField(y2);
+      let maxCat2 = '';
+      let maxVal2 = -Infinity;
+      for (const r of rows) {
+        const v = toNum(r[y2]);
+        if (v !== null && v > maxVal2) { maxVal2 = v; maxCat2 = String(r[xField!] ?? ''); }
+      }
+      const parts = [
+        `${barLabel}以柱状图、${lineLabel}以折线图展示，共${m1.count}个${m1.dim}。`,
+      ];
+      if (m1.summable) {
+        parts.push(`${barLabel}合计${num(m1.total)}，${m1.maxItem.name}最高（${num(m1.maxItem.value)}）。`);
+      } else {
+        parts.push(`${barLabel}最高为${m1.maxItem.name}（${num(m1.maxItem.value)}）。`);
+      }
+      if (maxCat2) {
+        parts.push(`${lineLabel}最高为${maxCat2}（${num(maxVal2)}）。`);
+      }
+      parts.push(comboInteractionHint());
+      return parts.join('');
+    }
+
+    // ── V2 新增类型：旧代码 return null，现补全描述 ──
+
+    case 'gauge': {
+      const vf = valueField ?? yFields[0] ?? null;
+      if (!vf) return null;
+      const firstRow = rows[0];
+      if (!firstRow) return null;
+      const v = toNum(firstRow[vf]);
+      if (v === null) return null;
+      const label = displayField(vf);
+      return `仪表盘展示${label}：当前值${num(v)}。`;
+    }
+
+    case 'scatter': {
+      if (!xField) return null;
+      const y1 = yFields[0] ?? null;
+      if (!y1) return null;
+      const xLabel = displayField(xField);
+      const yLabel = displayField(y1);
+      const count = rows.length;
+      return `散点图展示${xLabel}与${yLabel}的关系，共${count}个样本点。将鼠标移到点上可查看具体数值。`;
+    }
+
+    case 'bubble': {
+      if (!xField) return null;
+      const y1 = yFields[0] ?? null;
+      const sizeField = spec.sizeField ?? null;
+      if (!y1) return null;
+      const xLabel = displayField(xField);
+      const yLabel = displayField(y1);
+      const count = rows.length;
+      if (sizeField) {
+        const sLabel = displayField(sizeField);
+        return `气泡图展示${xLabel}、${yLabel}与${sLabel}的三变量关系，共${count}个样本点。气泡大小表示${sLabel}。`;
+      }
+      return `气泡图展示${xLabel}与${yLabel}的关系，共${count}个样本点。`;
+    }
+
+    case 'heatmap': {
+      if (!xField) return null;
+      const y1 = yFields[0] ?? null;
+      if (!y1) return null;
+      const vf = valueField ?? null;
+      const xLabel = displayField(xField);
+      const yLabel = displayField(y1);
+      const count = rows.length;
+      const parts: string[] = [];
+      parts.push(`热力图按${xLabel}（行）与${yLabel}（列）展示`);
+      if (vf) {
+        parts.push(`${displayField(vf)}`);
+      } else {
+        parts.push('数值');
+      }
+      parts.push(`的分布，共${count}个数据点。`);
+      if (meta.transform === 'matrix_aggregate') {
+        parts.push('已按两个维度聚合。');
+      }
+      return parts.join('');
+    }
+
+    case 'boxplot': {
+      if (!xField) return null;
+      const count = rows.length;
+      const xLabel = displayField(xField);
+      if (meta.transform === 'boxplot_summary') {
+        return `箱线图按${xLabel}分组展示五数概括（最小值、下四分位数、中位数、上四分位数、最大值），共${count}组。`;
+      }
+      return `箱线图按${xLabel}分组展示数据分布，共${count}组。`;
+    }
+
+    case 'radar': {
+      if (!xField) return null;
+      const measureCount = yFields.length;
+      const dimLabel = displayField(xField);
+      return `雷达图展示${measureCount}个指标在${dimLabel}维度的多指标剖面，共${rows.length}个数据点。`;
+    }
+
+    default:
+      return null;
+  }
+}
+
 /* ---- 说明生成 ---- */
 
 function interactionHint(m: { summable: boolean; hasNegative: boolean }): string {
@@ -159,8 +358,16 @@ export function generateChartDescription(
   const { rows, spec } = chart;
   const xField = (typeof spec.xField === 'string' && spec.xField.trim()) ? spec.xField : null;
   const yFields = getYFields(spec);
+  const valueField = (typeof spec.valueField === 'string' && spec.valueField.trim()) ? spec.valueField : null;
 
-  if (!xField || !rows.length) return null;
+  if (!rows.length) return null;
+
+  // V2 路径：在 xField 校验之前处理（gauge 等图表无 xField）
+  if (chart.v2Meta) {
+    return generateV2Description(chart, renderedType, xField, yFields, valueField);
+  }
+
+  if (!xField) return null;
 
   switch (renderedType) {
     case 'bar':
