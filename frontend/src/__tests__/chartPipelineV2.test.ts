@@ -436,6 +436,74 @@ test('ChartData does not mix raw rows with transformed spec', () => {
 });
 
 // ============================================================
+// 13. 成功 ChartData 必须设置 explicitType: true
+// ============================================================
+//
+// V2 Planner 已审批的 spec 进入 ChartView 后，应保留 V2 选择，
+// 不被旧 pickDefault() 用 getChartTypeAvailability() 二次推荐覆盖。
+// explicitType:true 使 ChartView pickDefault 分支1 生效（保留 chart.spec.type）。
+
+test('successful ChartData has explicitType=true (preserve V2 selection)', () => {
+  // 分类自动图表
+  const catInput: PrepareChartInputV2 = {
+    columns: CATEGORICAL_DATA.columns,
+    rows: CATEGORICAL_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-13a',
+    title: 'Test 13a',
+    dataVersion: 1,
+  };
+  const catResult = prepareChartV2(catInput);
+  assertOk(catResult.ok, `categorical should succeed, got: ${catResult.errorCode}`);
+  assertEqual(catResult.chart!.explicitType, true, 'categorical chart.explicitType must be true');
+
+  // 时间自动图表
+  const timeInput: PrepareChartInputV2 = {
+    columns: TEMPORAL_DATA.columns,
+    rows: TEMPORAL_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-13b',
+    title: 'Test 13b',
+    dataVersion: 1,
+  };
+  const timeResult = prepareChartV2(timeInput);
+  assertOk(timeResult.ok, `temporal should succeed, got: ${timeResult.errorCode}`);
+  assertEqual(timeResult.chart!.explicitType, true, 'temporal chart.explicitType must be true');
+
+  // 重复可加聚合图表（group_by_sum 后）
+  const aggInput: PrepareChartInputV2 = {
+    columns: DUPLICATE_ADDITIVE_DATA.columns,
+    rows: DUPLICATE_ADDITIVE_DATA.rows,
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'bar',
+    id: 'test-13c',
+    title: 'Test 13c',
+    dataVersion: 1,
+  };
+  const aggResult = prepareChartV2(aggInput);
+  assertOk(aggResult.ok, `aggregated should succeed, got: ${aggResult.errorCode}`);
+  assertEqual(aggResult.chart!.explicitType, true, 'aggregated chart.explicitType must be true');
+
+  // 用户显式请求的分类折线图
+  const lineInput: PrepareChartInputV2 = {
+    columns: CATEGORICAL_DATA.columns,
+    rows: CATEGORICAL_DATA.rows,
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'line',
+    id: 'test-13d',
+    title: 'Test 13d',
+    dataVersion: 1,
+  };
+  const lineResult = prepareChartV2(lineInput);
+  assertOk(lineResult.ok, `categorical line should succeed, got: ${lineResult.errorCode}`);
+  assertEqual(lineResult.chart!.explicitType, true, 'categorical line chart.explicitType must be true');
+});
+
+// ============================================================
 // 防御分支说明
 // ============================================================
 //

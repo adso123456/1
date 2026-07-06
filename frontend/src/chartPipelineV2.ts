@@ -138,6 +138,9 @@ export function prepareChartV2(
     columns: transformResult.columns,
     rows: transformResult.rows,
     spec: transformResult.spec,
+    // explicitType: true — V2 Planner 已审批该 spec，进入 ChartView 后应保留 V2 选择，
+    // 阻止旧 pickDefault() 用 getChartTypeAvailability() 二次推荐覆盖
+    explicitType: true,
   };
 
   // ── 6. Renderer 验证 ──
