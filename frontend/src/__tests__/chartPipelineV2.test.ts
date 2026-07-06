@@ -658,6 +658,192 @@ test('B-5B: prepareChartV2All 不改变 explicitType=true', () => {
 });
 
 // ============================================================
+// B-5C: prepareChartV2All 覆盖关键运行时数据形态
+// ============================================================
+
+const REGION_COUNT_DATA = {
+  columns: ['region', 'count'] as string[],
+  rows: [
+    { region: '城北区', count: 45 },
+    { region: '城南区', count: 32 },
+    { region: '城东区', count: 28 },
+    { region: '城西区', count: 19 },
+    { region: '中心区', count: 56 },
+  ] as Row[],
+};
+
+const MONTH_DISCHARGE_DATA = {
+  columns: ['month', 'discharge'] as string[],
+  rows: [
+    { month: '1月', discharge: 120 },
+    { month: '2月', discharge: 115 },
+    { month: '3月', discharge: 130 },
+    { month: '4月', discharge: 125 },
+    { month: '5月', discharge: 140 },
+    { month: '6月', discharge: 135 },
+  ] as Row[],
+};
+
+const MONITORING_DETAIL_DATA = {
+  columns: ['sample_id', 'sampling_point', 'ph_value', 'cod_value', 'nh3n_value'] as string[],
+  rows: [
+    { sample_id: 1, sampling_point: 'SP-A', ph_value: 7.2, cod_value: 12.0, nh3n_value: 0.5 },
+    { sample_id: 2, sampling_point: 'SP-B', ph_value: 7.8, cod_value: 18.0, nh3n_value: 0.8 },
+    { sample_id: 3, sampling_point: 'SP-A', ph_value: 7.5, cod_value: 10.0, nh3n_value: 0.4 },
+    { sample_id: 4, sampling_point: 'SP-C', ph_value: 7.0, cod_value: 8.0, nh3n_value: 0.3 },
+    { sample_id: 5, sampling_point: 'SP-B', ph_value: 8.1, cod_value: 20.0, nh3n_value: 0.9 },
+    { sample_id: 6, sampling_point: 'SP-A', ph_value: 6.8, cod_value: 15.0, nh3n_value: 0.6 },
+  ] as Row[],
+};
+
+test('B-5C: region_count → bar (V2 auto 默认柱状图)', () => {
+  const input: PrepareChartInputV2 = {
+    columns: REGION_COUNT_DATA.columns,
+    rows: REGION_COUNT_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5c-region',
+    title: 'Region Count',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'bar');
+  assertEqual(result.selectedPlan!.variantId, 'bar_categorical_comparison');
+  assertEqual(result.planning.profile.archetype, 'categorical_series');
+});
+
+test('B-5C: month_discharge → line (V2 auto 默认折线图)', () => {
+  const input: PrepareChartInputV2 = {
+    columns: MONTH_DISCHARGE_DATA.columns,
+    rows: MONTH_DISCHARGE_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5c-month',
+    title: 'Month Discharge',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'line');
+  assertEqual(result.selectedPlan!.variantId, 'line_temporal_trend_single');
+  assertEqual(result.planning.profile.archetype, 'temporal_series');
+});
+
+test('B-5C: monitoring_detail → no_default_plan (detail_rows 不自动出图)', () => {
+  const input: PrepareChartInputV2 = {
+    columns: MONITORING_DETAIL_DATA.columns,
+    rows: MONITORING_DETAIL_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5c-detail',
+    title: 'Monitoring Detail',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertEqual(result.ok, false, 'detail_rows should not produce auto chart');
+  assertEqual(result.errorCode, 'no_default_plan');
+  assertEqual(result.chart, null);
+  assertEqual(result.planning.profile.archetype, 'detail_rows');
+  // P1 修复验证：有 identifierFields(id) + 多 measure → detail_rows
+  assertOk(result.planning.profile.identifierFields.length > 0,
+    'monitoring detail should have identifier fields');
+});
+
+test('B-5C: repeated_region_count → no_default_plan (P3 修复)', () => {
+  const repeatedData = {
+    columns: ['region', 'count'] as string[],
+    rows: [
+      { region: '城北', count: 10 },
+      { region: '城北', count: 15 },
+      { region: '城南', count: 8 },
+      { region: '城南', count: 12 },
+    ] as Row[],
+  };
+
+  const input: PrepareChartInputV2 = {
+    columns: repeatedData.columns,
+    rows: repeatedData.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5c-repeated',
+    title: 'Repeated Region',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertEqual(result.ok, false, 'repeated_region_count should not produce auto chart');
+  assertEqual(result.errorCode, 'no_default_plan');
+  assertEqual(result.planning.profile.archetype, 'detail_rows');
+});
+
+test('B-5C: heterogeneous_metric_rows → no_default_plan', () => {
+  const heteroData = {
+    columns: ['metric_name', 'value'] as string[],
+    rows: [
+      { metric_name: 'BOD监测记录总数', value: 16 },
+      { metric_name: '涉及排污口数量', value: 16 },
+      { metric_name: '平均每个排污口记录数', value: 1 },
+    ] as Row[],
+  };
+
+  const input: PrepareChartInputV2 = {
+    columns: heteroData.columns,
+    rows: heteroData.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5c-hetero',
+    title: 'Hetero',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'no_default_plan');
+  assertEqual(result.planning.profile.archetype, 'heterogeneous_metric_rows');
+});
+
+test('B-5C: prepareChartV2All output has expected ChartData structure', () => {
+  // 验证成功输出的 ChartData 结构完整
+  const input: PrepareChartInputV2 = {
+    columns: REGION_COUNT_DATA.columns,
+    rows: REGION_COUNT_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5c-struct',
+    title: 'Structure Check',
+    dataVersion: 42,
+  };
+
+  const result = prepareChartV2All(input);
+  assertOk(result.ok);
+
+  const c = result.chart!;
+  assertEqual(c.id, 'test-b5c-struct');
+  assertEqual(c.title, 'Structure Check');
+  assertEqual(c.dataVersion, 42);
+  assertEqual(c.explicitType, true);
+  // columns/rows/spec 来自 transformResult（不混用原始输入）
+  assertOk(c.columns === result.transformResult!.columns);
+  assertOk(c.rows === result.transformResult!.rows);
+  assertOk(c.spec === result.transformResult!.spec);
+  // spec.type 必须为合法的 RenderableChartType
+  assertOk(
+    ['bar', 'line', 'scatter', 'bubble', 'gauge', 'pie', 'donut',
+     'area', 'horizontal_bar', 'radar', 'heatmap', 'boxplot', 'combo'].includes(c.spec.type),
+    `unexpected chart type: ${c.spec.type}`,
+  );
+});
+
+// ============================================================
 // 结果汇总
 // ============================================================
 console.log(`\n${'='.repeat(60)}`);
