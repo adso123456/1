@@ -324,6 +324,16 @@ test('fixture 11: categorical_matrix → heatmap allowed_explicit, defaultPlan=n
   assertSuitMap(r.plans, { heatmap: 'allowed_explicit' }, 'fixture 11');
   assertEqual(r.defaultPlan, null);
   assertEqual(r.noChartReason, 'no_recommended_plan_for_auto');
+  // B-7E：heatmap spec xField 与 yFields[0] 互异（dimensionFieldsAfter 跳过首个 dimension）
+  const heatmapPlan = r.plans.find(p => p.type === 'heatmap');
+  assertOk(heatmapPlan?.spec !== null, 'heatmap spec should be non-null');
+  const hx = heatmapPlan!.spec!.xField;
+  const hy = heatmapPlan!.spec!.yFields?.[0];
+  assertOk(typeof hx === 'string' && hx.length > 0, 'heatmap xField resolved');
+  assertOk(typeof hy === 'string' && hy.length > 0, 'heatmap yFields[0] resolved');
+  assertOk(hx !== hy, `heatmap xField (${hx}) must differ from yFields[0] (${hy})`);
+  // valueField 正确
+  assertEqual(heatmapPlan!.spec!.valueField, 'avg_temp', 'heatmap valueField = avg_temp');
 });
 
 // ============================================================
@@ -645,7 +655,9 @@ test('invariant: planChartsV2 default still uses PILOT (not ALL)', () => {
 //
 // ── 仍未修复（profiler/archetype/transform 阶段，后续单独处理） ──
 //
-// P2（夹具 11）✅ 已修复（B-7D）：matrix_aggregate transform 已实现，heatmap gate 已翻。
+// P2（夹具 11）✅ 已修复（B-7D / B-7E）：matrix_aggregate transform 已实现，heatmap gate 已翻。
+//    B-7E 新增 dimensionFieldsAfter 选择器，确保 heatmap xField ≠ yFields[0]，
+//    Planner 可自然产出有效 spec，无需绕过。
 //    categorical_matrix 数据 heatmap 变为 allowed_explicit（maxSuitability 限制）。
 //    auto 模式仍无 recommended（allowed_explicit ≠ recommended），defaultPlan=null 符合预期。
 //

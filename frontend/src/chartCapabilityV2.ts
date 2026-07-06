@@ -104,6 +104,7 @@ export type MultiFieldSelector =
   | { source: 'additiveMeasureFields'; maxCount?: number }
   | { source: 'nonAdditiveMeasureFields'; maxCount?: number }
   | { source: 'dimensionFields'; maxCount?: number }
+  | { source: 'dimensionFieldsAfter'; afterIndex: number; maxCount?: number }
   | { source: 'temporalFields'; maxCount?: number }
   // ── preferredSpec 字段 ──
   | { source: 'preferredYFields' };
@@ -744,7 +745,7 @@ export const ALL_CAPABILITIES_V2 = [
         maxSuitability: 'allowed_explicit',
         fieldMapping: {
           xField: { source: 'dimensionField', index: 0 },
-          yFields: { source: 'dimensionFields', maxCount: 1 },
+          yFields: { source: 'dimensionFieldsAfter', afterIndex: 0, maxCount: 1 },
           valueField: { source: 'measureField', index: 0 },
         },
         transform: 'matrix_aggregate',

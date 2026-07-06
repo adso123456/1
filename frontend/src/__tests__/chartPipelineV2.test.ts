@@ -327,44 +327,97 @@ test('boxplot: user requested but data not eligible → fallback', () => {
 });
 
 // ============================================================
-// 6b. heatmap gate 已翻转（B-7D）
+// 6b. heatmap gate 已翻转（B-7D / B-7E）
+// B-7E：dimensionFieldsAfter 选择器确保 xField ≠ yFields[0]，
+//       prepareChartV2All 可自然产出可渲染 heatmap，无需绕过 Planner。
 // ============================================================
 
-test('heatmap: prepareChartV2All → heatmap in switchablePlans (gate flipped)', () => {
-  // 注：Planner 的 yFields 选择器 { source: 'dimensionFields', maxCount: 1 }
-  // 会重复选取 xField 的同列，导致 transform 报 field_conflict。
-  // 这是 Planner 的已知限制（缺少 dimensionFieldsAfter 选择器），
-  // 不影响 transform/renderer 本身的正确性。
-  // 此处验证 heatmap gate 已翻、variant 可见于 switchablePlans。
+test('heatmap: prepareChartV2All → heatmap with distinct xField/yField (B-7E)', () => {
   const input: PrepareChartInputV2 = {
-    columns: ['product', 'region', 'sales'],
+    columns: ['region', 'month', 'avg_temp'],
     rows: [
-      { product: 'A', region: '东', sales: 100 },
-      { product: 'B', region: '西', sales: 200 },
+      { region: '城北', month: '1月', avg_temp: 5.2 },
+      { region: '城北', month: '2月', avg_temp: 7.1 },
+      { region: '城南', month: '1月', avg_temp: 6.0 },
+      { region: '城南', month: '2月', avg_temp: 8.3 },
     ] as Row[],
     source: 'user',
     intent: 'auto',
     requestedChartType: 'heatmap',
-    id: 'test-heatmap-switchable',
-    title: 'Heatmap Switchable',
+    id: 'test-heatmap-b7e',
+    title: 'Heatmap B-7E',
     dataVersion: 1,
   };
 
   const result = prepareChartV2All(input);
-  // heatmap 应在 switchablePlans 中（gate 已翻），但可能因 Planner 字段选择冲突
-  // 导致 defaultPlan 的 spec 无法通过 transform
+
+  // 管道应成功
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'heatmap');
+
+  // spec.xField 与 yFields[0] 互异（B-7E 核心验证）
+  const spec = result.chart!.spec;
+  assertOk(typeof spec.xField === 'string' && spec.xField.length > 0, 'xField must be resolved');
+  assertOk(Array.isArray(spec.yFields) && spec.yFields.length > 0, 'yFields must be resolved');
+  const yFields = spec.yFields!;
+  assertOk(spec.xField !== yFields[0],
+    `heatmap xField (${spec.xField}) must differ from yFields[0] (${yFields[0]})`);
+
+  // valueField 正确
+  assertEqual(spec.valueField, 'avg_temp', 'valueField should be avg_temp');
+
+  // Renderer 可消费
+  const option = buildChartOption(result.chart!);
+  assertOk(option !== null, 'buildChartOption should not return null');
+  const seriesData = (option as any).series?.[0]?.data;
+  assertOk(Array.isArray(seriesData), 'series data should be array');
+  assertEqual(seriesData.length, 4, '4 unique cells');
+
+  // heatmap 在 switchablePlans 中
   const heatmapPlans = result.planning.plans.filter(
     p => p.type === 'heatmap' && p.resolvedSuitability !== 'unsupported',
   );
   assertOk(heatmapPlans.length > 0, 'heatmap should be supported (gate flipped)');
 });
 
-test('heatmap: transform + renderer end-to-end via manual spec', () => {
-  // 绕过 Planner 字段选择限制，直接构造互异的 xField/yField
+test('heatmap: sparse matrix through prepareChartV2All (B-7E)', () => {
+  const input: PrepareChartInputV2 = {
+    columns: ['category', 'type', 'count'],
+    rows: [
+      { category: 'A', type: 'X', count: 10 },
+      { category: 'A', type: 'Y', count: 20 },
+      { category: 'B', type: 'X', count: 30 },
+      // B+Y missing
+    ] as Row[],
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'heatmap',
+    id: 'test-heatmap-sparse-b7e',
+    title: 'Sparse Heatmap',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'heatmap');
+  assertOk(result.chart!.spec.xField !== result.chart!.spec.yFields![0],
+    'xField and yFields[0] must differ');
+
+  // 稀疏矩阵：3 个单元格
+  assertEqual(result.chart!.rows.length, 3, 'only 3 cells with data');
+
+  const option = buildChartOption(result.chart!);
+  assertOk(option !== null, 'sparse heatmap should render');
+});
+
+test('heatmap: region_month_matrix with duplicate rows → transform aggregates', () => {
+  // 验证 matrix_aggregate 合并重复键
   const transformResult = executeDataTransformV2({
     columns: ['product', 'region', 'sales'],
     rows: [
       { product: '产品A', region: '城北', sales: 100 },
+      { product: '产品A', region: '城北', sales: 50 },  // 重复键 → 求和
       { product: '产品A', region: '城南', sales: 200 },
       { product: '产品B', region: '城北', sales: 150 },
       { product: '产品B', region: '城南', sales: 180 },
@@ -373,38 +426,13 @@ test('heatmap: transform + renderer end-to-end via manual spec', () => {
     transform: 'matrix_aggregate',
   });
   assertOk(transformResult.ok, `transform should succeed: ${transformResult.errorCode}`);
-  assertEqual(transformResult.rows.length, 4, '4 unique cells');
-
-  // 验证 renderer 可消费
-  const chart: any = {
-    id: 'test', title: 'Test', dataVersion: 1,
-    columns: transformResult.columns,
-    rows: transformResult.rows,
-    spec: transformResult.spec,
-    explicitType: true,
-  };
-  const option = buildChartOption(chart);
-  assertOk(option !== null, 'buildChartOption should not return null');
-  const seriesData = (option as any).series?.[0]?.data;
-  assertOk(Array.isArray(seriesData), 'series data should be array');
-  assertEqual(seriesData.length, 4);
-  assertEqual((seriesData[0] as number[]).length, 3, '[xIndex, yIndex, value]');
-});
-
-test('heatmap: sparse matrix → transform + renderer', () => {
-  const transformResult = executeDataTransformV2({
-    columns: ['category', 'type', 'count'],
-    rows: [
-      { category: 'A', type: 'X', count: 10 },
-      { category: 'A', type: 'Y', count: 20 },
-      { category: 'B', type: 'X', count: 30 },
-      // B+Y missing
-    ],
-    spec: { type: 'heatmap', xField: 'category', yFields: ['type'], valueField: 'count' },
-    transform: 'matrix_aggregate',
-  });
-  assertOk(transformResult.ok, `should succeed: ${transformResult.errorCode}`);
-  assertEqual(transformResult.rows.length, 3, 'only 3 cells with data');
+  // 产品A+城北 应合并为 150
+  const cell = transformResult.rows.find(
+    r => r.product === '产品A' && r.region === '城北',
+  );
+  assertOk(cell !== undefined, 'aggregated cell should exist');
+  assertEqual((cell as any).sales, 150, 'sales should be 100+50=150');
+  assertEqual(transformResult.rows.length, 4, '4 unique cells after aggregation');
 
   const chart: any = {
     id: 'test', title: 'Test', dataVersion: 1,
@@ -414,7 +442,7 @@ test('heatmap: sparse matrix → transform + renderer', () => {
     explicitType: true,
   };
   const option = buildChartOption(chart);
-  assertOk(option !== null, 'sparse heatmap should render');
+  assertOk(option !== null, 'aggregated heatmap should render');
 });
 
 // ============================================================

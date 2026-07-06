@@ -201,6 +201,13 @@ export function resolveMultiSelector(
     case 'dimensionFields':
       return limitMax(profile.traits.dimensionFields, selector.maxCount);
 
+    // ── dimensionFieldsAfter：跳过前 afterIndex+1 个 dimension ──
+    // afterIndex:0 → 从 dimensionFields[1] 开始（与 reference 并联的 selector 互异）。
+    case 'dimensionFieldsAfter': {
+      const start = Math.max(0, selector.afterIndex + 1);
+      return limitMax(profile.traits.dimensionFields.slice(start), selector.maxCount);
+    }
+
     case 'temporalFields':
       return limitMax(profile.temporalFields, selector.maxCount);
 

@@ -845,6 +845,46 @@ test('dimensionFields returns all dimensions', () => {
   );
 });
 
+test('dimensionFieldsAfter afterIndex 0 skips first dimension', () => {
+  const p = profile({ traits: traits({ dimensionFields: ['region', 'month', 'year'] }) });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'dimensionFieldsAfter', afterIndex: 0 }, ctx(p)),
+    ['month', 'year'],
+  );
+});
+
+test('dimensionFieldsAfter afterIndex 0 with maxCount 1 returns second dimension only', () => {
+  const p = profile({ traits: traits({ dimensionFields: ['region', 'month', 'year'] }) });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'dimensionFieldsAfter', afterIndex: 0, maxCount: 1 }, ctx(p)),
+    ['month'],
+  );
+});
+
+test('dimensionFieldsAfter afterIndex 1 skips first two dimensions', () => {
+  const p = profile({ traits: traits({ dimensionFields: ['a', 'b', 'c', 'd'] }) });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'dimensionFieldsAfter', afterIndex: 1 }, ctx(p)),
+    ['c', 'd'],
+  );
+});
+
+test('dimensionFieldsAfter insufficient remaining → empty array', () => {
+  const p = profile({ traits: traits({ dimensionFields: ['region'] }) });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'dimensionFieldsAfter', afterIndex: 0, maxCount: 1 }, ctx(p)),
+    [],
+  );
+});
+
+test('dimensionFieldsAfter afterIndex out of bounds → empty array', () => {
+  const p = profile({ traits: traits({ dimensionFields: ['d1', 'd2'] }) });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'dimensionFieldsAfter', afterIndex: 5, maxCount: 1 }, ctx(p)),
+    [],
+  );
+});
+
 test('temporalFields returns all temporal fields', () => {
   const p = profile({ temporalFields: ['year', 'month', 'day'] });
   assertDeepEqual(

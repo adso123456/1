@@ -435,11 +435,11 @@ assertOk(watch.length === 0, `watch count=${watch.length} should be 0`);
   assertEqual(r.v2Default, 'bubble', 'three_numeric: V2 默认 bubble');
 }
 
-// region_month_matrix → known_issue 或 V2 默认 null
+// region_month_matrix → accepted（categorical_matrix, heatmap 仅 allowed_explicit，auto 无默认）
 {
   const r = rows.find(x => x.fixture === 'region_month_matrix')!;
-  const ok = r.category === 'known_issue' || r.v2Default === null;
-  assertOk(ok, `region_month_matrix: known_issue or v2Default=null, got category=${r.category} v2Default=${r.v2Default}`);
+  const ok = r.category === 'accepted' && r.v2Default === null;
+  assertOk(ok, `region_month_matrix: expected accepted+null, got category=${r.category} v2Default=${r.v2Default}`);
 }
 
 // heterogeneous_metric_rows → V2 默认 null（全 unsupported）
