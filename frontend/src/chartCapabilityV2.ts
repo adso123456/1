@@ -328,7 +328,7 @@ export const PILOT_CAPABILITIES_V2 = [
           {
             capability: 'boxplot_summary',
             description: '按 xField 分组计算 min/Q1/median/Q3/max 五数概括',
-            currentlySupported: false,
+            currentlySupported: true,
           },
         ],
         unsupportedReasonCode: 'boxplot_unsupported',
@@ -787,7 +787,7 @@ export const ALL_CAPABILITIES_V2 = [
           {
             capability: 'boxplot_summary',
             description: '按 xField 分组计算 min/Q1/median/Q3/max 五数概括',
-            currentlySupported: false,
+            currentlySupported: true,
           },
         ],
         unsupportedReasonCode: 'boxplot_unsupported',

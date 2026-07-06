@@ -977,6 +977,58 @@ function buildBoxplotChart(chart: ChartData): EChartsOption | null {
   };
 }
 
+/** V2 boxplot：直接消费 transform 输出的五数概括（spec.yFields = ['min','q1','median','q3','max']）。
+ *  旧 valueField 格式仍走 buildBoxplotChart()。 */
+function buildBoxplotChartV2(chart: ChartData): EChartsOption | null {
+  const xField = getField(chart.spec, 'xField');
+  const yFields = chart.spec.yFields ?? [];
+  if (!hasColumn(chart.columns, xField)) return null;
+
+  // 必须恰好 5 个统计字段，且首字段为 'min'（区别于旧 valueField 格式）
+  const STAT_FIELDS_V2 = ['min', 'q1', 'median', 'q3', 'max'] as const;
+  if (yFields.length !== STAT_FIELDS_V2.length) return null;
+  for (let i = 0; i < STAT_FIELDS_V2.length; i++) {
+    if (yFields[i] !== STAT_FIELDS_V2[i]) return null;
+  }
+
+  // 校验统计字段均存在于 columns
+  for (const sf of STAT_FIELDS_V2) {
+    if (!hasColumn(chart.columns, sf)) return null;
+  }
+
+  // 校验每行的五数概括均为有效数值
+  const rows = cleanRows(chart.rows, [xField, ...STAT_FIELDS_V2]);
+  if (!rows.length) return null;
+
+  const groupNames: string[] = [];
+  const boxData: number[][] = [];
+
+  for (const row of rows) {
+    const name = String(row[xField]);
+    const stats = STAT_FIELDS_V2.map(sf => toNumber(row[sf]));
+    if (stats.some(v => v === null)) return null; // 任一统计值无效 → 整图不可用
+
+    groupNames.push(name);
+    boxData.push(stats as number[]);
+  }
+
+  const xLabel = formatColumnLabel(xField);
+
+  return {
+    color: BLUE_PALETTE,
+    title: { text: baseTitle(chart), left: 'center', textStyle: { fontSize: 14, color: '#374151' } },
+    tooltip: { trigger: 'item' },
+    grid: { bottom: 60, top: 50, left: 60, right: 24 },
+    xAxis: { type: 'category', data: groupNames, axisLabel: { rotate: groupNames.length > 6 ? 45 : 0, fontSize: 11 } },
+    yAxis: { type: 'value', name: xLabel },
+    series: [{
+      type: 'boxplot',
+      data: boxData,
+      itemStyle: { color: '#2563eb', borderColor: '#1e40af' },
+    }],
+  };
+}
+
 /** gauge：valueField=数值字段，取首行；可选 min/max/unit */
 function buildGaugeChart(chart: ChartData): EChartsOption | null {
   const valueField = getField(chart.spec, 'valueField');
@@ -1125,7 +1177,14 @@ const CHART_BUILDERS: Record<RenderableChartType, (chart: ChartData) => EChartsO
   bubble: chart => buildScatterChart(chart, true),
   radar: chart => buildRadarChart(chart),
   heatmap: chart => buildHeatmapChart(chart),
-  boxplot: chart => buildBoxplotChart(chart),
+  boxplot: chart => {
+    // V2 summary 格式：yFields = ['min','q1','median','q3','max']（transform 预计算）
+    if (chart.spec.yFields?.length === 5 && chart.spec.yFields[0] === 'min') {
+      return buildBoxplotChartV2(chart);
+    }
+    // 旧 valueField 格式（前端自行分组计算）
+    return buildBoxplotChart(chart);
+  },
   gauge: chart => buildGaugeChart(chart),
   combo: chart => buildComboChart(chart),
 };

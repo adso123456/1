@@ -161,12 +161,12 @@ test('line_temporal_trend_multi renderer gate is multi_series_line: false', () =
   assertEqual(req!.currentlySupported, false);
 });
 
-test('boxplot_grouped_distribution renderer gate is boxplot_summary: false', () => {
+test('boxplot_grouped_distribution renderer gate is boxplot_summary: true (B-7B)', () => {
   const v = allVariants().find(x => x.id === 'boxplot_grouped_distribution');
   assertOk(v !== undefined);
   const req = v!.rendererRequirements.find(r => r.capability === 'boxplot_summary');
   assertOk(req !== undefined, 'should have boxplot_summary renderer requirement');
-  assertEqual(req!.currentlySupported, false);
+  assertEqual(req!.currentlySupported, true);
 });
 
 test('recommended variants have no renderer gates', () => {
@@ -488,13 +488,13 @@ test('ALL_CAPABILITIES_V2 recommended variants have no renderer gates', () => {
   }
 });
 
-test('ALL_CAPABILITIES_V2 gate: boxplot/heatmap/line_multi are unsupported at runtime', () => {
-  // 这三个 variant 的 renderer gate = false，运行时必须 unsupported
+test('ALL_CAPABILITIES_V2 gate: heatmap/line_multi are unsupported at runtime (boxplot flipped B-7B)', () => {
+  // boxplot gate 已翻为 true；heatmap 和 line_multi 仍 gate=false
   const gated = allVariantsAll().filter(v => v.rendererRequirements.some(r => !r.currentlySupported));
   const gatedIds = gated.map(v => v.id).sort();
   assertEqual(
     gatedIds.join(','),
-    'boxplot_grouped_distribution,heatmap_categorical_matrix,line_temporal_trend_multi',
+    'heatmap_categorical_matrix,line_temporal_trend_multi',
     `gated variants mismatch: ${gatedIds}`,
   );
 });

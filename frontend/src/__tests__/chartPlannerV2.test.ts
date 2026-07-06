@@ -215,10 +215,10 @@ test('detail with duplicates: bar aggregated unsupported by renderer gate', () =
 });
 
 // ============================================================
-// 6. boxplot 因 renderer gate 被禁用
+// 6. boxplot gate 已翻转（B-7B）
 // ============================================================
 
-test('detail with duplicates: boxplot unsupported by renderer gate', () => {
+test('detail with duplicates: boxplot now allowed_explicit (gate flipped)', () => {
   const result = planChartsV2({
     columns: DETAIL_DUPLICATE_DATA.columns,
     rows: DETAIL_DUPLICATE_DATA.rows,
@@ -228,8 +228,11 @@ test('detail with duplicates: boxplot unsupported by renderer gate', () => {
 
   const plan = findPlan(result, 'boxplot_grouped_distribution');
   assertOk(plan !== undefined, 'boxplot_grouped_distribution should be in plans');
-  assertEqual(plan!.resolvedSuitability, 'unsupported', 'should be unsupported');
-  assertEqual(plan!.spec, null);
+  assertOk(
+    plan!.resolvedSuitability !== 'unsupported',
+    `should not be unsupported, got: ${plan!.resolvedSuitability}`,
+  );
+  assertOk(plan!.spec !== null, 'boxplot spec should not be null');
 });
 
 // ============================================================
@@ -443,10 +446,10 @@ test('switchablePlans contains only supported plans with spec', () => {
 // ============================================================
 
 test('all plans unsupported: defaultPlan=null, noChartReason set, fallbackNotice=null', () => {
-  // DETAIL_DUPLICATE_DATA 下全部 6 个 variant 均 unsupported
+  // 单 KPI 数据在 PILOT 下全部 unsupported（PILOT 不含 gauge）
   const result = planChartsV2({
-    columns: DETAIL_DUPLICATE_DATA.columns,
-    rows: DETAIL_DUPLICATE_DATA.rows,
+    columns: ['total_count'],
+    rows: [{ total_count: 342 }],
     source: 'auto',
     intent: 'auto',
   });

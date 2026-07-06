@@ -8,6 +8,7 @@ import {
   type PrepareChartInputV2,
   type PrepareChartResultV2,
 } from '../chartPipelineV2.js';
+import { buildChartOption } from '../chartRegistry.js';
 import type { Row } from '../datasetProfilerV2.js';
 
 let passed = 0;
@@ -239,10 +240,10 @@ test('aggregated bar: renderer produces non-null option', () => {
 });
 
 // ============================================================
-// 6. boxplot 仍被 gate 阻止
+// 6. boxplot gate 已翻转 → variant 可用
 // ============================================================
 
-test('boxplot variant still blocked by renderer gate', () => {
+test('boxplot gate flipped → prepareChartV2 allows boxplot variant', () => {
   const input: PrepareChartInputV2 = {
     columns: DETAIL_DUPLICATE_DATA.columns,
     rows: DETAIL_DUPLICATE_DATA.rows,
@@ -257,13 +258,71 @@ test('boxplot variant still blocked by renderer gate', () => {
 
   const boxplot = findPlan(result, 'boxplot_grouped_distribution');
   assertOk(boxplot !== undefined, 'boxplot variant should exist in plans');
-  assertEqual(
-    boxplot!.resolvedSuitability,
-    'unsupported',
-    'boxplot should be unsupported',
+  assertOk(
+    boxplot!.resolvedSuitability !== 'unsupported',
+    `boxplot should no longer be unsupported, got: ${boxplot!.resolvedSuitability}`,
   );
-  assertEqual(boxplot!.spec, null, 'boxplot spec should be null');
-  // gate 未翻转 → currentlySupported=false
+  assertOk(boxplot!.spec !== null, 'boxplot spec should not be null');
+  // 但 auto 场景下 detail_rows archetype 无 recommended 类型，defaultPlan 为 null
+  // （boxplot 仅 allowed_explicit，bar 也仅 allowed_explicit）
+});
+
+test('boxplot: prepareChartV2All with grouped samples → boxplot success', () => {
+  const input: PrepareChartInputV2 = {
+    columns: ['station', 'ph_value'],
+    rows: [
+      { station: '站点A', ph_value: 7.2 },
+      { station: '站点A', ph_value: 7.5 },
+      { station: '站点A', ph_value: 6.8 },
+      { station: '站点B', ph_value: 8.1 },
+      { station: '站点B', ph_value: 7.9 },
+      { station: '站点B', ph_value: 7.4 },
+    ] as Row[],
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'boxplot',
+    id: 'test-boxplot-1',
+    title: 'Boxplot Test',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+  assertOk(result.ok, `should succeed, got: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'boxplot');
+  assertEqual(result.chart!.explicitType, true);
+
+  // V2 transform 输出 spec 应含 yFields = ['min','q1','median','q3','max']
+  assertOk(result.chart!.spec.yFields !== undefined, 'yFields should be defined');
+  assertEqual(result.chart!.spec.yFields!.length, 5, 'yFields should have 5 stat fields');
+  assertEqual(result.chart!.spec.yFields![0], 'min');
+
+  // Renderer 验证
+  const option = buildChartOption(result.chart!);
+  assertOk(option !== null, 'buildChartOption should not return null');
+  // 验证 series data 是五数概括数组
+  const seriesData = (option as any).series?.[0]?.data;
+  assertOk(Array.isArray(seriesData), 'series data should be array');
+  assertEqual(seriesData.length, 2, 'should have 2 groups');
+  assertEqual((seriesData[0] as number[]).length, 5, 'each box should have 5 values');
+});
+
+test('boxplot: user requested but data not eligible → fallback', () => {
+  // 单值数据不适合 boxplot
+  const input: PrepareChartInputV2 = {
+    columns: ['total'],
+    rows: [{ total: 100 }] as Row[],
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'boxplot',
+    id: 'test-boxplot-fallback',
+    title: 'Boxplot Fallback',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+  // boxplot 应对此数据 unsupported → fallback
+  assertOk(result.selectedPlan?.type !== 'boxplot' || !result.ok,
+    'boxplot should not be selected for single-value data');
 });
 
 // ============================================================
