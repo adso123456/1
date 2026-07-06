@@ -171,10 +171,10 @@ test('categorical data: line is allowed_explicit (not recommended)', () => {
 });
 
 // ============================================================
-// 4. 多实体 line 因 renderer gate 被禁用
+// 4. 多实体 line gate 已翻 (B-9B)
 // ============================================================
 
-test('multi-entity temporal: line multi-series unsupported by renderer gate', () => {
+test('multi-entity temporal: line multi-series gate flipped (B-9B)', () => {
   const result = planChartsV2({
     columns: MULTI_SERIES_TEMPORAL_DATA.columns,
     rows: MULTI_SERIES_TEMPORAL_DATA.rows,
@@ -182,15 +182,18 @@ test('multi-entity temporal: line multi-series unsupported by renderer gate', ()
     intent: 'auto',
   });
 
-  // 用 archetype 名称验证
   const arch = result.profile.archetype;
   console.log(`  [info] multi-entity temporal → archetype: ${arch}`);
 
   const plan = findPlan(result, 'line_temporal_trend_multi');
   assertOk(plan !== undefined, 'line_temporal_trend_multi should be in plans');
-  assertEqual(plan!.resolvedSuitability, 'unsupported', 'should be unsupported due to renderer gate');
-  assertEqual(plan!.spec, null, 'spec should be null when unsupported');
-  assertOk(plan!.reasonCode.length > 0, 'should have a reason code');
+  // B-9B gate 已翻 → supported（baseSuitability=recommended clamped to allowed_explicit）
+  assertOk(
+    plan!.resolvedSuitability !== 'unsupported',
+    `should be supported, got: ${plan!.resolvedSuitability}`,
+  );
+  assertOk(plan!.spec !== null, 'spec should not be null');
+  assertEqual(plan!.spec!.seriesField, 'company', 'seriesField should resolve to company');
 });
 
 // ============================================================

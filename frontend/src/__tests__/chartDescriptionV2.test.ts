@@ -463,6 +463,45 @@ test('V2 combo → 有描述', () => {
 });
 
 // ============================================================
+// B-9B: V2 multi-series line 描述
+// ============================================================
+
+test('V2 multi-series line → 不为 null，包含分组/系列含义', () => {
+  const c = chart({
+    columns: ['station_name', 'month', 'value'],
+    rows: [
+      { station_name: '站点A', month: '1月', value: 10 },
+      { station_name: '站点A', month: '2月', value: 12 },
+      { station_name: '站点B', month: '1月', value: 8 },
+      { station_name: '站点B', month: '2月', value: 9 },
+    ],
+    spec: { type: 'line', xField: 'month', yFields: ['value'], seriesField: 'station_name' },
+    v2Meta: baseMeta({ semanticMode: 'trend', variantId: 'line_temporal_trend_multi' }),
+  });
+  const desc = generateChartDescription(c, 'line');
+  assertNotNull(desc, 'multi-series line description should not be null');
+  assertIncludes(desc, '折线图', 'should mention 折线图');
+  assertIncludes(desc, '系列', 'should mention 系列');
+  assertIncludes(desc, '分组', 'should mention 分组');
+});
+
+test('V2 multi-series line without seriesField → 走单系列 line 描述', () => {
+  const c = chart({
+    columns: ['month', 'value'],
+    rows: [
+      { month: '1月', value: 100 },
+      { month: '2月', value: 120 },
+    ],
+    spec: { type: 'line', xField: 'month', yFields: ['value'] },
+    v2Meta: baseMeta({ semanticMode: 'trend' }),
+  });
+  const desc = generateChartDescription(c, 'line');
+  assertNotNull(desc, 'single-series line description should not be null');
+  // 不应有"系列"关键词
+  assertOk(!desc!.includes('系列'), 'single-series line should not say 系列');
+});
+
+// ============================================================
 // 结果汇总
 // ============================================================
 console.log(`\n${'='.repeat(60)}`);

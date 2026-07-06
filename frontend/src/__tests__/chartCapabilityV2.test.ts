@@ -153,12 +153,12 @@ test('bar_categorical_aggregated renderer gate is group_by_sum: true', () => {
   assertEqual(req!.currentlySupported, true);
 });
 
-test('line_temporal_trend_multi renderer gate is multi_series_line: false', () => {
+test('line_temporal_trend_multi renderer gate is multi_series_line: true (B-9B)', () => {
   const v = allVariants().find(x => x.id === 'line_temporal_trend_multi');
   assertOk(v !== undefined);
   const req = v!.rendererRequirements.find(r => r.capability === 'multi_series_line');
   assertOk(req !== undefined, 'should have multi_series_line renderer requirement');
-  assertEqual(req!.currentlySupported, false);
+  assertEqual(req!.currentlySupported, true);
 });
 
 test('boxplot_grouped_distribution renderer gate is boxplot_summary: true (B-7B)', () => {
@@ -488,14 +488,14 @@ test('ALL_CAPABILITIES_V2 recommended variants have no renderer gates', () => {
   }
 });
 
-test('ALL_CAPABILITIES_V2 gate: only line_multi still unsupported (boxplot+heatmap flipped B-7B/D)', () => {
-  // boxplot gate (B-7B) 和 heatmap gate (B-7D) 已翻为 true；仅 line_multi 仍 gate=false
+test('ALL_CAPABILITIES_V2 gate: all gates now flipped (B-9B multi-series line)', () => {
+  // boxplot (B-7B), heatmap (B-7D), multi-series line (B-9B) 全部已翻
   const gated = allVariantsAll().filter(v => v.rendererRequirements.some(r => !r.currentlySupported));
   const gatedIds = gated.map(v => v.id).sort();
   assertEqual(
     gatedIds.join(','),
-    'line_temporal_trend_multi',
-    `gated variants mismatch: ${gatedIds}`,
+    '',
+    `unexpected gated variants: ${gatedIds}`,
   );
 });
 

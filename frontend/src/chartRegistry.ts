@@ -1166,10 +1166,97 @@ function buildComboOption(
   };
 }
 
+/** multi-series line：按 seriesField 分组，每条 entity 生成一条折线，缺失时间点填 null */
+function buildMultiSeriesLineChart(chart: ChartData): EChartsOption | null {
+  const xField = getField(chart.spec, 'xField');
+  const seriesField = getField(chart.spec, 'seriesField');
+  const yField = getYField(chart.spec);
+
+  // 字段校验
+  if (!hasColumn(chart.columns, xField) || !hasColumn(chart.columns, yField) || !hasColumn(chart.columns, seriesField)) return null;
+  // 三者互斥
+  if (xField === yField || xField === seriesField || yField === seriesField) return null;
+  if (!isNumericField(chart.rows, yField)) return null;
+
+  // 清洗：三个字段均非空且 y 可转为数值
+  const validRows = chart.rows.filter(row => {
+    if (isNullValue(row[xField!]) || isNullValue(row[seriesField!]) || isNullValue(row[yField!])) return false;
+    return toNumber(row[yField!]) !== null;
+  });
+  if (!validRows.length) return null;
+
+  // 构建时间点（去重 + xFieldSortKey 排序）
+  const timePointSet = new Set(validRows.map(r => String(r[xField!])));
+  const timePoints = [...timePointSet].sort((a, b) => {
+    const ka = xFieldSortKey(a);
+    const kb = xFieldSortKey(b);
+    if (typeof ka === 'number' && typeof kb === 'number') return ka - kb;
+    return String(ka).localeCompare(String(kb));
+  });
+
+  // 按 seriesField 分组，每个 entity → { timePoint → value }
+  const entities = [...new Set(validRows.map(r => String(r[seriesField!])))];
+  const entityDataMap = new Map<string, Map<string, unknown>>();
+  for (const row of validRows) {
+    const entity = String(row[seriesField!]);
+    const time = String(row[xField!]);
+    if (!entityDataMap.has(entity)) entityDataMap.set(entity, new Map());
+    entityDataMap.get(entity)!.set(time, row[yField!]);
+  }
+
+  // 构建 series（每条 entity 一个 line series，缺失时间点填 null）
+  const yLabel = formatColumnLabel(yField!);
+  const xLabel = formatColumnLabel(xField!);
+  const series = entities.map((entity, i) => ({
+    name: entity,
+    type: 'line' as const,
+    data: timePoints.map(tp => {
+      const map = entityDataMap.get(entity);
+      if (!map || !map.has(tp)) return null;
+      return toNumber(map.get(tp)!);
+    }),
+    smooth: true,
+    symbol: 'circle',
+    symbolSize: 6,
+    connectNulls: false,
+    itemStyle: { color: BLUE_PALETTE[i % BLUE_PALETTE.length] },
+  }));
+
+  return {
+    color: BLUE_PALETTE,
+    title: { text: baseTitle(chart), left: 'center', textStyle: { fontSize: 14, color: '#374151' } },
+    tooltip: { trigger: 'axis' },
+    legend: {
+      type: 'scroll',
+      orient: 'horizontal',
+      bottom: 0,
+      textStyle: { fontSize: 11 },
+    },
+    grid: { bottom: 60, top: 50, left: 60, right: 24 },
+    xAxis: {
+      type: 'category',
+      data: timePoints,
+      name: xLabel,
+      axisLabel: {
+        rotate: timePoints.length > 6 ? 45 : 0,
+        fontSize: 11,
+      },
+    },
+    yAxis: { type: 'value', name: yLabel },
+    series,
+  };
+}
+
 const CHART_BUILDERS: Record<RenderableChartType, (chart: ChartData) => EChartsOption | null> = {
   bar: chart => buildAxisChart(chart, 'bar'),
   horizontal_bar: chart => buildAxisChart(chart, 'horizontal_bar'),
-  line: chart => buildAxisChart(chart, 'line'),
+  line: chart => {
+    // V2 multi-series：有合法 seriesField 时走多系列渲染
+    if (chart.spec.seriesField && chart.columns.includes(chart.spec.seriesField)) {
+      return buildMultiSeriesLineChart(chart);
+    }
+    return buildAxisChart(chart, 'line');
+  },
   area: chart => buildAxisChart(chart, 'area'),
   pie: chart => buildPieChart(chart),
   donut: chart => buildPieChart(chart, true),

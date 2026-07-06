@@ -225,10 +225,10 @@ test('fixture 7: temporal_series → line=recommended, area=recommended', () => 
 });
 
 // ============================================================
-// 夹具 8：多实体时间趋势（renderer 无 multi-series → 全 unsupported）
+// 夹具 8：多实体时间趋势（B-9B：multi-series gate 已翻）
 // ============================================================
 
-test('fixture 8: multi_series_temporal → all unsupported (multi-series gate)', () => {
+test('fixture 8: multi_series_temporal → line allowed_explicit (B-9B gate flipped)', () => {
   const r = run({
     columns: ['station_name', 'month', 'value'],
     rows: [
@@ -239,9 +239,14 @@ test('fixture 8: multi_series_temporal → all unsupported (multi-series gate)',
   assertEqual(r.profile.archetype, 'multi_series_temporal');
   assertEqual(r.profile.traits.multiSeriesEligible, true);
   assertEqual(r.profile.traits.entityCount, 2);
-  assertSuitMap(r.plans, {}, 'fixture 8'); // line_temporal_trend_multi 被 multi_series_line gate
-  assertEqual(r.defaultPlan, null);
-  assertOk(r.noChartReason !== null);
+  // B-9B gate 已翻 → line_temporal_trend_multi 可用（baseSuitability=recommended 被 clamped 到 allowed_explicit）
+  assertSuitMap(r.plans, { line: 'allowed_explicit' }, 'fixture 8');
+  assertEqual(r.defaultPlan, null); // auto 无 recommended（line 仅 allowed_explicit）
+  assertEqual(r.noChartReason, 'no_recommended_plan_for_auto');
+  // spec 应非 null
+  const multiPlan = r.plans.find(p => p.variantId === 'line_temporal_trend_multi');
+  assertOk(multiPlan?.spec !== null, 'multi-series line spec should not be null');
+  assertEqual(multiPlan!.spec!.seriesField, 'station_name', 'seriesField should be resolved');
 });
 
 // ============================================================

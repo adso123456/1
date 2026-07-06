@@ -274,7 +274,7 @@ export const PILOT_CAPABILITIES_V2 = [
           {
             capability: 'multi_series_line',
             description: '支持按 seriesField 分系列绘制多条折线',
-            currentlySupported: false,
+            currentlySupported: true,
           },
         ],
         unsupportedReasonCode: 'line_multi_series_unsupported',
@@ -523,7 +523,7 @@ export const ALL_CAPABILITIES_V2 = [
           {
             capability: 'multi_series_line',
             description: '支持按 seriesField 分系列绘制多条折线',
-            currentlySupported: false,
+            currentlySupported: true,
           },
         ],
         unsupportedReasonCode: 'line_multi_series_unsupported',

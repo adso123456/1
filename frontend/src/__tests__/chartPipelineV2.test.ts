@@ -446,10 +446,10 @@ test('heatmap: region_month_matrix with duplicate rows → transform aggregates'
 });
 
 // ============================================================
-// 7. multi-series line 仍被 gate 阻止
+// 7. multi-series line gate 已翻转 (B-9B)
 // ============================================================
 
-test('multi-series line variant still blocked by renderer gate', () => {
+test('B-9B: multi-series line gate flipped → pipeline succeeds (prepareChartV2)', () => {
   const input: PrepareChartInputV2 = {
     columns: MULTI_SERIES_TEMPORAL_DATA.columns,
     rows: MULTI_SERIES_TEMPORAL_DATA.rows,
@@ -464,12 +464,13 @@ test('multi-series line variant still blocked by renderer gate', () => {
 
   const multi = findPlan(result, 'line_temporal_trend_multi');
   assertOk(multi !== undefined, 'multi-series line variant should exist');
-  assertEqual(
-    multi!.resolvedSuitability,
-    'unsupported',
-    'multi-series line should be unsupported',
+  // gate 已翻转 → supported
+  assertOk(
+    multi!.resolvedSuitability !== 'unsupported',
+    `multi-series line should be supported, got: ${multi!.resolvedSuitability}`,
   );
-  assertEqual(multi!.spec, null, 'multi-series line spec should be null');
+  assertOk(multi!.spec !== null, 'multi-series line spec should not be null');
+  assertEqual(multi!.spec!.seriesField, 'company', 'seriesField should be company');
 });
 
 // ============================================================
@@ -1133,6 +1134,128 @@ test('B-5C: prepareChartV2All output has expected ChartData structure', () => {
      'area', 'horizontal_bar', 'radar', 'heatmap', 'boxplot', 'combo'].includes(c.spec.type),
     `unexpected chart type: ${c.spec.type}`,
   );
+});
+
+// ============================================================
+// B-9B: multi-series line pipeline 全链路
+// ============================================================
+
+// 不完整多实体时间数据（goldenFixtures: incomplete_multi_series_temporal）
+const INCOMPLETE_MULTI_SERIES_DATA = {
+  columns: ['station_name', 'month', 'value'] as string[],
+  rows: [
+    { station_name: '站点A', month: '1月', value: 10 },
+    { station_name: '站点A', month: '2月', value: 12 },
+    { station_name: '站点A', month: '3月', value: 11 },
+    { station_name: '站点B', month: '1月', value: 8 },
+    // 站点B 缺少 2月、3月
+  ] as Row[],
+};
+
+test('B-9B: complete_multi_series_temporal → pipeline success via prepareChartV2All', () => {
+  // 使用 user + requestedChartType=line，因为 auto 模式不会选 allowed_explicit
+  const input: PrepareChartInputV2 = {
+    columns: MULTI_SERIES_TEMPORAL_DATA.columns,
+    rows: MULTI_SERIES_TEMPORAL_DATA.rows,
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'line',
+    id: 'test-b9b-1',
+    title: 'B-9B Complete Multi-Series',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'line');
+  assertEqual(result.selectedPlan!.variantId, 'line_temporal_trend_multi');
+  assertEqual(result.chart!.spec.seriesField, 'company');
+  assertEqual(result.chart!.v2Meta!.variantId, 'line_temporal_trend_multi');
+  assertEqual(result.chart!.explicitType, true);
+
+  // Renderer 可消费
+  const option = buildChartOption(result.chart!);
+  assertOk(option !== null, 'buildChartOption should not return null for multi-series line');
+
+  // 验证多 series 结构
+  const seriesArr = (option as any).series;
+  assertOk(Array.isArray(seriesArr), 'series should be array');
+  assertEqual(seriesArr.length, 2, 'should have 2 series (ACME + BETA)');
+  // 每个 series 应为 line 类型
+  for (const s of seriesArr) {
+    assertEqual(s.type, 'line', 'each series should be line type');
+    assertEqual(s.connectNulls, false, 'connectNulls should be false');
+  }
+  // legend 存在
+  assertOk((option as any).legend !== undefined, 'legend should be present');
+});
+
+test('B-9B: incomplete_multi_series_temporal → pipeline success, missing time points = null', () => {
+  const input: PrepareChartInputV2 = {
+    columns: INCOMPLETE_MULTI_SERIES_DATA.columns,
+    rows: INCOMPLETE_MULTI_SERIES_DATA.rows,
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'line',
+    id: 'test-b9b-2',
+    title: 'B-9B Incomplete Multi-Series',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  // 不完整数据也是 multi_series_temporal → pipeline 应成功
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'line');
+  assertEqual(result.chart!.spec.seriesField, 'station_name');
+
+  const option = buildChartOption(result.chart!);
+  assertOk(option !== null, 'incomplete multi-series should render');
+
+  // 验证 B（站点B）的数据在 2月、3月 位置为 null
+  const seriesArr = (option as any).series as any[];
+  assertEqual(seriesArr.length, 2, 'should have 2 series');
+  // 找到站点B的 series
+  const seriesB = seriesArr.find((s: any) => s.name === '站点B');
+  assertOk(seriesB !== undefined, '站点B series should exist');
+  // 时间点应为 ['1月','2月','3月']（含站点A 也有 3月），站点B data 应为 [8, null, null]
+  const xData = (option as any).xAxis.data as string[];
+  assertEqual(xData.length, 3, 'should have 3 time points');
+  const bData = seriesB.data as (number | null)[];
+  assertEqual(bData.length, 3, '站点B data should match time point count');
+  assertEqual(bData[0], 8, '1月 should be 8');
+  assertEqual(bData[1], null, '2月 should be null (missing)');
+  assertEqual(bData[2], null, '3月 should be null (missing)');
+  assertEqual(seriesB.connectNulls, false);
+});
+
+test('B-9B: user requests line on multi-series data → gets multi-series variant', () => {
+  const input: PrepareChartInputV2 = {
+    columns: MULTI_SERIES_TEMPORAL_DATA.columns,
+    rows: MULTI_SERIES_TEMPORAL_DATA.rows,
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'line',
+    id: 'test-b9b-3',
+    title: 'B-9B User Requests Multi-Series Line',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  // user + requestedChartType=line → 应优先选 line_temporal_trend_multi
+  assertEqual(result.selectedPlan!.variantId, 'line_temporal_trend_multi');
+  assertEqual(result.chart!.spec.type, 'line');
+  assertEqual(result.chart!.spec.seriesField, 'company');
+  assertEqual(result.planning.fallbackNotice, null, 'should have no fallback notice');
+
+  // Renderer 成功
+  const option = buildChartOption(result.chart!);
+  assertOk(option !== null);
+  const seriesArr = (option as any).series;
+  assertEqual(seriesArr.length, 2);
 });
 
 // ============================================================

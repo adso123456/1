@@ -153,9 +153,9 @@ function compareOne(
         note: `V2 判 ${archetype}，不应自动出图（旧逻辑误推 ${oldDefault}）`,
       };
     }
-    // accepted：multi_series_temporal + renderer gate=false → V2 正确不出图
+    // accepted：multi_series_temporal + auto 无 recommended（line 仅 allowed_explicit）
     // 旧逻辑 getChartTypeAvailability 用 pie/bar 的试错 spec 蒙混通过，
-    // 实际上多实体时间序列无法用单系列图表正确表达。
+    // 实际上多实体时间序列应用多系列折线图表达，但 auto 按规则不自动选 allowed_explicit。
     if (archetype === 'multi_series_temporal') {
       return {
         fixture: name,
@@ -165,7 +165,7 @@ function compareOne(
         v2Default,
         v2SupportedCount: v2Supported.length,
         category: 'accepted',
-        note: `V2 判 ${archetype}，multi-series gate=false，不应自动出图（旧逻辑误推 ${oldDefault}）`,
+        note: `V2 判 ${archetype}，line only allowed_explicit，auto 无默认（旧逻辑误推 ${oldDefault}）`,
       };
     }
     // heatmap gate 已翻（B-7D）→ categorical_matrix 不再全 unsupported
@@ -448,10 +448,12 @@ assertOk(watch.length === 0, `watch count=${watch.length} should be 0`);
   assertEqual(r.v2Default, null, 'heterogeneous_metric_rows: V2 默认 null');
 }
 
-// complete_multi_series_temporal → V2 默认 null（gate=false）
+// complete_multi_series_temporal → V2 默认 null（B-9B gate 已翻但仍仅 allowed_explicit，auto 无 recommended）
 {
   const r = rows.find(x => x.fixture === 'complete_multi_series_temporal')!;
-  assertEqual(r.v2Default, null, 'complete_multi_series_temporal: V2 默认 null（multi-series gate）');
+  assertEqual(r.v2Default, null, 'complete_multi_series_temporal: V2 默认 null（line allowed_explicit, auto 无 recommended）');
+  assertOk(r.category === 'accepted' || r.category === 'same',
+    `complete_multi_series_temporal category: expected accepted or same, got ${r.category}`);
 }
 
 // ── 所有 accepted 行必须带 note ──

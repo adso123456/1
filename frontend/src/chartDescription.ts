@@ -160,6 +160,20 @@ function generateV2Description(
 
     case 'line':
     case 'area': {
+      // ── V2 multi-series line（有 seriesField 时优先走多系列文案）──
+      if (renderedType === 'line' && spec.seriesField) {
+        const y1 = yFields[0] ?? null;
+        if (!xField || !y1) return null;
+        // 统计 entity 数量
+        const entitySet = new Set(rows.map(r => String(r[spec.seriesField!] ?? '')).filter(v => v));
+        const entityCount = entitySet.size;
+        const timeCount = rows.length;
+        const xLabel = displayField(xField);
+        const yLabel = displayField(y1);
+        const sLabel = displayField(spec.seriesField);
+        return `折线图按${sLabel}分组展示${xLabel}与${yLabel}的关系，共${entityCount}个系列、${timeCount}个数据点。将鼠标移到图形上可查看各系列具体数值。`;
+      }
+
       if (!xField) return null;
       const y1 = yFields[0] ?? null;
       if (!y1) return null;
