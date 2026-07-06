@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { SSEEvent, ChatMessage, SessionMeta, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
 import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability, buildChartOption, normalizeChartSpec, CHART_TYPE_LABELS } from '../chartRegistry';
-import { prepareChartV2 } from '../chartPipelineV2';
+import { prepareChartV2All } from '../chartPipelineV2';
 
 /* ======== 本地会话持久化（localStorage） ======== */
 
@@ -832,7 +832,7 @@ export function useSSE() {
                     }
                   } else if (!ct) {
                     // V2 Pipeline：自动推荐图表（替代 isChartWorthy + fallbackSpecFromColumns）
-                    const v2Result = prepareChartV2({
+                    const v2Result = prepareChartV2All({
                       columns,
                       rows,
                       source: 'auto',

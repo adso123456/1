@@ -4,6 +4,7 @@
 
 import {
   prepareChartV2,
+  prepareChartV2All,
   type PrepareChartInputV2,
   type PrepareChartResultV2,
 } from '../chartPipelineV2.js';
@@ -525,6 +526,136 @@ test('successful ChartData has explicitType=true (preserve V2 selection)', () =>
 //       待后续引入新 renderer（如预计算 boxplot）或 schema 不兼容的输出时可测试。
 //
 // 以上分支不得通过类型断言、伪造 Planner 结果或修改生产接口制造覆盖。
+
+// ============================================================
+// B-5B: prepareChartV2All 使用 ALL_CAPABILITIES_V2
+// ============================================================
+
+// 单 KPI 数据（PILOT 无 gauge → ALL 有 gauge）
+const SINGLE_KPI_DATA = {
+  columns: ['total_count'] as string[],
+  rows: [{ total_count: 342 }] as Row[],
+};
+
+// 两数值关系数据（PILOT 无 scatter → ALL 有 scatter）
+const TWO_NUMERIC_DATA = {
+  columns: ['rainfall', 'runoff'] as string[],
+  rows: [
+    { rainfall: 12.5, runoff: 3.2 },
+    { rainfall: 25.0, runoff: 7.8 },
+    { rainfall: 8.0, runoff: 1.9 },
+    { rainfall: 30.5, runoff: 10.1 },
+    { rainfall: 15.0, runoff: 4.5 },
+    { rainfall: 22.0, runoff: 6.7 },
+  ] as Row[],
+};
+
+// 三数值关系数据（PILOT 无 bubble → ALL 有 bubble）
+const THREE_NUMERIC_DATA = {
+  columns: ['rainfall', 'runoff', 'area'] as string[],
+  rows: [
+    { rainfall: 12.5, runoff: 3.2, area: 150 },
+    { rainfall: 25.0, runoff: 7.8, area: 300 },
+    { rainfall: 8.0, runoff: 1.9, area: 100 },
+    { rainfall: 30.5, runoff: 10.1, area: 350 },
+    { rainfall: 15.0, runoff: 4.5, area: 180 },
+    { rainfall: 22.0, runoff: 6.7, area: 250 },
+  ] as Row[],
+};
+
+test('B-5B: prepareChartV2All single_kpi → gauge (ALL 新能力)', () => {
+  const input: PrepareChartInputV2 = {
+    columns: SINGLE_KPI_DATA.columns,
+    rows: SINGLE_KPI_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5b-1',
+    title: 'B-5B Gauge',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'gauge');
+  assertEqual(result.selectedPlan!.variantId, 'gauge_single_value');
+  assertEqual(result.errorCode, null);
+});
+
+test('B-5B: prepareChartV2All two_numeric → scatter (ALL 新能力)', () => {
+  const input: PrepareChartInputV2 = {
+    columns: TWO_NUMERIC_DATA.columns,
+    rows: TWO_NUMERIC_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5b-2',
+    title: 'B-5B Scatter',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'scatter');
+  assertEqual(result.selectedPlan!.variantId, 'scatter_numeric_relationship');
+  assertEqual(result.errorCode, null);
+});
+
+test('B-5B: prepareChartV2All three_numeric → bubble (ALL 新能力)', () => {
+  const input: PrepareChartInputV2 = {
+    columns: THREE_NUMERIC_DATA.columns,
+    rows: THREE_NUMERIC_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5b-3',
+    title: 'B-5B Bubble',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'bubble');
+  assertEqual(result.selectedPlan!.variantId, 'bubble_numeric_relationship');
+  assertEqual(result.errorCode, null);
+});
+
+test('B-5B: prepareChartV2All 分类数据仍可用 bar', () => {
+  // ALL 中 bar 与 PILOT 行为一致
+  const input: PrepareChartInputV2 = {
+    columns: CATEGORICAL_DATA.columns,
+    rows: CATEGORICAL_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5b-4',
+    title: 'B-5B Bar',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
+  assertEqual(result.chart!.spec.type, 'bar');
+  assertEqual(result.selectedPlan!.variantId, 'bar_categorical_comparison');
+});
+
+test('B-5B: prepareChartV2All 不改变 explicitType=true', () => {
+  const input: PrepareChartInputV2 = {
+    columns: TWO_NUMERIC_DATA.columns,
+    rows: TWO_NUMERIC_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'test-b5b-5',
+    title: 'B-5B ExplicitType',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok);
+  assertEqual(result.chart!.explicitType, true,
+    'prepareChartV2All must set explicitType=true (same as prepareChartV2)');
+});
 
 // ============================================================
 // 结果汇总

@@ -7,11 +7,13 @@ import type { Row } from './datasetProfilerV2.js';
 import type { ChartSpec, RenderableChartType, ChartData } from './types.js';
 import {
   planChartsV2,
+  planChartsWithCapabilitiesV2,
   type ChartPlanV2,
   type ChartPlanningResultV2,
   type SelectionSourceV2,
   type ChartIntentV2,
 } from './chartPlannerV2.js';
+import { ALL_CAPABILITIES_V2 } from './chartCapabilityV2.js';
 import {
   executeDataTransformV2,
   type DataTransformResultV2,
@@ -145,6 +147,113 @@ export function prepareChartV2(
 
   // ── 6. Renderer 验证 ──
   // explicitType: true — 该 spec 已由 V2 Planner 审批通过，旧 Renderer 不得再做推荐判断
+  const option = buildChartOption({ ...chart, explicitType: true });
+  if (!option) {
+    return {
+      ok: false,
+      chart: null,
+      planning,
+      selectedPlan,
+      transformResult,
+      errorCode: 'renderer_rejected_plan',
+    };
+  }
+
+  // ── 成功 ──
+  return {
+    ok: true,
+    chart,
+    planning,
+    selectedPlan,
+    transformResult,
+    errorCode: null,
+  };
+}
+
+// ============================================================
+// prepareChartV2All
+// ============================================================
+
+/**
+ * 与 prepareChartV2 逻辑相同，但使用 ALL_CAPABILITIES_V2（13 种图表类型）
+ * 替代默认的 PILOT_CAPABILITIES_V2（3 种类型）。
+ *
+ * 阶段 B-5B：仅用于 auto no-chart-type 运行时兜底路径。
+ * prepareChartV2 保留 PILOT 行为不变。
+ */
+export function prepareChartV2All(
+  input: PrepareChartInputV2,
+): PrepareChartResultV2 {
+  // ── 1. Planner（ALL_CAPABILITIES_V2）──
+  const planning = planChartsWithCapabilitiesV2(
+    {
+      columns: input.columns,
+      rows: input.rows,
+      source: input.source,
+      intent: input.intent,
+      requestedChartType: input.requestedChartType,
+      preferredSpec: input.preferredSpec,
+    },
+    ALL_CAPABILITIES_V2,
+  );
+
+  // ── 2. 检查 defaultPlan ──
+  if (!planning.defaultPlan) {
+    return {
+      ok: false,
+      chart: null,
+      planning,
+      selectedPlan: null,
+      transformResult: null,
+      errorCode: 'no_default_plan',
+    };
+  }
+
+  const selectedPlan = planning.defaultPlan;
+
+  // ── 3. 检查 spec ──
+  if (!selectedPlan.spec) {
+    return {
+      ok: false,
+      chart: null,
+      planning,
+      selectedPlan,
+      transformResult: null,
+      errorCode: 'selected_plan_missing_spec',
+    };
+  }
+
+  // ── 4. Transform ──
+  const transformResult = executeDataTransformV2({
+    columns: input.columns,
+    rows: input.rows,
+    spec: selectedPlan.spec,
+    transform: selectedPlan.transform,
+  });
+
+  if (!transformResult.ok) {
+    return {
+      ok: false,
+      chart: null,
+      planning,
+      selectedPlan,
+      transformResult,
+      errorCode: `transform_failed_${transformResult.errorCode}`,
+    };
+  }
+
+  // ── 5. 组装 ChartData ──
+  const chart: ChartData = {
+    id: input.id,
+    title: input.title,
+    dataVersion: input.dataVersion,
+    columns: transformResult.columns,
+    rows: transformResult.rows,
+    spec: transformResult.spec,
+    explicitType: true,
+  };
+
+  // ── 6. Renderer 验证 ──
   const option = buildChartOption({ ...chart, explicitType: true });
   if (!option) {
     return {
