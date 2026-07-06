@@ -69,8 +69,8 @@ const TEMPORAL_DATA = {
   ] as Row[],
 };
 
-/** 多实体时序：entity + 时间 + 指标 → multi_entity_temporal */
-const MULTI_ENTITY_TEMPORAL_DATA = {
+/** 多系列时序：entity + 时间 + 指标 → multi_series_temporal */
+const MULTI_SERIES_TEMPORAL_DATA = {
   columns: ['company', 'year', 'revenue'] as string[],
   rows: [
     { company: 'ACME', year: '2020', revenue: 100 },
@@ -176,8 +176,8 @@ test('categorical data: line is allowed_explicit (not recommended)', () => {
 
 test('multi-entity temporal: line multi-series unsupported by renderer gate', () => {
   const result = planChartsV2({
-    columns: MULTI_ENTITY_TEMPORAL_DATA.columns,
-    rows: MULTI_ENTITY_TEMPORAL_DATA.rows,
+    columns: MULTI_SERIES_TEMPORAL_DATA.columns,
+    rows: MULTI_SERIES_TEMPORAL_DATA.rows,
     source: 'auto',
     intent: 'auto',
   });

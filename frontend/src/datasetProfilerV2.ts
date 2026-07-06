@@ -47,7 +47,7 @@ export type DatasetArchetype =
   | 'empty'
   | 'single_value'
   | 'single_row_multi_measure'
-  | 'multi_entity_temporal'
+  | 'multi_series_temporal'
   | 'categorical_matrix'
   | 'numeric_relationship'
   | 'temporal_series'
@@ -415,6 +415,8 @@ function computeDetailConfidence(
   dimensionFieldCount: number,
   duplicateDimensionKeys: boolean,
   groupedSamplesEligible: boolean,
+  measureFields: string[],
+  measureKinds: Record<string, MeasureKind>,
 ): { confidence: number; evidence: string[] } {
   let score = 0;
   const evidence: string[] = [];
@@ -447,6 +449,17 @@ function computeDetailConfidence(
   if (groupedSamplesEligible) {
     score += 0.2;
     evidence.push('明确分组样本结构（非可加指标 + 重复分组 + 每组多样本）');
+  }
+
+  // +0.2: 重复分类 + 单可加指标 + 非聚合 → 需要先聚合才能可视化（P3）
+  if (
+    duplicateDimensionKeys &&
+    measureFields.length === 1 &&
+    measureKinds[measureFields[0]] === 'additive' &&
+    aggregationState !== 'aggregated'
+  ) {
+    score += 0.2;
+    evidence.push('重复分类可加指标，需要先聚合');
   }
 
   // -0.3: aggregationState === 'aggregated' 且无重复维度键
@@ -580,6 +593,7 @@ function determineArchetype(
   measureFields: string[],
   dimensionFields: string[],
   temporalFields: string[],
+  identifierFields: string[],
 ): DatasetArchetype {
   // (0) empty
   if (columns.length === 0 || rows.length === 0) return 'empty';
@@ -593,13 +607,33 @@ function determineArchetype(
   // (3) heterogeneous_metric_rows
   if (traits.heterogeneousConfidence >= 0.6) return 'heterogeneous_metric_rows';
 
-  // (4) multi_entity_temporal
+  // (3b) detail_rows 优先：明显原始明细先拦截，避免误判为多系列时间序列。
+  //   - 有 identifierFields（id/编号/编码）→ 强信号
+  //   - 多 measure + 非聚合 → 原始监测明细
+  //   - detailConfidence >= 0.5 + 非聚合
+  // 真正聚合多系列时间序列（单 measure + aggregated + 无 id）不命中此分支。
+  if (
+    identifierFields.length > 0 ||
+    (measureFields.length > 1 && traits.aggregationState !== 'aggregated') ||
+    (traits.detailConfidence >= 0.5 && traits.aggregationState !== 'aggregated')
+  ) {
+    return 'detail_rows';
+  }
+
+  // (4) multi_series_temporal：聚合后的单指标多实体时间序列。
+  //   严格门槛——必须有 entity + 时间 + 单 measure + 多实体 + 多时间点 +
+  //   multiSeriesEligible + aggregated + 无 identifierFields。
   if (
     entityField !== null &&
     temporalFields.length >= 1 &&
-    traits.entityCount >= 2
+    measureFields.length === 1 &&
+    traits.entityCount >= 2 &&
+    traits.timePointCount >= 2 &&
+    traits.multiSeriesEligible === true &&
+    traits.aggregationState === 'aggregated' &&
+    identifierFields.length === 0
   ) {
-    return 'multi_entity_temporal';
+    return 'multi_series_temporal';
   }
 
   // (5) categorical_matrix
@@ -772,7 +806,7 @@ export function analyzeDatasetV2(
   // ── 阶段 10：置信度 ──
   const detailResult = computeDetailConfidence(
     rows, identifierFields, aggResult.state, dimensionFields.length,
-    duplicateDimensionKeys, groupedSamplesEligible,
+    duplicateDimensionKeys, groupedSamplesEligible, measureFields, measureKinds,
   );
 
   const heteroResult = computeHeterogeneousConfidence(
@@ -826,7 +860,7 @@ export function analyzeDatasetV2(
 
   // ── 阶段 13：archetype ──
   const archetype = determineArchetype(
-    columns, rows, traits, entityField, measureFields, dimensionFields, temporalFields,
+    columns, rows, traits, entityField, measureFields, dimensionFields, temporalFields, identifierFields,
   );
 
   return {

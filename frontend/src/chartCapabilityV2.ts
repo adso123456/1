@@ -251,7 +251,7 @@ export const PILOT_CAPABILITIES_V2 = [
       {
         id: 'line_temporal_trend_multi',
         archetypeSuitability: {
-          multi_entity_temporal: 'recommended',
+          multi_series_temporal: 'recommended',
         },
         traitRequirements: [
           { trait: 'temporalFieldCount', min: 1 },
@@ -345,7 +345,6 @@ export const PILOT_CAPABILITIES_V2 = [
 // 运行时仍默认使用 PILOT_CAPABILITIES_V2（见 chartPlannerV2.ts planChartsV2）。
 //
 // 与报告《图表架构审查报告 V2》§4.3 的差异（因 profiler 实际命名）：
-//   - 报告 archetype `multi_series_temporal` → 实际 `multi_entity_temporal`
 //   - 报告 trait `categoryFieldCount` → 实际 `dimensionFieldCount`
 //   - 报告 trait `hasRepeatedCategories` → 实际 `duplicateDimensionKeys`
 //   - 报告 trait `isAggregated` → profiler 无对应 boolean trait（aggregationState 为三态枚举）。
@@ -501,7 +500,7 @@ export const ALL_CAPABILITIES_V2 = [
       {
         id: 'line_temporal_trend_multi',
         archetypeSuitability: {
-          multi_entity_temporal: 'recommended',
+          multi_series_temporal: 'recommended',
         },
         traitRequirements: [
           { trait: 'temporalFieldCount', min: 1 },

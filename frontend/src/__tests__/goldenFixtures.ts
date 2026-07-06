@@ -37,7 +37,7 @@ export const FIXTURES: GoldenFixture[] = [
   },
 
   // ── 4. 带唯一 ID 的监测明细 ──
-  //    避免：实体关键词（如 station/site）+ 时间字段 → multi_entity_temporal
+  //    避免：实体关键词（如 station/site）+ 时间字段 → multi_series_temporal
   //    避免：identifier 关键词（如 code）→ dimensionFields 被清空
   //    使用 sampling_point（非实体、非标识、非时间）+ sample_id（仅 _id 匹配）
   {
@@ -88,7 +88,7 @@ export const FIXTURES: GoldenFixture[] = [
 
   // ── 7. 完整多实体时间数据 ──
   {
-    name: 'complete_multi_entity_temporal',
+    name: 'complete_multi_series_temporal',
     columns: ['station_name', 'month', 'value'],
     rows: [
       { station_name: '站点A', month: '1月', value: 10 },
@@ -102,7 +102,7 @@ export const FIXTURES: GoldenFixture[] = [
 
   // ── 8. 不完整多实体时间数据 ──
   {
-    name: 'incomplete_multi_entity_temporal',
+    name: 'incomplete_multi_series_temporal',
     columns: ['station_name', 'month', 'value'],
     rows: [
       { station_name: '站点A', month: '1月', value: 10 },

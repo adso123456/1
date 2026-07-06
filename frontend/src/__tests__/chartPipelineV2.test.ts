@@ -75,7 +75,7 @@ const DETAIL_DUPLICATE_DATA = {
   ] as Row[],
 };
 
-const MULTI_ENTITY_TEMPORAL_DATA = {
+const MULTI_SERIES_TEMPORAL_DATA = {
   columns: ['company', 'year', 'revenue'] as string[],
   rows: [
     { company: 'ACME', year: '2020', revenue: 100 },
@@ -271,8 +271,8 @@ test('boxplot variant still blocked by renderer gate', () => {
 
 test('multi-series line variant still blocked by renderer gate', () => {
   const input: PrepareChartInputV2 = {
-    columns: MULTI_ENTITY_TEMPORAL_DATA.columns,
-    rows: MULTI_ENTITY_TEMPORAL_DATA.rows,
+    columns: MULTI_SERIES_TEMPORAL_DATA.columns,
+    rows: MULTI_SERIES_TEMPORAL_DATA.rows,
     source: 'auto',
     intent: 'auto',
     id: 'test-7',

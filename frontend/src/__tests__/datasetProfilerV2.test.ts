@@ -138,9 +138,9 @@ test('month_discharge → archetype=temporal_series', () => {
 // ============================================================
 // 7. 完整多实体时间数据
 // ============================================================
-test('complete_multi_entity_temporal → multi_entity_temporal (complete=1.0)', () => {
-  const p = profile('complete_multi_entity_temporal');
-  assertEqual(p.archetype, 'multi_entity_temporal');
+test('complete_multi_series_temporal → multi_series_temporal (complete=1.0)', () => {
+  const p = profile('complete_multi_series_temporal');
+  assertEqual(p.archetype, 'multi_series_temporal');
   assertEqual(p.traits.entityFieldCount, 1);
   assertOk(p.traits.entityCount >= 2);
   assertEqual(p.traits.temporalFieldCount, 1);
@@ -155,9 +155,9 @@ test('complete_multi_entity_temporal → multi_entity_temporal (complete=1.0)', 
 // ============================================================
 // 8. 不完整多实体时间数据
 // ============================================================
-test('incomplete_multi_entity_temporal → multi_entity_temporal (complete<1.0)', () => {
-  const p = profile('incomplete_multi_entity_temporal');
-  assertEqual(p.archetype, 'multi_entity_temporal');
+test('incomplete_multi_series_temporal → multi_series_temporal (complete<1.0)', () => {
+  const p = profile('incomplete_multi_series_temporal');
+  assertEqual(p.archetype, 'multi_series_temporal');
   assertEqual(p.traits.entityFieldCount, 1);
   assertEqual(p.traits.entityCount, 2);
   assertEqual(p.traits.temporalFieldCount, 1);
@@ -233,18 +233,21 @@ test('station_ph_samples → detail_rows, groupedSamplesEligible=true', () => {
 });
 
 // ============================================================
-// 13. 重复 region + count
+// 13. 重复 region + count（P3 修复：可加指标 + 重复维度 + 非聚合 → detail_rows）
 // ============================================================
-test('repeated_region_count → unknown, groupedSamplesEligible=false', () => {
+test('repeated_region_count → detail_rows, groupedSamplesEligible=false', () => {
   const p = profile('repeated_region_count');
-  assertEqual(p.archetype, 'unknown');
-  assertOk(p.traits.detailConfidence < 0.5,
-    `detailConfidence=${p.traits.detailConfidence} should be < 0.5`);
+  assertEqual(p.archetype, 'detail_rows');
+  assertOk(p.traits.detailConfidence >= 0.5,
+    `detailConfidence=${p.traits.detailConfidence} should be >= 0.5`);
   assertEqual(p.traits.groupedSamplesEligible, false);
   assertEqual(p.traits.measureKinds['count'], 'additive');
   assertEqual(p.traits.primaryDimensionHasDuplicates, true);
   assertEqual(p.traits.duplicateDimensionKeys, true);
   assertEqual(p.traits.aggregationState, 'raw');
+  // P3：detailEvidence 应包含"重复分类可加指标/需要聚合"含义
+  assertOk(p.traits.detailEvidence.some((e: string) => e.includes('重复分类可加指标')),
+    `detailEvidence: ${p.traits.detailEvidence.join('; ')}`);
 });
 
 // ============================================================
@@ -413,8 +416,9 @@ test('multi-entity + temporal + no measure → multiSeriesEligible=false', () =>
       { station_name: '站点B', month: '2月' },
     ],
   );
-  // 数据有实体+时间，但无 measure
-  assertEqual(p.archetype, 'multi_entity_temporal');
+  // 数据有实体+时间，但无 measure。P1 收紧后 multi_series_temporal 要求 measureCount===1，
+  // 无 measure 数据不可图表化 → unknown（multiSeriesEligible 仍必须 false）。
+  assertEqual(p.archetype, 'unknown');
   assertEqual(p.traits.multiSeriesEligible, false);
 });
 
@@ -459,6 +463,87 @@ test('only entity + temporal, no category → categoryCardinality=0', () => {
   assertEqual(p.traits.categoryCardinality, 0);
   // dimensionCardinality 可以大于 0
   assertOk(p.traits.dimensionCardinality > 0);
+});
+
+// ============================================================
+// P1：multi_series_temporal 收紧 + detail_rows 优先拦截
+// ============================================================
+
+test('P1: 监测明细 (id+station+date+多measure) → detail_rows，identifierFields 含 id', () => {
+  const rows: Row[] = Array.from({ length: 30 }, (_, i) => ({
+    id: i, station_name: '站' + (i % 5), sample_date: '2024-01-' + ((i % 28) + 1),
+    ph: 7 + i % 3, cod: 12 + i % 5, nh3n: 0.5 + i % 2,
+  }));
+  const p = profileInline(
+    ['id', 'station_name', 'sample_date', 'ph', 'cod', 'nh3n'],
+    rows,
+  );
+  assertEqual(p.archetype, 'detail_rows');
+  assertOk(p.identifierFields.includes('id'), 'identifierFields 应包含 id');
+  assertOk(p.traits.measureCount > 1, '多 measure 明细');
+  assertOk(p.traits.detailConfidence >= 0.5, 'detailConfidence >= 0.5');
+});
+
+test('P1: 真多系列时间序列 (station+month+value) → multi_series_temporal（严格门槛）', () => {
+  const rows: Row[] = [];
+  for (const s of ['站点A', '站点B']) {
+    for (const m of ['1月', '2月', '3月']) {
+      rows.push({ station_name: s, month: m, value: s === '站点A' ? 10 : 8 });
+    }
+  }
+  const p = profileInline(['station_name', 'month', 'value'], rows);
+  assertEqual(p.archetype, 'multi_series_temporal');
+  assertEqual(p.traits.measureCount, 1, 'measureCount===1');
+  assertEqual(p.traits.aggregationState, 'aggregated');
+  assertEqual(p.identifierFields.length, 0, '无 identifierFields');
+  assertEqual(p.traits.multiSeriesEligible, true);
+  assertEqual(p.traits.entityCount, 2);
+  assertOk(p.traits.timePointCount >= 2);
+});
+
+// ============================================================
+// P3：重复分类可加指标 → detail_rows（非聚合 + 重复维度 + 单 additive measure）
+// ============================================================
+
+test('P3: region+count 重复可加数据 → detail_rows, detailConfidence>=0.5', () => {
+  const rows: Row[] = [
+    { region: '城北', count: 10 },
+    { region: '城北', count: 15 },
+    { region: '城南', count: 8 },
+    { region: '城南', count: 12 },
+  ];
+  const p = profileInline(['region', 'count'], rows);
+  assertEqual(p.archetype, 'detail_rows');
+  assertEqual(p.traits.duplicateDimensionKeys, true);
+  assertEqual(p.traits.measureCount, 1);
+  assertEqual(p.traits.measureKinds['count'], 'additive');
+  assertEqual(p.traits.aggregationState, 'raw');
+  assertOk(p.traits.detailConfidence >= 0.5,
+    `detailConfidence=${p.traits.detailConfidence} should be >= 0.5`);
+  assertOk(p.traits.detailEvidence.some((e: string) => e.includes('重复分类可加指标')),
+    `detailEvidence: ${p.traits.detailEvidence.join('; ')}`);
+});
+
+test('P3: 防回归——分组 pH 样本不受 additive 规则影响', () => {
+  const p = profile('station_ph_samples');
+  // ph_value = non_additive，不命中 P3 additive 分支
+  assertEqual(p.traits.measureKinds['ph_value'], 'non_additive');
+  assertEqual(p.archetype, 'detail_rows');
+  assertEqual(p.traits.groupedSamplesEligible, true);
+  // detailEvidence 应仍来自 groupedSamplesEligible 分支，不含 P3 additive 证据
+  assertOk(!p.traits.detailEvidence.some((e: string) => e.includes('重复分类可加指标')),
+    `detailEvidence 不应含 P3 additive 证据: ${p.traits.detailEvidence.join('; ')}`);
+});
+
+test('P3: 防回归——已聚合数据不命中 P3 分支', () => {
+  // region + count 但维度无重复（已聚合）
+  const p = profile('region_count');
+  assertEqual(p.traits.duplicateDimensionKeys, false);
+  assertEqual(p.traits.aggregationState, 'aggregated');
+  // 不命中 P3 条件（aggregationState === 'aggregated'）
+  assertOk(!p.traits.detailEvidence.some((e: string) => e.includes('重复分类可加指标')),
+    `已聚合数据不应含 P3 证据: ${p.traits.detailEvidence.join('; ')}`);
+  assertEqual(p.archetype, 'categorical_series');
 });
 
 // ============================================================
