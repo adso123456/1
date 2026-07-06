@@ -70,6 +70,8 @@ export function executeDataTransformV2(
       return executeGroupBySum(input);
     case 'boxplot_summary':
       return executeBoxplotSummary(input);
+    case 'matrix_aggregate':
+      return executeMatrixAggregate(input);
     default:
       return {
         ok: false,
@@ -325,6 +327,93 @@ function executeBoxplotSummary(input: DataTransformInputV2): DataTransformResult
     columns: outputColumns,
     rows: outputRows,
     spec: outputSpec,
+    errorCode: null,
+  };
+}
+
+// ============================================================
+// matrix_aggregate
+// ============================================================
+
+/**
+ * 按 (xField, yFields[0]) 分组对 valueField 执行 SUM 聚合。
+ * 输出长表同构格式，旧 buildHeatmapChart() 可直接消费。
+ * 稀疏单元格不输出行。不修改输入。
+ */
+function executeMatrixAggregate(input: DataTransformInputV2): DataTransformResultV2 {
+  const { columns, rows, spec } = input;
+  const xField = spec.xField;
+  const yField = spec.yFields?.[0];
+  const valueField = spec.valueField;
+
+  // ── 校验 ──
+  if (!xField || !columns.includes(xField)) {
+    return {
+      ok: false, columns: [], rows: [],
+      spec: cloneSpec(spec), errorCode: 'missing_xField',
+    };
+  }
+  if (!yField || !columns.includes(yField)) {
+    return {
+      ok: false, columns: [], rows: [],
+      spec: cloneSpec(spec), errorCode: 'missing_yField',
+    };
+  }
+  if (!valueField || !columns.includes(valueField)) {
+    return {
+      ok: false, columns: [], rows: [],
+      spec: cloneSpec(spec), errorCode: 'missing_valueField',
+    };
+  }
+  if (xField === yField || valueField === xField || valueField === yField) {
+    return {
+      ok: false, columns: [], rows: [],
+      spec: cloneSpec(spec), errorCode: 'field_conflict',
+    };
+  }
+
+  // ── 聚合 ──
+  const aggregates = new Map<string, { xVal: string; yVal: string; sum: number }>();
+  let hasValidData = false;
+
+  for (const row of rows) {
+    const xVal = row[xField];
+    const yVal = row[yField];
+    if (xVal === null || xVal === undefined || xVal === ''
+      || yVal === null || yVal === undefined || yVal === '') continue;
+
+    const n = toNumber(row[valueField]);
+    if (n === null) continue;
+
+    const key = `${String(xVal)}||${String(yVal)}`;
+    const existing = aggregates.get(key);
+    if (existing) {
+      existing.sum += n;
+    } else {
+      aggregates.set(key, { xVal: String(xVal), yVal: String(yVal), sum: n });
+    }
+    hasValidData = true;
+  }
+
+  if (!hasValidData || aggregates.size === 0) {
+    return {
+      ok: false, columns: [], rows: [],
+      spec: cloneSpec(spec), errorCode: 'no_valid_data',
+    };
+  }
+
+  // ── 构建输出（保持长表格式） ──
+  const outputColumns = [xField, yField, valueField];
+  const outputRows: Row[] = [];
+  for (const { xVal, yVal, sum } of aggregates.values()) {
+    outputRows.push({ [xField]: xVal, [yField]: yVal, [valueField]: sum });
+  }
+
+  return {
+    ok: true,
+    columns: outputColumns,
+    rows: outputRows,
+    spec: cloneSpec(spec),
     errorCode: null,
   };
 }

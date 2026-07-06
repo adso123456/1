@@ -168,7 +168,8 @@ function compareOne(
         note: `V2 判 ${archetype}，multi-series gate=false，不应自动出图（旧逻辑误推 ${oldDefault}）`,
       };
     }
-    // known_issue：P2 heatmap gate
+    // heatmap gate 已翻（B-7D）→ categorical_matrix 不再全 unsupported
+    // auto 仍无 recommended（heatmap 仅 allowed_explicit），defaultPlan=null 符合预期
     if (archetype === 'categorical_matrix') {
       return {
         fixture: name,
@@ -177,8 +178,8 @@ function compareOne(
         oldSupportedCount: oldSupported.length,
         v2Default,
         v2SupportedCount: v2Supported.length,
-        category: 'known_issue',
-        note: 'P2: heatmap matrix_aggregate gate=false → categorical_matrix 全 unsupported',
+        category: 'accepted',
+        note: `V2 判 ${archetype}，heatmap 仅 allowed_explicit，auto 不应自动出图（旧逻辑误推 ${oldDefault}）`,
       };
     }
     // known_issue：P4 — categorical_series 多指标 V2 无 recommended（radar 仅 allowed_explicit）
@@ -246,7 +247,7 @@ function compareOne(
     };
   }
 
-  // known_issue：旧逻辑选 heatmap 但 V2 选别的
+  // heatmap gate 已翻（B-7D），此分支不应再触发（V2 heatmap 现在可实现）
   if (archetype === 'categorical_matrix' && oldDefault === 'heatmap') {
     return {
       fixture: name,
@@ -255,8 +256,8 @@ function compareOne(
       oldSupportedCount: oldSupported.length,
       v2Default,
       v2SupportedCount: v2Supported.length,
-      category: 'known_issue',
-      note: 'P2: heatmap gate=false，V2 heatmap unsupported',
+      category: 'watch',
+      note: `P2 已修复但未预期: old=heatmap, v2=${v2Default}`,
     };
   }
 

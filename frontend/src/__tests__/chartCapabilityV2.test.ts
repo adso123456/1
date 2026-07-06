@@ -488,13 +488,13 @@ test('ALL_CAPABILITIES_V2 recommended variants have no renderer gates', () => {
   }
 });
 
-test('ALL_CAPABILITIES_V2 gate: heatmap/line_multi are unsupported at runtime (boxplot flipped B-7B)', () => {
-  // boxplot gate 已翻为 true；heatmap 和 line_multi 仍 gate=false
+test('ALL_CAPABILITIES_V2 gate: only line_multi still unsupported (boxplot+heatmap flipped B-7B/D)', () => {
+  // boxplot gate (B-7B) 和 heatmap gate (B-7D) 已翻为 true；仅 line_multi 仍 gate=false
   const gated = allVariantsAll().filter(v => v.rendererRequirements.some(r => !r.currentlySupported));
   const gatedIds = gated.map(v => v.id).sort();
   assertEqual(
     gatedIds.join(','),
-    'heatmap_categorical_matrix,line_temporal_trend_multi',
+    'line_temporal_trend_multi',
     `gated variants mismatch: ${gatedIds}`,
   );
 });

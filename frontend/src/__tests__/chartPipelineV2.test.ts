@@ -8,6 +8,7 @@ import {
   type PrepareChartInputV2,
   type PrepareChartResultV2,
 } from '../chartPipelineV2.js';
+import { executeDataTransformV2 } from '../chartDataTransformV2.js';
 import { buildChartOption } from '../chartRegistry.js';
 import type { Row } from '../datasetProfilerV2.js';
 
@@ -323,6 +324,97 @@ test('boxplot: user requested but data not eligible → fallback', () => {
   // boxplot 应对此数据 unsupported → fallback
   assertOk(result.selectedPlan?.type !== 'boxplot' || !result.ok,
     'boxplot should not be selected for single-value data');
+});
+
+// ============================================================
+// 6b. heatmap gate 已翻转（B-7D）
+// ============================================================
+
+test('heatmap: prepareChartV2All → heatmap in switchablePlans (gate flipped)', () => {
+  // 注：Planner 的 yFields 选择器 { source: 'dimensionFields', maxCount: 1 }
+  // 会重复选取 xField 的同列，导致 transform 报 field_conflict。
+  // 这是 Planner 的已知限制（缺少 dimensionFieldsAfter 选择器），
+  // 不影响 transform/renderer 本身的正确性。
+  // 此处验证 heatmap gate 已翻、variant 可见于 switchablePlans。
+  const input: PrepareChartInputV2 = {
+    columns: ['product', 'region', 'sales'],
+    rows: [
+      { product: 'A', region: '东', sales: 100 },
+      { product: 'B', region: '西', sales: 200 },
+    ] as Row[],
+    source: 'user',
+    intent: 'auto',
+    requestedChartType: 'heatmap',
+    id: 'test-heatmap-switchable',
+    title: 'Heatmap Switchable',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+  // heatmap 应在 switchablePlans 中（gate 已翻），但可能因 Planner 字段选择冲突
+  // 导致 defaultPlan 的 spec 无法通过 transform
+  const heatmapPlans = result.planning.plans.filter(
+    p => p.type === 'heatmap' && p.resolvedSuitability !== 'unsupported',
+  );
+  assertOk(heatmapPlans.length > 0, 'heatmap should be supported (gate flipped)');
+});
+
+test('heatmap: transform + renderer end-to-end via manual spec', () => {
+  // 绕过 Planner 字段选择限制，直接构造互异的 xField/yField
+  const transformResult = executeDataTransformV2({
+    columns: ['product', 'region', 'sales'],
+    rows: [
+      { product: '产品A', region: '城北', sales: 100 },
+      { product: '产品A', region: '城南', sales: 200 },
+      { product: '产品B', region: '城北', sales: 150 },
+      { product: '产品B', region: '城南', sales: 180 },
+    ],
+    spec: { type: 'heatmap', xField: 'product', yFields: ['region'], valueField: 'sales' },
+    transform: 'matrix_aggregate',
+  });
+  assertOk(transformResult.ok, `transform should succeed: ${transformResult.errorCode}`);
+  assertEqual(transformResult.rows.length, 4, '4 unique cells');
+
+  // 验证 renderer 可消费
+  const chart: any = {
+    id: 'test', title: 'Test', dataVersion: 1,
+    columns: transformResult.columns,
+    rows: transformResult.rows,
+    spec: transformResult.spec,
+    explicitType: true,
+  };
+  const option = buildChartOption(chart);
+  assertOk(option !== null, 'buildChartOption should not return null');
+  const seriesData = (option as any).series?.[0]?.data;
+  assertOk(Array.isArray(seriesData), 'series data should be array');
+  assertEqual(seriesData.length, 4);
+  assertEqual((seriesData[0] as number[]).length, 3, '[xIndex, yIndex, value]');
+});
+
+test('heatmap: sparse matrix → transform + renderer', () => {
+  const transformResult = executeDataTransformV2({
+    columns: ['category', 'type', 'count'],
+    rows: [
+      { category: 'A', type: 'X', count: 10 },
+      { category: 'A', type: 'Y', count: 20 },
+      { category: 'B', type: 'X', count: 30 },
+      // B+Y missing
+    ],
+    spec: { type: 'heatmap', xField: 'category', yFields: ['type'], valueField: 'count' },
+    transform: 'matrix_aggregate',
+  });
+  assertOk(transformResult.ok, `should succeed: ${transformResult.errorCode}`);
+  assertEqual(transformResult.rows.length, 3, 'only 3 cells with data');
+
+  const chart: any = {
+    id: 'test', title: 'Test', dataVersion: 1,
+    columns: transformResult.columns,
+    rows: transformResult.rows,
+    spec: transformResult.spec,
+    explicitType: true,
+  };
+  const option = buildChartOption(chart);
+  assertOk(option !== null, 'sparse heatmap should render');
 });
 
 // ============================================================

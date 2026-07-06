@@ -678,6 +678,158 @@ test('boxplot: xField conflicts with stat fields → error', () => {
 });
 
 // ============================================================
+// 8. matrix_aggregate：按 (xField, yField) SUM 聚合
+// ============================================================
+
+test('matrix_aggregate: no duplicates → output unchanged', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['region', 'month', 'avg_temp'],
+    rows: [
+      { region: '城北', month: '1月', avg_temp: 5.2 },
+      { region: '城北', month: '2月', avg_temp: 7.1 },
+      { region: '城南', month: '1月', avg_temp: 6.0 },
+    ],
+    spec: { type: 'heatmap', xField: 'region', yFields: ['month'], valueField: 'avg_temp' },
+    transform: 'matrix_aggregate',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok, result.errorCode ?? 'should succeed');
+  assertDeepEqual(result.columns, ['region', 'month', 'avg_temp']);
+  assertEqual(result.rows.length, 3);
+  assertEqual(result.spec.type, 'heatmap');
+});
+
+test('matrix_aggregate: duplicate (xField, yField) → SUM aggregation', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['city', 'product', 'sales'],
+    rows: [
+      { city: '北京', product: 'A', sales: 100 },
+      { city: '北京', product: 'A', sales: 200 },
+      { city: '北京', product: 'B', sales: 50 },
+      { city: '上海', product: 'A', sales: 80 },
+    ],
+    spec: { type: 'heatmap', xField: 'city', yFields: ['product'], valueField: 'sales' },
+    transform: 'matrix_aggregate',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok);
+  assertEqual(result.rows.length, 3, '3 unique (city, product) pairs');
+  // 北京+A → 300
+  const ba = result.rows.find(r => r.city === '北京' && r.product === 'A')!;
+  assertOk(ba !== undefined, '北京+A should exist');
+  assertEqual(ba.sales, 300);
+  // 北京+B → 50
+  const bb = result.rows.find(r => r.city === '北京' && r.product === 'B')!;
+  assertEqual(bb.sales, 50);
+  // 上海+A → 80
+  const sa = result.rows.find(r => r.city === '上海' && r.product === 'A')!;
+  assertEqual(sa.sales, 80);
+});
+
+test('matrix_aggregate: sparse matrix → missing cells not output', () => {
+  // 3×3 matrix, only 5 cells have data
+  const input: DataTransformInputV2 = {
+    columns: ['x', 'y', 'v'],
+    rows: [
+      { x: 'A', y: '1', v: 10 },
+      { x: 'A', y: '2', v: 20 },
+      { x: 'B', y: '2', v: 30 },
+      { x: 'B', y: '3', v: 40 },
+      { x: 'C', y: '1', v: 50 },
+    ],
+    spec: { type: 'heatmap', xField: 'x', yFields: ['y'], valueField: 'v' },
+    transform: 'matrix_aggregate',
+  };
+
+  const result = executeDataTransformV2(input);
+  assertOk(result.ok);
+  assertEqual(result.rows.length, 5, 'only 5 cells output, missing cells not padded');
+  // verify no zero-value rows for missing cells
+  const cells = new Set(result.rows.map(r => `${r.x}|${r.y}`));
+  assertEqual(cells.size, 5);
+});
+
+test('matrix_aggregate: missing xField → error', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['region', 'month', 'val'],
+    rows: [{ region: 'A', month: '1', val: 10 }],
+    spec: { type: 'heatmap', yFields: ['month'], valueField: 'val' },
+    transform: 'matrix_aggregate',
+  };
+  const result = executeDataTransformV2(input);
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'missing_xField');
+});
+
+test('matrix_aggregate: missing yField → error', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['region', 'month', 'val'],
+    rows: [{ region: 'A', month: '1', val: 10 }],
+    spec: { type: 'heatmap', xField: 'region', valueField: 'val' },
+    transform: 'matrix_aggregate',
+  };
+  const result = executeDataTransformV2(input);
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'missing_yField');
+});
+
+test('matrix_aggregate: missing valueField → error', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['region', 'month', 'val'],
+    rows: [{ region: 'A', month: '1', val: 10 }],
+    spec: { type: 'heatmap', xField: 'region', yFields: ['month'] },
+    transform: 'matrix_aggregate',
+  };
+  const result = executeDataTransformV2(input);
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'missing_valueField');
+});
+
+test('matrix_aggregate: all null / non-numeric values → no_valid_data', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['region', 'month', 'val'],
+    rows: [
+      { region: 'A', month: '1', val: null },
+      { region: 'B', month: '2', val: 'N/A' },
+    ] as Row[],
+    spec: { type: 'heatmap', xField: 'region', yFields: ['month'], valueField: 'val' },
+    transform: 'matrix_aggregate',
+  };
+  const result = executeDataTransformV2(input);
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'no_valid_data');
+});
+
+test('matrix_aggregate: does not mutate input', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['region', 'month', 'val'],
+    rows: [
+      { region: 'A', month: '1', val: 10 },
+      { region: 'A', month: '1', val: 20 },
+    ],
+    spec: { type: 'heatmap', xField: 'region', yFields: ['month'], valueField: 'val' },
+    transform: 'matrix_aggregate',
+  };
+  const snapBefore = snap(input);
+  executeDataTransformV2(input);
+  assertEqual(snap(input), snapBefore, 'input should be unchanged');
+});
+
+test('matrix_aggregate: xField equals yField → error', () => {
+  const input: DataTransformInputV2 = {
+    columns: ['dim', 'val'],
+    rows: [{ dim: 'A', val: 10 }],
+    spec: { type: 'heatmap', xField: 'dim', yFields: ['dim'], valueField: 'val' },
+    transform: 'matrix_aggregate',
+  };
+  const result = executeDataTransformV2(input);
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'field_conflict');
+});
+
+// ============================================================
 // 结果汇总
 // ============================================================
 console.log(`\n${'='.repeat(60)}`);

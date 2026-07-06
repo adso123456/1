@@ -752,7 +752,7 @@ export const ALL_CAPABILITIES_V2 = [
           {
             capability: 'matrix_aggregate',
             description: '将长表按两个分类维度透视成矩阵',
-            currentlySupported: false,
+            currentlySupported: true,
           },
         ],
         unsupportedReasonCode: 'heatmap_matrix_aggregate_unsupported',
