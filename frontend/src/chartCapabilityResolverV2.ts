@@ -32,12 +32,15 @@ export interface FieldSelectorContext {
  * numeric trait：
  *   - equals: traits[trait] === equals
  *   - min/max: 全部满足才通过（null 表示无边界，undefined 表示未指定该方向）
+ *
+ * string trait：
+ *   - equals: traits[trait] === equals（字面量相等，如 aggregationState === 'aggregated'）
  */
 export function matchTraitRequirement(
   requirement: TraitRequirement,
   traits: DatasetTraitsV2,
 ): boolean {
-  const value: boolean | number = traits[requirement.trait];
+  const value: boolean | number | string = traits[requirement.trait];
 
   // ── boolean trait ──
   if (typeof value === 'boolean') {
@@ -58,6 +61,12 @@ export function matchTraitRequirement(
     if (req.min != null && value < req.min) return false;
     if (req.max != null && value > req.max) return false;
     return true;
+  }
+
+  // ── string trait（字面量相等） ──
+  if (typeof value === 'string') {
+    if ('equals' in requirement) return value === requirement.equals;
+    return false;
   }
 
   return false;
@@ -181,6 +190,13 @@ export function resolveMultiSelector(
     // ── 无过滤 ──
     case 'measureFields':
       return limitMax(profile.measureFields, selector.maxCount);
+
+    case 'measureFieldsAfter': {
+      // 跳过前 afterIndex+1 个 measure（afterIndex:0 → 从 measureFields[1] 开始）。
+      // Math.max 防御 afterIndex 为负导致 slice 负索引从尾部取。字段不足 → 空数组。
+      const start = Math.max(0, selector.afterIndex + 1);
+      return limitMax(profile.measureFields.slice(start), selector.maxCount);
+    }
 
     case 'dimensionFields':
       return limitMax(profile.traits.dimensionFields, selector.maxCount);

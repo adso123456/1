@@ -374,9 +374,21 @@ const _compileCheck4: ArchetypeSuitability = { empty: 'unsupported' as ChartSuit
 // @ts-expect-error: 'none' is excluded from RenderableChartType
 const _compileCheck5: ChartCapability = { type: 'none', label: '无', variants: [] };
 
+// 6) string trait（aggregationState）不能使用 min
+// @ts-expect-error: string trait must not use min
+const _compileCheck6: TraitRequirement = { trait: 'aggregationState', min: 0 };
+
+// 7) numeric trait 不能使用 string equals（equals 类型必须为 number）
+// @ts-expect-error: numeric trait equals must be number, not string
+const _compileCheck7: TraitRequirement = { trait: 'measureCount', equals: 'aggregated' };
+
+// 8) 正向：string trait 可用字面量 equals（此行不应有类型错误；若加 @ts-expect-error 会 TS2578）
+const _compileCheck8: TraitRequirement = { trait: 'aggregationState', equals: 'aggregated' };
+
 // ── 标记引用（避免 unused-variable 警告） ──
 void _compileCheck1; void _compileCheck2; void _compileCheck3;
-void _compileCheck4; void _compileCheck5;
+void _compileCheck4; void _compileCheck5; void _compileCheck6;
+void _compileCheck7; void _compileCheck8;
 
 // ============================================================
 // 12. ALL_CAPABILITIES_V2 完整能力矩阵（13 种图表）

@@ -10,6 +10,7 @@
 import { planChartsWithCapabilitiesV2 } from '../chartPlannerV2.js';
 import { ALL_CAPABILITIES_V2 } from '../chartCapabilityV2.js';
 import type { PlanChartsInputV2, ChartPlanV2 } from '../chartPlannerV2.js';
+import type { ChartCapability } from '../chartCapabilityV2.js';
 import type { Row } from '../datasetProfilerV2.js';
 import type { ChartSuitability, RenderableChartType } from '../types.js';
 
@@ -255,6 +256,16 @@ test('fixture 9: numeric_relationship → scatter=recommended', () => {
   assertSuitMap(r.plans, { scatter: 'recommended' }, 'fixture 9');
   assertEqual(r.defaultPlan?.type, 'scatter');
   assertEqual(r.noChartReason, null);
+  // P8：scatter xField 与 yFields[0] 互异
+  const scatterPlan = r.plans.find(p => p.type === 'scatter');
+  assertOk(scatterPlan?.spec !== null, 'scatter spec should be non-null');
+  const sx = scatterPlan!.spec!.xField;
+  const sy = scatterPlan!.spec!.yFields?.[0];
+  assertOk(typeof sx === 'string' && sx.length > 0, 'scatter xField resolved');
+  assertOk(typeof sy === 'string' && sy.length > 0, 'scatter yFields[0] resolved');
+  assertOk(sx !== sy, `scatter xField (${sx}) must differ from yFields[0] (${sy})`);
+  // P7：numeric_relationship 无 entityField → seriesField 被跳过（undefined），spec 仍有效
+  assertEqual(scatterPlan!.spec!.seriesField, undefined, 'scatter spec should have no seriesField without entityField');
 });
 
 // ============================================================
@@ -268,9 +279,29 @@ test('fixture 10: numeric_relationship(3) → bubble=recommended', () => {
   assertEqual(r.profile.traits.measureCount, 3);
   assertEqual(r.profile.traits.numericFieldCount, 3);
   assertSuitMap(r.plans, { scatter: 'recommended', bubble: 'recommended' }, 'fixture 10');
-  // 报告期望 defaultPlan=bubble，实际 scatter（见问题清单 P9：selectForAuto 取 recommended[0]，scatter 先于 bubble）
-  assertEqual(r.defaultPlan?.type, 'scatter');
+  // P9：三数值关系 auto 默认选 bubble（autoPriority：bubble=0 优先于 scatter=2），不靠数组顺序
+  assertEqual(r.defaultPlan?.type, 'bubble');
   assertEqual(r.noChartReason, null);
+  // P8：scatter xField 与 yFields[0] 互异
+  const scatterPlan = r.plans.find(p => p.type === 'scatter');
+  assertOk(scatterPlan?.spec !== null, 'scatter spec should be non-null');
+  assertOk(scatterPlan!.spec!.xField !== scatterPlan!.spec!.yFields?.[0],
+    `scatter x/y must differ: ${scatterPlan!.spec!.xField} vs ${scatterPlan!.spec!.yFields?.[0]}`);
+  // P8：bubble xField / yFields[0] / sizeField 三者互异
+  const bubblePlan = r.plans.find(p => p.type === 'bubble');
+  assertOk(bubblePlan?.spec !== null, 'bubble spec should be non-null');
+  const bx = bubblePlan!.spec!.xField;
+  const by = bubblePlan!.spec!.yFields?.[0];
+  const bs = bubblePlan!.spec!.sizeField;
+  assertOk(typeof bx === 'string' && bx.length > 0, 'bubble xField resolved');
+  assertOk(typeof by === 'string' && by.length > 0, 'bubble yFields[0] resolved');
+  assertOk(typeof bs === 'string' && bs.length > 0, 'bubble sizeField resolved');
+  assertOk(bx !== by, `bubble xField (${bx}) must differ from yFields[0] (${by})`);
+  assertOk(bx !== bs, `bubble xField (${bx}) must differ from sizeField (${bs})`);
+  assertOk(by !== bs, `bubble yFields[0] (${by}) must differ from sizeField (${bs})`);
+  // P7：numeric_relationship 无 entityField → scatter/bubble 的 seriesField 被跳过
+  assertEqual(scatterPlan!.spec!.seriesField, undefined, 'scatter spec should have no seriesField without entityField');
+  assertEqual(bubblePlan!.spec!.seriesField, undefined, 'bubble spec should have no seriesField without entityField');
 });
 
 // ============================================================
@@ -380,6 +411,162 @@ test('fixture 15: heterogeneous_metric_rows → all unsupported, defaultPlan=nul
 });
 
 // ============================================================
+// P8 边界：measure 不足时 scatter/bubble 不生成同列 spec
+// ============================================================
+
+test('P8: single measure → scatter/bubble unsupported (no same-column spec)', () => {
+  // 仅 1 个 measure，无法满足 scatter(measureCount>=2) / bubble(measureCount>=3)
+  const r = run({
+    columns: ['category', 'value'],
+    rows: [
+      { category: 'A', value: 1 }, { category: 'B', value: 2 },
+      { category: 'C', value: 3 }, { category: 'D', value: 4 },
+    ],
+  });
+  const scatter = r.plans.find(p => p.type === 'scatter');
+  const bubble = r.plans.find(p => p.type === 'bubble');
+  assertEqual(scatter?.resolvedSuitability, 'unsupported', 'scatter must be unsupported with 1 measure');
+  assertEqual(bubble?.resolvedSuitability, 'unsupported', 'bubble must be unsupported with 1 measure');
+  assertEqual(scatter?.spec, null, 'scatter must have null spec (no same-column fallback)');
+  assertEqual(bubble?.spec, null, 'bubble must have null spec (no same-column fallback)');
+});
+
+test('P8: two measures → bubble unsupported (measureCount<3), scatter still has distinct x/y', () => {
+  // 两数值关系：scatter 可执行，bubble 因 measureCount<3 unsupported
+  const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({ x: i, y: i * 2 }));
+  const r = run({ columns: ['x', 'y'], rows });
+  const scatter = r.plans.find(p => p.type === 'scatter');
+  const bubble = r.plans.find(p => p.type === 'bubble');
+  assertEqual(bubble?.resolvedSuitability, 'unsupported', 'bubble needs >=3 measures');
+  assertEqual(bubble?.spec, null, 'bubble must have null spec');
+  assertEqual(scatter?.resolvedSuitability, 'recommended', 'scatter ok with 2 measures');
+  assertOk(scatter?.spec !== null, 'scatter spec non-null');
+  assertOk(scatter!.spec!.xField !== scatter!.spec!.yFields?.[0], 'scatter x/y distinct');
+});
+
+// ============================================================
+// P7：seriesField optional enhancement
+// numeric_relationship 不可能含 entityField（archetype 约束 dimensionFields===0），
+// 故"有 entityField 写入 seriesField"用自定义 capability + unknown archetype 数据验证，
+// 不扩展 ALL_CAPABILITIES_V2 中 scatter/bubble 的适用范围。
+// ============================================================
+
+/** 极简测试 capability：unknown archetype，seriesField=entityField（optional） */
+const P7_CAPABILITY: ChartCapability = {
+  type: 'scatter',
+  label: 'P7 测试散点',
+  variants: [
+    {
+      id: 'p7_series_optional',
+      archetypeSuitability: { unknown: 'allowed_explicit' },
+      traitRequirements: [
+        { trait: 'measureCount', min: 2 },
+      ],
+      semanticMode: 'relationship',
+      maxSuitability: 'allowed_explicit',
+      fieldMapping: {
+        xField: { source: 'measureField', index: 0 },
+        yFields: { source: 'measureFieldsAfter', afterIndex: 0, maxCount: 1 },
+        seriesField: { source: 'entityField' },
+      },
+      transform: 'none',
+      rendererRequirements: [],
+      unsupportedReasonCode: 'p7_unsupported',
+    },
+  ],
+};
+
+test('P7: with entityField → spec carries seriesField', () => {
+  // station_name 被 findEntityNameField 识别为 entityField；archetype=unknown
+  const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({
+    station_name: 'S' + (i % 3), rainfall: 10 + i, runoff: 2 + i,
+  }));
+  const r = planChartsWithCapabilitiesV2(
+    { columns: ['station_name', 'rainfall', 'runoff'], rows, source: 'auto', intent: 'auto' },
+    [P7_CAPABILITY],
+  );
+  assertEqual(r.profile.archetype, 'unknown');
+  assertEqual(r.profile.entityField, 'station_name');
+  const plan = r.plans.find(p => p.variantId === 'p7_series_optional');
+  assertOk(plan?.spec !== null, 'spec should be non-null with entityField present');
+  assertEqual(plan!.spec!.seriesField, 'station_name', 'seriesField should be written when entityField exists');
+  // x/y 仍互异且必填
+  assertOk(plan!.spec!.xField === 'rainfall', 'xField resolved');
+  assertOk(plan!.spec!.yFields?.[0] === 'runoff', 'yFields[0] resolved');
+});
+
+test('P7: without entityField → spec non-null, seriesField skipped (not null)', () => {
+  // 两数值列无 entityField：archetype=numeric_relationship，但本 capability 用 unknown archetype
+  // 故用 unknown archetype 数据（含非 measure 列但非 entity 关键词）构造无 entityField 场景
+  const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({
+    label: 'L' + (i % 3), rainfall: 10 + i, runoff: 2 + i,
+  }));
+  const r = planChartsWithCapabilitiesV2(
+    { columns: ['label', 'rainfall', 'runoff'], rows, source: 'auto', intent: 'auto' },
+    [P7_CAPABILITY],
+  );
+  assertEqual(r.profile.entityField, null, 'no entityField for label column');
+  const plan = r.plans.find(p => p.variantId === 'p7_series_optional');
+  assertOk(plan?.spec !== null, 'spec should still be non-null without entityField');
+  assertEqual(plan!.spec!.seriesField, undefined, 'seriesField should be skipped (undefined) when entityField absent');
+});
+
+test('P7: required xField/yFields missing → spec=null (only seriesField is optional)', () => {
+  // 仅 1 个 measure：measureCount>=2 trait 失败 → unsupported，spec=null
+  // （seriesField optional 不应让必填字段缺失也能生成 spec）
+  const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({
+    station_name: 'S' + (i % 3), rainfall: 10 + i,
+  }));
+  const r = planChartsWithCapabilitiesV2(
+    { columns: ['station_name', 'rainfall'], rows, source: 'auto', intent: 'auto' },
+    [P7_CAPABILITY],
+  );
+  const plan = r.plans.find(p => p.variantId === 'p7_series_optional');
+  assertEqual(plan?.resolvedSuitability, 'unsupported', 'insufficient measures → unsupported');
+  assertEqual(plan?.spec, null, 'required fields missing → spec=null (seriesField optionality does not rescue)');
+});
+
+// ============================================================
+// P9：auto 默认选择 tie-break（autoPriority）
+// ============================================================
+
+test('P9: three-measure auto → bubble (tie-break, not array order)', () => {
+  // ALL_CAPABILITIES_V2 中 scatter 排在 bubble 之前，但 auto 应选 bubble（autoPriority 0 < 2）
+  const rows: Row[] = Array.from({ length: 20 }, (_, i) => ({ rainfall: 10 + i * 2, runoff: 2 + i * 0.5, area: 100 + i * 10 }));
+  const r = run({ columns: ['rainfall', 'runoff', 'area'], rows });
+  const scatter = r.plans.find(p => p.type === 'scatter');
+  const bubble = r.plans.find(p => p.type === 'bubble');
+  assertEqual(scatter?.resolvedSuitability, 'recommended', 'scatter recommended');
+  assertEqual(bubble?.resolvedSuitability, 'recommended', 'bubble recommended');
+  // 两者都 recommended，但 auto 选 bubble（不靠数组顺序：scatter 在数组中更靠前）
+  assertEqual(r.defaultPlan?.type, 'bubble', 'auto must pick bubble via tie-break, not array order');
+  assertEqual(r.defaultPlan?.variantId, 'bubble_numeric_relationship');
+});
+
+test('P9: three-measure user requests scatter → scatter (autoPriority does not override user)', () => {
+  // 三数值关系数据，user 显式请求 scatter → 应返回 scatter，不被 bubble tie-break 覆盖
+  const rows: Row[] = Array.from({ length: 20 }, (_, i) => ({ rainfall: 10 + i * 2, runoff: 2 + i * 0.5, area: 100 + i * 10 }));
+  const r = run({
+    columns: ['rainfall', 'runoff', 'area'], rows,
+    source: 'user', requestedChartType: 'scatter', intent: 'auto',
+  });
+  assertEqual(r.profile.archetype, 'numeric_relationship');
+  assertEqual(r.profile.traits.measureCount, 3);
+  // auto 会选 bubble，但 user 请求 scatter → 返回 scatter
+  assertEqual(r.defaultPlan?.type, 'scatter', 'user requested scatter must be honored');
+  assertEqual(r.defaultPlan?.variantId, 'scatter_numeric_relationship');
+  assertEqual(r.fallbackNotice, null, 'scatter is available, no fallback');
+});
+
+test('P9: two-measure auto → scatter (not bubble, bubble trait fails)', () => {
+  // 两数值关系：bubble 因 measureCount<3 不 recommended，auto 选 scatter
+  const rows: Row[] = Array.from({ length: 20 }, (_, i) => ({ rainfall: 10 + i * 2, runoff: 2 + i * 0.5 }));
+  const r = run({ columns: ['rainfall', 'runoff'], rows });
+  assertEqual(r.defaultPlan?.type, 'scatter');
+  assertEqual(r.plans.find(p => p.type === 'bubble')?.resolvedSuitability, 'unsupported');
+});
+
+// ============================================================
 // 跨夹具不变量：13 种 type 都有至少一个 plan
 // ============================================================
 
@@ -409,53 +596,59 @@ test('invariant: planChartsV2 default still uses PILOT (not ALL)', () => {
 // 问题清单（profiler/capability 与报告不一致）
 // ============================================================
 //
+// ── 阶段 B-2 已修复（P6/P7/P8/P9） ──
+//
+// P6（trait 命名）✅ 已修复：TraitRequirement 已支持 string 字面量相等，
+//    area 现用 `{ trait: 'aggregationState', equals: 'aggregated' }` 严格表达
+//    "仅聚合后时间序列适合面积图"（不再用 entityFieldCount<=1 近似）。
+//    报告 isAggregated → profiler aggregationState(三态) 的语义鸿沟已消除。
+//
+// P7（scatter/bubble seriesField）✅ 已修复：buildSpec 中 seriesField 改为
+//    optional enhancement——解析失败时跳过（不写该字段），不让 spec=null。
+//    scatter/bubble 已补回 `seriesField: { source: 'entityField' }`：
+//    有 entityField 时写入 spec，无时 spec 仍有效（仅缺 seriesField）。
+//    注：numeric_relationship archetype 约束 dimensionFields===0，而 entityField
+//    必为非 measure 列→必进 dimensionFields，故 numeric_relationship 数据恒无
+//    entityField，seriesField 在该场景总被跳过（设计如此，非缺陷）。
+//
+// P8（scatter/bubble xField 与 yField 同列）✅ 已修复：新增 MultiFieldSelector
+//    `measureFieldsAfter`（跳过前 afterIndex+1 个 measure）。scatter/bubble 的
+//    yFields 改用 `{ afterIndex: 0, maxCount: 1 }` 取 measureFields[1]，
+//    bubble sizeField 用 measureField[2]。x=measureFields[0]、y=[1]、size=[2] 三者互异。
+//
+// P9（夹具 10 defaultPlan）✅ 已修复：selectForAuto 增加 autoPriority(plan, profile)
+//    稳定 tie-break，按数据形态显式排序，不依赖 ALL_CAPABILITIES_V2 数组顺序。
+//    三数值关系 auto 默认选 bubble（autoPriority 0 优先于 scatter 2）。
+//    仅影响 source==='auto'，user/model/dashboard 不受影响。
+//
+// ── 仍未修复（profiler/archetype/transform 阶段，后续单独处理） ──
+//
 // P1（夹具 4）：报告期望 detail_rows，profiler 实际判 multi_entity_temporal。
 //    原因：profiler archetype 判定顺序把 multi_entity_temporal（第 4 步）放在
 //    detail_rows（第 9 步）之前。含实体+时间+多 measure 的明细数据先命中前者。
 //    detailConfidence=0.60 已达阈值，但 archetype 已被前面拦截。
-//    报告 §1.2 顺序：temporal(5) 在 matrix(3)/numeric(4) 之后，detail(7) 更后。
 //    影响：明细监测数据不会落到 detail_rows，无法触发"建议先聚合"提示。
+//    属 profiler/archetype 阶段，本阶段不处理。
 //
 // P2（夹具 11）：报告期望 heatmap=recommended，实际 unsupported。
 //    原因：heatmap 依赖 matrix_aggregate transform，chartDataTransformV2 未实现，
-//    通过 rendererRequirements gate=false 标 unsupported。本阶段不实现 transform，
-//    故 heatmap 暂不可执行。符合任务"未实现 transform 通过 gate 标 unsupported"要求。
+//    通过 rendererRequirements gate=false 标 unsupported。
+//    属 transform/renderer 阶段，本阶段不实现，保留 gate 行为。
 //
 // P3（夹具 13）：报告期望 detail_rows，profiler 实际判 unknown。
 //    原因：detailConfidence=0.30 < 0.5 阈值，未命中 detail_rows，落到 unknown。
 //    该数据 region 重复但 count 是可加指标，profiler 视为可聚合而非明细。
-//    报告 §8 夹具 13 也标注"此数据需要先聚合才能画分类对比图"，与 unknown 行为接近。
+//    属 profiler/archetype 阶段，本阶段不处理。
 //
 // P4（夹具 14）：报告期望 radar=recommended，实际 allowed_explicit。
 //    原因：ALL_CAPABILITIES_V2 中 radar archetypeSuitability[categorical_series]=allowed_explicit，
 //    maxSuitability=allowed_explicit。intent=auto 不提升。
 //    报告 §8 夹具 14 期望 defaultPlan=radar，但报告 §3.4 categorical_series 默认 intent=comparison，
 //    radar(profile) 与 comparison 不匹配，按报告 §4.4 不应提升为 recommended。
-//    故此处与报告夹具期望不一致，但符合报告 §4.4 的 intent 规则。
-//    结论：报告夹具 14 的期望与报告 §4.4 规则自相矛盾，本实现遵循 §4.4。
+//    结论：报告夹具 14 的期望与报告 §4.4 规则自相矛盾，本实现遵循 §4.4 intent 规则，保留现状。
 //
 // P5（archetype 命名）：报告用 multi_series_temporal，profiler 用 multi_entity_temporal。
-//    本阶段不修改 profiler（任务边界），ALL_CAPABILITIES_V2 已适配实际命名。
-//
-// P6（trait 命名）：报告用 categoryFieldCount/hasRepeatedCategories/isAggregated，
-//    profiler 用 dimensionFieldCount/duplicateDimensionKeys/aggregationState(三态)。
-//    TraitRequirement 不支持枚举相等，area 的 isAggregated 要求无法表达，
-//    改用 entityFieldCount<=1 近似。本阶段不修改 profiler。
-//
-// P7（scatter/bubble seriesField）：报告 §4.3 含 seriesField，但 FieldResolver 将
-//    fieldMapping 中出现的字段视为必需，numeric_relationship 数据无 entityField
-//    会导致 spec=null。本阶段去掉 seriesField 让散点/气泡图可执行。
-//    后续 FieldResolver 支持"可选字段"后可补回。
-//
-// P8（scatter/bubble xField 与 yField 同列）：xField=measureField[0]，yFields=measureFields[:1]
-//    两者首个 measure 相同。Planner 不检查字段冲突，spec 可构建（resolvedSuitability=recommended），
-//    但 buildScatterChart 会因 xField===yField 返回 null。本阶段不测渲染，仅测 Planner 决策。
-//    根因：MultiFieldSelector 不支持"跳过首项 measure"。后续需扩展 selector。
-//
-// P9（夹具 10 defaultPlan）：报告期望 bubble，实际 scatter。
-//    原因：三数值关系数据上 scatter 和 bubble 均 recommended，selectForAuto 取 recommended[0]，
-//    ALL_CAPABILITIES_V2 中 scatter 排在 bubble 之前。报告 §8 夹具 10 期望 bubble 优先。
-//    根因：selectForAuto 无"三数值优先 bubble"的 tie-break 规则。后续需在 Planner 加分规则。
+//    属 profiler/archetype 阶段，本阶段不修改 profiler，ALL_CAPABILITIES_V2 已适配实际命名。
 
 // ============================================================
 // 结果汇总

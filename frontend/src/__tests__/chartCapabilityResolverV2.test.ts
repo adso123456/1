@@ -293,6 +293,36 @@ test('numeric equals satisfied but max fails → fails', () => {
 });
 
 // ============================================================
+// 7d. String Trait Matcher — equals（字面量相等，如 aggregationState）
+// ============================================================
+
+test('string equals → match when value equals literal', () => {
+  const t = traits({ aggregationState: 'aggregated' });
+  assertOk(matchTraitRequirement({ trait: 'aggregationState', equals: 'aggregated' }, t));
+});
+
+test('string equals → mismatch when value differs', () => {
+  const t = traits({ aggregationState: 'raw' });
+  assertOk(!matchTraitRequirement({ trait: 'aggregationState', equals: 'aggregated' }, t));
+});
+
+test('string equals → mismatch when value is unknown', () => {
+  const t = traits({ aggregationState: 'unknown' });
+  assertOk(!matchTraitRequirement({ trait: 'aggregationState', equals: 'aggregated' }, t));
+});
+
+test('string equals → raw literal matches raw', () => {
+  const t = traits({ aggregationState: 'raw' });
+  assertOk(matchTraitRequirement({ trait: 'aggregationState', equals: 'raw' }, t));
+});
+
+test('string trait defaultTraits aggregationState is unknown → aggregated fails', () => {
+  // defaultTraits 出厂的 aggregationState='unknown'，不应误判为 aggregated
+  const t = defaultTraits();
+  assertOk(!matchTraitRequirement({ trait: 'aggregationState', equals: 'aggregated' }, t));
+});
+
+// ============================================================
 // 7c. Numeric Trait Matcher — NaN / 非有限数
 // ============================================================
 
@@ -763,6 +793,47 @@ test('measureFields with maxCount truncates', () => {
   assertDeepEqual(
     resolveMultiSelector({ source: 'measureFields', maxCount: 2 }, ctx(p)),
     ['sales', 'profit'],
+  );
+});
+
+test('measureFieldsAfter afterIndex 0 skips first measure', () => {
+  const p = profile({ measureFields: ['sales', 'profit', 'count'] });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'measureFieldsAfter', afterIndex: 0 }, ctx(p)),
+    ['profit', 'count'],
+  );
+});
+
+test('measureFieldsAfter afterIndex 0 with maxCount 1 returns second measure only', () => {
+  const p = profile({ measureFields: ['sales', 'profit', 'count'] });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'measureFieldsAfter', afterIndex: 0, maxCount: 1 }, ctx(p)),
+    ['profit'],
+  );
+});
+
+test('measureFieldsAfter afterIndex 1 skips first two measures', () => {
+  const p = profile({ measureFields: ['a', 'b', 'c', 'd'] });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'measureFieldsAfter', afterIndex: 1 }, ctx(p)),
+    ['c', 'd'],
+  );
+});
+
+test('measureFieldsAfter insufficient remaining → empty array', () => {
+  // 仅 1 个 measure，afterIndex:0 要求跳过首个 → 无剩余
+  const p = profile({ measureFields: ['sales'] });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'measureFieldsAfter', afterIndex: 0, maxCount: 1 }, ctx(p)),
+    [],
+  );
+});
+
+test('measureFieldsAfter afterIndex out of bounds → empty array', () => {
+  const p = profile({ measureFields: ['sales', 'profit'] });
+  assertDeepEqual(
+    resolveMultiSelector({ source: 'measureFieldsAfter', afterIndex: 5, maxCount: 1 }, ctx(p)),
+    [],
   );
 });
 

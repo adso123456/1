@@ -44,6 +44,16 @@ type NumericTraitName = {
 }[keyof DatasetTraitsV2];
 
 /**
+ * 从 DatasetTraitsV2 中提取 string 字面量联合类型的 trait 名称。
+ * 仅匹配值类型为字面量联合（如 AggregationState）的字段；
+ * string | null、string[]、Record 等不满足 extends string，故不会被选中。
+ * 当前仅 aggregationState 入选。
+ */
+type StringTraitName = {
+  [K in keyof DatasetTraitsV2]: DatasetTraitsV2[K] extends string ? K : never;
+}[keyof DatasetTraitsV2];
+
+/**
  * 类型安全的 trait 要求。
  *
  * boolean trait — 严格互斥，必须恰好使用一种：
@@ -52,6 +62,8 @@ type NumericTraitName = {
  *   - forbidden: true
  *
  * numeric trait — 必须至少包含 equals / min / max 之一。
+ *
+ * string trait — 仅支持字面量相等（如 aggregationState === 'aggregated'）。
  */
 export type TraitRequirement =
   // ── boolean（严格互斥：恰好一种） ──
@@ -61,7 +73,9 @@ export type TraitRequirement =
   // ── numeric（必须至少包含 equals / min / max 之一） ──
   | { trait: NumericTraitName; equals: number }
   | { trait: NumericTraitName; min: number | null; max?: number | null }
-  | { trait: NumericTraitName; max: number | null; min?: number | null };
+  | { trait: NumericTraitName; max: number | null; min?: number | null }
+  // ── string（字面量相等，仅 aggregationState 等）──
+  | { trait: StringTraitName; equals: string };
 
 // ============================================================
 // 字段选择器
@@ -86,6 +100,7 @@ export type ScalarFieldSelector =
 
 export type MultiFieldSelector =
   | { source: 'measureFields'; maxCount?: number }
+  | { source: 'measureFieldsAfter'; afterIndex: number; maxCount?: number }
   | { source: 'additiveMeasureFields'; maxCount?: number }
   | { source: 'nonAdditiveMeasureFields'; maxCount?: number }
   | { source: 'dimensionFields'; maxCount?: number }
@@ -333,9 +348,9 @@ export const PILOT_CAPABILITIES_V2 = [
 //   - 报告 archetype `multi_series_temporal` → 实际 `multi_entity_temporal`
 //   - 报告 trait `categoryFieldCount` → 实际 `dimensionFieldCount`
 //   - 报告 trait `hasRepeatedCategories` → 实际 `duplicateDimensionKeys`
-//   - 报告 trait `isAggregated` → profiler 无对应 boolean trait（aggregationState 为三态枚举），
-//     TraitRequirement 不支持枚举相等，故 area 等需要 isAggregated 的 variant 暂以近似 trait 表达，
-//     详见问题清单。
+//   - 报告 trait `isAggregated` → profiler 无对应 boolean trait（aggregationState 为三态枚举）。
+//     阶段 B-2：TraitRequirement 已支持 string 字面量相等，area 现用
+//     `{ trait: 'aggregationState', equals: 'aggregated' }` 严格表达"仅聚合后时间序列适合面积图"。
 //
 // transform gate 策略：
 //   - transform='none' / 'group_by_sum'：chartDataTransformV2 已稳定支持，可执行
@@ -551,6 +566,7 @@ export const ALL_CAPABILITIES_V2 = [
           { trait: 'timePointCount', min: 2 },
           { trait: 'measureCount', equals: 1 },
           { trait: 'entityFieldCount', max: 1 },
+          { trait: 'aggregationState', equals: 'aggregated' },
         ],
         semanticMode: 'trend',
         maxSuitability: 'recommended',
@@ -622,9 +638,8 @@ export const ALL_CAPABILITIES_V2 = [
   },
 
   // ── scatter（两数值关系） ──
-  // 注：报告 §4.3 scatter 含 seriesField，但 FieldResolver 将 fieldMapping 中出现的字段
-  // 一律视为必需，numeric_relationship 数据无 entityField 会导致 spec=null。
-  // 故本阶段去掉 seriesField，让散点图可执行（点名称缺失可接受）。见问题清单。
+  // xField=measureFields[0]，yFields=measureFields[1]（measureFieldsAfter 跳过首个 measure）。
+  // seriesField=entityField（optional enhancement：无 entityField 时跳过，spec 仍有效）。
   {
     type: 'scatter',
     label: '散点图',
@@ -643,7 +658,8 @@ export const ALL_CAPABILITIES_V2 = [
         maxSuitability: 'recommended',
         fieldMapping: {
           xField: { source: 'measureField', index: 0 },
-          yFields: { source: 'measureFields', maxCount: 1 },
+          yFields: { source: 'measureFieldsAfter', afterIndex: 0, maxCount: 1 },
+          seriesField: { source: 'entityField' },
         },
         transform: 'none',
         rendererRequirements: [],
@@ -653,7 +669,8 @@ export const ALL_CAPABILITIES_V2 = [
   },
 
   // ── bubble（三数值关系） ──
-  // 注：同 scatter，去掉 seriesField。
+  // xField=measureFields[0]，yFields=measureFields[1]，sizeField=measureFields[2]，三者互异。
+  // seriesField=entityField（optional enhancement：同 scatter）。
   {
     type: 'bubble',
     label: '气泡图',
@@ -671,8 +688,9 @@ export const ALL_CAPABILITIES_V2 = [
         maxSuitability: 'recommended',
         fieldMapping: {
           xField: { source: 'measureField', index: 0 },
-          yFields: { source: 'measureFields', maxCount: 1 },
+          yFields: { source: 'measureFieldsAfter', afterIndex: 0, maxCount: 1 },
           sizeField: { source: 'measureField', index: 2 },
+          seriesField: { source: 'entityField' },
         },
         transform: 'none',
         rendererRequirements: [],

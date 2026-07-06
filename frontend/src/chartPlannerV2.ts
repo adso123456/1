@@ -137,6 +137,7 @@ export function planChartsWithCapabilitiesV2(
     plans,
     supportedPlans,
     input,
+    profile,
   );
 
   return {
@@ -248,7 +249,8 @@ function makeUnsupportedPlan(
 /**
  * 将 variant 的 fieldMapping 解析为具体 ChartSpec。
  * 任一必需字段解析失败（null 或空数组）→ 返回 null。
- * fieldMapping 中存在的字段均视为必需。
+ * xField / yFields / valueField / sizeField 为必需；
+ * seriesField 为 optional enhancement，解析失败时跳过（不写该字段），不导致 spec=null。
  */
 function buildSpec(
   chartType: RenderableChartType,
@@ -279,11 +281,11 @@ function buildSpec(
     spec.valueField = v;
   }
 
-  // seriesField — 存在时必须解析成功
+  // seriesField — optional enhancement：解析失败时跳过，不让 spec=null
+  // （scatter/bubble 的 seriesField 为可选增强，numeric_relationship 数据通常无 entityField）
   if (fm.seriesField) {
     const s = resolveScalarSelector(fm.seriesField, context);
-    if (!s) return null;
-    spec.seriesField = s;
+    if (s) spec.seriesField = s;
   }
 
   // sizeField — 存在时必须解析成功
@@ -359,6 +361,7 @@ function selectDefault(
   allPlans: readonly ChartPlanV2[],
   supportedPlans: readonly ChartPlanV2[],
   input: PlanChartsInputV2,
+  profile: DatasetProfileV2,
 ): DefaultSelection {
   // 无任何 supported 计划
   if (supportedPlans.length === 0) {
@@ -379,7 +382,7 @@ function selectDefault(
     case 'dashboard':
       return selectForModel(recommended, allowedExplicit, input.preferredSpec?.type);
     case 'auto':
-      return selectForAuto(recommended);
+      return selectForAuto(recommended, profile);
   }
 }
 
@@ -445,15 +448,55 @@ function selectForModel(
 
 function selectForAuto(
   recommended: readonly ChartPlanV2[],
+  profile: DatasetProfileV2,
 ): DefaultSelection {
   if (recommended.length > 0) {
-    return { defaultPlan: recommended[0], fallbackNotice: null, noChartReason: null };
+    // 稳定 tie-break：按数据形态显式排序，不依赖 capabilities 数组顺序。
+    // 复制后排序，避免污染外部数组。
+    const sorted = [...recommended].sort(
+      (a, b) => autoPriority(a, profile) - autoPriority(b, profile),
+    );
+    return { defaultPlan: sorted[0], fallbackNotice: null, noChartReason: null };
   }
   return {
     defaultPlan: null,
     fallbackNotice: null,
     noChartReason: 'no_recommended_plan_for_auto',
   };
+}
+
+/**
+ * auto 默认选择的稳定优先级：返回数字越小越优先。
+ *
+ * 显式表达"数据形态 → 首选图表类型"，不依赖 ALL_CAPABILITIES_V2 数组顺序：
+ *   - single_value → gauge
+ *   - categorical_series + 单指标 → bar
+ *   - temporal_series → line
+ *   - numeric_relationship + measureCount===2 → scatter
+ *   - numeric_relationship + measureCount>=3 → bubble
+ *
+ * 未匹配的数据形态返回大值（不特殊提升），保持 recommended 出现顺序。
+ * 仅影响 source==='auto'，user/model/dashboard 不调用此函数。
+ */
+function autoPriority(plan: ChartPlanV2, profile: DatasetProfileV2): number {
+  const arch = profile.archetype;
+  const measureCount = profile.traits.measureCount;
+
+  // (archetype, chartType) → 优先级（0 最优先）。未列出的组合走兜底。
+  if (arch === 'single_value' && plan.type === 'gauge') return 0;
+  if (arch === 'categorical_series' && measureCount === 1 && plan.type === 'bar') return 0;
+  if (arch === 'temporal_series' && plan.type === 'line') return 0;
+  if (arch === 'numeric_relationship' && measureCount === 2 && plan.type === 'scatter') return 0;
+  if (arch === 'numeric_relationship' && measureCount >= 3 && plan.type === 'bubble') return 0;
+
+  // 兜底：同类 archetype 内的次选（如 horizontal_bar vs bar、area vs line）
+  // 给一个中等优先级，仍优于完全未匹配的组合。
+  if (arch === 'categorical_series' && plan.type === 'horizontal_bar') return 1;
+  if (arch === 'temporal_series' && plan.type === 'area') return 1;
+  if (arch === 'numeric_relationship' && measureCount >= 3 && plan.type === 'scatter') return 2;
+
+  // 完全未匹配：返回大值，保持相对顺序（sort 稳定，同优先级保持原顺序）
+  return 100;
 }
 
 function buildNoChartReason(allPlans: readonly ChartPlanV2[]): string {
