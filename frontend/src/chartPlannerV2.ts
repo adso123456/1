@@ -7,6 +7,7 @@ import { analyzeDatasetV2 } from './datasetProfilerV2.js';
 import type { DatasetProfileV2, Row } from './datasetProfilerV2.js';
 import { PILOT_CAPABILITIES_V2 } from './chartCapabilityV2.js';
 import type {
+  ChartCapability,
   ChartCapabilityVariant,
   ChartSemanticMode,
   DataTransformPlan,
@@ -80,7 +81,7 @@ export interface ChartPlanningResultV2 {
 // ============================================================
 
 /**
- * 根据输入数据与请求来源，对全部 pilot variant 评估适用性，
+ * 根据输入数据与请求来源，对全部 variant 评估适用性，
  * 并选出默认图表计划。
  *
  * 评估流水线（每个 variant）：
@@ -95,8 +96,14 @@ export interface ChartPlanningResultV2 {
  * - user：requestedChartType 优先
  * - model/dashboard：preferredSpec.type 优先
  * - auto：第一个 recommended；无 recommended 时 defaultPlan=null
+ *
+ * 运行时默认使用 PILOT_CAPABILITIES_V2（见 planChartsV2）。
+ * Golden 测试使用 ALL_CAPABILITIES_V2（见 planChartsWithCapabilitiesV2）。
  */
-export function planChartsV2(input: PlanChartsInputV2): ChartPlanningResultV2 {
+export function planChartsWithCapabilitiesV2(
+  input: PlanChartsInputV2,
+  capabilities: readonly ChartCapability[],
+): ChartPlanningResultV2 {
   // ── 数据画像 ──
   const profile = analyzeDatasetV2(input.columns, input.rows);
   const context: FieldSelectorContext = {
@@ -107,7 +114,7 @@ export function planChartsV2(input: PlanChartsInputV2): ChartPlanningResultV2 {
   // ── 阶段 1：评估全部 variant ──
   const plans: ChartPlanV2[] = [];
 
-  for (const capability of PILOT_CAPABILITIES_V2) {
+  for (const capability of capabilities) {
     for (const variant of capability.variants) {
       const plan = evaluateVariant(
         capability.type,
@@ -140,6 +147,16 @@ export function planChartsV2(input: PlanChartsInputV2): ChartPlanningResultV2 {
     fallbackNotice,
     switchablePlans: supportedPlans,
   };
+}
+
+/**
+ * 运行时入口：使用 PILOT_CAPABILITIES_V2 评估。
+ *
+ * 阶段 B-1：保持运行时行为不变，不切换到 ALL_CAPABILITIES_V2。
+ * Golden 测试请直接调用 planChartsWithCapabilitiesV2(input, ALL_CAPABILITIES_V2)。
+ */
+export function planChartsV2(input: PlanChartsInputV2): ChartPlanningResultV2 {
+  return planChartsWithCapabilitiesV2(input, PILOT_CAPABILITIES_V2);
 }
 
 // ============================================================

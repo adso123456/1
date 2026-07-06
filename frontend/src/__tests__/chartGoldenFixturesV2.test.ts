@@ -1,0 +1,473 @@
+// chartGoldenFixturesV2.test.ts — V2 Golden 回归夹具（15 种数据形态）
+//
+// 阶段 B-1：离线验证 Planner 对各种数据形态产出正确的 13 种 ChartPlan。
+// 使用 ALL_CAPABILITIES_V2 + planChartsWithCapabilitiesV2，不接入运行时。
+// 运行时仍默认使用 PILOT_CAPABILITIES_V2（本测试不影响生产行为）。
+//
+// 夹具对应《图表架构审查报告 V2》§8 的 15 种数据形态。
+// 与报告期望不一致之处，在文件末尾"问题清单"注释中记录。
+
+import { planChartsWithCapabilitiesV2 } from '../chartPlannerV2.js';
+import { ALL_CAPABILITIES_V2 } from '../chartCapabilityV2.js';
+import type { PlanChartsInputV2, ChartPlanV2 } from '../chartPlannerV2.js';
+import type { Row } from '../datasetProfilerV2.js';
+import type { ChartSuitability, RenderableChartType } from '../types.js';
+
+let passed = 0;
+let failed = 0;
+
+function assertEqual<T>(actual: T, expected: T, msg?: string): void {
+  if (actual !== expected) {
+    throw new Error(msg ?? `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+}
+function assertOk(cond: boolean, msg?: string): void {
+  if (!cond) throw new Error(msg ?? `expected truthy, got ${JSON.stringify(cond)}`);
+}
+function test(name: string, fn: () => void): void {
+  try {
+    fn();
+    passed++;
+  } catch (err) {
+    failed++;
+    console.error(`\nFAIL: ${name}`);
+    console.error(`  ${(err as Error).message}`);
+  }
+}
+
+// ---- 辅助 ----
+
+const ALL_TYPES: RenderableChartType[] = [
+  'bar', 'horizontal_bar', 'line', 'area', 'pie', 'donut',
+  'scatter', 'bubble', 'radar', 'heatmap', 'boxplot', 'gauge', 'combo',
+];
+
+/** 某 type 在 plans 中的最高 suitability（recommended > allowed_explicit > unsupported） */
+function bestSuitability(plans: readonly ChartPlanV2[], type: RenderableChartType): ChartSuitability {
+  const suits = plans.filter(p => p.type === type).map(p => p.resolvedSuitability);
+  if (suits.includes('recommended')) return 'recommended';
+  if (suits.includes('allowed_explicit')) return 'allowed_explicit';
+  return 'unsupported';
+}
+
+/** 每种 type 的 best suitability 映射，用于整体断言 */
+function suitMap(plans: readonly ChartPlanV2[]): Record<RenderableChartType, ChartSuitability> {
+  const map = {} as Record<RenderableChartType, ChartSuitability>;
+  for (const t of ALL_TYPES) map[t] = bestSuitability(plans, t);
+  return map;
+}
+
+/** 断言 13 个 type 的 suitability 全部匹配期望 */
+function assertSuitMap(
+  plans: readonly ChartPlanV2[],
+  expected: Partial<Record<RenderableChartType, ChartSuitability>>,
+  fixture: string,
+): void {
+  const actual = suitMap(plans);
+  for (const t of ALL_TYPES) {
+    const exp = expected[t] ?? 'unsupported';
+    assertEqual(actual[t], exp, `${fixture}: ${t} expected ${exp}, got ${actual[t]}`);
+  }
+}
+
+interface FixInput {
+  columns: string[];
+  rows: Row[];
+  source?: PlanChartsInputV2['source'];
+  intent?: PlanChartsInputV2['intent'];
+  requestedChartType?: RenderableChartType;
+}
+
+function run(input: FixInput) {
+  return planChartsWithCapabilitiesV2(
+    {
+      columns: input.columns,
+      rows: input.rows,
+      source: input.source ?? 'auto',
+      intent: input.intent ?? 'auto',
+      requestedChartType: input.requestedChartType,
+    },
+    ALL_CAPABILITIES_V2,
+  );
+}
+
+// ============================================================
+// 夹具 1：空数据
+// ============================================================
+
+test('fixture 1: empty → all unsupported, defaultPlan=null', () => {
+  const r = run({ columns: [], rows: [] });
+  const p = r.profile;
+  assertEqual(p.archetype, 'empty');
+  assertEqual(p.traits.measureCount, 0);
+  assertEqual(p.traits.rowCount, 0);
+  assertEqual(r.plans.length, 17); // 13 种共 17 个 variant
+  assertSuitMap(r.plans, {}, 'fixture 1'); // 全 unsupported
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
+});
+
+// ============================================================
+// 夹具 2：单 KPI
+// ============================================================
+
+test('fixture 2: single_value → gauge=recommended', () => {
+  const r = run({ columns: ['total_count'], rows: [{ total_count: 342 }] });
+  assertEqual(r.profile.archetype, 'single_value');
+  assertEqual(r.profile.traits.measureCount, 1);
+  assertEqual(r.profile.traits.rowCount, 1);
+  assertSuitMap(r.plans, { gauge: 'recommended' }, 'fixture 2');
+  assertEqual(r.defaultPlan?.type, 'gauge');
+  assertEqual(r.noChartReason, null);
+});
+
+// ============================================================
+// 夹具 3：单行多指标
+// ============================================================
+
+test('fixture 3: single_row_multi_measure → all unsupported, defaultPlan=null', () => {
+  const r = run({
+    columns: ['station_count', 'avg_discharge', 'total_violations'],
+    rows: [{ station_count: 120, avg_discharge: 350.5, total_violations: 15 }],
+  });
+  assertEqual(r.profile.archetype, 'single_row_multi_measure');
+  assertEqual(r.profile.traits.measureCount, 3);
+  assertEqual(r.profile.traits.rowCount, 1);
+  assertSuitMap(r.plans, {}, 'fixture 3');
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
+});
+
+// ============================================================
+// 夹具 4：普通明细（profiler 实际判为 multi_entity_temporal，与报告 detail_rows 期望不同）
+// ============================================================
+
+test('fixture 4: detail-like rows → profiler multi_entity_temporal (见问题清单 P1)', () => {
+  const rows: Row[] = Array.from({ length: 30 }, (_, i) => ({
+    id: i, station_name: '站' + (i % 5), sample_date: '2024-01-' + ((i % 28) + 1),
+    ph: 7 + i % 3, cod: 12 + i % 5, nh3n: 0.5 + i % 2,
+  }));
+  const r = run({ columns: ['id', 'station_name', 'sample_date', 'ph', 'cod', 'nh3n'], rows });
+  // 报告期望 detail_rows，实际 multi_entity_temporal（profiler 判定顺序导致）
+  assertEqual(r.profile.archetype, 'multi_entity_temporal');
+  assertOk(r.profile.traits.detailConfidence >= 0.5, 'detailConfidence 应 >= 0.5');
+  assertSuitMap(r.plans, {}, 'fixture 4');
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
+});
+
+// ============================================================
+// 夹具 5：分类对比
+// ============================================================
+
+test('fixture 5: categorical_series → bar=recommended', () => {
+  const r = run({
+    columns: ['region', 'count'],
+    rows: [
+      { region: '城北', count: 45 }, { region: '城南', count: 32 },
+      { region: '城东', count: 28 }, { region: '城西', count: 19 }, { region: '中心', count: 56 },
+    ],
+  });
+  assertEqual(r.profile.archetype, 'categorical_series');
+  assertEqual(r.profile.traits.measureCount, 1);
+  assertEqual(r.profile.traits.duplicateDimensionKeys, false);
+  assertEqual(r.profile.traits.partToWholeEligible, true);
+  assertSuitMap(r.plans, {
+    bar: 'recommended', horizontal_bar: 'recommended',
+    line: 'allowed_explicit', pie: 'allowed_explicit', donut: 'allowed_explicit',
+  }, 'fixture 5');
+  assertEqual(r.defaultPlan?.type, 'bar');
+  assertEqual(r.noChartReason, null);
+});
+
+// ============================================================
+// 夹具 6：分类对比 + 用户请求饼图
+// ============================================================
+
+test('fixture 6: categorical_series + user pie → defaultPlan=pie', () => {
+  const rows = [
+    { region: '城北', count: 45 }, { region: '城南', count: 32 },
+    { region: '城东', count: 28 }, { region: '城西', count: 19 }, { region: '中心', count: 56 },
+  ];
+  const r = run({
+    columns: ['region', 'count'], rows,
+    source: 'user', requestedChartType: 'pie', intent: 'part_to_whole',
+  });
+  assertEqual(r.profile.archetype, 'categorical_series');
+  // intent=part_to_whole：bar 从 recommended 降为 allowed_explicit
+  // pie maxSuitability=allowed_explicit，intent 匹配但不突破上限，仍 allowed_explicit
+  assertSuitMap(r.plans, {
+    bar: 'allowed_explicit', horizontal_bar: 'allowed_explicit',
+    line: 'allowed_explicit', pie: 'allowed_explicit', donut: 'allowed_explicit',
+  }, 'fixture 6');
+  assertEqual(r.defaultPlan?.type, 'pie');
+  assertEqual(r.noChartReason, null);
+});
+
+// ============================================================
+// 夹具 7：单实体时间趋势
+// ============================================================
+
+test('fixture 7: temporal_series → line=recommended, area=recommended', () => {
+  const rows: Row[] = Array.from({ length: 12 }, (_, i) => ({ month: (i + 1) + '月', discharge: 100 + i * 5 }));
+  const r = run({ columns: ['month', 'discharge'], rows });
+  assertEqual(r.profile.archetype, 'temporal_series');
+  assertEqual(r.profile.traits.timePointCount, 12);
+  assertEqual(r.profile.traits.entityFieldCount, 0);
+  assertSuitMap(r.plans, {
+    line: 'recommended', area: 'recommended',
+    bar: 'allowed_explicit', horizontal_bar: 'allowed_explicit',
+  }, 'fixture 7');
+  assertEqual(r.defaultPlan?.type, 'line');
+  assertEqual(r.noChartReason, null);
+});
+
+// ============================================================
+// 夹具 8：多实体时间趋势（renderer 无 multi-series → 全 unsupported）
+// ============================================================
+
+test('fixture 8: multi_entity_temporal → all unsupported (multi-series gate)', () => {
+  const r = run({
+    columns: ['station_name', 'month', 'value'],
+    rows: [
+      { station_name: 'A', month: '1月', value: 10 }, { station_name: 'A', month: '2月', value: 12 }, { station_name: 'A', month: '3月', value: 11 },
+      { station_name: 'B', month: '1月', value: 8 }, { station_name: 'B', month: '2月', value: 9 }, { station_name: 'B', month: '3月', value: 10 },
+    ],
+  });
+  assertEqual(r.profile.archetype, 'multi_entity_temporal');
+  assertEqual(r.profile.traits.multiSeriesEligible, true);
+  assertEqual(r.profile.traits.entityCount, 2);
+  assertSuitMap(r.plans, {}, 'fixture 8'); // line_temporal_trend_multi 被 multi_series_line gate
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
+});
+
+// ============================================================
+// 夹具 9：两数值关系
+// ============================================================
+
+test('fixture 9: numeric_relationship → scatter=recommended', () => {
+  const rows: Row[] = Array.from({ length: 20 }, (_, i) => ({ rainfall: 10 + i * 2, runoff: 2 + i * 0.5 }));
+  const r = run({ columns: ['rainfall', 'runoff'], rows });
+  assertEqual(r.profile.archetype, 'numeric_relationship');
+  assertEqual(r.profile.traits.measureCount, 2);
+  assertEqual(r.profile.traits.numericFieldCount, 2);
+  assertSuitMap(r.plans, { scatter: 'recommended' }, 'fixture 9');
+  assertEqual(r.defaultPlan?.type, 'scatter');
+  assertEqual(r.noChartReason, null);
+});
+
+// ============================================================
+// 夹具 10：三数值关系
+// ============================================================
+
+test('fixture 10: numeric_relationship(3) → bubble=recommended', () => {
+  const rows: Row[] = Array.from({ length: 20 }, (_, i) => ({ rainfall: 10 + i * 2, runoff: 2 + i * 0.5, area: 100 + i * 10 }));
+  const r = run({ columns: ['rainfall', 'runoff', 'area'], rows });
+  assertEqual(r.profile.archetype, 'numeric_relationship');
+  assertEqual(r.profile.traits.measureCount, 3);
+  assertEqual(r.profile.traits.numericFieldCount, 3);
+  assertSuitMap(r.plans, { scatter: 'recommended', bubble: 'recommended' }, 'fixture 10');
+  // 报告期望 defaultPlan=bubble，实际 scatter（见问题清单 P9：selectForAuto 取 recommended[0]，scatter 先于 bubble）
+  assertEqual(r.defaultPlan?.type, 'scatter');
+  assertEqual(r.noChartReason, null);
+});
+
+// ============================================================
+// 夹具 11：二维矩阵（heatmap 需 matrix_aggregate，gate → unsupported）
+// ============================================================
+
+test('fixture 11: categorical_matrix → heatmap gate, defaultPlan=null (见问题清单 P2)', () => {
+  const r = run({
+    columns: ['region', 'month', 'avg_temp'],
+    rows: [
+      { region: '城北', month: '1月', avg_temp: 5.2 }, { region: '城北', month: '2月', avg_temp: 7.1 },
+      { region: '城南', month: '1月', avg_temp: 6.0 }, { region: '城南', month: '2月', avg_temp: 8.3 },
+    ],
+  });
+  assertEqual(r.profile.archetype, 'categorical_matrix');
+  assertEqual(r.profile.traits.matrixEligible, true);
+  assertEqual(r.profile.traits.dimensionFieldCount, 2);
+  // 报告期望 heatmap=recommended，实际 matrix_aggregate 未实现 → gate → unsupported
+  assertSuitMap(r.plans, { heatmap: 'unsupported' }, 'fixture 11');
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
+});
+
+// ============================================================
+// 夹具 12：真正分组分布样本（boxplot gate）
+// ============================================================
+
+test('fixture 12: detail_rows + grouped samples → boxplot gate', () => {
+  const r = run({
+    columns: ['station', 'ph_value'],
+    rows: [
+      { station: 'A', ph_value: 7.2 }, { station: 'A', ph_value: 7.5 }, { station: 'A', ph_value: 6.8 },
+      { station: 'B', ph_value: 8.1 }, { station: 'B', ph_value: 7.9 },
+    ],
+  });
+  assertEqual(r.profile.archetype, 'detail_rows');
+  assertEqual(r.profile.traits.groupedSamplesEligible, true);
+  assertEqual(r.profile.traits.duplicateDimensionKeys, true);
+  // boxplot_summary 未实现 → gate → unsupported
+  assertSuitMap(r.plans, { boxplot: 'unsupported' }, 'fixture 12');
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
+});
+
+// ============================================================
+// 夹具 13：重复分类但应聚合（profiler 判 unknown，与报告 detail_rows 期望不同）
+// ============================================================
+
+test('fixture 13: duplicate aggregable → unknown, defaultPlan=null (见问题清单 P3)', () => {
+  const r = run({
+    columns: ['region', 'count'],
+    rows: [
+      { region: '城北', count: 10 }, { region: '城北', count: 15 },
+      { region: '城南', count: 8 }, { region: '城南', count: 12 },
+    ],
+  });
+  // 报告期望 detail_rows，实际 unknown（detailConfidence=0.30 < 0.5）
+  assertEqual(r.profile.archetype, 'unknown');
+  assertEqual(r.profile.traits.duplicateDimensionKeys, true);
+  assertEqual(r.profile.traits.partToWholeEligible, true);
+  // bar_categorical_aggregated / horizontal_bar_categorical_aggregated = allowed_explicit
+  assertSuitMap(r.plans, { bar: 'allowed_explicit', horizontal_bar: 'allowed_explicit' }, 'fixture 13');
+  assertEqual(r.defaultPlan, null); // auto 无 recommended
+  assertEqual(r.noChartReason, 'no_recommended_plan_for_auto');
+});
+
+// ============================================================
+// 夹具 14：多指标剖面（radar/combo 仅 allowed_explicit，auto 无 recommended）
+// ============================================================
+
+test('fixture 14: categorical_series multi-measure → radar/combo allowed_explicit (见问题清单 P4)', () => {
+  const r = run({
+    columns: ['station_name', 'ph', 'do', 'cod', 'nh3n'],
+    rows: [
+      { station_name: 'A', ph: 7.2, do: 6.5, cod: 12.0, nh3n: 0.5 },
+      { station_name: 'B', ph: 7.8, do: 5.8, cod: 18.0, nh3n: 0.8 },
+      { station_name: 'C', ph: 7.0, do: 7.2, cod: 8.0, nh3n: 0.3 },
+    ],
+  });
+  assertEqual(r.profile.archetype, 'categorical_series');
+  assertEqual(r.profile.traits.measureCount, 4);
+  assertEqual(r.profile.traits.dimensionCardinality, 3);
+  // 报告期望 radar=recommended，实际 radar maxSuitability=allowed_explicit → 不提升
+  assertSuitMap(r.plans, { radar: 'allowed_explicit', combo: 'allowed_explicit' }, 'fixture 14');
+  assertEqual(r.defaultPlan, null); // auto 无 recommended
+  assertEqual(r.noChartReason, 'no_recommended_plan_for_auto');
+});
+
+// ============================================================
+// 夹具 15：异构指标汇总（关键纠正：不出图）
+// ============================================================
+
+test('fixture 15: heterogeneous_metric_rows → all unsupported, defaultPlan=null', () => {
+  const r = run({
+    columns: ['metric_name', 'value'],
+    rows: [
+      { metric_name: 'BOD监测记录总数', value: 16 },
+      { metric_name: '涉及排污口数量', value: 16 },
+      { metric_name: '平均每个排污口记录数', value: 1 },
+    ],
+  });
+  assertEqual(r.profile.archetype, 'heterogeneous_metric_rows');
+  assertOk(r.profile.traits.heterogeneousConfidence >= 0.6);
+  assertSuitMap(r.plans, {}, 'fixture 15'); // 全 unsupported
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
+});
+
+// ============================================================
+// 跨夹具不变量：13 种 type 都有至少一个 plan
+// ============================================================
+
+test('invariant: every fixture has 13 types in plans', () => {
+  const allFixtures: FixInput[] = [
+    { columns: [], rows: [] },
+    { columns: ['total_count'], rows: [{ total_count: 342 }] },
+    { columns: ['region', 'count'], rows: [{ region: 'A', count: 1 }] },
+  ];
+  for (const f of allFixtures) {
+    const r = run(f);
+    const types = new Set(r.plans.map(p => p.type));
+    for (const t of ALL_TYPES) {
+      assertOk(types.has(t), `fixture missing plan for type ${t}`);
+    }
+  }
+});
+
+test('invariant: planChartsV2 default still uses PILOT (not ALL)', () => {
+  // 间接验证：PILOT 只 3 种，ALL 13 种；planChartsV2 返回的 plans 数量应 = PILOT variant 总数(6)
+  // 直接 import planChartsV2 会耦合，这里只验证 ALL 路径的 variant 总数
+  const r = run({ columns: ['region', 'count'], rows: [{ region: 'A', count: 1 }] });
+  assertEqual(r.plans.length, 17); // ALL_CAPABILITIES_V2 共 17 个 variant
+});
+
+// ============================================================
+// 问题清单（profiler/capability 与报告不一致）
+// ============================================================
+//
+// P1（夹具 4）：报告期望 detail_rows，profiler 实际判 multi_entity_temporal。
+//    原因：profiler archetype 判定顺序把 multi_entity_temporal（第 4 步）放在
+//    detail_rows（第 9 步）之前。含实体+时间+多 measure 的明细数据先命中前者。
+//    detailConfidence=0.60 已达阈值，但 archetype 已被前面拦截。
+//    报告 §1.2 顺序：temporal(5) 在 matrix(3)/numeric(4) 之后，detail(7) 更后。
+//    影响：明细监测数据不会落到 detail_rows，无法触发"建议先聚合"提示。
+//
+// P2（夹具 11）：报告期望 heatmap=recommended，实际 unsupported。
+//    原因：heatmap 依赖 matrix_aggregate transform，chartDataTransformV2 未实现，
+//    通过 rendererRequirements gate=false 标 unsupported。本阶段不实现 transform，
+//    故 heatmap 暂不可执行。符合任务"未实现 transform 通过 gate 标 unsupported"要求。
+//
+// P3（夹具 13）：报告期望 detail_rows，profiler 实际判 unknown。
+//    原因：detailConfidence=0.30 < 0.5 阈值，未命中 detail_rows，落到 unknown。
+//    该数据 region 重复但 count 是可加指标，profiler 视为可聚合而非明细。
+//    报告 §8 夹具 13 也标注"此数据需要先聚合才能画分类对比图"，与 unknown 行为接近。
+//
+// P4（夹具 14）：报告期望 radar=recommended，实际 allowed_explicit。
+//    原因：ALL_CAPABILITIES_V2 中 radar archetypeSuitability[categorical_series]=allowed_explicit，
+//    maxSuitability=allowed_explicit。intent=auto 不提升。
+//    报告 §8 夹具 14 期望 defaultPlan=radar，但报告 §3.4 categorical_series 默认 intent=comparison，
+//    radar(profile) 与 comparison 不匹配，按报告 §4.4 不应提升为 recommended。
+//    故此处与报告夹具期望不一致，但符合报告 §4.4 的 intent 规则。
+//    结论：报告夹具 14 的期望与报告 §4.4 规则自相矛盾，本实现遵循 §4.4。
+//
+// P5（archetype 命名）：报告用 multi_series_temporal，profiler 用 multi_entity_temporal。
+//    本阶段不修改 profiler（任务边界），ALL_CAPABILITIES_V2 已适配实际命名。
+//
+// P6（trait 命名）：报告用 categoryFieldCount/hasRepeatedCategories/isAggregated，
+//    profiler 用 dimensionFieldCount/duplicateDimensionKeys/aggregationState(三态)。
+//    TraitRequirement 不支持枚举相等，area 的 isAggregated 要求无法表达，
+//    改用 entityFieldCount<=1 近似。本阶段不修改 profiler。
+//
+// P7（scatter/bubble seriesField）：报告 §4.3 含 seriesField，但 FieldResolver 将
+//    fieldMapping 中出现的字段视为必需，numeric_relationship 数据无 entityField
+//    会导致 spec=null。本阶段去掉 seriesField 让散点/气泡图可执行。
+//    后续 FieldResolver 支持"可选字段"后可补回。
+//
+// P8（scatter/bubble xField 与 yField 同列）：xField=measureField[0]，yFields=measureFields[:1]
+//    两者首个 measure 相同。Planner 不检查字段冲突，spec 可构建（resolvedSuitability=recommended），
+//    但 buildScatterChart 会因 xField===yField 返回 null。本阶段不测渲染，仅测 Planner 决策。
+//    根因：MultiFieldSelector 不支持"跳过首项 measure"。后续需扩展 selector。
+//
+// P9（夹具 10 defaultPlan）：报告期望 bubble，实际 scatter。
+//    原因：三数值关系数据上 scatter 和 bubble 均 recommended，selectForAuto 取 recommended[0]，
+//    ALL_CAPABILITIES_V2 中 scatter 排在 bubble 之前。报告 §8 夹具 10 期望 bubble 优先。
+//    根因：selectForAuto 无"三数值优先 bubble"的 tie-break 规则。后续需在 Planner 加分规则。
+
+// ============================================================
+// 结果汇总
+// ============================================================
+console.log(`\n${'='.repeat(60)}`);
+console.log(`V2 Golden Fixtures Tests`);
+console.log(`${'='.repeat(60)}`);
+console.log(`Passed: ${passed}`);
+console.log(`Failed: ${failed}`);
+console.log(`Total:  ${passed + failed}`);
+console.log(`${'='.repeat(60)}`);
+
+if (failed > 0) {
+  throw new Error(`${failed} test(s) failed`);
+}

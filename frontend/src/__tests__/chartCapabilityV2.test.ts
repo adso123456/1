@@ -5,12 +5,13 @@
 
 import {
   PILOT_CAPABILITIES_V2,
+  ALL_CAPABILITIES_V2,
   type ChartCapabilityVariant,
   type TraitRequirement,
   type ArchetypeSuitability,
   type ChartCapability,
 } from '../chartCapabilityV2.js';
-import type { ChartSuitability } from '../types.js';
+import type { ChartSuitability, RenderableChartType } from '../types.js';
 
 let passed = 0;
 let failed = 0;
@@ -376,6 +377,131 @@ const _compileCheck5: ChartCapability = { type: 'none', label: '无', variants: 
 // ── 标记引用（避免 unused-variable 警告） ──
 void _compileCheck1; void _compileCheck2; void _compileCheck3;
 void _compileCheck4; void _compileCheck5;
+
+// ============================================================
+// 12. ALL_CAPABILITIES_V2 完整能力矩阵（13 种图表）
+// ============================================================
+//
+// 阶段 B-1：离线补齐 13 种图表能力矩阵，仅用于 Golden 测试，不接入运行时。
+// 以下测试验证 ALL_CAPABILITIES_V2 的结构契约。
+
+const ALL_RENDERABLE_TYPES: RenderableChartType[] = [
+  'bar', 'horizontal_bar', 'line', 'area', 'pie', 'donut',
+  'scatter', 'bubble', 'radar', 'heatmap', 'boxplot', 'gauge', 'combo',
+];
+
+function allVariantsAll(): ChartCapabilityVariant[] {
+  return ALL_CAPABILITIES_V2.flatMap(c => [...c.variants]);
+}
+
+test('ALL_CAPABILITIES_V2 has 13 capabilities', () => {
+  assertEqual(ALL_CAPABILITIES_V2.length, 13);
+});
+
+test('ALL_CAPABILITIES_V2 covers all 13 renderable types', () => {
+  const types = ALL_CAPABILITIES_V2.map(c => c.type).sort();
+  const expected = [...ALL_RENDERABLE_TYPES].sort();
+  assertEqual(types.join(','), expected.join(','), `missing types: ${expected.filter(t => !types.includes(t)).join(',')}`);
+});
+
+test('ALL_CAPABILITIES_V2 type is unique', () => {
+  const types = ALL_CAPABILITIES_V2.map(c => c.type);
+  assertEqual(new Set(types).size, types.length, `duplicate type: ${types}`);
+});
+
+test('ALL_CAPABILITIES_V2 variant id is globally unique', () => {
+  const ids = allVariantsAll().map(v => v.id);
+  assertEqual(new Set(ids).size, ids.length, `duplicate id: ${ids}`);
+});
+
+test('ALL_CAPABILITIES_V2 every variant has at least one archetype entry', () => {
+  for (const v of allVariantsAll()) {
+    const entries = Object.keys(v.archetypeSuitability);
+    assertOk(entries.length > 0, `${v.id}: archetypeSuitability must not be empty`);
+  }
+});
+
+test('ALL_CAPABILITIES_V2 archetypeSuitability values are valid', () => {
+  const valid = new Set(['recommended', 'allowed_explicit']);
+  for (const v of allVariantsAll()) {
+    for (const [, suitability] of Object.entries(v.archetypeSuitability)) {
+      assertOk(valid.has(suitability), `${v.id}: invalid suitability "${suitability}"`);
+    }
+  }
+});
+
+test('ALL_CAPABILITIES_V2 every variant has xField or valueField mapping', () => {
+  // gauge 只有 valueField；其余都有 xField
+  for (const v of allVariantsAll()) {
+    const hasX = v.fieldMapping.xField !== undefined;
+    const hasV = v.fieldMapping.valueField !== undefined;
+    assertOk(hasX || hasV, `${v.id}: must have xField or valueField`);
+  }
+});
+
+test('ALL_CAPABILITIES_V2 non-gauge variants have yFields mapping', () => {
+  for (const v of allVariantsAll()) {
+    // gauge/boxplot 用 valueField，无 yFields
+    if (v.fieldMapping.valueField) continue;
+    assertOk(v.fieldMapping.yFields !== undefined, `${v.id}: yFields is required`);
+  }
+});
+
+test('ALL_CAPABILITIES_V2 transform !== none implies maxSuitability is allowed_explicit', () => {
+  for (const v of allVariantsAll()) {
+    if (v.transform !== 'none') {
+      assertEqual(v.maxSuitability, 'allowed_explicit',
+        `${v.id}: transform=${v.transform} should cap to allowed_explicit`);
+    }
+  }
+});
+
+test('ALL_CAPABILITIES_V2 renderer gate exists implies maxSuitability is allowed_explicit', () => {
+  for (const v of allVariantsAll()) {
+    if (v.rendererRequirements.length > 0) {
+      assertEqual(v.maxSuitability, 'allowed_explicit',
+        `${v.id}: has renderer gates, maxSuitability should be allowed_explicit`);
+    }
+  }
+});
+
+test('ALL_CAPABILITIES_V2 recommended variants have no renderer gates', () => {
+  for (const cap of ALL_CAPABILITIES_V2) {
+    for (const v of cap.variants) {
+      if (v.maxSuitability === 'recommended') {
+        assertEqual(v.rendererRequirements.length, 0,
+          `${v.id}: recommended variant should have no renderer gates`);
+      }
+    }
+  }
+});
+
+test('ALL_CAPABILITIES_V2 gate: boxplot/heatmap/line_multi are unsupported at runtime', () => {
+  // 这三个 variant 的 renderer gate = false，运行时必须 unsupported
+  const gated = allVariantsAll().filter(v => v.rendererRequirements.some(r => !r.currentlySupported));
+  const gatedIds = gated.map(v => v.id).sort();
+  assertEqual(
+    gatedIds.join(','),
+    'boxplot_grouped_distribution,heatmap_categorical_matrix,line_temporal_trend_multi',
+    `gated variants mismatch: ${gatedIds}`,
+  );
+});
+
+test('ALL_CAPABILITIES_V2 includes pilot capabilities as subset', () => {
+  // PILOT 的 3 种 type 必须在 ALL 中
+  const allTypes = new Set(ALL_CAPABILITIES_V2.map(c => c.type));
+  for (const cap of PILOT_CAPABILITIES_V2) {
+    assertOk(allTypes.has(cap.type), `pilot type ${cap.type} missing in ALL`);
+  }
+});
+
+test('ALL_CAPABILITIES_V2 pilot variant ids preserved', () => {
+  // PILOT 的 variant id 必须在 ALL 中保留（运行时契约稳定）
+  const allIds = new Set(allVariantsAll().map(v => v.id));
+  for (const v of allVariants()) {
+    assertOk(allIds.has(v.id), `pilot variant ${v.id} missing in ALL`);
+  }
+});
 
 // ============================================================
 // 结果汇总

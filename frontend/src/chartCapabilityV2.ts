@@ -321,3 +321,515 @@ export const PILOT_CAPABILITIES_V2 = [
     ],
   },
 ] as const satisfies readonly ChartCapability[];
+
+// ============================================================
+// 完整能力矩阵 ALL_CAPABILITIES_V2（13 种图表）
+// ============================================================
+//
+// 阶段 B-1：离线补齐 13 种图表能力矩阵，仅用于 Golden 测试，不接入运行时。
+// 运行时仍默认使用 PILOT_CAPABILITIES_V2（见 chartPlannerV2.ts planChartsV2）。
+//
+// 与报告《图表架构审查报告 V2》§4.3 的差异（因 profiler 实际命名）：
+//   - 报告 archetype `multi_series_temporal` → 实际 `multi_entity_temporal`
+//   - 报告 trait `categoryFieldCount` → 实际 `dimensionFieldCount`
+//   - 报告 trait `hasRepeatedCategories` → 实际 `duplicateDimensionKeys`
+//   - 报告 trait `isAggregated` → profiler 无对应 boolean trait（aggregationState 为三态枚举），
+//     TraitRequirement 不支持枚举相等，故 area 等需要 isAggregated 的 variant 暂以近似 trait 表达，
+//     详见问题清单。
+//
+// transform gate 策略：
+//   - transform='none' / 'group_by_sum'：chartDataTransformV2 已稳定支持，可执行
+//   - transform='boxplot_summary'：renderer gate=false → unsupported
+//   - transform='matrix_aggregate'：未实现 → renderer gate=false → unsupported
+//   - pie/donut 用 transform='none'（ECharts 自动算占比，不依赖 percent_of_total）
+//   - gauge/combo 用 transform='none'（buildGaugeChart/buildComboChart 自行处理单值/双轴）
+
+export const ALL_CAPABILITIES_V2 = [
+  // ── bar（复用 pilot 两个 variant） ──
+  {
+    type: 'bar',
+    label: '柱状图',
+    variants: [
+      {
+        id: 'bar_categorical_comparison',
+        archetypeSuitability: {
+          categorical_series: 'recommended',
+          temporal_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'dimensionCardinality', min: 1 },
+          { trait: 'duplicateDimensionKeys', forbidden: true },
+        ],
+        semanticMode: 'comparison',
+        maxSuitability: 'recommended',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'bar_unsupported',
+      },
+      {
+        id: 'bar_categorical_aggregated',
+        archetypeSuitability: {
+          detail_rows: 'allowed_explicit',
+          unknown: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'dimensionCardinality', min: 1 },
+          { trait: 'duplicateDimensionKeys', required: true },
+        ],
+        semanticMode: 'comparison',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'additiveMeasureFields', maxCount: 1 },
+        },
+        transform: 'group_by_sum',
+        rendererRequirements: [
+          {
+            capability: 'group_by_sum',
+            description: '按 xField 分组对 yField 执行 SUM 聚合',
+            currentlySupported: true,
+          },
+        ],
+        unsupportedReasonCode: 'bar_needs_aggregation',
+      },
+    ],
+  },
+
+  // ── horizontal_bar（与 bar 对称） ──
+  {
+    type: 'horizontal_bar',
+    label: '横向柱状图',
+    variants: [
+      {
+        id: 'horizontal_bar_categorical_comparison',
+        archetypeSuitability: {
+          categorical_series: 'recommended',
+          temporal_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'dimensionCardinality', min: 1 },
+          { trait: 'duplicateDimensionKeys', forbidden: true },
+        ],
+        semanticMode: 'comparison',
+        maxSuitability: 'recommended',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'horizontal_bar_unsupported',
+      },
+      {
+        id: 'horizontal_bar_categorical_aggregated',
+        archetypeSuitability: {
+          detail_rows: 'allowed_explicit',
+          unknown: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'dimensionCardinality', min: 1 },
+          { trait: 'duplicateDimensionKeys', required: true },
+        ],
+        semanticMode: 'comparison',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'additiveMeasureFields', maxCount: 1 },
+        },
+        transform: 'group_by_sum',
+        rendererRequirements: [
+          {
+            capability: 'group_by_sum',
+            description: '按 xField 分组对 yField 执行 SUM 聚合',
+            currentlySupported: true,
+          },
+        ],
+        unsupportedReasonCode: 'horizontal_bar_needs_aggregation',
+      },
+    ],
+  },
+
+  // ── line（复用 pilot 三个 variant） ──
+  {
+    type: 'line',
+    label: '折线图',
+    variants: [
+      {
+        id: 'line_temporal_trend_single',
+        archetypeSuitability: {
+          temporal_series: 'recommended',
+        },
+        traitRequirements: [
+          { trait: 'temporalFieldCount', min: 1 },
+          { trait: 'timePointCount', min: 2 },
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'entityFieldCount', equals: 0 },
+        ],
+        semanticMode: 'trend',
+        maxSuitability: 'recommended',
+        fieldMapping: {
+          xField: { source: 'temporalField', index: 0 },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'line_temporal_unsupported',
+      },
+      {
+        id: 'line_temporal_trend_multi',
+        archetypeSuitability: {
+          multi_entity_temporal: 'recommended',
+        },
+        traitRequirements: [
+          { trait: 'temporalFieldCount', min: 1 },
+          { trait: 'timePointCount', min: 2 },
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'entityFieldCount', equals: 1 },
+          { trait: 'entityCount', min: 2 },
+          { trait: 'multiSeriesEligible', required: true },
+        ],
+        semanticMode: 'trend',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'temporalField', index: 0 },
+          yFields: { source: 'measureFields', maxCount: 1 },
+          seriesField: { source: 'entityField' },
+        },
+        transform: 'none',
+        rendererRequirements: [
+          {
+            capability: 'multi_series_line',
+            description: '支持按 seriesField 分系列绘制多条折线',
+            currentlySupported: false,
+          },
+        ],
+        unsupportedReasonCode: 'line_multi_series_unsupported',
+      },
+      {
+        id: 'line_categorical_comparison',
+        archetypeSuitability: {
+          categorical_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'dimensionCardinality', min: 2 },
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'duplicateDimensionKeys', forbidden: true },
+        ],
+        semanticMode: 'comparison',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'line_categorical_unsupported',
+      },
+    ],
+  },
+
+  // ── area（单实体时间趋势） ──
+  {
+    type: 'area',
+    label: '面积图',
+    variants: [
+      {
+        id: 'area_temporal_trend_single',
+        archetypeSuitability: {
+          temporal_series: 'recommended',
+        },
+        traitRequirements: [
+          { trait: 'temporalFieldCount', min: 1 },
+          { trait: 'timePointCount', min: 2 },
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'entityFieldCount', max: 1 },
+        ],
+        semanticMode: 'trend',
+        maxSuitability: 'recommended',
+        fieldMapping: {
+          xField: { source: 'temporalField', index: 0 },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'area_unsupported',
+      },
+    ],
+  },
+
+  // ── pie（分类占比，用 none，ECharts 自动算占比） ──
+  {
+    type: 'pie',
+    label: '饼图',
+    variants: [
+      {
+        id: 'pie_part_to_whole',
+        archetypeSuitability: {
+          categorical_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'partToWholeEligible', required: true },
+          { trait: 'dimensionCardinality', min: 2, max: 12 },
+        ],
+        semanticMode: 'part_to_whole',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'pie_unsupported',
+      },
+    ],
+  },
+
+  // ── donut（与 pie 相同规则） ──
+  {
+    type: 'donut',
+    label: '环形图',
+    variants: [
+      {
+        id: 'donut_part_to_whole',
+        archetypeSuitability: {
+          categorical_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'partToWholeEligible', required: true },
+          { trait: 'dimensionCardinality', min: 2, max: 12 },
+        ],
+        semanticMode: 'part_to_whole',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'donut_unsupported',
+      },
+    ],
+  },
+
+  // ── scatter（两数值关系） ──
+  // 注：报告 §4.3 scatter 含 seriesField，但 FieldResolver 将 fieldMapping 中出现的字段
+  // 一律视为必需，numeric_relationship 数据无 entityField 会导致 spec=null。
+  // 故本阶段去掉 seriesField，让散点图可执行（点名称缺失可接受）。见问题清单。
+  {
+    type: 'scatter',
+    label: '散点图',
+    variants: [
+      {
+        id: 'scatter_numeric_relationship',
+        archetypeSuitability: {
+          numeric_relationship: 'recommended',
+          temporal_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'numericFieldCount', min: 2 },
+          { trait: 'measureCount', min: 2 },
+        ],
+        semanticMode: 'relationship',
+        maxSuitability: 'recommended',
+        fieldMapping: {
+          xField: { source: 'measureField', index: 0 },
+          yFields: { source: 'measureFields', maxCount: 1 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'scatter_unsupported',
+      },
+    ],
+  },
+
+  // ── bubble（三数值关系） ──
+  // 注：同 scatter，去掉 seriesField。
+  {
+    type: 'bubble',
+    label: '气泡图',
+    variants: [
+      {
+        id: 'bubble_numeric_relationship',
+        archetypeSuitability: {
+          numeric_relationship: 'recommended',
+        },
+        traitRequirements: [
+          { trait: 'numericFieldCount', min: 3 },
+          { trait: 'measureCount', min: 3 },
+        ],
+        semanticMode: 'relationship',
+        maxSuitability: 'recommended',
+        fieldMapping: {
+          xField: { source: 'measureField', index: 0 },
+          yFields: { source: 'measureFields', maxCount: 1 },
+          sizeField: { source: 'measureField', index: 2 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'bubble_unsupported',
+      },
+    ],
+  },
+
+  // ── radar（多指标剖面） ──
+  {
+    type: 'radar',
+    label: '雷达图',
+    variants: [
+      {
+        id: 'radar_multi_measure_profile',
+        archetypeSuitability: {
+          categorical_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', min: 3 },
+          { trait: 'dimensionFieldCount', min: 1 },
+          { trait: 'dimensionCardinality', max: 8 },
+        ],
+        semanticMode: 'profile',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'measureFields', maxCount: 4 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'radar_unsupported',
+      },
+    ],
+  },
+
+  // ── heatmap（二维矩阵，需 matrix_aggregate，gate） ──
+  {
+    type: 'heatmap',
+    label: '热力图',
+    variants: [
+      {
+        id: 'heatmap_categorical_matrix',
+        archetypeSuitability: {
+          categorical_matrix: 'recommended',
+        },
+        traitRequirements: [
+          { trait: 'matrixEligible', required: true },
+          { trait: 'dimensionFieldCount', min: 2 },
+        ],
+        semanticMode: 'distribution',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'dimensionField', index: 0 },
+          yFields: { source: 'dimensionFields', maxCount: 1 },
+          valueField: { source: 'measureField', index: 0 },
+        },
+        transform: 'matrix_aggregate',
+        rendererRequirements: [
+          {
+            capability: 'matrix_aggregate',
+            description: '将长表按两个分类维度透视成矩阵',
+            currentlySupported: false,
+          },
+        ],
+        unsupportedReasonCode: 'heatmap_matrix_aggregate_unsupported',
+      },
+    ],
+  },
+
+  // ── boxplot（复用 pilot，boxplot_summary gate） ──
+  {
+    type: 'boxplot',
+    label: '箱线图',
+    variants: [
+      {
+        id: 'boxplot_grouped_distribution',
+        archetypeSuitability: {
+          categorical_series: 'allowed_explicit',
+          detail_rows: 'allowed_explicit',
+          unknown: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'groupedSamplesEligible', required: true },
+          { trait: 'dimensionCardinality', min: 2, max: 20 },
+        ],
+        semanticMode: 'distribution',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          xField: { source: 'primaryDimensionField' },
+          valueField: { source: 'nonAdditiveMeasureField', index: 0 },
+        },
+        transform: 'boxplot_summary',
+        rendererRequirements: [
+          {
+            capability: 'boxplot_summary',
+            description: '按 xField 分组计算 min/Q1/median/Q3/max 五数概括',
+            currentlySupported: false,
+          },
+        ],
+        unsupportedReasonCode: 'boxplot_unsupported',
+      },
+    ],
+  },
+
+  // ── gauge（单值 KPI，用 none，buildGaugeChart 自行取首行） ──
+  {
+    type: 'gauge',
+    label: '仪表盘',
+    variants: [
+      {
+        id: 'gauge_single_value',
+        archetypeSuitability: {
+          single_value: 'recommended',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', equals: 1 },
+          { trait: 'rowCount', equals: 1 },
+        ],
+        semanticMode: 'kpi',
+        maxSuitability: 'recommended',
+        fieldMapping: {
+          valueField: { source: 'measureField', index: 0 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'gauge_unsupported',
+      },
+    ],
+  },
+
+  // ── combo（双 Y 轴，用 none） ──
+  {
+    type: 'combo',
+    label: '组合图',
+    variants: [
+      {
+        id: 'combo_dual_axis',
+        archetypeSuitability: {
+          categorical_series: 'allowed_explicit',
+          temporal_series: 'allowed_explicit',
+        },
+        traitRequirements: [
+          { trait: 'measureCount', min: 2 },
+          { trait: 'dimensionFieldCount', min: 1 },
+        ],
+        semanticMode: 'profile',
+        maxSuitability: 'allowed_explicit',
+        fieldMapping: {
+          // primaryDimensionField 在 categorical_series 为分类、在 temporal_series 为时间字段
+          xField: { source: 'primaryDimensionField' },
+          yFields: { source: 'measureFields', maxCount: 2 },
+        },
+        transform: 'none',
+        rendererRequirements: [],
+        unsupportedReasonCode: 'combo_unsupported',
+      },
+    ],
+  },
+] as const satisfies readonly ChartCapability[];
