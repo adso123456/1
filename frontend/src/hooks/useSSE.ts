@@ -876,11 +876,12 @@ export function useSSE() {
                       );
                     }
                   } else {
-                    // 无图表
+                    // 无图表（ct === 'none'，或存在旧 chart_type 但数据不适合出图）：
+                    // 显式清空 charts，清除流式过程中已经生成的临时图表
                     setMessages(prev =>
                       prev.map(m =>
                         m.id === assistantMsgId
-                          ? { ...m, text: finalText, dataframes: [...dataframes] }
+                          ? { ...m, text: finalText, charts: [], dataframes: [...dataframes] }
                           : m
                       )
                     );
