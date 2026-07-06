@@ -133,11 +133,18 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
     }
   }, [chart.dataVersion, chart.spec.type, allTypes]);
 
-  /** 当前类型对应的完整渲染 Spec（从 availability 中获取） */
+  /** 当前类型对应的完整渲染 Spec。
+   *  优先保留 V2 Planner 产出的原始 spec（explicitType=true 且类型匹配时），
+   *  避免被旧 getChartTypeAvailability() 推导的 spec 覆盖。
+   *  用户手动切换后 localType 与原始 spec.type 不同，仍走旧 availability spec。 */
   const activeSpec = useMemo<ChartSpec | null>(() => {
+    // V2 auto 输出的 spec 优先保留，不被旧 availability 推导覆盖
+    if (chart.explicitType === true && chart.spec?.type === localType) {
+      return chart.spec;
+    }
     const item = allTypes.find(t => t.type === localType);
     return item?.spec ?? null;
-  }, [allTypes, localType]);
+  }, [allTypes, localType, chart.explicitType, chart.spec]);
 
   // 图表实例就绪后：初始 resize + fillHeight 模式下建立 ECharts 实际 DOM 的 ResizeObserver
   const handleChartReady = () => {
