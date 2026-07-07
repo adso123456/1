@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { DashboardItem, DashboardMeta, DashboardChartItem, DashboardLayoutInfo, ChartSpec } from '../types';
+import type { DashboardItem, DashboardMeta, DashboardChartItem, DashboardLayoutInfo, ChartSpec, ChartData } from '../types';
 import type { Layout } from 'react-grid-layout';
 
 /** v3 localStorage key —— 细粒度纵向网格（rowHeight=10, margin=6） */
@@ -354,6 +354,32 @@ export function useDashboard() {
     return persist(current);
   }, [persist, reload]);
 
+  /** 用完整 newChart 替换指定 dashboard item 的 chart（仪表板内 V2 切换图表类型后持久化）。
+   *  保留 dashboard item 的 layout / id / sourceSessionId 等元数据，
+   *  保留 old chart 的 UI 字段（chartOnly / dataVersion / title / id）。
+   *  找不到 id 或 item 非 chart 类型时返回 false。 */
+  const updateChartFull = useCallback((id: string, newChart: ChartData): boolean => {
+    const current = reload();
+    const db = current.dashboards.find(d => d.id === current.currentDashboardId);
+    if (!db) return false;
+
+    const item = db.items.find(c => c.id === id);
+    if (!item || item.type !== 'chart') return false;
+
+    // 合并：newChart 提供 transform 后的 spec/columns/rows/v2Meta/sourceColumns/sourceRows/explicitType，
+    //        old chart 保留 UI 元数据字段
+    item.chart = {
+      ...newChart,
+      chartOnly: item.chart.chartOnly,
+      dataVersion: item.chart.dataVersion,
+      title: item.chart.title || newChart.title,
+      id: item.chart.id || newChart.id,
+    };
+
+    db.updatedAt = Date.now();
+    return persist(current);
+  }, [persist, reload]);
+
   /** 新建仪表板并立即切换 */
   const createDashboard = useCallback((): boolean => {
     const current = reload();
@@ -430,6 +456,7 @@ export function useDashboard() {
     updateLayout,
     updateItemHeight,
     updateChartSpec,
+    updateChartFull,
     createDashboard,
     switchDashboard,
     addItemsToDashboard,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import type { DashboardItem, ChartSpec } from '../types';
+import type { DashboardItem, ChartSpec, ChartData } from '../types';
 import { default as GridLayout } from 'react-grid-layout/legacy';
 import type { Layout } from 'react-grid-layout/legacy';
 import { ChartView } from './ChartView';
@@ -17,6 +17,8 @@ interface Props {
   onUpdateItemHeight?: (id: string, h: number) => void;
   /** 仪表板内图表切换类型后，回传项目 ID 与完整 ChartSpec 供上层持久化 */
   onUpdateChartSpec?: (id: string, spec: ChartSpec) => void;
+  /** 仪表板内 V2 图表切换：回传项目 ID 与完整新 ChartData（含 transform 后 columns/rows/v2Meta） */
+  onV2ChartSwitch?: (dashboardItemId: string, newChart: ChartData) => void;
 }
 
 const BORDER = '#e5e7eb';
@@ -33,7 +35,7 @@ const GRID_MARGIN = 6;
  *  表格内容区 padding 为 0，故不另加。 */
 const TABLE_CARD_CHROME = 51;
 
-export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLayoutChange, onUpdateItemHeight, onUpdateChartSpec }: Props) {
+export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLayoutChange, onUpdateItemHeight, onUpdateChartSpec, onV2ChartSwitch }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(600);
   const [exporting, setExporting] = useState(false);
@@ -367,7 +369,12 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                         hideDescription
                         fillHeight
                         showExport
+                        messageId={di.id}
+                        chartIndex={0}
                         onChangeSpec={(spec) => onUpdateChartSpec?.(di.id, spec)}
+                        onV2ChartSwitch={onV2ChartSwitch
+                          ? (_, __, newChart) => onV2ChartSwitch(di.id, newChart)
+                          : undefined}
                       />
                     ) : (
                       <TableView

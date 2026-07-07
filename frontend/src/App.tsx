@@ -38,6 +38,7 @@ function App() {
     updateLayout,
     updateItemHeight,
     updateChartSpec,
+    updateChartFull,
     createDashboard,
     switchDashboard,
     addItemsToDashboard,
@@ -96,13 +97,21 @@ function App() {
     }
   }, [removeItem]);
 
-  // 仪表板内图表切换类型后持久化完整 spec
+  // 仪表板内图表切换类型后持久化完整 spec（旧路径，保留兼容）
   const handleUpdateChartSpec = useCallback((id: string, spec: ChartSpec) => {
     const ok = updateChartSpec(id, spec);
     if (!ok) {
       alert('图表配置保存失败，localStorage 可能已满。');
     }
   }, [updateChartSpec]);
+
+  // 仪表板内 V2 图表切换：持久化完整 ChartData（含 transform 后 columns/rows/v2Meta/source 数据）
+  const handleDashboardV2ChartSwitch = useCallback((dashboardItemId: string, newChart: ChartData) => {
+    const ok = updateChartFull(dashboardItemId, newChart);
+    if (!ok) {
+      alert('图表切换保存失败，localStorage 可能已满。');
+    }
+  }, [updateChartFull]);
 
   // 聊天页"添加到仪表板"：暂存快照 + 上下文（会话 ID 在此补充），打开弹窗
   const handleRequestAddToDashboard = useCallback((payload: { chart: ChartData; messageId: string; sql: string | null }) => {
@@ -200,6 +209,7 @@ function App() {
             onLayoutChange={updateLayout}
             onUpdateItemHeight={updateItemHeight}
             onUpdateChartSpec={handleUpdateChartSpec}
+            onV2ChartSwitch={handleDashboardV2ChartSwitch}
           />
         )}
       </div>
