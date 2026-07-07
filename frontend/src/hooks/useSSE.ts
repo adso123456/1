@@ -10,6 +10,15 @@ const SESSIONS_KEY = 'water_qa_sessions';
 const META_KEY = 'water_qa_session_meta';
 const CURRENT_ID_KEY = 'water_qa_current_id';
 
+/** 写入失败统一文案（与读取失败文案不同，便于分类处理） */
+const STORAGE_WRITE_ERROR = '本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。';
+
+/** 仅清除写入失败错误，保留读取失败错误。
+ *  写入成功时调用：prev === STORAGE_WRITE_ERROR → 可清除；否则保留原状。 */
+export function clearWriteStorageErrorOnly(prev: string | null): string | null {
+  return prev === STORAGE_WRITE_ERROR ? null : prev;
+}
+
 /** 模块级：最近一次 localStorage 读取失败的错误信息。
  *  由 loadAllSessions / loadAllMeta 在 catch 中设置，
  *  由 useSSE hook 初始化时通过 consumeStorageReadError 消费。 */
@@ -552,11 +561,12 @@ export function useSSE() {
     const metaOk = saveAllMeta(allMeta);
     saveCurrentId(currentSessionId);
 
-    // 任一写入失败 → 提示用户；全部成功 → 清除旧错误
+    // 任一写入失败 → 提示用户
+    // 全部成功 → 仅清除写入失败错误，不清除读取失败错误
     if (!sessionsOk || !metaOk) {
-      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+      setStorageError(STORAGE_WRITE_ERROR);
     } else {
-      setStorageError(null);
+      setStorageError(prev => clearWriteStorageErrorOnly(prev));
     }
 
     setSessionList(Object.values(allMeta).sort((a, b) => b.updatedAt - a.updatedAt));
@@ -583,7 +593,7 @@ export function useSSE() {
     const metaOk = saveAllMeta(allMeta);
 
     if (!sessionsOk || !metaOk) {
-      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+      setStorageError(STORAGE_WRITE_ERROR);
     }
 
     // 创建新会话
@@ -618,7 +628,7 @@ export function useSSE() {
     const metaOk = saveAllMeta(allMeta);
 
     if (!sessionsOk || !metaOk) {
-      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+      setStorageError(STORAGE_WRITE_ERROR);
     }
 
     // 加载目标会话
@@ -644,7 +654,7 @@ export function useSSE() {
     const metaOk = saveAllMeta(allMeta);
 
     if (!sessionsOk || !metaOk) {
-      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+      setStorageError(STORAGE_WRITE_ERROR);
     }
 
     // 更新列表

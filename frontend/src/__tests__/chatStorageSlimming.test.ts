@@ -32,6 +32,7 @@ import {
   saveAllMeta,
   loadAllMeta,
   getSessionMessages,
+  clearWriteStorageErrorOnly,
 } from '../hooks/useSSE.js';
 import type { ChatMessage, ChartData } from '../types.js';
 
@@ -863,6 +864,30 @@ test('T40: loadAllMeta 遇到非法 JSON → 返回 {} + consumeStorageReadError
     // 清除可能残留的错误
     consumeStorageReadError();
   }
+});
+
+// ============================================================
+// 10. P4C：clearWriteStorageErrorOnly 分类清除
+// ============================================================
+
+const STORAGE_WRITE_ERROR = '本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。';
+const READ_ERROR_SESSIONS = '会话数据读取失败，历史记录可能已损坏。';
+const READ_ERROR_META = '会话列表读取失败，历史记录可能已损坏。';
+
+test('T41: clearWriteStorageErrorOnly 写入错误 → null（允许清除）', () => {
+  assertEqual(clearWriteStorageErrorOnly(STORAGE_WRITE_ERROR), null);
+});
+
+test('T42: clearWriteStorageErrorOnly 读取错误（sessions）→ 保持原文', () => {
+  assertEqual(clearWriteStorageErrorOnly(READ_ERROR_SESSIONS), READ_ERROR_SESSIONS);
+});
+
+test('T43: clearWriteStorageErrorOnly 读取错误（meta）→ 保持原文', () => {
+  assertEqual(clearWriteStorageErrorOnly(READ_ERROR_META), READ_ERROR_META);
+});
+
+test('T44: clearWriteStorageErrorOnly(null) → null', () => {
+  assertEqual(clearWriteStorageErrorOnly(null), null);
 });
 
 // ============================================================
