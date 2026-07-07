@@ -27,7 +27,7 @@ interface ToastState {
 }
 
 function App() {
-  const { messages, loading, sendMessage, cancelRequest, clearMessages, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession } = useSSE();
+  const { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession } = useSSE();
   const {
     currentItems: dashboardItems,
     currentDashboardName,
@@ -188,7 +188,7 @@ function App() {
             onCancel={cancelRequest}
             onClear={clearMessages}
             onChangeChartType={() => {}}
-            onV2ChartSwitch={() => {}}
+            onV2ChartSwitch={replaceMessageChart}
             onAddToDashboard={handleRequestAddToDashboard}
           />
         ) : (

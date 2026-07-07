@@ -984,5 +984,32 @@ export function useSSE() {
     lastConvIdRef.current = '';
   }, []);
 
-  return { messages, loading, sendMessage, cancelRequest, clearMessages, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession };
+  /** 替换指定消息中第 chartIndex 个 chart（V2 点击切换用） */
+  const replaceMessageChart = useCallback(
+    (messageId: string, chartIndex: number, newChart: ChartData) => {
+      setMessages(prev =>
+        prev.map(msg => {
+          if (msg.id !== messageId) return msg;
+          const oldChart = msg.charts[chartIndex];
+          if (!oldChart) return msg;
+          return {
+            ...msg,
+            charts: msg.charts.map((c, i) =>
+              i === chartIndex
+                ? {
+                    ...newChart,
+                    // 保留原 chart 的 UI 元数据字段
+                    chartOnly: oldChart.chartOnly,
+                    dataVersion: oldChart.dataVersion,
+                  }
+                : c,
+            ),
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  return { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession };
 }

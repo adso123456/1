@@ -10,7 +10,7 @@ interface Props {
   onClear: () => void;
   onChangeChartType: (type: RenderableChartType) => void;
   /** 透传给 MessageBubble：V2 图表切换 */
-  onV2ChartSwitch?: (newChart: ChartData) => void;
+  onV2ChartSwitch?: (messageId: string, chartIndex: number, newChart: ChartData) => void;
   /** 透传给 MessageBubble：点击"添加到仪表板" */
   onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
 }

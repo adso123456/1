@@ -22,9 +22,14 @@ interface Props {
   /** 仪表板用：切换类型时回传 availability 返回的完整 ChartSpec，供上层持久化。
    *  聊天页不传，仅靠 onChangeType 通知类型变化。 */
   onChangeSpec?: (spec: ChartSpec) => void;
+  /** 当前 chart 所属消息 ID（V2 切换时需要定位消息） */
+  messageId?: string;
+  /** 当前 chart 在 message.charts 中的索引（V2 切换时需要定位 chart） */
+  chartIndex?: number;
   /** V2 图表切换：基于 sourceColumns/sourceRows 重新执行 V2 plan+transform，
-   *  返回完整 ChartData。未传时 fallback 到旧 onChangeType/onChangeSpec 路径。 */
-  onV2ChartSwitch?: (newChart: ChartData) => void;
+   *  返回完整 ChartData。未传时 fallback 到旧 onChangeType/onChangeSpec 路径。
+   *  messageId + chartIndex 用于在消息列表中定位并替换目标 chart。 */
+  onV2ChartSwitch?: (messageId: string, chartIndex: number, newChart: ChartData) => void;
   /** 隐藏"图表/表格"切换，始终显示图表（仪表板和弹窗预览用） */
   hideTableToggle?: boolean;
   /** 隐藏图表下方自动生成的文字说明（仪表板精简用） */
@@ -39,7 +44,7 @@ interface Props {
 
 type ViewMode = 'chart' | 'table';
 
-export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2ChartSwitch, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
+export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2ChartSwitch, messageId, chartIndex, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
   const isChartOnly = !!chart.chartOnly;
 
   const [viewMode, setViewMode] = useState<ViewMode>('chart');
@@ -222,10 +227,10 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
           dataVersion: chart.dataVersion,
         };
         setLocalType(type);
-        if (onV2ChartSwitch) {
-          onV2ChartSwitch(newChart);
+        if (onV2ChartSwitch && messageId !== undefined && chartIndex !== undefined) {
+          onV2ChartSwitch(messageId, chartIndex, newChart);
         } else {
-          // 未传 onV2ChartSwitch → fallback 到旧 onChangeType/onChangeSpec
+          // 未传 onV2ChartSwitch 或缺少定位信息 → fallback 到旧 onChangeType/onChangeSpec
           onChangeType?.(type);
           onChangeSpec?.(newChart.spec);
         }

@@ -11,7 +11,7 @@ interface Props {
   message: ChatMessage;
   onChangeChartType?: (type: RenderableChartType) => void;
   /** V2 图表切换：基于 sourceColumns/sourceRows 重新执行 V2 plan+transform，返回完整 ChartData */
-  onV2ChartSwitch?: (newChart: ChartData) => void;
+  onV2ChartSwitch?: (messageId: string, chartIndex: number, newChart: ChartData) => void;
   /** 点击"添加到仪表板"时回调，携带当前 activeSpec 图表快照、消息 ID、消息 SQL（会话 ID 由 App 补充） */
   onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
 }
@@ -214,13 +214,18 @@ export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onA
             {(() => {
               // 选择展示图表：第一张无 error 且可构建 > 第一张有 error > 第一张
               let best = message.charts.length > 0 ? message.charts[0] : null;
+              let bestIndex = 0;
               if (message.charts.length > 1) {
-                const valid = message.charts.find(c => !c.error && buildChartOption(c) !== null);
-                if (valid) {
-                  best = valid;
+                const validIdx = message.charts.findIndex(c => !c.error && buildChartOption(c) !== null);
+                if (validIdx !== -1) {
+                  best = message.charts[validIdx];
+                  bestIndex = validIdx;
                 } else {
-                  const errChart = message.charts.find(c => !!c.error);
-                  if (errChart) best = errChart;
+                  const errIdx = message.charts.findIndex(c => !!c.error);
+                  if (errIdx !== -1) {
+                    best = message.charts[errIdx];
+                    bestIndex = errIdx;
+                  }
                 }
               }
               if (!best) return null;
@@ -246,6 +251,8 @@ export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onA
                   >
                     <ChartView
                       chart={best}
+                      messageId={message.id}
+                      chartIndex={bestIndex}
                       onChangeType={onChangeChartType}
                       onV2ChartSwitch={onV2ChartSwitch}
                       showExport
