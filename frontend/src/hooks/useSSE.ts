@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { SSEEvent, ChatMessage, SessionMeta, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
 import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability, buildChartOption, normalizeChartSpec, CHART_TYPE_LABELS } from '../chartRegistry';
 import { prepareChartV2All } from '../chartPipelineV2';
+import type { Row } from '../datasetProfilerV2';
 
 /* ======== 本地会话持久化（localStorage） ======== */
 
@@ -495,12 +496,42 @@ export function useSSE() {
   const sendMessage = useCallback(async (userText: string) => {
     const switchType = isPureChartSwitch(userText);
 
-    // 纯图表切换：仅对单图消息生效，且目标类型必须可用
+    // 纯图表切换：仅对单图消息生效
     if (switchType && lastDataRef.current) {
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.role === 'assistant' && lastMsg.charts.length === 1) {
         const oldChart = lastMsg.charts[0];
-        // 复用与图表下拉同一套可用性评估，返回通过验证的完整 spec
+
+        // 优先从 chart 的 source 数据获取原始列行（V2 图表已保存），
+        // 否则回退到 lastDataRef（SSE 流结束时的原始查询结果）。
+        const sourceColumns = oldChart.sourceColumns ?? lastDataRef.current.columns;
+        const sourceRows = oldChart.sourceRows ?? lastDataRef.current.rows;
+
+        // ── 优先走 V2 Planner（从原始数据重新规划，避免基于 transform 后数据二次聚合）──
+        const v2Result = prepareChartV2All({
+          columns: sourceColumns,
+          rows: sourceRows as Row[],
+          source: 'user',
+          intent: 'auto',
+          requestedChartType: switchType,
+          id: oldChart.id,
+          title: oldChart.title,
+          dataVersion: oldChart.dataVersion,
+        });
+
+        if (v2Result.ok && v2Result.chart) {
+          // V2 成功 — 使用 Planner 产出的完整 ChartData（含新 transform 后的 spec/columns/rows）
+          setMessages(prev =>
+            prev.map((m, i) =>
+              i === prev.length - 1
+                ? { ...m, charts: [v2Result.chart!] }
+                : m
+            )
+          );
+          return;
+        }
+
+        // ── V2 失败 → fallback 到旧 getChartTypeAvailability ──
         const avail = getChartTypeAvailability(oldChart)
           .find(a => a.type === switchType);
         if (avail?.supported && avail.spec) {

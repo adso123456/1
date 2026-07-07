@@ -1259,6 +1259,55 @@ test('B-9B: user requests line on multi-series data → gets multi-series varian
 });
 
 // ============================================================
+// 16. B-10B: sourceColumns/sourceRows 保存验证
+// ============================================================
+
+test('B-10B: prepareChartV2 成功时 sourceColumns/sourceRows 非空', () => {
+  const input: PrepareChartInputV2 = {
+    columns: CATEGORICAL_DATA.columns,
+    rows: CATEGORICAL_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'b10b-1',
+    title: 'B-10B Test 1',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2(input);
+
+  assertOk(result.ok, `should succeed: ${result.errorCode}`);
+  const chart = result.chart!;
+  assertOk(Array.isArray(chart.sourceColumns), 'sourceColumns 应存在');
+  assertOk(Array.isArray(chart.sourceRows), 'sourceRows 应存在');
+  assertEqual(chart.sourceColumns!.length, CATEGORICAL_DATA.columns.length);
+  assertEqual(chart.sourceRows!.length, CATEGORICAL_DATA.rows.length);
+});
+
+test('B-10B: prepareChartV2All 成功时 sourceColumns/sourceRows 等于输入', () => {
+  const input: PrepareChartInputV2 = {
+    columns: CATEGORICAL_DATA.columns,
+    rows: CATEGORICAL_DATA.rows,
+    source: 'auto',
+    intent: 'auto',
+    id: 'b10b-2',
+    title: 'B-10B Test 2',
+    dataVersion: 1,
+  };
+
+  const result = prepareChartV2All(input);
+
+  assertOk(result.ok, `should succeed: ${result.errorCode}`);
+  const chart = result.chart!;
+  assertEqual(chart.sourceColumns!.length, input.columns.length,
+    'sourceColumns 长度应等于输入 columns');
+  assertEqual(chart.sourceRows!.length, input.rows.length,
+    'sourceRows 长度应等于输入 rows');
+  // columns/rows 仍是 transform 后输出
+  assertEqual(chart.columns, result.transformResult!.columns);
+  assertEqual(chart.rows, result.transformResult!.rows);
+});
+
+// ============================================================
 // 结果汇总
 // ============================================================
 console.log(`\n${'='.repeat(60)}`);

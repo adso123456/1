@@ -151,6 +151,9 @@ export function prepareChartV2(
       fallbackNotice: planning.fallbackNotice,
       noChartReason: planning.noChartReason,
     },
+    // 保存原始查询数据，供用户切换图表类型时重新规划（避免基于 transform 后数据二次聚合）
+    sourceColumns: input.columns,
+    sourceRows: input.rows,
   };
 
   // ── 6. Renderer 验证 ──
@@ -267,6 +270,9 @@ export function prepareChartV2All(
       fallbackNotice: planning.fallbackNotice,
       noChartReason: planning.noChartReason,
     },
+    // 保存原始查询数据，供用户切换图表类型时重新规划（避免基于 transform 后数据二次聚合）
+    sourceColumns: input.columns,
+    sourceRows: input.rows,
   };
 
   // ── 6. Renderer 验证 ──

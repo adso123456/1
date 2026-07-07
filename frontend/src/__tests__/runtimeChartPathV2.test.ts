@@ -251,7 +251,71 @@ test('PILOT: prepareChartV2 对 single_kpi 无 gauge（仅 3 种类型）', () =
 });
 
 // ============================================================
-// 4. 跨验证：Shadow Comparison 关键断言一致
+// 4. B-10B: user source + requestedChartType 路径
+// ============================================================
+
+test('user: source=user + requestedChartType=bar → 正确选择 bar', () => {
+  const input = makeInput(BASIC_DATA.columns, BASIC_DATA.rows);
+  const r = prepareChartV2All({ ...input, source: 'user', requestedChartType: 'bar' });
+  assertOk(r.ok, `should succeed: ${r.errorCode}`);
+  assertEqual(r.chart!.spec.type, 'bar');
+  // B-10B: sourceColumns/sourceRows 应保存
+  assertOk(Array.isArray(r.chart!.sourceColumns), 'sourceColumns 应存在');
+  assertOk(Array.isArray(r.chart!.sourceRows), 'sourceRows 应存在');
+  assertEqual(r.chart!.sourceColumns!.length, BASIC_DATA.columns.length);
+  assertEqual(r.chart!.sourceRows!.length, BASIC_DATA.rows.length);
+});
+
+test('user: source=user + requestedChartType=gauge for single_kpi → 正确选择 gauge', () => {
+  const r = prepareChartV2All({
+    ...makeInput(['total_count'], [{ total_count: 342 }]),
+    source: 'user',
+    requestedChartType: 'gauge',
+  });
+  assertOk(r.ok, `should succeed: ${r.errorCode}`);
+  assertEqual(r.chart!.spec.type, 'gauge');
+  assertOk(Array.isArray(r.chart!.sourceColumns));
+  assertEqual(r.chart!.sourceColumns![0], 'total_count');
+});
+
+test('user: source=user + requestedChartType=boxplot → 正确选择 boxplot', () => {
+  const r = prepareChartV2All({
+    ...makeInput(
+      ['station', 'ph_value'],
+      [
+        { station: '站点A', ph_value: 7.2 },
+        { station: '站点A', ph_value: 7.5 },
+        { station: '站点B', ph_value: 8.1 },
+        { station: '站点B', ph_value: 7.9 },
+      ],
+    ),
+    source: 'user',
+    requestedChartType: 'boxplot',
+  });
+  assertOk(r.ok, `should succeed: ${r.errorCode}`);
+  assertEqual(r.chart!.spec.type, 'boxplot');
+  // source 数据与 transform 后不同
+  assertOk(r.chart!.sourceColumns!.includes('ph_value'),
+    'sourceColumns 应含原始列 ph_value');
+  assertOk(r.chart!.columns.includes('min'),
+    'transform 后 columns 应含 min');
+});
+
+test('user: source=user + requestedChartType → 不可用时回退', () => {
+  // 对 categorical data 请求 gauge → 应回退到 bar（supported）
+  const r = prepareChartV2All({
+    ...makeInput(BASIC_DATA.columns, BASIC_DATA.rows),
+    source: 'user',
+    requestedChartType: 'gauge',
+  });
+  assertOk(r.ok, '应成功（回退到支持的图表）');
+  assertOk(r.planning.fallbackNotice !== null,
+    '应有 fallbackNotice 说明 gauge 不可用');
+  console.log(`  [info] gauge requested → got ${r.chart!.spec.type}, fallback: ${r.planning.fallbackNotice}`);
+});
+
+// ============================================================
+// 5. 跨验证：Shadow Comparison 关键断言一致
 // ============================================================
 
 test('cross: ALL 的 gauge/scatter/bubble 与 PILOT 不冲突', () => {

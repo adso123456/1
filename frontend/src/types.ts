@@ -107,6 +107,10 @@ export interface ChartData {
   chartOnly?: boolean;
   /** V2 Pipeline 元数据（仅 V2 路径填充，旧路径为 undefined） */
   v2Meta?: ChartMetaV2;
+  /** V2 Pipeline 原始查询列（transform 前），用于用户切换图表类型时重新规划 */
+  sourceColumns?: string[];
+  /** V2 Pipeline 原始查询行（transform 前），用于用户切换图表类型时重新规划 */
+  sourceRows?: Array<Record<string, unknown>>;
 }
 
 /** V2 Pipeline 产出的图表元数据 */
