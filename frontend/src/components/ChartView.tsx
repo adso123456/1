@@ -125,10 +125,6 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
 
   const [localType, setLocalType] = useState<RenderableChartType>(() => pickDefault());
 
-  /** 核心图表类型（bar/horizontal_bar/line/area），用于下拉过滤 */
-  const CORE_CHART_TYPES: RenderableChartType[] = ['bar', 'horizontal_bar', 'line', 'area'];
-  const isCoreChart = CORE_CHART_TYPES.includes(localType);
-
   // 跟踪上次 dataVersion 和 spec.type，用于判断数据/推荐类型是否真正变化
   const prevDataVersionRef = useRef(chart.dataVersion);
   const prevSpecTypeRef = useRef(chart.spec.type);
@@ -470,10 +466,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
                 overflowY: 'auto',
                 padding: '4px 0',
               }}>
-                {(isCoreChart
-                  ? allTypes.filter(t => CORE_CHART_TYPES.includes(t.type) && t.supported)
-                  : allTypes
-                ).map(t => {
+                {allTypes.map(t => {
                   const isCurrent = t.type === localType;
                   return (
                     <button
