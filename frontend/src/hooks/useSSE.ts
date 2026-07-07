@@ -10,6 +10,18 @@ const SESSIONS_KEY = 'water_qa_sessions';
 const META_KEY = 'water_qa_session_meta';
 const CURRENT_ID_KEY = 'water_qa_current_id';
 
+/** 模块级：最近一次 localStorage 读取失败的错误信息。
+ *  由 loadAllSessions / loadAllMeta 在 catch 中设置，
+ *  由 useSSE hook 初始化时通过 consumeStorageReadError 消费。 */
+let lastStorageReadError: string | null = null;
+
+/** 消费并清除上次 localStorage 读取错误。仅 hook 初始化时调用一次。 */
+export function consumeStorageReadError(): string | null {
+  const error = lastStorageReadError;
+  lastStorageReadError = null;
+  return error;
+}
+
 /** 保存前剥离 chart 中的 sourceRows/sourceColumns，减少重复存储。
  *  不修改原 messages。保留 rows/columns/spec/v2Meta/explicitType/dataframes。
  *  兼容旧 schema：缺失 charts/dataframes 时按空数组处理，不抛错。 */
@@ -111,27 +123,42 @@ function loadAllSessions(): Record<string, ChatMessage[]> {
       }
     }
     return hydrated;
-  } catch { return {}; }
+  } catch {
+    lastStorageReadError = '会话数据读取失败，历史记录可能已损坏。';
+    return {};
+  }
 }
 
 /** 只读获取指定会话的消息列表（不切换当前会话，不触发状态变更） */
 export function getSessionMessages(id: string): ChatMessage[] {
   return loadAllSessions()[id] || [];
 }
-function saveAllSessions(data: Record<string, ChatMessage[]>) {
+function saveAllSessions(data: Record<string, ChatMessage[]>): boolean {
   // 写入前剥离 sourceRows/sourceColumns，减少重复存储
   const stripped: Record<string, ChatMessage[]> = {};
   for (const [id, msgs] of Object.entries(data)) {
     stripped[id] = stripChartSourceDataForStorage(msgs);
   }
-  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(stripped)); } catch { /* quota exceeded */ }
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(stripped)); return true; }
+  catch { return false; }
 }
 function loadAllMeta(): Record<string, SessionMeta> {
-  try { const raw = localStorage.getItem(META_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(META_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    lastStorageReadError = '会话列表读取失败，历史记录可能已损坏。';
+    return {};
+  }
 }
-function saveAllMeta(data: Record<string, SessionMeta>) {
-  try { localStorage.setItem(META_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
+function saveAllMeta(data: Record<string, SessionMeta>): boolean {
+  try { localStorage.setItem(META_KEY, JSON.stringify(data)); return true; }
+  catch { return false; }
 }
+
+// 导出供测试使用（P4B）
+export { saveAllSessions, saveAllMeta, loadAllMeta };
 function loadCurrentId(): string {
   try { return localStorage.getItem(CURRENT_ID_KEY) || ''; } catch { return ''; }
 }
@@ -501,6 +528,10 @@ export function useSSE() {
   const lastConvIdRef = useRef<string>('');
   const dataVersionRef = useRef<number>(0);
 
+  // localStorage 读写错误提示状态
+  const [storageError, setStorageError] = useState<string | null>(() => consumeStorageReadError());
+  const clearStorageError = useCallback(() => setStorageError(null), []);
+
   /** 流式结束后自动保存当前会话到 localStorage */
   useEffect(() => {
     if (loading) return;
@@ -508,7 +539,7 @@ export function useSSE() {
 
     const all = loadAllSessions();
     all[currentSessionId] = messages;
-    saveAllSessions(all);
+    const sessionsOk = saveAllSessions(all);
 
     const allMeta = loadAllMeta();
     const existing = allMeta[currentSessionId];
@@ -518,8 +549,15 @@ export function useSSE() {
       createdAt: existing?.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
-    saveAllMeta(allMeta);
+    const metaOk = saveAllMeta(allMeta);
     saveCurrentId(currentSessionId);
+
+    // 任一写入失败 → 提示用户；全部成功 → 清除旧错误
+    if (!sessionsOk || !metaOk) {
+      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+    } else {
+      setStorageError(null);
+    }
 
     setSessionList(Object.values(allMeta).sort((a, b) => b.updatedAt - a.updatedAt));
   }, [messages, loading, currentSessionId]);
@@ -531,7 +569,7 @@ export function useSSE() {
     // 保存当前会话
     const all = loadAllSessions();
     all[currentSessionId] = messages;
-    saveAllSessions(all);
+    const sessionsOk = saveAllSessions(all);
 
     const allMeta = loadAllMeta();
     if (messages.length > 0) {
@@ -542,7 +580,11 @@ export function useSSE() {
         updatedAt: Date.now(),
       };
     }
-    saveAllMeta(allMeta);
+    const metaOk = saveAllMeta(allMeta);
+
+    if (!sessionsOk || !metaOk) {
+      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+    }
 
     // 创建新会话
     const newId = `s_${Date.now()}`;
@@ -562,7 +604,7 @@ export function useSSE() {
     // 保存当前会话
     const all = loadAllSessions();
     all[currentSessionId] = messages;
-    saveAllSessions(all);
+    const sessionsOk = saveAllSessions(all);
 
     const allMeta = loadAllMeta();
     if (messages.length > 0) {
@@ -573,7 +615,11 @@ export function useSSE() {
         updatedAt: Date.now(),
       };
     }
-    saveAllMeta(allMeta);
+    const metaOk = saveAllMeta(allMeta);
+
+    if (!sessionsOk || !metaOk) {
+      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+    }
 
     // 加载目标会话
     const target = all[id] || [];
@@ -591,11 +637,15 @@ export function useSSE() {
     // 从 localStorage 移除消息和元数据
     const all = loadAllSessions();
     delete all[id];
-    saveAllSessions(all);
+    const sessionsOk = saveAllSessions(all);
 
     const allMeta = loadAllMeta();
     delete allMeta[id];
-    saveAllMeta(allMeta);
+    const metaOk = saveAllMeta(allMeta);
+
+    if (!sessionsOk || !metaOk) {
+      setStorageError('本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。');
+    }
 
     // 更新列表
     const remaining = Object.values(allMeta).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -995,5 +1045,5 @@ export function useSSE() {
     [],
   );
 
-  return { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession };
+  return { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession, storageError, clearStorageError };
 }

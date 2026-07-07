@@ -1,15 +1,37 @@
-// chatStorageSlimming.test.ts — P3B: Chat localStorage 瘦身（剥离/恢复 source 数据）
+// chatStorageSlimming.test.ts — P3B/P3C/P4B: Chat localStorage 瘦身 + 兼容 + 错误提示
 //
-// 验证 stripChartSourceDataForStorage 和 hydrateChartSourceDataFromDataframes：
-// 1. 保存前剥离 sourceRows/sourceColumns
-// 2. 保留 rows/columns/spec/v2Meta/explicitType/dataframes
-// 3. 读取后从最后一个有效 dataframe 恢复 source 数据
-// 4. 无 dataframe / 无 v2Meta / 已有 source 时的边界行为
-// 5. 不 mutate 原始 messages
+// 验证：
+// 1. stripChartSourceDataForStorage / hydrateChartSourceDataFromDataframes
+// 2. 旧 schema 兼容（缺失 charts/dataframes）
+// 3. localStorage 读写失败提示（consumeStorageReadError / saveAllSessions / saveAllMeta）
+
+// ── localStorage polyfill（tsx 命令行环境无 DOM API）──
+if (typeof localStorage === 'undefined') {
+  const store = new Map<string, string>();
+  (globalThis as Record<string, unknown>).localStorage = {
+    getItem(key: string): string | null {
+      return store.has(key) ? store.get(key)! : null;
+    },
+    setItem(key: string, value: string): void {
+      store.set(key, value);
+    },
+    removeItem(key: string): void {
+      store.delete(key);
+    },
+    clear(): void {
+      store.clear();
+    },
+  } as Storage;
+}
 
 import {
   stripChartSourceDataForStorage,
   hydrateChartSourceDataFromDataframes,
+  consumeStorageReadError,
+  saveAllSessions,
+  saveAllMeta,
+  loadAllMeta,
+  getSessionMessages,
 } from '../hooks/useSSE.js';
 import type { ChatMessage, ChartData } from '../types.js';
 
@@ -719,6 +741,128 @@ test('T33: strip — 混合正常 + 旧消息，各自正确 normalize', () => {
   assertEqual(stripped[1].charts.length, 0);
   assertOk(Array.isArray(stripped[1].dataframes), '旧消息 dataframes normalize');
   assertEqual(stripped[1].dataframes.length, 0);
+});
+
+// ============================================================
+// 9. P4B：localStorage 读写失败提示
+// ============================================================
+
+// ── 辅助：mock localStorage.setItem 抛错 ──
+function mockSetItemThrow(): () => void {
+  const orig = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = () => { throw new DOMException('QuotaExceededError', 'QuotaExceededError'); };
+  return () => { localStorage.setItem = orig; };
+}
+
+test('T34: consumeStorageReadError — 第一次返回错误，第二次返回 null', () => {
+  // 清除旧错误
+  consumeStorageReadError();
+
+  // 写入非法 JSON → 触发 loadAllSessions catch
+  localStorage.setItem('water_qa_sessions', 'not-valid-json{{{');
+  try {
+    // getSessionMessages 内部调用 loadAllSessions → catch 设置 lastStorageReadError
+    getSessionMessages('nonexistent');
+
+    // consumeStorageReadError 应返回错误
+    const err1 = consumeStorageReadError();
+    assertOk(err1 !== null && err1.length > 0, '第一次应返回错误');
+    assertOk(err1!.includes('会话数据读取失败'), `文案应包含读取失败，实际: ${err1}`);
+
+    // 第二次应返回 null（已消费）
+    const err2 = consumeStorageReadError();
+    assertEqual(err2, null, '第二次应返回 null');
+  } finally {
+    localStorage.setItem('water_qa_sessions', '');
+    // 清除可能残留的错误
+    consumeStorageReadError();
+  }
+});
+
+test('T35: saveAllSessions 写入成功返回 true', () => {
+  const chart = makeV2Chart();
+  const msg = makeMessage({ charts: [chart] });
+  const data = { test_session: [msg] };
+
+  const ok = saveAllSessions(data);
+  assertEqual(ok, true, '写入成功应返回 true');
+});
+
+test('T36: saveAllSessions 遇到 setItem 抛错返回 false', () => {
+  const restore = mockSetItemThrow();
+  try {
+    const chart = makeV2Chart();
+    const msg = makeMessage({ charts: [chart] });
+    const data = { test_session: [msg] };
+
+    const ok = saveAllSessions(data);
+    assertEqual(ok, false, '写入失败应返回 false');
+  } finally {
+    restore();
+  }
+});
+
+test('T37: saveAllMeta 写入成功返回 true', () => {
+  const data = {
+    test_session: { id: 'test_session', title: '测试', createdAt: 1, updatedAt: 2 },
+  };
+
+  const ok = saveAllMeta(data);
+  assertEqual(ok, true, '写入成功应返回 true');
+});
+
+test('T38: saveAllMeta 遇到 setItem 抛错返回 false', () => {
+  const restore = mockSetItemThrow();
+  try {
+    const data = {
+      test_session: { id: 'test_session', title: '测试', createdAt: 1, updatedAt: 2 },
+    };
+
+    const ok = saveAllMeta(data);
+    assertEqual(ok, false, '写入失败应返回 false');
+  } finally {
+    restore();
+  }
+});
+
+test('T39: loadAllSessions 遇到非法 JSON → 返回空 + consumeStorageReadError 非 null', () => {
+  // 清除旧错误
+  consumeStorageReadError();
+
+  // 写入非法 JSON
+  localStorage.setItem('water_qa_sessions', 'this-is-not-valid-json{{{');
+  try {
+    // getSessionMessages 内部调用 loadAllSessions → catch 返回 {}
+    const msgs = getSessionMessages('any');
+    assertEqual(msgs.length, 0, '非法 JSON 时应返回空数组');
+
+    const err = consumeStorageReadError();
+    assertOk(err !== null, '应返回错误信息');
+    assertOk(err!.includes('会话数据读取失败'), `文案应包含读取失败，实际: ${err}`);
+  } finally {
+    localStorage.setItem('water_qa_sessions', '');
+    consumeStorageReadError();
+  }
+});
+
+test('T40: loadAllMeta 遇到非法 JSON → 返回 {} + consumeStorageReadError 非 null', () => {
+  // 清除旧错误
+  consumeStorageReadError();
+
+  // 写入非法 JSON 到 meta key
+  localStorage.setItem('water_qa_session_meta', 'bad-json{{{');
+  try {
+    const result = loadAllMeta();
+    assertDeepEqual(result, {}, '非法 JSON 时应返回 {}');
+
+    const err = consumeStorageReadError();
+    assertOk(err !== null, '应按返回错误信息');
+    assertOk(err!.includes('会话列表读取失败'), `文案应包含读取失败，实际: ${err}`);
+  } finally {
+    localStorage.setItem('water_qa_session_meta', '');
+    // 清除可能残留的错误
+    consumeStorageReadError();
+  }
 });
 
 // ============================================================

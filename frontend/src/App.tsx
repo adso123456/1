@@ -27,7 +27,7 @@ interface ToastState {
 }
 
 function App() {
-  const { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession } = useSSE();
+  const { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession, storageError, clearStorageError } = useSSE();
   const {
     currentItems: dashboardItems,
     currentDashboardName,
@@ -189,6 +189,37 @@ function App() {
         />
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Chat localStorage 读写失败提示（不影响 Dashboard Toast） */}
+        {currentView === 'chat' && storageError && (
+          <div style={{
+            backgroundColor: '#fef3c7',
+            borderBottom: '1px solid #f59e0b',
+            color: '#92400e',
+            padding: '8px 16px',
+            fontSize: 13,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexShrink: 0,
+          }}>
+            <span>⚠ {storageError}</span>
+            <button
+              onClick={clearStorageError}
+              aria-label="关闭提示"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: 16,
+                color: '#92400e',
+                padding: '0 4px',
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
         {currentView === 'chat' ? (
           <ChatArea
             messages={messages}
