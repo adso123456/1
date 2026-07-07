@@ -195,12 +195,6 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     const target = allTypes.find(t => t.type === type);
     if (!target?.supported || !target.spec) return;
 
-    // 切换前清空画布，避免旧图表类型配置残留
-    const instance = echartsRef.current?.getEchartsInstance();
-    if (instance) {
-      instance.clear();
-    }
-
     // ── V2 路径：chart 有 source 数据时，基于 source 重新 plan+transform ──
     if (chart.sourceColumns && chart.sourceRows) {
       const result = prepareChartV2All({
@@ -222,6 +216,8 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
           chartOnly: chart.chartOnly,
           dataVersion: chart.dataVersion,
         };
+        // 确认切换成功后清空画布，避免旧图表类型配置残留
+        echartsRef.current?.getEchartsInstance()?.clear();
         setLocalType(type);
         if (onV2ChartSwitch && messageId !== undefined && chartIndex !== undefined) {
           onV2ChartSwitch(messageId, chartIndex, newChart);
@@ -239,6 +235,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     }
 
     // ── 旧路径：无 source 数据 → 完全走旧逻辑 ──
+    echartsRef.current?.getEchartsInstance()?.clear();
     setLocalType(type);
     onChangeType?.(type);
     // 回传 availability 返回的完整 Spec（含 xField/yFields/sizeField/valueField 等），供仪表板持久化
