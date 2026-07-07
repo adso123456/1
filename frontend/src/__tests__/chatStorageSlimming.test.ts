@@ -569,6 +569,159 @@ test('T25: error chart 也被正确剥离和恢复', () => {
 });
 
 // ============================================================
+// 8. 旧 schema 兼容：缺失 charts / dataframes（P3C）
+// ============================================================
+
+test('T26: strip — 缺失 charts 不抛错，返回 charts: []', () => {
+  // 模拟旧版本消息：没有 charts 字段
+  const msg = { id: 'old-msg', role: 'assistant', text: '旧消息', dataframes: [], thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+  const messages = [msg];
+
+  const stripped = stripChartSourceDataForStorage(messages);
+
+  assertOk(Array.isArray(stripped[0].charts), 'charts 应为数组');
+  assertEqual(stripped[0].charts.length, 0);
+});
+
+test('T27: strip — 缺失 dataframes 不抛错，返回 dataframes: []', () => {
+  const chart = makeV2Chart();
+  const msg = { id: 'old-msg', role: 'assistant', text: '旧消息', charts: [chart], thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+  const messages = [msg];
+
+  const stripped = stripChartSourceDataForStorage(messages);
+
+  assertOk(Array.isArray(stripped[0].dataframes), 'dataframes 应为数组');
+  assertEqual(stripped[0].dataframes.length, 0);
+  // charts 中的 source 应被剥离
+  assertOk(stripped[0].charts[0].sourceRows === undefined, 'sourceRows 应被剥离');
+});
+
+test('T28: hydrate — 缺失 charts 不抛错，返回 charts: []', () => {
+  const msg = { id: 'old-msg', role: 'assistant', text: '旧消息', dataframes: [], thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+  const messages = [msg];
+
+  const hydrated = hydrateChartSourceDataFromDataframes(messages);
+
+  assertOk(Array.isArray(hydrated[0].charts), 'charts 应为数组');
+  assertEqual(hydrated[0].charts.length, 0);
+});
+
+test('T29: hydrate — 缺失 dataframes 不抛错，返回 dataframes: []', () => {
+  const slimChart: ChartData = {
+    id: 'msg-1-chart-0',
+    title: '测试图表',
+    dataVersion: 3,
+    columns: ['city', 'cnt'],
+    rows: [{ city: '北京', cnt: 100 }],
+    spec: { type: 'bar', xField: 'city', yFields: ['cnt'] },
+    explicitType: true,
+    v2Meta: { semanticMode: 'comparison', transform: 'group_by_sum', archetype: 'categorical_series', variantId: 'bar_v1' },
+  };
+  const msg = { id: 'old-msg', role: 'assistant', text: '旧消息', charts: [slimChart], thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+  const messages = [msg];
+
+  const hydrated = hydrateChartSourceDataFromDataframes(messages);
+
+  assertOk(Array.isArray(hydrated[0].dataframes), 'dataframes 应为数组');
+  assertEqual(hydrated[0].dataframes.length, 0);
+  // 无 dataframe 可恢复 → source 保持缺失
+  assertOk(hydrated[0].charts[0].sourceRows === undefined);
+  assertOk(hydrated[0].charts[0].sourceColumns === undefined);
+});
+
+test('T30: 旧消息缺 dataframes 时不影响已有 chart 渲染字段', () => {
+  const slimChart: ChartData = {
+    id: 'msg-1-chart-0',
+    title: '测试图表',
+    dataVersion: 3,
+    columns: ['city', 'cnt'],
+    rows: [{ city: '北京', cnt: 100 }],
+    spec: { type: 'bar', xField: 'city', yFields: ['cnt'] },
+    explicitType: true,
+    v2Meta: { semanticMode: 'comparison', transform: 'group_by_sum', archetype: 'categorical_series', variantId: 'bar_v1' },
+  };
+  const msg = { id: 'old-msg', role: 'assistant', text: '旧消息', charts: [slimChart], thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+  const messages = [msg];
+
+  const hydrated = hydrateChartSourceDataFromDataframes(messages);
+
+  // 渲染必需字段不受影响
+  assertDeepEqual(hydrated[0].charts[0].columns, ['city', 'cnt']);
+  assertDeepEqual(hydrated[0].charts[0].rows, [{ city: '北京', cnt: 100 }]);
+  assertEqual(hydrated[0].charts[0].spec.type, 'bar');
+  assertEqual(hydrated[0].charts[0].v2Meta!.semanticMode, 'comparison');
+  assertEqual(hydrated[0].charts[0].explicitType, true);
+});
+
+test('T31: 缺失 charts 且缺失 dataframes 的消息不抛错', () => {
+  // 极旧版本：两个字段都没有
+  const msg = { id: 'old-msg', role: 'assistant', text: '旧消息', thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+  const messages = [msg];
+
+  // strip
+  const stripped = stripChartSourceDataForStorage(messages);
+  assertOk(Array.isArray(stripped[0].charts), 'strip: charts 应为数组');
+  assertOk(Array.isArray(stripped[0].dataframes), 'strip: dataframes 应为数组');
+
+  // hydrate
+  const hydrated = hydrateChartSourceDataFromDataframes(stripped);
+  assertOk(Array.isArray(hydrated[0].charts), 'hydrate: charts 应为数组');
+  assertOk(Array.isArray(hydrated[0].dataframes), 'hydrate: dataframes 应为数组');
+});
+
+test('T32: 混合 messages — 坏消息不影响正常消息 hydrate', () => {
+  // 正常 V2 chart（缺失 source，等待恢复）
+  const slimChart: ChartData = {
+    id: 'good-chart',
+    title: '正常图表',
+    dataVersion: 3,
+    columns: ['city', 'cnt'],
+    rows: [{ city: '北京', cnt: 100 }],
+    spec: { type: 'bar', xField: 'city', yFields: ['cnt'] },
+    explicitType: true,
+    v2Meta: { semanticMode: 'comparison', transform: 'group_by_sum', archetype: 'categorical_series', variantId: 'bar_v1' },
+  };
+  const goodMsg = makeMessage({ id: 'good-msg', charts: [slimChart] });
+
+  // 坏消息：缺少 charts 和 dataframes
+  const badMsg = { id: 'bad-msg', role: 'assistant', text: '旧消息', thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+
+  const messages = [badMsg, goodMsg] as ChatMessage[];
+
+  const hydrated = hydrateChartSourceDataFromDataframes(messages);
+
+  // 坏消息：normalize 但不抛错
+  assertOk(Array.isArray(hydrated[0].charts), '坏消息 charts 应 normalize 为 []');
+  assertOk(Array.isArray(hydrated[0].dataframes), '坏消息 dataframes 应 normalize 为 []');
+
+  // 正常消息：source 被成功恢复
+  assertOk(hydrated[1].charts[0].sourceRows !== undefined, '正常消息 sourceRows 应被恢复');
+  assertDeepEqual(hydrated[1].charts[0].sourceRows, goodMsg.dataframes[0].data);
+  assertDeepEqual(hydrated[1].charts[0].sourceColumns, goodMsg.dataframes[0].columns);
+  assertDeepEqual(hydrated[1].charts[0].rows, [{ city: '北京', cnt: 100 }]);
+});
+
+test('T33: strip — 混合正常 + 旧消息，各自正确 normalize', () => {
+  const chart = makeV2Chart();
+  const goodMsg = makeMessage({ charts: [chart], id: 'good' });
+  const badMsg = { id: 'bad', role: 'assistant', text: '旧消息', thinkingCollapsed: true, streaming: false } as unknown as ChatMessage;
+  const messages = [goodMsg, badMsg] as ChatMessage[];
+
+  const stripped = stripChartSourceDataForStorage(messages);
+
+  // 正常消息：source 被剥离
+  assertOk(stripped[0].charts[0].sourceRows === undefined, '正常消息 source 被剥离');
+  assertOk(Array.isArray(stripped[0].dataframes), '正常消息 dataframes 保留');
+  assertEqual(stripped[0].dataframes.length, 1);
+
+  // 旧消息：normalize
+  assertOk(Array.isArray(stripped[1].charts), '旧消息 charts normalize');
+  assertEqual(stripped[1].charts.length, 0);
+  assertOk(Array.isArray(stripped[1].dataframes), '旧消息 dataframes normalize');
+  assertEqual(stripped[1].dataframes.length, 0);
+});
+
+// ============================================================
 // 结果摘要
 // ============================================================
 

@@ -11,15 +11,23 @@ const META_KEY = 'water_qa_session_meta';
 const CURRENT_ID_KEY = 'water_qa_current_id';
 
 /** 保存前剥离 chart 中的 sourceRows/sourceColumns，减少重复存储。
- *  不修改原 messages。保留 rows/columns/spec/v2Meta/explicitType/dataframes。 */
+ *  不修改原 messages。保留 rows/columns/spec/v2Meta/explicitType/dataframes。
+ *  兼容旧 schema：缺失 charts/dataframes 时按空数组处理，不抛错。 */
 export function stripChartSourceDataForStorage(messages: ChatMessage[]): ChatMessage[] {
   return messages.map(msg => {
-    const hasSource = msg.charts.some(c => c.sourceRows !== undefined || c.sourceColumns !== undefined);
-    if (!hasSource) return msg;
+    const charts = Array.isArray(msg.charts) ? msg.charts : [];
+    const dataframes = Array.isArray(msg.dataframes) ? msg.dataframes : [];
+    const hasSource = charts.some(c => c.sourceRows !== undefined || c.sourceColumns !== undefined);
+
+    if (!hasSource) {
+      // 无 source 数据但需要 normalize 缺失字段时，返回修正后的副本
+      if (charts === msg.charts && dataframes === msg.dataframes) return msg;
+      return { ...msg, charts, dataframes } as ChatMessage;
+    }
 
     return {
       ...msg,
-      charts: msg.charts.map(c => {
+      charts: charts.map(c => {
         if (c.sourceRows === undefined && c.sourceColumns === undefined) return c;
         const stripped: ChartData = {
           id: c.id,
@@ -35,26 +43,35 @@ export function stripChartSourceDataForStorage(messages: ChatMessage[]): ChatMes
         };
         return stripped;
       }),
-    };
+      dataframes,
+    } as ChatMessage;
   });
 }
 
 /** 读取后从同一条 message 的最后一个有效 dataframe 恢复 chart 的 sourceRows/sourceColumns。
  *  只恢复带 v2Meta 且缺失 source 数据的 chart；已有 source 数据时不覆盖。
- *  不修改原 messages。找不到有效 dataframe 时保持原样，不报错。 */
+ *  不修改原 messages。找不到有效 dataframe 时保持原样，不报错。
+ *  兼容旧 schema：缺失 charts/dataframes 时按空数组处理，不抛错。 */
 export function hydrateChartSourceDataFromDataframes(messages: ChatMessage[]): ChatMessage[] {
   return messages.map(msg => {
+    const charts = Array.isArray(msg.charts) ? msg.charts : [];
+    const dataframes = Array.isArray(msg.dataframes) ? msg.dataframes : [];
+
     // 找最后一个有效 dataframe（有列且有数据）
-    const lastDf = [...msg.dataframes].reverse().find(
+    const lastDf = [...dataframes].reverse().find(
       df => Array.isArray(df.columns) && df.columns.length > 0
          && Array.isArray(df.data) && df.data.length > 0,
     );
 
-    if (!lastDf) return msg;
+    if (!lastDf) {
+      // 无有效 dataframe 但需要 normalize 缺失字段时，返回修正后的副本
+      if (charts === msg.charts && dataframes === msg.dataframes) return msg;
+      return { ...msg, charts, dataframes } as ChatMessage;
+    }
 
     return {
       ...msg,
-      charts: msg.charts.map(c => {
+      charts: charts.map(c => {
         // 仅 V2 chart 且缺失 source 数据时恢复；已有 source 不覆盖
         if (!c.v2Meta) return c;
         if (c.sourceRows !== undefined && c.sourceColumns !== undefined) return c;
@@ -65,7 +82,8 @@ export function hydrateChartSourceDataFromDataframes(messages: ChatMessage[]): C
           sourceRows: c.sourceRows ?? lastDf.data,
         };
       }),
-    };
+      dataframes,
+    } as ChatMessage;
   });
 }
 
@@ -74,10 +92,23 @@ function loadAllSessions(): Record<string, ChatMessage[]> {
     const raw = localStorage.getItem(SESSIONS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
+    // 防御：解析结果不是普通对象（如字符串/数组/null）→ 返回空
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+
     // 读取后从 dataframe 恢复 source 数据，保证历史会话 V2 图表切换能力
     const hydrated: Record<string, ChatMessage[]> = {};
     for (const [id, msgs] of Object.entries(parsed)) {
-      hydrated[id] = hydrateChartSourceDataFromDataframes(msgs as ChatMessage[]);
+      try {
+        if (!Array.isArray(msgs)) {
+          // 旧 schema：某个 session 的值不是数组 → 按空数组处理
+          hydrated[id] = [];
+          continue;
+        }
+        hydrated[id] = hydrateChartSourceDataFromDataframes(msgs as ChatMessage[]);
+      } catch {
+        // 单个 session 处理失败 → 丢弃该 session，不影响其他
+        hydrated[id] = [];
+      }
     }
     return hydrated;
   } catch { return {}; }
