@@ -10,8 +10,77 @@ const SESSIONS_KEY = 'water_qa_sessions';
 const META_KEY = 'water_qa_session_meta';
 const CURRENT_ID_KEY = 'water_qa_current_id';
 
+/** 保存前剥离 chart 中的 sourceRows/sourceColumns，减少重复存储。
+ *  不修改原 messages。保留 rows/columns/spec/v2Meta/explicitType/dataframes。 */
+export function stripChartSourceDataForStorage(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map(msg => {
+    const hasSource = msg.charts.some(c => c.sourceRows !== undefined || c.sourceColumns !== undefined);
+    if (!hasSource) return msg;
+
+    return {
+      ...msg,
+      charts: msg.charts.map(c => {
+        if (c.sourceRows === undefined && c.sourceColumns === undefined) return c;
+        const stripped: ChartData = {
+          id: c.id,
+          columns: c.columns,
+          rows: c.rows,
+          spec: c.spec,
+          title: c.title,
+          dataVersion: c.dataVersion,
+          ...(c.error !== undefined ? { error: c.error } : {}),
+          ...(c.explicitType !== undefined ? { explicitType: c.explicitType } : {}),
+          ...(c.chartOnly !== undefined ? { chartOnly: c.chartOnly } : {}),
+          ...(c.v2Meta !== undefined ? { v2Meta: c.v2Meta } : {}),
+        };
+        return stripped;
+      }),
+    };
+  });
+}
+
+/** 读取后从同一条 message 的最后一个有效 dataframe 恢复 chart 的 sourceRows/sourceColumns。
+ *  只恢复带 v2Meta 且缺失 source 数据的 chart；已有 source 数据时不覆盖。
+ *  不修改原 messages。找不到有效 dataframe 时保持原样，不报错。 */
+export function hydrateChartSourceDataFromDataframes(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map(msg => {
+    // 找最后一个有效 dataframe（有列且有数据）
+    const lastDf = [...msg.dataframes].reverse().find(
+      df => Array.isArray(df.columns) && df.columns.length > 0
+         && Array.isArray(df.data) && df.data.length > 0,
+    );
+
+    if (!lastDf) return msg;
+
+    return {
+      ...msg,
+      charts: msg.charts.map(c => {
+        // 仅 V2 chart 且缺失 source 数据时恢复；已有 source 不覆盖
+        if (!c.v2Meta) return c;
+        if (c.sourceRows !== undefined && c.sourceColumns !== undefined) return c;
+
+        return {
+          ...c,
+          sourceColumns: c.sourceColumns ?? lastDf.columns,
+          sourceRows: c.sourceRows ?? lastDf.data,
+        };
+      }),
+    };
+  });
+}
+
 function loadAllSessions(): Record<string, ChatMessage[]> {
-  try { const raw = localStorage.getItem(SESSIONS_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    // 读取后从 dataframe 恢复 source 数据，保证历史会话 V2 图表切换能力
+    const hydrated: Record<string, ChatMessage[]> = {};
+    for (const [id, msgs] of Object.entries(parsed)) {
+      hydrated[id] = hydrateChartSourceDataFromDataframes(msgs as ChatMessage[]);
+    }
+    return hydrated;
+  } catch { return {}; }
 }
 
 /** 只读获取指定会话的消息列表（不切换当前会话，不触发状态变更） */
@@ -19,7 +88,12 @@ export function getSessionMessages(id: string): ChatMessage[] {
   return loadAllSessions()[id] || [];
 }
 function saveAllSessions(data: Record<string, ChatMessage[]>) {
-  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
+  // 写入前剥离 sourceRows/sourceColumns，减少重复存储
+  const stripped: Record<string, ChatMessage[]> = {};
+  for (const [id, msgs] of Object.entries(data)) {
+    stripped[id] = stripChartSourceDataForStorage(msgs);
+  }
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(stripped)); } catch { /* quota exceeded */ }
 }
 function loadAllMeta(): Record<string, SessionMeta> {
   try { const raw = localStorage.getItem(META_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
