@@ -233,10 +233,8 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
         return;
       }
 
-      // V2 失败 → fallback 到旧 target.spec 切换路径
-      setLocalType(type);
-      onChangeType?.(type);
-      onChangeSpec?.(target.spec);
+      // V2 失败 → 不切换，仅提示（避免 spec 切换但 columns/rows/v2Meta 不一致）
+      showToast('该数据类型暂不支持该图表');
       return;
     }
 
