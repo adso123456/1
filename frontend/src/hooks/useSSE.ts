@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { SSEEvent, ChatMessage, SessionMeta, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
-import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability, buildChartOption, normalizeChartSpec, CHART_TYPE_LABELS } from '../chartRegistry';
+import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability } from '../chartRegistry';
 import { prepareChartV2All } from '../chartPipelineV2';
 import type { Row } from '../datasetProfilerV2';
 
@@ -205,7 +205,7 @@ function extractChartType(text: string): 'bar' | 'line' | 'pie' | 'none' | null 
 }
 
 /** 识别消息中的图表类型名 */
-function detectChartTypeName(text: string): RenderableChartType | null {
+export function detectChartTypeName(text: string): RenderableChartType | null {
   // combo 必须在 bar/line 之前检测，避免"柱状折线图"被"柱状图"或"折线图"部分匹配
   if (/组合图|柱线图|柱状折线图|双轴图|柱状图和折线图/.test(text)) return 'combo';
   if (/雷达图/.test(text)) return 'radar';
@@ -236,7 +236,7 @@ const SWITCH_WRAPPER_AFTERS = ['显示', '展示', '呈现', '画', '出图'];
  * 判断用户输入是否为纯图表切换指令（白名单句式匹配）。
  * 只有整句话符合简短切换句式时才本地处理；其余一律发送后端。
  */
-function isPureChartSwitch(msg: string): RenderableChartType | null {
+export function isPureChartSwitch(msg: string): RenderableChartType | null {
   const trimmed = msg.trim();
 
   // 句式1：前缀 + 图表类型名  如"改成饼图""切换为柱状图""改为雷达图"
@@ -260,7 +260,7 @@ function isPureChartSwitch(msg: string): RenderableChartType | null {
   }
 
   // 句式3：极短消息，只有图表类型名本身  如"饼图""柱状图"
-  // 排除追加类消息（由 isPureChartAppend 单独处理）
+  // 排除追加类消息（追加句式走正常 SSE 请求流程，不再本地拦截）
   if (trimmed.length <= 6 && !/^(加|再|补充|新增|追加)/.test(trimmed)) {
     return detectChartTypeName(trimmed);
   }
@@ -281,7 +281,7 @@ const APPEND_PREFIXES = [
  * 判断用户输入是否为纯追加图表指令（基于上一条数据新增图表类型）。
  * 白名单前缀 + 图表类型名 + 可选后缀。
  */
-function isPureChartAppend(msg: string): RenderableChartType | null {
+export function isPureChartAppend(msg: string): RenderableChartType | null {
   const trimmed = msg.trim();
 
   // 问句不视为追加指令
@@ -553,151 +553,6 @@ export function useSSE() {
         // 类型不可用 → 不吞消息，继续走正常请求
       }
       // 多图消息 / 无数据 / 不可用 → 走正常请求
-    }
-
-    // === 本地追加图表：基于上一条查询结果新增图表类型 ===
-    const appendType = isPureChartAppend(userText);
-    if (appendType) {
-      const userMsg: ChatMessage = {
-        id: `u_${Date.now()}`,
-        role: 'user',
-        text: userText,
-        dataframes: [],
-        charts: [],
-        thinkingCollapsed: true,
-        streaming: false,
-      };
-      const assistantMsgId = `a_${Date.now()}`;
-
-      // 查找最近一次数据查询结果：优先图表，其次 dataframe，不跨消息搜索
-      let sourceChart: ChartData | null = null;
-      let sourceSql: string | null = null;
-      let errorText: string | null = null;
-
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (m.role !== 'assistant') continue;
-
-        const hasCharts = m.charts.length > 0;
-        const hasDataframes = m.dataframes.length > 0;
-        const hasData = hasCharts || hasDataframes;
-
-        if (!hasData) {
-          // 最近一条 assistant 无任何数据，继续往前找
-          continue;
-        }
-
-        if (hasCharts) {
-          const valid = m.charts.find(c => !c.error && c.columns.length > 0 && c.rows.length > 0);
-          if (valid) {
-            sourceChart = valid;
-            sourceSql = m.sql || null;
-            break;
-          }
-        }
-
-        // 有 dataframe 但没有有效图表 → 无法确定字段映射
-        if (hasDataframes && !sourceChart) {
-          errorText = '上一次查询结果未生成图表，无法确定字段映射。请先用图表展示数据后再追加。';
-        }
-        break; // 无论是否找到，停在最近一次有数据的消息
-      }
-
-      if (errorText) {
-        const errorMsg: ChatMessage = {
-          id: assistantMsgId,
-          role: 'assistant',
-          text: errorText,
-          dataframes: [],
-          charts: [],
-          thinkingCollapsed: true,
-          streaming: false,
-        };
-        setMessages(prev => [...prev, userMsg, errorMsg]);
-        return;
-      }
-
-      if (!sourceChart) {
-        const errorMsg: ChatMessage = {
-          id: assistantMsgId,
-          role: 'assistant',
-          text: '当前没有可用的图表数据，无法生成新图表。请先进行一次数据查询。',
-          dataframes: [],
-          charts: [],
-          thinkingCollapsed: true,
-          streaming: false,
-        };
-        setMessages(prev => [...prev, userMsg, errorMsg]);
-        return;
-      }
-
-      // 用目标类型构造 spec，复用原图的字段映射
-      let newSpec: ChartSpec;
-      let option: unknown;
-      try {
-        newSpec = normalizeChartSpec(
-          { ...sourceChart.spec, type: appendType },
-          appendType,
-        );
-        const testChart: ChartData = {
-          ...sourceChart,
-          id: '',
-          spec: newSpec,
-          title: newSpec.title || sourceChart.title,
-          explicitType: true,
-        };
-        option = buildChartOption(testChart);
-      } catch {
-        const errorMsg: ChatMessage = {
-          id: assistantMsgId,
-          role: 'assistant',
-          text: '当前数据无法生成该图表类型。',
-          dataframes: [],
-          charts: [],
-          thinkingCollapsed: true,
-          streaming: false,
-        };
-        setMessages(prev => [...prev, userMsg, errorMsg]);
-        return;
-      }
-
-      if (!option) {
-        const errorMsg: ChatMessage = {
-          id: assistantMsgId,
-          role: 'assistant',
-          text: '当前数据无法生成该图表类型。',
-          dataframes: [],
-          charts: [],
-          thinkingCollapsed: true,
-          streaming: false,
-        };
-        setMessages(prev => [...prev, userMsg, errorMsg]);
-        return;
-      }
-
-      // 创建新 assistant 消息展示追加图表
-      const chartLabel = CHART_TYPE_LABELS[appendType] || appendType;
-      const assistantMsg: ChatMessage = {
-        id: assistantMsgId,
-        role: 'assistant',
-        text: `已生成${chartLabel}`,
-        dataframes: [],
-        charts: [{
-          ...sourceChart,
-          id: `${assistantMsgId}-chart-0`,
-          spec: newSpec,
-          title: newSpec.title || sourceChart.title,
-          explicitType: true,
-          chartOnly: true,
-        }],
-        // 复用来源消息的 SQL，使追加图表添加到仪表板时 sourceSql 不为 null
-        sql: sourceSql,
-        thinkingCollapsed: true,
-        streaming: false,
-      };
-
-      setMessages(prev => [...prev, userMsg, assistantMsg]);
-      return;
     }
 
     // 正常请求
