@@ -10,6 +10,8 @@ import { ChartErrorBoundary } from './ChartCard';
 interface Props {
   message: ChatMessage;
   onChangeChartType?: (type: RenderableChartType) => void;
+  /** V2 图表切换：基于 sourceColumns/sourceRows 重新执行 V2 plan+transform，返回完整 ChartData */
+  onV2ChartSwitch?: (newChart: ChartData) => void;
   /** 点击"添加到仪表板"时回调，携带当前 activeSpec 图表快照、消息 ID、消息 SQL（会话 ID 由 App 补充） */
   onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
 }
@@ -23,7 +25,7 @@ function cleanMarkdown(text: string): string {
     .trimEnd();
 }
 
-export function MessageBubble({ message, onChangeChartType, onAddToDashboard }: Props) {
+export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onAddToDashboard }: Props) {
   const isUser = message.role === 'user';
   const hasSql = !!(message.sql && message.sql.trim());
   const [showSql, setShowSql] = useState(false);
@@ -245,6 +247,7 @@ export function MessageBubble({ message, onChangeChartType, onAddToDashboard }: 
                     <ChartView
                       chart={best}
                       onChangeType={onChangeChartType}
+                      onV2ChartSwitch={onV2ChartSwitch}
                       showExport
                       onAddToDashboard={onAddToDashboard
                         ? (chart) => onAddToDashboard({

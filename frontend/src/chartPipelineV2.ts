@@ -4,7 +4,13 @@
 // 仅支持 pilot 已实现的图表类型和 transform。
 
 import type { Row } from './datasetProfilerV2.js';
-import type { ChartSpec, RenderableChartType, ChartData } from './types.js';
+import type {
+  ChartSpec,
+  RenderableChartType,
+  ChartData,
+  ChartTypeAvailability,
+  ChartSuitability,
+} from './types.js';
 import {
   planChartsV2,
   planChartsWithCapabilitiesV2,
@@ -18,7 +24,12 @@ import {
   executeDataTransformV2,
   type DataTransformResultV2,
 } from './chartDataTransformV2.js';
-import { buildChartOption } from './chartRegistry.js';
+import {
+  buildChartOption,
+  getChartTypeAvailability,
+  CHART_TYPE_LABELS,
+  RENDERABLE_TYPES,
+} from './chartRegistry.js';
 
 // ============================================================
 // 导出类型
@@ -297,4 +308,92 @@ export function prepareChartV2All(
     transformResult,
     errorCode: null,
   };
+}
+
+// ============================================================
+// getChartTypeAvailabilityV2
+// ============================================================
+
+/**
+ * V2 驱动的图表类型可用性评估，替代旧 getChartTypeAvailability。
+ *
+ * - chart 有 sourceColumns / sourceRows 时：基于 source 数据对 13 种图表做 plan 评估
+ * - chart 无 source 数据时：直接 fallback 到旧 getChartTypeAvailability
+ *
+ * 仅做可用性判断，不执行 transform，不调用 buildChartOption。
+ * 同一 chart type 有多个 variant 时，选该 type 下最高 suitability 的一个。
+ */
+export function getChartTypeAvailabilityV2(
+  chart: ChartData,
+): ChartTypeAvailability[] {
+  // ── 旧图表无 source 数据 → fallback 到旧逻辑 ──
+  if (!chart.sourceColumns || !chart.sourceRows) {
+    return getChartTypeAvailability(chart);
+  }
+
+  // ── V2 路径：基于 sourceColumns / sourceRows 做 planning ──
+  const sourceColumns = chart.sourceColumns;
+  const sourceRows = chart.sourceRows;
+
+  const planning = planChartsWithCapabilitiesV2(
+    {
+      columns: sourceColumns,
+      rows: sourceRows,
+      source: 'auto',
+      intent: 'auto',
+    },
+    ALL_CAPABILITIES_V2,
+  );
+
+  // ── 按 chart type 分组，每组取最高 suitability 的 plan ──
+  const bestByType = new Map<RenderableChartType, ChartPlanV2>();
+
+  for (const plan of planning.plans) {
+    const existing = bestByType.get(plan.type);
+    if (
+      !existing ||
+      suitabilityRank(plan.resolvedSuitability) >
+        suitabilityRank(existing.resolvedSuitability)
+    ) {
+      bestByType.set(plan.type, plan);
+    }
+  }
+
+  // ── 覆盖全部 13 种 RENDERABLE_TYPES ──
+  return RENDERABLE_TYPES.map((type) => {
+    const plan = bestByType.get(type);
+
+    if (!plan) {
+      // 该类型无任何 plan（理论上不应发生，ALL_CAPABILITIES_V2 包含全部 13 种）
+      return {
+        type,
+        label: CHART_TYPE_LABELS[type],
+        supported: false,
+        reason: '该数据类型暂不支持该图表',
+        spec: null,
+        suitability: 'unsupported' as ChartSuitability,
+      };
+    }
+
+    const supported =
+      plan.resolvedSuitability !== 'unsupported' && plan.spec !== null;
+
+    return {
+      type,
+      label: CHART_TYPE_LABELS[type],
+      supported,
+      spec: supported ? plan.spec : null,
+      suitability: plan.resolvedSuitability,
+      reason: supported
+        ? ''
+        : plan.reasonCode || '该数据类型暂不支持该图表',
+    };
+  });
+}
+
+/** suitability 优先级：recommended(2) > allowed_explicit(1) > unsupported(0) */
+function suitabilityRank(s: ChartSuitability): number {
+  if (s === 'recommended') return 2;
+  if (s === 'allowed_explicit') return 1;
+  return 0;
 }

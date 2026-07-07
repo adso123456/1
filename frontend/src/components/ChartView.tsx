@@ -4,12 +4,15 @@ import type { ChartData, ChartSpec, ChartTypeAvailability, RenderableChartType }
 import {
   buildChartOption,
   CHART_TYPE_LABELS,
-  getChartTypeAvailability,
   isNullValue,
   isRenderableChartType,
 } from '../chartRegistry';
 import { generateChartDescription } from '../chartDescription';
 import { formatCellValue, formatColumnLabel } from '../utils/tableFormatting';
+import {
+  getChartTypeAvailabilityV2,
+  prepareChartV2All,
+} from '../chartPipelineV2';
 
 interface Props {
   chart: ChartData;
@@ -19,6 +22,9 @@ interface Props {
   /** 仪表板用：切换类型时回传 availability 返回的完整 ChartSpec，供上层持久化。
    *  聊天页不传，仅靠 onChangeType 通知类型变化。 */
   onChangeSpec?: (spec: ChartSpec) => void;
+  /** V2 图表切换：基于 sourceColumns/sourceRows 重新执行 V2 plan+transform，
+   *  返回完整 ChartData。未传时 fallback 到旧 onChangeType/onChangeSpec 路径。 */
+  onV2ChartSwitch?: (newChart: ChartData) => void;
   /** 隐藏"图表/表格"切换，始终显示图表（仪表板和弹窗预览用） */
   hideTableToggle?: boolean;
   /** 隐藏图表下方自动生成的文字说明（仪表板精简用） */
@@ -33,7 +39,7 @@ interface Props {
 
 type ViewMode = 'chart' | 'table';
 
-export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
+export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2ChartSwitch, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
   const isChartOnly = !!chart.chartOnly;
 
   const [viewMode, setViewMode] = useState<ViewMode>('chart');
@@ -73,9 +79,10 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
     toastTimerRef.current = setTimeout(() => setToastMessage(null), 2000);
   };
 
-  /** 全部 13 种图表类型的可用性评估（含完整 Spec） */
+  /** 全部 13 种图表类型的可用性评估（含完整 Spec）。
+   *   V2 图表有 source 数据时走 V2 planning；旧图表无 source 数据时自动 fallback 到旧逻辑。 */
   const allTypes = useMemo<ChartTypeAvailability[]>(
-    () => getChartTypeAvailability(chart),
+    () => getChartTypeAvailabilityV2(chart),
     [chart],
   );
 
@@ -186,11 +193,53 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, hideTa
     // 仅在目标类型可用（supported 且 spec 非空）时才切换，避免切到不支持的类型
     const target = allTypes.find(t => t.type === type);
     if (!target?.supported || !target.spec) return;
+
     // 切换前清空画布，避免旧图表类型配置残留
     const instance = echartsRef.current?.getEchartsInstance();
     if (instance) {
       instance.clear();
     }
+
+    // ── V2 路径：chart 有 source 数据时，基于 source 重新 plan+transform ──
+    if (chart.sourceColumns && chart.sourceRows) {
+      const result = prepareChartV2All({
+        columns: chart.sourceColumns,
+        rows: chart.sourceRows,
+        source: 'user',
+        intent: 'auto',
+        requestedChartType: type,
+        id: chart.id || '',
+        title: chart.title || '',
+        dataVersion: chart.dataVersion ?? 0,
+      });
+
+      if (result.ok && result.chart) {
+        // V2 切换成功 → 优先走 onV2ChartSwitch 回调
+        const newChart: ChartData = {
+          ...result.chart,
+          // 保留原 chart 的元数据字段
+          chartOnly: chart.chartOnly,
+          dataVersion: chart.dataVersion,
+        };
+        setLocalType(type);
+        if (onV2ChartSwitch) {
+          onV2ChartSwitch(newChart);
+        } else {
+          // 未传 onV2ChartSwitch → fallback 到旧 onChangeType/onChangeSpec
+          onChangeType?.(type);
+          onChangeSpec?.(newChart.spec);
+        }
+        return;
+      }
+
+      // V2 失败 → fallback 到旧 target.spec 切换路径
+      setLocalType(type);
+      onChangeType?.(type);
+      onChangeSpec?.(target.spec);
+      return;
+    }
+
+    // ── 旧路径：无 source 数据 → 完全走旧逻辑 ──
     setLocalType(type);
     onChangeType?.(type);
     // 回传 availability 返回的完整 Spec（含 xField/yFields/sizeField/valueField 等），供仪表板持久化

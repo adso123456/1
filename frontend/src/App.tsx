@@ -188,6 +188,7 @@ function App() {
             onCancel={cancelRequest}
             onClear={clearMessages}
             onChangeChartType={() => {}}
+            onV2ChartSwitch={() => {}}
             onAddToDashboard={handleRequestAddToDashboard}
           />
         ) : (
