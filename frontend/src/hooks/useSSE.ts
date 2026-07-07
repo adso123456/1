@@ -355,6 +355,30 @@ function chartsSignatureEqual(a: ChartData[], b: ChartData[]): boolean {
   return true;
 }
 
+/**
+ * 当新 dataframe 到达时，刷新已有 charts 的 columns/rows/dataVersion 引用。
+ * V2 图表（含 v2Meta）的 columns/rows 是 transform 后结果，跳过覆盖；
+ * 旧图表（无 v2Meta）继续用最新 dataframe 更新。
+ */
+export function refreshChartsFromDataframe(
+  charts: ChartData[],
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+  dataVersion: number,
+): ChartData[] {
+  if (charts.length === 0) return charts;
+  return charts.map(c => {
+    // V2 图表的 columns/rows 是 transform 后结果，不得被原始 dataframe 覆盖
+    if (c.v2Meta) return c;
+    return {
+      ...c,
+      columns,
+      rows,
+      dataVersion,
+    };
+  });
+}
+
 export function useSSE() {
   const [currentSessionId, setCurrentSessionId] = useState<string>(initSessionId);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -647,14 +671,14 @@ export function useSSE() {
               setMessages(prev =>
                 prev.map(m => {
                   if (m.id !== assistantMsgId) return m;
-                  // DataFrame 更新后，已有 charts 必须使用最新 columns/rows/dataVersion 引用
-                  const updatedCharts = m.charts.length > 0 && dfData.data && dfData.columns
-                    ? m.charts.map(c => ({
-                        ...c,
-                        columns: dfData.columns,
-                        rows: dfData.data,
-                        dataVersion: dataVersionRef.current,
-                      }))
+                  // DataFrame 更新后刷新已有 charts；V2 chart（含 v2Meta）跳过覆盖
+                  const updatedCharts = (m.charts.length > 0 && dfData.data && dfData.columns)
+                    ? refreshChartsFromDataframe(
+                        m.charts,
+                        dfData.columns,
+                        dfData.data,
+                        dataVersionRef.current,
+                      )
                     : m.charts;
                   const next = { ...m, dataframes: [...dataframes], charts: updatedCharts, sql: sqlText };
                   return next;
