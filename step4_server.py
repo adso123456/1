@@ -98,9 +98,12 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
 """
         return base + extra
 
-OPENCODE_API_KEY = os.getenv("OPENCODE_API_KEY")
-if not OPENCODE_API_KEY:
-    print("[FAIL] OPENCODE_API_KEY 未设置!")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODEL = "deepseek-v4-pro"
+
+if not DEEPSEEK_API_KEY:
+    print("[FAIL] DEEPSEEK_API_KEY is required")
     sys.exit(1)
 
 
@@ -111,11 +114,11 @@ class SimpleUserResolver(UserResolver):
 
 def create_agent():
     """创建 Agent — 与 train_step3 共享 embedding function 和阈值"""
-    print("初始化 LLM 服务 (deepseek-v4-pro)...")
+    print("初始化 LLM 服务 (deepseek-v4-pro via DeepSeek official API)...")
     llm = OpenAILlmService(
-        model="deepseek-v4-pro",
-        api_key=OPENCODE_API_KEY,
-        base_url="https://opencode.ai/zen/go/v1",
+        model=DEEPSEEK_MODEL,
+        api_key=DEEPSEEK_API_KEY,
+        base_url=DEEPSEEK_BASE_URL,
     )
 
     print("连接 PostgreSQL...")
