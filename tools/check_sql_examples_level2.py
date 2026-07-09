@@ -289,8 +289,8 @@ def build_report(results: list[dict[str, Any]], status_short: str, remote: str) 
             "- 是否写入 ChromaDB：否",
             "- 是否修改数据库结构：否",
             "- 是否进入第 2/3/4 级：否",
-            "- 当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练。",
-            "- 下一步建议：人工确认 requires_manual_review 样本的固定值、业务语义和 P0 候选一致性后，再另起阶段执行受控训练写入。",
+            "- 当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练，excluded 样本禁止训练。",
+            "- 下一步建议：下一阶段如执行训练，只能训练 train_decision=approved 的样本；requires_manual_review 样本需先人工确认业务语义和 P0 候选稳定性。",
             "",
         ]
     )

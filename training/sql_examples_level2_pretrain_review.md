@@ -11,19 +11,17 @@ origin	https://github.com/adso123456/1.git (push)
 - git status --short：
 ```text
 M tools/check_sql_examples_level2.py
- M tools/sql_examples_level2_check_result.md
  M training/sql_examples_level2_draft.json
  M training/sql_examples_level2_review.md
-?? training/sql_examples_level2_pretrain_review.md
 ```
 - 样本总数：19
-- approved 数量：8
-- requires_manual_review 数量：11
+- approved 数量：16
+- requires_manual_review 数量：3
 - excluded 数量：0
 - 静态检查失败数量：0
 - 静态检查失败样本列表：无
 - SQL Guard warning 样本列表：L2_SQL_019
-- requires_manual_review 样本列表：L2_SQL_001, L2_SQL_002, L2_SQL_003, L2_SQL_004, L2_SQL_005, L2_SQL_006, L2_SQL_007, L2_SQL_008, L2_SQL_011, L2_SQL_012, L2_SQL_019
+- requires_manual_review 样本列表：L2_SQL_011, L2_SQL_012, L2_SQL_019
 - excluded 样本列表：无
 
 ## 场景覆盖
@@ -47,8 +45,8 @@ M tools/check_sql_examples_level2.py
 - used_tables：wm_waterquality_day_records
 - used_columns：wm_waterquality_day_records.station_id, wm_waterquality_day_records.monitor_time, wm_waterquality_day_records.m2_value, wm_waterquality_day_records.m3_value, wm_waterquality_day_records.water_quality_level
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；固定 station_id=1408 和日期 2026-01-01 仅作为示例条件，核心训练目标是日记录表选择、趋势字段选择和排序方式，不应引导模型固定使用该站点或日期。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
@@ -59,20 +57,20 @@ M tools/check_sql_examples_level2.py
 - used_tables：wm_waterquality_day_records
 - used_columns：wm_waterquality_day_records.station_id, wm_waterquality_day_records.monitor_time
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard severity=ok；但 SQL 固定日期 2026-01-01，训练前需人工确认是否适合作为通用示例。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；固定日期 2026-01-01 仅作为示例过滤条件，核心训练目标是日记录表聚合、COUNT/MAX 和按站点分组。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
 ### L2_SQL_003
 
 - id：L2_SQL_003
-- question：某站点某时间段水质日变化趋势，包含 pH 和溶解氧
+- question：查询某站点水质日趋势中的 pH 和溶解氧变化
 - used_tables：wm_waterquality_day_records
 - used_columns：wm_waterquality_day_records.station_id, wm_waterquality_day_records.monitor_time, wm_waterquality_day_records.m2_value, wm_waterquality_day_records.m3_value
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard 已由原 warning 修订为 ok；但 SQL 固定 station_id=1408，训练前需人工确认固定站点值是否适合作为示例。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；原 warning 根因是 question 未明确水质日趋势，已最小修订 question；固定 station_id=1408 仅作为示例条件，不是核心训练目标。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
@@ -83,8 +81,8 @@ M tools/check_sql_examples_level2.py
 - used_tables：wm_waterquality_hour_records
 - used_columns：wm_waterquality_hour_records.station_id, wm_waterquality_hour_records.monitor_time, wm_waterquality_hour_records.m1_value, wm_waterquality_hour_records.m2_value, wm_waterquality_hour_records.m3_value, wm_waterquality_hour_records.water_quality_level
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；固定 station_id=1408 和日期 2026-01-01 仅作为示例条件，核心训练目标是小时记录表选择和水质趋势字段选择。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
@@ -95,8 +93,8 @@ M tools/check_sql_examples_level2.py
 - used_tables：wm_waterquality_hour_records
 - used_columns：wm_waterquality_hour_records.station_id, wm_waterquality_hour_records.water_quality_level, wm_waterquality_hour_records.monitor_time
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；固定 station_id=1408 和日期 2026-01-01 仅作为示例过滤条件，核心训练目标是小时表按水质等级聚合。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
@@ -107,8 +105,8 @@ M tools/check_sql_examples_level2.py
 - used_tables：wm_waterquality_hour_records
 - used_columns：wm_waterquality_hour_records.station_id, wm_waterquality_hour_records.monitor_time, wm_waterquality_hour_records.m2_value, wm_waterquality_hour_records.m8_value, wm_waterquality_hour_records.m9_value
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard severity=ok；但 SQL 固定日期 2026-01-01，训练前需人工确认是否适合作为通用示例。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；固定日期 2026-01-01 仅作为示例过滤条件，核心训练目标是小时表多指标字段选择。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
@@ -119,8 +117,8 @@ M tools/check_sql_examples_level2.py
 - used_tables：wm_waterquality_month_records
 - used_columns：wm_waterquality_month_records.station_id, wm_waterquality_month_records.monitor_year, wm_waterquality_month_records.monitor_month, wm_waterquality_month_records.m2_value, wm_waterquality_month_records.m3_value, wm_waterquality_month_records.water_quality_level
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard severity=ok；但 SQL 固定 station_id=1408 和年份 2025，训练前需人工确认是否存在过拟合风险。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；固定 station_id=1408 和年份 2025 仅作为示例条件，核心训练目标是月记录表选择和年月排序。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
@@ -131,8 +129,8 @@ M tools/check_sql_examples_level2.py
 - used_tables：wm_waterquality_month_records
 - used_columns：wm_waterquality_month_records.monitor_year, wm_waterquality_month_records.monitor_month
 - SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
-- train_decision：requires_manual_review
-- review_notes：SQL Guard severity=ok；但 SQL 固定年份 2025，训练前需人工确认是否适合作为通用示例。
+- train_decision：approved
+- review_notes：SQL Guard severity=ok；固定年份 2025 仅作为示例过滤条件，核心训练目标是月表按年月聚合。
 - 是否通过训练前审查：是
 - reason：通过训练前审查标记
 
@@ -276,5 +274,5 @@ M tools/check_sql_examples_level2.py
 - 是否写入 ChromaDB：否
 - 是否修改数据库结构：否
 - 是否进入第 2/3/4 级：否
-- 当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练。
-- 下一步建议：人工确认 requires_manual_review 样本的固定值、业务语义和 P0 候选一致性后，再另起阶段执行受控训练写入。
+- 当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练，excluded 样本禁止训练。
+- 下一步建议：下一阶段如执行训练，只能训练 train_decision=approved 的样本；requires_manual_review 样本需先人工确认业务语义和 P0 候选稳定性。

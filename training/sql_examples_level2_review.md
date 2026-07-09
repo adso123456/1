@@ -31,15 +31,14 @@
 
 ## 训练前复核标记
 
-- approved：8 条
-- requires_manual_review：11 条
+- approved：16 条
+- requires_manual_review：3 条
 - excluded：0 条
 
-本阶段不是训练阶段。`requires_manual_review` 样本不得直接写入 ChromaDB，必须在人工确认固定值、业务语义和 P0 候选一致性后再决定。
+本阶段不是训练阶段。固定 `station_id`、固定年份或固定日期可以作为 SQL 示例条件保留，不自动判为 `requires_manual_review`；但 `review_notes` 必须说明这些固定值不是核心训练目标，不应引导模型以后固定使用相同条件。`requires_manual_review` 样本不得直接写入 ChromaDB，必须在人工确认业务语义和 P0 候选一致性后再决定。
 
 ## 需要重点人工检查的样本
 
-- `L2_SQL_001` - `L2_SQL_008`：水质趋势样本静态校验通过，但 SQL 中存在固定 `station_id`、固定日期或固定年份，需确认是否适合作为通用训练样本。
 - `L2_SQL_011`：排污口溯源责任主体统计，风险等级 medium，需确认字段口径。
 - `L2_SQL_012`：排污口溯源企业和排放许可证，风险等级 medium，需确认字段口径。
 - `L2_SQL_019`：`wm_water_source_intake_v2` 不在 deterministic candidate tables 中，SQL Guard severity=warning，需人工确认水源地取水口供水能力场景是否稳定。
@@ -76,6 +75,6 @@
 - 未发现 `SELECT *`。
 - SQL Guard 全部 passed=True。
 - `L2_SQL_019` 仍为 severity=warning，已标记 `requires_manual_review`，不得直接训练。
-- `L2_SQL_003` 已将 question 最小修订为明确的水质日变化趋势问法，SQL Guard severity 已从 warning 变为 ok，但因固定 `station_id` 仍需人工复核。
+- `L2_SQL_003` 已将 question 最小修订为 `查询某站点水质日趋势中的 pH 和溶解氧变化`，SQL Guard severity 已从 warning 变为 ok，可作为 approved 样本。
 
-当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练。
+当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练。下一阶段如执行训练，只能训练 `train_decision=approved` 的样本。

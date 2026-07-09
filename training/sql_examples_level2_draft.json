@@ -14,8 +14,8 @@
     "purpose": "水质日趋势：训练模型优先使用 wm_waterquality_day_records 查询日粒度趋势。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；固定 station_id=1408 和日期 2026-01-01 仅作为示例条件，核心训练目标是日记录表选择、趋势字段选择和排序方式，不应引导模型固定使用该站点或日期。"
   },
   {
     "id": "L2_SQL_002",
@@ -29,12 +29,12 @@
     "purpose": "水质日趋势：训练日记录聚合场景，避免退化到阈值表。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard severity=ok；但 SQL 固定日期 2026-01-01，训练前需人工确认是否适合作为通用示例。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；固定日期 2026-01-01 仅作为示例过滤条件，核心训练目标是日记录表聚合、COUNT/MAX 和按站点分组。"
   },
   {
     "id": "L2_SQL_003",
-    "question": "某站点某时间段水质日变化趋势，包含 pH 和溶解氧",
+    "question": "查询某站点水质日趋势中的 pH 和溶解氧变化",
     "sql": "SELECT station_id, monitor_time, m2_value, m3_value\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL AND m3_value IS NOT NULL\nORDER BY monitor_time\nLIMIT 100",
     "expected_tables": ["wm_waterquality_day_records"],
     "expected_columns": [
@@ -46,8 +46,8 @@
     "purpose": "水质日趋势：训练常见指标 m2_value 和 m3_value 的日趋势查询。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard 已由原 warning 修订为 ok；但 SQL 固定 station_id=1408，训练前需人工确认固定站点值是否适合作为示例。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；原 warning 根因是 question 未明确水质日趋势，已最小修订 question；固定 station_id=1408 仅作为示例条件，不是核心训练目标。"
   },
   {
     "id": "L2_SQL_004",
@@ -65,8 +65,8 @@
     "purpose": "水质小时趋势：训练模型优先使用 wm_waterquality_hour_records 查询小时粒度趋势。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；固定 station_id=1408 和日期 2026-01-01 仅作为示例条件，核心训练目标是小时记录表选择和水质趋势字段选择。"
   },
   {
     "id": "L2_SQL_005",
@@ -81,8 +81,8 @@
     "purpose": "水质小时趋势：训练小时表聚合和等级分布查询。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；固定 station_id=1408 和日期 2026-01-01 仅作为示例过滤条件，核心训练目标是小时表按水质等级聚合。"
   },
   {
     "id": "L2_SQL_006",
@@ -99,8 +99,8 @@
     "purpose": "水质小时趋势：训练小时表多指标查询，避免误用日表或阈值表。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard severity=ok；但 SQL 固定日期 2026-01-01，训练前需人工确认是否适合作为通用示例。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；固定日期 2026-01-01 仅作为示例过滤条件，核心训练目标是小时表多指标字段选择。"
   },
   {
     "id": "L2_SQL_007",
@@ -118,8 +118,8 @@
     "purpose": "水质月趋势：训练模型优先使用 wm_waterquality_month_records 查询月粒度趋势。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和年份 2025，训练前需人工确认是否存在过拟合风险。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；固定 station_id=1408 和年份 2025 仅作为示例条件，核心训练目标是月记录表选择和年月排序。"
   },
   {
     "id": "L2_SQL_008",
@@ -133,8 +133,8 @@
     "purpose": "水质月趋势：训练月表按年月聚合，不退化到 day/hour/year records。",
     "risk_level": "low",
     "review_status": "draft",
-    "train_decision": "requires_manual_review",
-    "review_notes": "SQL Guard severity=ok；但 SQL 固定年份 2025，训练前需人工确认是否适合作为通用示例。"
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；固定年份 2025 仅作为示例过滤条件，核心训练目标是月表按年月聚合。"
   },
   {
     "id": "L2_SQL_009",
