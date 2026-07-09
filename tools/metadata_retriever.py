@@ -348,18 +348,32 @@ class DeterministicMetadataRetriever:
             reasons.append(reason)
 
         if "水质" in query_compact:
-            if table_name.startswith("wm_waterquality") or "水质监测" in table_comment:
+            is_waterquality_record = re.fullmatch(
+                r"wm_waterquality_(day|hour|month|year)_records", table_name
+            )
+            is_trend_query = any(word in query_compact for word in ("时间段", "变化", "趋势"))
+            has_granularity = any(word in query_compact for word in ("日", "小时", "月", "年"))
+
+            if is_waterquality_record or "水质监测" in table_comment:
                 add(1800, "waterquality_intent", "水质问题优先匹配水质监测记录表")
             if "日" in query_compact and table_name == "wm_waterquality_day_records":
                 add(1450, "waterquality_granularity", "水质日粒度命中")
             if "小时" in query_compact and table_name == "wm_waterquality_hour_records":
                 add(1450, "waterquality_granularity", "水质小时粒度命中")
             if "月" in query_compact and table_name == "wm_waterquality_month_records":
-                add(900, "waterquality_granularity", "水质月粒度命中")
-            if any(word in query_compact for word in ("时间段", "变化", "趋势")) and table_name.startswith(
-                "wm_waterquality"
-            ):
+                add(1450, "waterquality_granularity", "水质月粒度命中")
+            if is_trend_query and is_waterquality_record:
                 add(900, "waterquality_trend_intent", "水质趋势问题优先记录表")
+            if (
+                is_trend_query
+                and not has_granularity
+                and table_name == "wm_waterquality_day_records"
+            ):
+                add(700, "waterquality_default_day_granularity", "未说明粒度时默认优先水质日记录")
+            if is_trend_query and any(
+                word in table_name for word in ("threshold", "setting", "config", "standard")
+            ):
+                add(-2200, "waterquality_config_negative_guard", "水质趋势问题降低阈值或配置类表优先级")
             if table_name in {"rs_outlet", "layer_outlet_sewage"}:
                 add(-600, "waterquality_negative_guard", "水质问题降低排污口基础表优先级")
 

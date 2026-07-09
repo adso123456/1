@@ -52,12 +52,33 @@ TEST_CASES: list[dict[str, Any]] = [
     {"query": "水质小时记录", "expected_top1": "wm_waterquality_hour_records"},
     {
         "query": "某地区某时间段水质变化趋势",
-        "expected_contains_any": [
+        "expected_top1": "wm_waterquality_day_records",
+        "expected_contains_all": [
             "wm_waterquality_day_records",
             "wm_waterquality_hour_records",
             "wm_waterquality_month_records",
         ],
-        "forbidden_top1": ["rs_outlet", "layer_outlet_sewage"],
+        "forbidden_top1": [
+            "rs_outlet",
+            "layer_outlet_sewage",
+            "wm_waterquality_threshold",
+        ],
+        "waterquality_trend": True,
+    },
+    {
+        "query": "某地区某时间段水质日变化趋势",
+        "expected_top1": "wm_waterquality_day_records",
+        "waterquality_trend": True,
+    },
+    {
+        "query": "某地区某时间段水质小时变化趋势",
+        "expected_top1": "wm_waterquality_hour_records",
+        "waterquality_trend": True,
+    },
+    {
+        "query": "某地区某时间段水质月变化趋势",
+        "expected_top1": "wm_waterquality_month_records",
+        "waterquality_trend": True,
     },
     {"query": "站点名称", "expected_contains_field": "station_name"},
     {"query": "排污口编码", "expected_contains_field": "outlet_code"},
@@ -87,8 +108,13 @@ def _candidate_fields(candidates: list[dict[str, Any]]) -> set[str]:
 
 
 def _expected_text(case: dict[str, Any]) -> str:
+    parts: list[str] = []
     if "expected_top1" in case:
-        return f"top1 = {case['expected_top1']}"
+        parts.append(f"top1 = {case['expected_top1']}")
+    if "expected_contains_all" in case:
+        parts.append("contains all = " + ", ".join(case["expected_contains_all"]))
+    if parts:
+        return "；".join(parts)
     if "expected_contains_any" in case:
         return "contains any = " + ", ".join(case["expected_contains_any"])
     if "expected_contains_field" in case:
@@ -107,7 +133,21 @@ def _check_case(case: dict[str, Any], candidates: list[dict[str, Any]]) -> tuple
 
     if "expected_top1" in case:
         expected = case["expected_top1"]
-        return actual_top1 == expected, f"期望 top1={expected}，实际 top1={actual_top1}"
+        if actual_top1 != expected:
+            return False, f"期望 top1={expected}，实际 top1={actual_top1}"
+
+    if "expected_contains_all" in case:
+        expected_names = set(case["expected_contains_all"])
+        actual_names = set(candidate_names)
+        missing_names = sorted(expected_names - actual_names)
+        if missing_names:
+            return False, "候选表缺少：" + ", ".join(missing_names)
+
+    if "expected_top1" in case:
+        reason = f"期望 top1={case['expected_top1']}，实际 top1={actual_top1}"
+        if "expected_contains_all" in case:
+            reason += "；必含候选表均已出现"
+        return True, reason
 
     if "expected_contains_any" in case:
         expected_names = set(case["expected_contains_any"])
@@ -145,6 +185,7 @@ def run_tests() -> tuple[list[dict[str, Any]], dict[str, Any]]:
                 "pass": passed,
                 "reason": reason,
                 "high_risk_exact": bool(case.get("high_risk_exact")),
+                "waterquality_trend": bool(case.get("waterquality_trend")),
             }
         )
 
@@ -154,6 +195,11 @@ def run_tests() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     high_risk_fixed = sum(
         1 for result in results if result["high_risk_exact"] and result["pass"]
     )
+    trend_results = [result for result in results if result["waterquality_trend"]]
+    trend_passed = sum(1 for result in trend_results if result["pass"])
+    trend_top1_list = [
+        f"{result['query']} => {result['actual_top1']}" for result in trend_results
+    ]
     summary = {
         "total": len(results),
         "passed": passed_count,
@@ -161,6 +207,9 @@ def run_tests() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         "failed_cases": failed_cases,
         "high_risk_total": high_risk_total,
         "high_risk_fixed": high_risk_fixed,
+        "trend_total": len(trend_results),
+        "trend_passed": trend_passed,
+        "trend_top1_list": trend_top1_list,
     }
     return results, summary
 
@@ -175,6 +224,8 @@ def write_report(results: list[dict[str, Any]], summary: dict[str, Any]) -> None
         f"- 通过数量：{summary['passed']}",
         f"- 失败数量：{summary['failed']}",
         f"- 失败用例列表：{', '.join(summary['failed_cases']) if summary['failed_cases'] else '无'}",
+        f"- 水质趋势类测试通过数量：{summary['trend_passed']}/{summary['trend_total']}",
+        f"- 水质趋势类 actual_top1 列表：{'; '.join(summary['trend_top1_list'])}",
         f"- 高风险 9 张表是否全部被修正为确定性 top-1：{'是' if summary['high_risk_fixed'] == summary['high_risk_total'] else '否'}（{summary['high_risk_fixed']}/{summary['high_risk_total']}）",
         "- 是否接入主问答流程：否",
         "- 是否训练 Vanna：否",
@@ -212,6 +263,8 @@ def main() -> int:
     print(f"通过数量: {summary['passed']}")
     print(f"失败数量: {summary['failed']}")
     print(f"失败用例列表: {', '.join(summary['failed_cases']) if summary['failed_cases'] else '无'}")
+    print(f"水质趋势类测试通过数量: {summary['trend_passed']}/{summary['trend_total']}")
+    print(f"水质趋势类 actual_top1 列表: {'; '.join(summary['trend_top1_list'])}")
     print(f"高风险 9 张表修正数量: {summary['high_risk_fixed']}/{summary['high_risk_total']}")
     print(f"报告: {REPORT_PATH}")
     return 0 if summary["failed"] == 0 else 1

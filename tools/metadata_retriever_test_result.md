@@ -2,10 +2,12 @@
 
 ## 汇总
 
-- 测试用例总数：15
-- 通过数量：15
+- 测试用例总数：18
+- 通过数量：18
 - 失败数量：0
 - 失败用例列表：无
+- 水质趋势类测试通过数量：4/4
+- 水质趋势类 actual_top1 列表：某地区某时间段水质变化趋势 => wm_waterquality_day_records; 某地区某时间段水质日变化趋势 => wm_waterquality_day_records; 某地区某时间段水质小时变化趋势 => wm_waterquality_hour_records; 某地区某时间段水质月变化趋势 => wm_waterquality_month_records
 - 高风险 9 张表是否全部被修正为确定性 top-1：是（9/9）
 - 是否接入主问答流程：否
 - 是否训练 Vanna：否
@@ -101,7 +103,7 @@
 - query：水质日记录
 - expected：top1 = wm_waterquality_day_records
 - actual_top1：wm_waterquality_day_records
-- actual_candidates：wm_waterquality_day_records, wm_waterquality_year_records, wm_waterquality_month_records, wm_waterquality_hour_records, wm_waterquality_threshold, wh_hydrological_day_records
+- actual_candidates：wm_waterquality_day_records, wm_waterquality_year_records, wm_waterquality_month_records, wm_waterquality_hour_records, wh_hydrological_day_records
 - pass/fail：pass
 - reason：期望 top1=wm_waterquality_day_records，实际 top1=wm_waterquality_day_records
 
@@ -110,20 +112,47 @@
 - query：水质小时记录
 - expected：top1 = wm_waterquality_hour_records
 - actual_top1：wm_waterquality_hour_records
-- actual_candidates：wm_waterquality_hour_records, wm_waterquality_day_records, wm_waterquality_year_records, wm_waterquality_month_records, wm_waterquality_threshold, wh_hydrological_hour_records
+- actual_candidates：wm_waterquality_hour_records, wm_waterquality_day_records, wm_waterquality_year_records, wm_waterquality_month_records, wh_hydrological_hour_records
 - pass/fail：pass
 - reason：期望 top1=wm_waterquality_hour_records，实际 top1=wm_waterquality_hour_records
 
 ### 12. 某地区某时间段水质变化趋势
 
 - query：某地区某时间段水质变化趋势
-- expected：contains any = wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_month_records
-- actual_top1：wm_waterquality_threshold
-- actual_candidates：wm_waterquality_threshold, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_year_records, wm_waterquality_month_records
+- expected：top1 = wm_waterquality_day_records；contains all = wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_month_records
+- actual_top1：wm_waterquality_day_records
+- actual_candidates：wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_year_records, wm_waterquality_month_records
 - pass/fail：pass
-- reason：候选表包含任一目标表
+- reason：期望 top1=wm_waterquality_day_records，实际 top1=wm_waterquality_day_records；必含候选表均已出现
 
-### 13. 站点名称
+### 13. 某地区某时间段水质日变化趋势
+
+- query：某地区某时间段水质日变化趋势
+- expected：top1 = wm_waterquality_day_records
+- actual_top1：wm_waterquality_day_records
+- actual_candidates：wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_year_records, wm_waterquality_month_records
+- pass/fail：pass
+- reason：期望 top1=wm_waterquality_day_records，实际 top1=wm_waterquality_day_records
+
+### 14. 某地区某时间段水质小时变化趋势
+
+- query：某地区某时间段水质小时变化趋势
+- expected：top1 = wm_waterquality_hour_records
+- actual_top1：wm_waterquality_hour_records
+- actual_candidates：wm_waterquality_hour_records, wm_waterquality_day_records, wm_waterquality_year_records, wm_waterquality_month_records
+- pass/fail：pass
+- reason：期望 top1=wm_waterquality_hour_records，实际 top1=wm_waterquality_hour_records
+
+### 15. 某地区某时间段水质月变化趋势
+
+- query：某地区某时间段水质月变化趋势
+- expected：top1 = wm_waterquality_month_records
+- actual_top1：wm_waterquality_month_records
+- actual_candidates：wm_waterquality_month_records, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_year_records
+- pass/fail：pass
+- reason：期望 top1=wm_waterquality_month_records，实际 top1=wm_waterquality_month_records
+
+### 16. 站点名称
 
 - query：站点名称
 - expected：contains field = station_name
@@ -132,7 +161,7 @@
 - pass/fail：pass
 - reason：字段 station_name 已出现在 matched_columns
 
-### 14. 排污口编码
+### 17. 排污口编码
 
 - query：排污口编码
 - expected：contains field = outlet_code
@@ -141,7 +170,7 @@
 - pass/fail：pass
 - reason：字段 outlet_code 已出现在 matched_columns
 
-### 15. 排污口溯源
+### 18. 排污口溯源
 
 - query：排污口溯源
 - expected：top1 in rs_outlet_trace_v2, wst_trace_edge, wst_trace_node, wst_trace_topology_issue
