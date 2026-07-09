@@ -101,6 +101,7 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-v4-pro"
+AGENT_DATA_DIR = os.getenv("AGENT_DATA_DIR", "E:/3/posgresql/1/agent_data")
 
 if not DEEPSEEK_API_KEY:
     print("[FAIL] DEEPSEEK_API_KEY is required")
@@ -129,7 +130,7 @@ def create_agent():
 
     print("注册工具 (run_sql)...")
     tool_registry = ToolRegistry()
-    file_system = LocalFileSystem(working_directory="E:/3/posgresql/1/agent_data")
+    file_system = LocalFileSystem(working_directory=AGENT_DATA_DIR)
     raw_run_sql_tool = RunSqlTool(sql_runner=pg_runner, file_system=file_system)
     tool_registry.register_local_tool(
         GuardedRunSqlTool(

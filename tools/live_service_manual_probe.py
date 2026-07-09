@@ -5,9 +5,11 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -22,6 +24,8 @@ PROJECT_ROOT = CURRENT_DIR.parent
 REPORT_PATH = CURRENT_DIR / "live_service_manual_probe_result.md"
 PYTHON_EXE = PROJECT_ROOT / "vanna_venv" / "Scripts" / "python.exe"
 SERVER_URL = "http://127.0.0.1:8000"
+FORMAL_VANNA_DATA_DIR = PROJECT_ROOT / "vanna_data"
+FORMAL_AGENT_DATA_DIR = PROJECT_ROOT / "agent_data"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -163,15 +167,9 @@ def collect_file_fingerprint(paths: list[Path]) -> dict[str, tuple[int, str]]:
 
 def chroma_fingerprint() -> dict[str, tuple[int, str]]:
     targets = [
-        PROJECT_ROOT / "vanna_data" / "chroma.sqlite3",
-        PROJECT_ROOT
-        / "vanna_data"
-        / "68092f4b-e2a5-4ccd-b126-95b1218cb050"
-        / "data_level0.bin",
-        PROJECT_ROOT
-        / "vanna_data"
-        / "68092f4b-e2a5-4ccd-b126-95b1218cb050"
-        / "length.bin",
+        FORMAL_VANNA_DATA_DIR / "chroma.sqlite3",
+        FORMAL_VANNA_DATA_DIR / "68092f4b-e2a5-4ccd-b126-95b1218cb050" / "data_level0.bin",
+        FORMAL_VANNA_DATA_DIR / "68092f4b-e2a5-4ccd-b126-95b1218cb050" / "length.bin",
     ]
     return collect_file_fingerprint(targets)
 
@@ -179,8 +177,46 @@ def chroma_fingerprint() -> dict[str, tuple[int, str]]:
 def query_result_files() -> set[str]:
     return {
         str(path.relative_to(PROJECT_ROOT))
-        for path in (PROJECT_ROOT / "agent_data").glob("**/query_results_*.csv")
+        for path in FORMAL_AGENT_DATA_DIR.glob("**/query_results_*.csv")
     }
+
+
+def setup_isolated_dirs() -> dict[str, Any]:
+    root = Path(tempfile.mkdtemp(prefix="vanna_live_probe_"))
+    isolated_vanna_data = root / "vanna_data"
+    isolated_agent_data = root / "agent_data"
+
+    if FORMAL_VANNA_DATA_DIR.exists():
+        shutil.copytree(FORMAL_VANNA_DATA_DIR, isolated_vanna_data)
+    else:
+        isolated_vanna_data.mkdir(parents=True, exist_ok=True)
+    isolated_agent_data.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "enabled": True,
+        "root": root,
+        "vanna_data_dir": isolated_vanna_data,
+        "agent_data_dir": isolated_agent_data,
+    }
+
+
+def has_chroma_files(path: Path) -> bool:
+    if not path.exists():
+        return False
+    return any(
+        item.is_file()
+        and (
+            item.name == "chroma.sqlite3"
+            or item.name in {"data_level0.bin", "length.bin"}
+        )
+        for item in path.rglob("*")
+    )
+
+
+def isolated_query_result_files(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    return sorted(str(item.relative_to(path)) for item in path.glob("**/query_results_*.csv"))
 
 
 def scan_contextual_hardcoded_keys() -> list[str]:
@@ -218,7 +254,9 @@ def scan_contextual_hardcoded_keys() -> list[str]:
     return sorted(set(findings))
 
 
-def start_server() -> tuple[subprocess.Popen[str] | None, list[str], dict[str, Any]]:
+def start_server(
+    isolation: dict[str, Any],
+) -> tuple[subprocess.Popen[str] | None, list[str], dict[str, Any]]:
     api_key, key_source = get_deepseek_api_key()
     info = {
         "api_key_source": key_source,
@@ -229,9 +267,8 @@ def start_server() -> tuple[subprocess.Popen[str] | None, list[str], dict[str, A
     logs: list[str] = []
 
     if is_port_open(8000):
-        info["started"] = True
-        info["used_existing_server"] = True
-        logs.append("Port 8000 already open; using existing service.")
+        info["failure_reason"] = "Port 8000 already open; cannot guarantee isolated VANNA_DATA_DIR/AGENT_DATA_DIR"
+        logs.append(info["failure_reason"])
         return None, logs, info
 
     if not api_key:
@@ -241,6 +278,9 @@ def start_server() -> tuple[subprocess.Popen[str] | None, list[str], dict[str, A
     env = os.environ.copy()
     env["DEEPSEEK_API_KEY"] = api_key
     env["PYTHONUNBUFFERED"] = "1"
+    env["VANNA_PROBE_ISOLATED"] = "1"
+    env["VANNA_DATA_DIR"] = str(isolation["vanna_data_dir"])
+    env["AGENT_DATA_DIR"] = str(isolation["agent_data_dir"])
 
     process = subprocess.Popen(
         [str(PYTHON_EXE), "step4_server.py"],
@@ -468,6 +508,16 @@ def write_report(summary: dict[str, Any], cases: list[dict[str, Any]]) -> None:
         "```text",
         summary["status_short"] or "clean",
         "```",
+        f"- 写入来源定位结论：{summary['write_source_conclusion']}",
+        f"- 是否修改 step4_server.py：{bool_cn(summary['modified_step4_server'])}",
+        f"- 是否修改 agent_config.py：{bool_cn(summary['modified_agent_config'])}",
+        f"- 是否修改 .env.example：{bool_cn(summary['modified_env_example'])}",
+        f"- 是否启用隔离目录：{bool_cn(summary['isolation_enabled'])}",
+        f"- 隔离目录路径：{summary['isolation_root']}",
+        f"- 正式 vanna_data 是否变化：{bool_cn(summary['formal_vanna_data_changed'])}",
+        f"- 正式 agent_data/query_results_*.csv 是否新增：{bool_cn(summary['formal_query_results_added'])}",
+        f"- 临时目录是否产生 Chroma 文件：{bool_cn(summary['temp_chroma_files_present'])}",
+        f"- 临时目录是否产生 query_results 文件：{bool_cn(summary['temp_query_results_present'])}",
         f"- 是否成功启动 step4_server.py：{bool_cn(summary['server_started'])}",
         f"- 启动失败原因：{summary['startup_failure'] or '无'}",
         f"- 是否调用 DeepSeek 官方 API：{bool_cn(summary['called_deepseek'])}",
@@ -483,7 +533,7 @@ def write_report(summary: dict[str, Any], cases: list[dict[str, Any]]) -> None:
         f"- 是否执行真实 SQL：{bool_cn(summary['executed_real_sql'])}",
         f"- 是否执行 DDL / DML：{bool_cn(summary['executed_ddl_dml'])}",
         "- 是否训练 Vanna：否",
-        f"- 是否写入 ChromaDB：{bool_cn(summary['wrote_chromadb'])}",
+        f"- 是否写入正式 ChromaDB：{bool_cn(summary['formal_vanna_data_changed'])}",
         "- 是否修改数据库结构：否",
         "- 是否进入第 2/3/4 级：否",
         f"- 当前结论：{summary['conclusion']}",
@@ -531,6 +581,7 @@ async def main() -> int:
     remote = run_command(["git", "remote", "-v"])
     status_short = run_command(["git", "status", "--short"])
     hardcoded_keys = scan_contextual_hardcoded_keys()
+    isolation = setup_isolated_dirs()
 
     server_process: subprocess.Popen[str] | None = None
     logs: list[str] = []
@@ -539,7 +590,7 @@ async def main() -> int:
     illegal_guard = {"blocked": False, "message": "", "reason": "", "inner_called": False}
 
     try:
-        server_process, logs, startup = start_server()
+        server_process, logs, startup = start_server(isolation)
         server_started = bool(startup.get("started"))
         health_status, health_body = url_get("/health", timeout=10) if server_started else (None, "")
 
@@ -557,8 +608,11 @@ async def main() -> int:
     after_chroma = chroma_fingerprint()
     after_query_files = query_result_files()
     log_text = "\n".join(logs)
-    generated_query_files = sorted(after_query_files - before_query_files)
-    wrote_chromadb = before_chroma != after_chroma
+    formal_query_results_added = sorted(after_query_files - before_query_files)
+    formal_vanna_data_changed = before_chroma != after_chroma
+    temp_query_results = isolated_query_result_files(isolation["agent_data_dir"])
+    temp_chroma_files_present = has_chroma_files(isolation["vanna_data_dir"])
+    temp_query_results_present = bool(temp_query_results)
 
     guard_block_message = "SQL Guard blocked execution" in illegal_guard["message"]
     failed_cases = [case["name"] for case in case_results if not case["passed"]]
@@ -572,16 +626,26 @@ async def main() -> int:
     elif failed_cases:
         conclusion = "当前阶段未通过完整真实服务验证"
         next_step = "根据失败问题明细修复真实链路，再重跑验证"
-    elif wrote_chromadb:
-        conclusion = "当前阶段未通过完整真实服务验证：真实服务有响应，但检测到 ChromaDB 文件变化"
-        next_step = "确认 Chroma 初始化是否会写入持久化文件，必要时隔离验证环境"
+    elif formal_vanna_data_changed or formal_query_results_added:
+        conclusion = "当前阶段未通过完整真实服务验证：正式目录仍有新增或修改"
+        next_step = "检查隔离环境变量是否被真实服务继承，再重跑验证"
     else:
-        conclusion = "真实主服务最小人工验证通过"
+        conclusion = "真实主服务隔离写入验证通过"
         next_step = "可进入下一阶段前先处理遗留 vanna_data/query_results 工作区产物"
 
     summary = {
         "remote": remote,
         "status_short": status_short,
+        "write_source_conclusion": "Chroma 写入来自 agent_config.create_memory() 的 persist_directory；query_results CSV 写入来自 RunSqlTool 经 LocalFileSystem.write_file 输出。已通过 VANNA_DATA_DIR/AGENT_DATA_DIR 将验证写入隔离到临时目录。",
+        "modified_step4_server": bool(run_command(["git", "diff", "--name-only", "--", "step4_server.py"])),
+        "modified_agent_config": bool(run_command(["git", "diff", "--name-only", "--", "agent_config.py"])),
+        "modified_env_example": bool(run_command(["git", "diff", "--name-only", "--", ".env.example"])),
+        "isolation_enabled": bool(isolation["enabled"]),
+        "isolation_root": str(isolation["root"]),
+        "formal_vanna_data_changed": formal_vanna_data_changed,
+        "formal_query_results_added": bool(formal_query_results_added),
+        "temp_chroma_files_present": temp_chroma_files_present,
+        "temp_query_results_present": temp_query_results_present,
         "server_started": bool(startup.get("started")),
         "startup_failure": startup.get("failure_reason", ""),
         "called_deepseek": bool(case_results),
@@ -598,7 +662,6 @@ async def main() -> int:
         "failed_cases": failed_cases + ([] if illegal_guard["blocked"] else ["非法 SQL Guard 拦截"]),
         "executed_real_sql": executed_real_sql,
         "executed_ddl_dml": executed_ddl_dml,
-        "wrote_chromadb": wrote_chromadb,
         "conclusion": conclusion,
         "next_step": next_step,
         "log_llm_init": "初始化 LLM 服务 (deepseek-v4-pro via DeepSeek official API)" in log_text,
@@ -609,7 +672,8 @@ async def main() -> int:
         if guard_block_message
         else "未观察到",
         "hardcoded_key_files": hardcoded_keys,
-        "generated_query_files": generated_query_files,
+        "formal_query_result_files_added": formal_query_results_added,
+        "temp_query_result_files": temp_query_results,
     }
 
     if not case_results:
@@ -667,7 +731,11 @@ async def main() -> int:
     print(f"failed_cases: {format_list(summary['failed_cases'])}")
     print(f"executed_real_sql: {summary['executed_real_sql']}")
     print(f"executed_ddl_dml: {summary['executed_ddl_dml']}")
-    print(f"wrote_chromadb: {summary['wrote_chromadb']}")
+    print(f"isolation_root: {summary['isolation_root']}")
+    print(f"formal_vanna_data_changed: {summary['formal_vanna_data_changed']}")
+    print(f"formal_query_results_added: {summary['formal_query_results_added']}")
+    print(f"temp_chroma_files_present: {summary['temp_chroma_files_present']}")
+    print(f"temp_query_results_present: {summary['temp_query_results_present']}")
     print(f"conclusion: {summary['conclusion']}")
     return 0
 

@@ -12,8 +12,8 @@ EMBEDDING_FUNCTION = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="BAAI/bge-small-zh-v1.5"
 )
 
-# ChromaDB 路径
-CHROMA_DIR = "E:/3/posgresql/1/vanna_data"
+# ChromaDB 路径；验证脚本可用环境变量隔离持久化写入，默认生产路径不变。
+CHROMA_DIR = os.getenv("VANNA_DATA_DIR", "E:/3/posgresql/1/vanna_data")
 
 # PostgreSQL 连接
 DB_KWARGS = dict(
