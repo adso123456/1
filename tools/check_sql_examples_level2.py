@@ -12,6 +12,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 DRAFT_PATH = PROJECT_ROOT / "training" / "sql_examples_level2_draft.json"
 REPORT_PATH = CURRENT_DIR / "sql_examples_level2_check_result.md"
+PRETRAIN_REVIEW_PATH = PROJECT_ROOT / "training" / "sql_examples_level2_pretrain_review.md"
 INDEX_PATH = PROJECT_ROOT / "agent_data" / "column_metadata_index.json"
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -29,7 +30,11 @@ REQUIRED_FIELDS = {
     "purpose",
     "risk_level",
     "review_status",
+    "train_decision",
+    "review_notes",
 }
+
+TRAIN_DECISIONS = {"approved", "requires_manual_review", "excluded"}
 
 SCENARIOS = [
     "水质日趋势",
@@ -115,6 +120,13 @@ def check_sample(
     expected_tables = list(sample.get("expected_tables") or [])
     expected_columns = list(sample.get("expected_columns") or [])
     scenario = scenario_of(sample)
+    train_decision = str(sample.get("train_decision") or "").strip()
+    review_notes = str(sample.get("review_notes") or "").strip()
+
+    if train_decision not in TRAIN_DECISIONS:
+        failures.append("train_decision 非法或为空")
+    if not review_notes:
+        failures.append("review_notes 为空")
 
     if not re.match(r"^\s*select\b", sql, flags=re.I):
         failures.append("SQL 不是 SELECT")
@@ -136,8 +148,12 @@ def check_sample(
         failures.append("expected_columns 包含未知字段：" + ", ".join(unknown_expected_columns))
 
     guard_result = guard.validate(sql=sql, query=question)
-    if not guard_result.passed:
-        failures.append("SQL Guard 未通过：" + guard_result.reason)
+    if not guard_result.passed and train_decision != "excluded":
+        failures.append("SQL Guard 未通过但未标记 excluded：" + guard_result.reason)
+    if guard_result.severity == "warning" and train_decision == "approved":
+        failures.append("SQL Guard warning 样本不能标记 approved")
+    if train_decision == "approved" and guard_result.severity != "ok":
+        failures.append("approved 样本必须为 SQL Guard severity=ok")
 
     used_tables = guard_result.used_tables
     used_columns = guard_result.used_columns
@@ -177,19 +193,36 @@ def check_sample(
         "used_tables": used_tables,
         "used_columns": used_columns,
         "sql_guard": guard_result.to_dict(),
+        "train_decision": train_decision,
+        "review_notes": review_notes,
         "pass": passed,
-        "reason": "通过" if passed else "；".join(failures),
+        "reason": "通过训练前审查标记" if passed else "；".join(failures),
     }
 
 
-def write_report(results: list[dict[str, Any]], status_short: str, remote: str) -> None:
+def build_report(results: list[dict[str, Any]], status_short: str, remote: str) -> str:
     coverage = Counter(result["scenario"] for result in results)
-    passed = sum(1 for result in results if result["pass"])
-    failed = len(results) - passed
+    decision_counts = Counter(result["train_decision"] for result in results)
+    failed = sum(1 for result in results if not result["pass"])
     failed_ids = [result["id"] for result in results if not result["pass"]]
+    warning_ids = [
+        result["id"]
+        for result in results
+        if result["sql_guard"].get("severity") == "warning"
+    ]
+    review_ids = [
+        result["id"]
+        for result in results
+        if result["train_decision"] == "requires_manual_review"
+    ]
+    excluded_ids = [
+        result["id"]
+        for result in results
+        if result["train_decision"] == "excluded"
+    ]
 
     lines = [
-        "# 第 2 级 SQL 示例训练草案静态审查报告",
+        "# 第 2 级 SQL 示例训练前复核报告",
         "",
         "## 汇总",
         "",
@@ -203,9 +236,14 @@ def write_report(results: list[dict[str, Any]], status_short: str, remote: str) 
         status_short or "clean",
         "```",
         f"- 样本总数：{len(results)}",
-        f"- 通过数量：{passed}",
-        f"- 失败数量：{failed}",
-        f"- 失败样本列表：{', '.join(failed_ids) if failed_ids else '无'}",
+        f"- approved 数量：{decision_counts.get('approved', 0)}",
+        f"- requires_manual_review 数量：{decision_counts.get('requires_manual_review', 0)}",
+        f"- excluded 数量：{decision_counts.get('excluded', 0)}",
+        f"- 静态检查失败数量：{failed}",
+        f"- 静态检查失败样本列表：{', '.join(failed_ids) if failed_ids else '无'}",
+        f"- SQL Guard warning 样本列表：{', '.join(warning_ids) if warning_ids else '无'}",
+        f"- requires_manual_review 样本列表：{', '.join(review_ids) if review_ids else '无'}",
+        f"- excluded 样本列表：{', '.join(excluded_ids) if excluded_ids else '无'}",
         "",
         "## 场景覆盖",
         "",
@@ -233,7 +271,9 @@ def write_report(results: list[dict[str, Any]], status_short: str, remote: str) 
                 f"- used_tables：{', '.join(result['used_tables']) or '无'}",
                 f"- used_columns：{', '.join(result['used_columns']) or '无'}",
                 f"- SQL Guard 结果：passed={guard['passed']}；severity={guard['severity']}；reason={guard['reason']}",
-                f"- 是否通过：{'是' if result['pass'] else '否'}",
+                f"- train_decision：{result['train_decision']}",
+                f"- review_notes：{result['review_notes']}",
+                f"- 是否通过训练前审查：{'是' if result['pass'] else '否'}",
                 f"- reason：{result['reason']}",
                 "",
             ]
@@ -249,13 +289,19 @@ def write_report(results: list[dict[str, Any]], status_short: str, remote: str) 
             "- 是否写入 ChromaDB：否",
             "- 是否修改数据库结构：否",
             "- 是否进入第 2/3/4 级：否",
-            "- 当前结论：所有草案样本通过静态审查，可进入人工复核。",
-            "- 下一步建议：人工确认业务语义后，另起阶段执行受控训练写入。",
+            "- 当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练。",
+            "- 下一步建议：人工确认 requires_manual_review 样本的固定值、业务语义和 P0 候选一致性后，再另起阶段执行受控训练写入。",
             "",
         ]
     )
 
-    REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
+    return "\n".join(lines)
+
+
+def write_report(results: list[dict[str, Any]], status_short: str, remote: str) -> None:
+    report = build_report(results, status_short, remote)
+    REPORT_PATH.write_text(report, encoding="utf-8")
+    PRETRAIN_REVIEW_PATH.write_text(report, encoding="utf-8")
 
 
 def main() -> int:
@@ -268,13 +314,19 @@ def main() -> int:
     results = [check_sample(sample, seen_ids, tables, columns, guard) for sample in samples]
     write_report(results, status_short, remote)
 
-    passed = sum(1 for result in results if result["pass"])
-    failed = len(results) - passed
+    approved = sum(1 for result in results if result["train_decision"] == "approved")
+    requires_review = sum(
+        1 for result in results if result["train_decision"] == "requires_manual_review"
+    )
+    excluded = sum(1 for result in results if result["train_decision"] == "excluded")
+    failed = sum(1 for result in results if not result["pass"])
     print(f"样本总数: {len(results)}")
-    print(f"通过数量: {passed}")
-    print(f"失败数量: {failed}")
+    print(f"approved 数量: {approved}")
+    print(f"requires_manual_review 数量: {requires_review}")
+    print(f"excluded 数量: {excluded}")
+    print(f"静态检查失败数量: {failed}")
     print(
-        "失败样本列表: "
+        "静态检查失败样本列表: "
         + (", ".join(result["id"] for result in results if not result["pass"]) or "无")
     )
     print(f"报告: {REPORT_PATH}")

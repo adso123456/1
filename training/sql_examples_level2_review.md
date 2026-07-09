@@ -29,12 +29,20 @@
 - 取水口信息当前覆盖基础信息和供水能力，可后续补充按行政区、水源类型聚合样本。
 - 水质趋势当前以单表查询为主，暂未加入站点表 join，以降低训练草案风险。
 
+## 训练前复核标记
+
+- approved：8 条
+- requires_manual_review：11 条
+- excluded：0 条
+
+本阶段不是训练阶段。`requires_manual_review` 样本不得直接写入 ChromaDB，必须在人工确认固定值、业务语义和 P0 候选一致性后再决定。
+
 ## 需要重点人工检查的样本
 
-- `L2_SQL_011`：排污口溯源责任主体统计，风险等级 medium。
-- `L2_SQL_012`：排污口溯源企业和排放许可证，风险等级 medium。
-
-以上两条涉及溯源业务语义，虽然 SQL Guard 已静态通过，但建议人工确认字段含义和展示口径。
+- `L2_SQL_001` - `L2_SQL_008`：水质趋势样本静态校验通过，但 SQL 中存在固定 `station_id`、固定日期或固定年份，需确认是否适合作为通用训练样本。
+- `L2_SQL_011`：排污口溯源责任主体统计，风险等级 medium，需确认字段口径。
+- `L2_SQL_012`：排污口溯源企业和排放许可证，风险等级 medium，需确认字段口径。
+- `L2_SQL_019`：`wm_water_source_intake_v2` 不在 deterministic candidate tables 中，SQL Guard severity=warning，需人工确认水源地取水口供水能力场景是否稳定。
 
 ## 水质趋势表使用情况
 
@@ -66,6 +74,8 @@
 - 未访问系统表。
 - 未发现未知表或未知字段。
 - 未发现 `SELECT *`。
-- SQL Guard 全部通过。
+- SQL Guard 全部 passed=True。
+- `L2_SQL_019` 仍为 severity=warning，已标记 `requires_manual_review`，不得直接训练。
+- `L2_SQL_003` 已将 question 最小修订为明确的水质日变化趋势问法，SQL Guard severity 已从 warning 变为 ok，但因固定 `station_id` 仍需人工复核。
 
-当前结论：草案可进入人工复核，但不得直接训练。
+当前结论：训练前复核准备通过；approved 样本可作为后续训练候选，requires_manual_review 样本不得直接训练。

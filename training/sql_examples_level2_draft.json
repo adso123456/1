@@ -13,7 +13,9 @@
     ],
     "purpose": "水质日趋势：训练模型优先使用 wm_waterquality_day_records 查询日粒度趋势。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。"
   },
   {
     "id": "L2_SQL_002",
@@ -26,11 +28,13 @@
     ],
     "purpose": "水质日趋势：训练日记录聚合场景，避免退化到阈值表。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但 SQL 固定日期 2026-01-01，训练前需人工确认是否适合作为通用示例。"
   },
   {
     "id": "L2_SQL_003",
-    "question": "查询某站点日均 pH 和溶解氧趋势",
+    "question": "某站点某时间段水质日变化趋势，包含 pH 和溶解氧",
     "sql": "SELECT station_id, monitor_time, m2_value, m3_value\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL AND m3_value IS NOT NULL\nORDER BY monitor_time\nLIMIT 100",
     "expected_tables": ["wm_waterquality_day_records"],
     "expected_columns": [
@@ -41,7 +45,9 @@
     ],
     "purpose": "水质日趋势：训练常见指标 m2_value 和 m3_value 的日趋势查询。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard 已由原 warning 修订为 ok；但 SQL 固定 station_id=1408，训练前需人工确认固定站点值是否适合作为示例。"
   },
   {
     "id": "L2_SQL_004",
@@ -58,7 +64,9 @@
     ],
     "purpose": "水质小时趋势：训练模型优先使用 wm_waterquality_hour_records 查询小时粒度趋势。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。"
   },
   {
     "id": "L2_SQL_005",
@@ -72,7 +80,9 @@
     ],
     "purpose": "水质小时趋势：训练小时表聚合和等级分布查询。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和日期 2026-01-01，训练前需人工确认是否存在过拟合风险。"
   },
   {
     "id": "L2_SQL_006",
@@ -88,7 +98,9 @@
     ],
     "purpose": "水质小时趋势：训练小时表多指标查询，避免误用日表或阈值表。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但 SQL 固定日期 2026-01-01，训练前需人工确认是否适合作为通用示例。"
   },
   {
     "id": "L2_SQL_007",
@@ -105,7 +117,9 @@
     ],
     "purpose": "水质月趋势：训练模型优先使用 wm_waterquality_month_records 查询月粒度趋势。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但 SQL 固定 station_id=1408 和年份 2025，训练前需人工确认是否存在过拟合风险。"
   },
   {
     "id": "L2_SQL_008",
@@ -118,7 +132,9 @@
     ],
     "purpose": "水质月趋势：训练月表按年月聚合，不退化到 day/hour/year records。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但 SQL 固定年份 2025，训练前需人工确认是否适合作为通用示例。"
   },
   {
     "id": "L2_SQL_009",
@@ -132,7 +148,9 @@
     ],
     "purpose": "排污口编码：训练优先使用 rs_outlet 和明确 outlet_code 字段。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；使用 rs_outlet 与明确 outlet_code 字段，未使用 SELECT *，包含 LIMIT，可作为排污口编码示例。"
   },
   {
     "id": "L2_SQL_010",
@@ -146,7 +164,9 @@
     ],
     "purpose": "排污口编码：训练使用 rs_outlet_info_v2 的国家编码和地方编码字段。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；使用 rs_outlet_info_v2 与 outlet_code_national/outlet_code_local，未使用 SELECT *，包含 LIMIT。"
   },
   {
     "id": "L2_SQL_011",
@@ -158,7 +178,9 @@
     ],
     "purpose": "排污口溯源：训练溯源问题优先使用 rs_outlet_trace_v2，不能只查 rs_outlet。",
     "risk_level": "medium",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但排污口溯源责任主体统计属于中风险业务语义，训练前需人工确认字段口径。"
   },
   {
     "id": "L2_SQL_012",
@@ -174,7 +196,9 @@
     ],
     "purpose": "排污口溯源：训练溯源明细字段，避免基础表单表误用。",
     "risk_level": "medium",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=ok；但溯源企业、排放许可证和信用代码字段口径需人工确认，暂不直接批准训练。"
   },
   {
     "id": "L2_SQL_013",
@@ -190,7 +214,9 @@
     ],
     "purpose": "排污口基础信息：训练基础信息查询使用 rs_outlet。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；使用 rs_outlet 基础信息字段，未使用 SELECT *，包含 LIMIT，可作为基础信息示例。"
   },
   {
     "id": "L2_SQL_014",
@@ -202,7 +228,9 @@
     ],
     "purpose": "排污口基础信息：训练按区县聚合排污口数量。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；按 county_name 聚合排污口数量，表字段均在元数据内，包含 LIMIT。"
   },
   {
     "id": "L2_SQL_015",
@@ -218,7 +246,9 @@
     ],
     "purpose": "站点信息：训练站点名称查询使用 wm_station_info_v2。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；使用 wm_station_info_v2 的站点名称和区域字段，未使用 SELECT *，包含 LIMIT。"
   },
   {
     "id": "L2_SQL_016",
@@ -230,7 +260,9 @@
     ],
     "purpose": "站点信息：训练站点按区域聚合查询。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；按 region_name 聚合站点数量，表字段均在元数据内，包含 LIMIT。"
   },
   {
     "id": "L2_SQL_017",
@@ -245,7 +277,9 @@
     ],
     "purpose": "区域信息：训练区域编码、区域名称查询使用 gis_region。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；使用 gis_region 的区域编码、名称和层级字段，未使用 SELECT *，包含 LIMIT。"
   },
   {
     "id": "L2_SQL_018",
@@ -262,7 +296,9 @@
     ],
     "purpose": "取水口信息：训练取水口基础信息查询使用 wm_water_intake。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "approved",
+    "review_notes": "SQL Guard severity=ok；使用 wm_water_intake 基础字段，未使用 SELECT *，包含 LIMIT。"
   },
   {
     "id": "L2_SQL_019",
@@ -279,6 +315,8 @@
     ],
     "purpose": "取水口信息：训练水源地取水口供水能力查询使用 wm_water_source_intake_v2。",
     "risk_level": "low",
-    "review_status": "draft"
+    "review_status": "draft",
+    "train_decision": "requires_manual_review",
+    "review_notes": "SQL Guard severity=warning，wm_water_source_intake_v2 不在 deterministic candidate tables 中；水源地取水口供水能力场景需人工确认后再决定是否训练。"
   }
 ]
