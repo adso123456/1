@@ -1,0 +1,284 @@
+[
+  {
+    "id": "L2_SQL_001",
+    "question": "某站点最近一段时间水质日变化趋势",
+    "sql": "SELECT station_id, monitor_time, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND monitor_time >= '2026-01-01'\nORDER BY monitor_time\nLIMIT 200",
+    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_columns": [
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.m2_value",
+      "wm_waterquality_day_records.m3_value",
+      "wm_waterquality_day_records.water_quality_level"
+    ],
+    "purpose": "水质日趋势：训练模型优先使用 wm_waterquality_day_records 查询日粒度趋势。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_002",
+    "question": "按站点查看水质日记录数量和最近监测时间",
+    "sql": "SELECT station_id, COUNT(*) AS record_count, MAX(monitor_time) AS latest_monitor_time\nFROM wm_waterquality_day_records\nWHERE monitor_time >= '2026-01-01'\nGROUP BY station_id\nORDER BY COUNT(*) DESC\nLIMIT 50",
+    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_columns": [
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.monitor_time"
+    ],
+    "purpose": "水质日趋势：训练日记录聚合场景，避免退化到阈值表。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_003",
+    "question": "查询某站点日均 pH 和溶解氧趋势",
+    "sql": "SELECT station_id, monitor_time, m2_value, m3_value\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL AND m3_value IS NOT NULL\nORDER BY monitor_time\nLIMIT 100",
+    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_columns": [
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.m2_value",
+      "wm_waterquality_day_records.m3_value"
+    ],
+    "purpose": "水质日趋势：训练常见指标 m2_value 和 m3_value 的日趋势查询。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_004",
+    "question": "某站点水质小时变化趋势",
+    "sql": "SELECT station_id, monitor_time, m1_value, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408 AND monitor_time >= '2026-01-01'\nORDER BY monitor_time\nLIMIT 200",
+    "expected_tables": ["wm_waterquality_hour_records"],
+    "expected_columns": [
+      "wm_waterquality_hour_records.station_id",
+      "wm_waterquality_hour_records.monitor_time",
+      "wm_waterquality_hour_records.m1_value",
+      "wm_waterquality_hour_records.m2_value",
+      "wm_waterquality_hour_records.m3_value",
+      "wm_waterquality_hour_records.water_quality_level"
+    ],
+    "purpose": "水质小时趋势：训练模型优先使用 wm_waterquality_hour_records 查询小时粒度趋势。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_005",
+    "question": "按小时查看某站点水质等级分布",
+    "sql": "SELECT station_id, water_quality_level, COUNT(*) AS record_count\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408 AND monitor_time >= '2026-01-01'\nGROUP BY station_id, water_quality_level\nORDER BY COUNT(*) DESC\nLIMIT 50",
+    "expected_tables": ["wm_waterquality_hour_records"],
+    "expected_columns": [
+      "wm_waterquality_hour_records.station_id",
+      "wm_waterquality_hour_records.water_quality_level",
+      "wm_waterquality_hour_records.monitor_time"
+    ],
+    "purpose": "水质小时趋势：训练小时表聚合和等级分布查询。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_006",
+    "question": "查询最近小时水质监测中的 pH 和氨氮指标",
+    "sql": "SELECT station_id, monitor_time, m2_value, m8_value, m9_value\nFROM wm_waterquality_hour_records\nWHERE monitor_time >= '2026-01-01'\nORDER BY monitor_time DESC\nLIMIT 100",
+    "expected_tables": ["wm_waterquality_hour_records"],
+    "expected_columns": [
+      "wm_waterquality_hour_records.station_id",
+      "wm_waterquality_hour_records.monitor_time",
+      "wm_waterquality_hour_records.m2_value",
+      "wm_waterquality_hour_records.m8_value",
+      "wm_waterquality_hour_records.m9_value"
+    ],
+    "purpose": "水质小时趋势：训练小时表多指标查询，避免误用日表或阈值表。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_007",
+    "question": "某站点水质月变化趋势",
+    "sql": "SELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 60",
+    "expected_tables": ["wm_waterquality_month_records"],
+    "expected_columns": [
+      "wm_waterquality_month_records.station_id",
+      "wm_waterquality_month_records.monitor_year",
+      "wm_waterquality_month_records.monitor_month",
+      "wm_waterquality_month_records.m2_value",
+      "wm_waterquality_month_records.m3_value",
+      "wm_waterquality_month_records.water_quality_level"
+    ],
+    "purpose": "水质月趋势：训练模型优先使用 wm_waterquality_month_records 查询月粒度趋势。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_008",
+    "question": "按月份统计水质月记录数量",
+    "sql": "SELECT monitor_year, monitor_month, COUNT(*) AS record_count\nFROM wm_waterquality_month_records\nWHERE monitor_year >= 2025\nGROUP BY monitor_year, monitor_month\nORDER BY monitor_year, monitor_month\nLIMIT 36",
+    "expected_tables": ["wm_waterquality_month_records"],
+    "expected_columns": [
+      "wm_waterquality_month_records.monitor_year",
+      "wm_waterquality_month_records.monitor_month"
+    ],
+    "purpose": "水质月趋势：训练月表按年月聚合，不退化到 day/hour/year records。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_009",
+    "question": "查询排污口编码",
+    "sql": "SELECT outlet_name, outlet_code, outlet_code_province\nFROM rs_outlet\nORDER BY outlet_name\nLIMIT 50",
+    "expected_tables": ["rs_outlet"],
+    "expected_columns": [
+      "rs_outlet.outlet_name",
+      "rs_outlet.outlet_code",
+      "rs_outlet.outlet_code_province"
+    ],
+    "purpose": "排污口编码：训练优先使用 rs_outlet 和明确 outlet_code 字段。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_010",
+    "question": "查看排污口国家编码和地方编码",
+    "sql": "SELECT outlet_name, outlet_code_national, outlet_code_local\nFROM rs_outlet_info_v2\nORDER BY outlet_name\nLIMIT 50",
+    "expected_tables": ["rs_outlet_info_v2"],
+    "expected_columns": [
+      "rs_outlet_info_v2.outlet_name",
+      "rs_outlet_info_v2.outlet_code_national",
+      "rs_outlet_info_v2.outlet_code_local"
+    ],
+    "purpose": "排污口编码：训练使用 rs_outlet_info_v2 的国家编码和地方编码字段。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_011",
+    "question": "排污口溯源责任主体统计",
+    "sql": "SELECT primary_entity_name, COUNT(*) AS outlet_count\nFROM rs_outlet_trace_v2\nWHERE primary_entity_name IS NOT NULL\nGROUP BY primary_entity_name\nORDER BY COUNT(*) DESC\nLIMIT 50",
+    "expected_tables": ["rs_outlet_trace_v2"],
+    "expected_columns": [
+      "rs_outlet_trace_v2.primary_entity_name"
+    ],
+    "purpose": "排污口溯源：训练溯源问题优先使用 rs_outlet_trace_v2，不能只查 rs_outlet。",
+    "risk_level": "medium",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_012",
+    "question": "查询排污口溯源企业和排放许可证",
+    "sql": "SELECT outlet_name, primary_entity_name, discharge_permit_no, credit_code, wastewater_type\nFROM rs_outlet_trace_v2\nWHERE primary_entity_name IS NOT NULL\nORDER BY outlet_name\nLIMIT 50",
+    "expected_tables": ["rs_outlet_trace_v2"],
+    "expected_columns": [
+      "rs_outlet_trace_v2.outlet_name",
+      "rs_outlet_trace_v2.primary_entity_name",
+      "rs_outlet_trace_v2.discharge_permit_no",
+      "rs_outlet_trace_v2.credit_code",
+      "rs_outlet_trace_v2.wastewater_type"
+    ],
+    "purpose": "排污口溯源：训练溯源明细字段，避免基础表单表误用。",
+    "risk_level": "medium",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_013",
+    "question": "查询排污口基础信息",
+    "sql": "SELECT outlet_name, area_name, county_name, river_basin, outlet_address\nFROM rs_outlet\nORDER BY outlet_name\nLIMIT 50",
+    "expected_tables": ["rs_outlet"],
+    "expected_columns": [
+      "rs_outlet.outlet_name",
+      "rs_outlet.area_name",
+      "rs_outlet.county_name",
+      "rs_outlet.river_basin",
+      "rs_outlet.outlet_address"
+    ],
+    "purpose": "排污口基础信息：训练基础信息查询使用 rs_outlet。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_014",
+    "question": "按区县统计排污口数量",
+    "sql": "SELECT county_name, COUNT(*) AS outlet_count\nFROM rs_outlet\nWHERE county_name IS NOT NULL\nGROUP BY county_name\nORDER BY COUNT(*) DESC\nLIMIT 50",
+    "expected_tables": ["rs_outlet"],
+    "expected_columns": [
+      "rs_outlet.county_name"
+    ],
+    "purpose": "排污口基础信息：训练按区县聚合排污口数量。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_015",
+    "question": "查询站点名称和所属区域",
+    "sql": "SELECT station_code, station_name, region_code, region_name, station_type\nFROM wm_station_info_v2\nORDER BY station_name\nLIMIT 50",
+    "expected_tables": ["wm_station_info_v2"],
+    "expected_columns": [
+      "wm_station_info_v2.station_code",
+      "wm_station_info_v2.station_name",
+      "wm_station_info_v2.region_code",
+      "wm_station_info_v2.region_name",
+      "wm_station_info_v2.station_type"
+    ],
+    "purpose": "站点信息：训练站点名称查询使用 wm_station_info_v2。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_016",
+    "question": "按区域统计监测站点数量",
+    "sql": "SELECT region_name, COUNT(*) AS station_count\nFROM wm_station_info_v2\nWHERE region_name IS NOT NULL\nGROUP BY region_name\nORDER BY COUNT(*) DESC\nLIMIT 50",
+    "expected_tables": ["wm_station_info_v2"],
+    "expected_columns": [
+      "wm_station_info_v2.region_name"
+    ],
+    "purpose": "站点信息：训练站点按区域聚合查询。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_017",
+    "question": "查询区域编码和区域名称",
+    "sql": "SELECT region_code, region_name, region_level, parent_code\nFROM gis_region\nORDER BY region_code\nLIMIT 100",
+    "expected_tables": ["gis_region"],
+    "expected_columns": [
+      "gis_region.region_code",
+      "gis_region.region_name",
+      "gis_region.region_level",
+      "gis_region.parent_code"
+    ],
+    "purpose": "区域信息：训练区域编码、区域名称查询使用 gis_region。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_018",
+    "question": "查询取水口名称和水源类型",
+    "sql": "SELECT name, region_name, city, county, water_type, code\nFROM wm_water_intake\nORDER BY name\nLIMIT 50",
+    "expected_tables": ["wm_water_intake"],
+    "expected_columns": [
+      "wm_water_intake.name",
+      "wm_water_intake.region_name",
+      "wm_water_intake.city",
+      "wm_water_intake.county",
+      "wm_water_intake.water_type",
+      "wm_water_intake.code"
+    ],
+    "purpose": "取水口信息：训练取水口基础信息查询使用 wm_water_intake。",
+    "risk_level": "low",
+    "review_status": "draft"
+  },
+  {
+    "id": "L2_SQL_019",
+    "question": "查询水源地取水口供水能力",
+    "sql": "SELECT name, city, district, source_type, daily_supply_capacity, annual_actual_withdrawal\nFROM wm_water_source_intake_v2\nORDER BY daily_supply_capacity DESC\nLIMIT 50",
+    "expected_tables": ["wm_water_source_intake_v2"],
+    "expected_columns": [
+      "wm_water_source_intake_v2.name",
+      "wm_water_source_intake_v2.city",
+      "wm_water_source_intake_v2.district",
+      "wm_water_source_intake_v2.source_type",
+      "wm_water_source_intake_v2.daily_supply_capacity",
+      "wm_water_source_intake_v2.annual_actual_withdrawal"
+    ],
+    "purpose": "取水口信息：训练水源地取水口供水能力查询使用 wm_water_source_intake_v2。",
+    "risk_level": "low",
+    "review_status": "draft"
+  }
+]
