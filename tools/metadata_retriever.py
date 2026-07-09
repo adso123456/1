@@ -238,6 +238,21 @@ class DeterministicMetadataRetriever:
                     matched_by.append(method)
             reason_parts.extend(column_reasons)
 
+        outlet_code_score, outlet_code_methods, outlet_code_reasons, outlet_code_columns = (
+            self._score_outlet_code_intent(query_compact, table_name_text, table["columns"])
+        )
+        if outlet_code_score:
+            score += outlet_code_score
+            for method in outlet_code_methods:
+                if method not in matched_by:
+                    matched_by.append(method)
+            reason_parts.extend(outlet_code_reasons)
+            seen_column_names = {column["column_name"] for column in matched_columns}
+            for column in outlet_code_columns:
+                if column["column_name"] not in seen_column_names:
+                    matched_columns.append(column)
+                    seen_column_names.add(column["column_name"])
+
         intent_score, intent_methods, intent_reasons = self._score_intent(
             query_compact, table_name_text, table_comment_compact
         )
@@ -329,6 +344,55 @@ class DeterministicMetadataRetriever:
             )
         )
         return best_score, methods, reasons, matches[:8]
+
+    def _score_outlet_code_intent(
+        self,
+        query_compact: str,
+        table_name: str,
+        columns: list[dict[str, Any]],
+    ) -> tuple[int, list[str], list[str], list[dict[str, Any]]]:
+        if not (
+            "排污口" in query_compact
+            and any(word in query_compact for word in ("编码", "编号"))
+        ):
+            return 0, [], [], []
+
+        priority_tables = {
+            "rs_outlet": 6200,
+            "rs_outlet_info_v2": 5900,
+        }
+        if table_name not in priority_tables:
+            return 0, [], [], []
+
+        explicit_code_columns = {
+            "outlet_code": 0,
+            "outlet_code_national": 1,
+            "outlet_code_local": 2,
+            "outlet_code_province": 3,
+        }
+        matched_columns = [
+            {
+                "column_name": column["column_name"],
+                "column_type": column["column_type"],
+                "column_comment": column["column_comment"],
+                "matched_by": ["outlet_code_intent_column"],
+            }
+            for column in columns
+            if column["column_name"] in explicit_code_columns
+        ]
+        matched_columns.sort(
+            key=lambda column: explicit_code_columns[column["column_name"]]
+        )
+
+        if not matched_columns:
+            return 0, [], [], []
+
+        return (
+            priority_tables[table_name],
+            ["outlet_code_intent"],
+            ["排污口编码问题优先排污口主表及明确 outlet_code 字段"],
+            matched_columns,
+        )
 
     def _score_intent(
         self,

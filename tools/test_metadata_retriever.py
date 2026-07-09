@@ -83,6 +83,26 @@ TEST_CASES: list[dict[str, Any]] = [
     {"query": "站点名称", "expected_contains_field": "station_name"},
     {"query": "排污口编码", "expected_contains_field": "outlet_code"},
     {
+        "query": "查询排污口编码",
+        "expected_contains_any": ["rs_outlet", "rs_outlet_info_v2"],
+        "expected_contains_field_any": [
+            "outlet_code",
+            "outlet_code_national",
+            "outlet_code_local",
+            "outlet_code_province",
+        ],
+    },
+    {
+        "query": "查看排污口编码",
+        "expected_contains_any": ["rs_outlet", "rs_outlet_info_v2"],
+        "expected_contains_field_any": [
+            "outlet_code",
+            "outlet_code_national",
+            "outlet_code_local",
+            "outlet_code_province",
+        ],
+    },
+    {
         "query": "排污口溯源",
         "expected_top1_should_be_one_of": [
             "rs_outlet_trace_v2",
@@ -119,6 +139,8 @@ def _expected_text(case: dict[str, Any]) -> str:
         return "contains any = " + ", ".join(case["expected_contains_any"])
     if "expected_contains_field" in case:
         return f"contains field = {case['expected_contains_field']}"
+    if "expected_contains_field_any" in case:
+        return "contains field any = " + ", ".join(case["expected_contains_field_any"])
     if "expected_top1_should_be_one_of" in case:
         return "top1 in " + ", ".join(case["expected_top1_should_be_one_of"])
     return ""
@@ -152,14 +174,24 @@ def _check_case(case: dict[str, Any], candidates: list[dict[str, Any]]) -> tuple
     if "expected_contains_any" in case:
         expected_names = set(case["expected_contains_any"])
         actual_names = set(candidate_names)
-        ok = bool(expected_names & actual_names)
-        return ok, "候选表包含任一目标表" if ok else "候选表未包含目标水质记录表"
+        if not expected_names & actual_names:
+            return False, "候选表未包含任一目标表"
 
     if "expected_contains_field" in case:
         expected_field = case["expected_contains_field"]
         fields = _candidate_fields(candidates)
         ok = expected_field in fields
         return ok, f"字段 {expected_field} {'已' if ok else '未'}出现在 matched_columns"
+
+    if "expected_contains_field_any" in case:
+        expected_fields = set(case["expected_contains_field_any"])
+        fields = _candidate_fields(candidates)
+        matched = sorted(expected_fields & fields)
+        ok = bool(matched)
+        return ok, "字段命中：" + ", ".join(matched) if ok else "未命中任一明确编码字段"
+
+    if "expected_contains_any" in case:
+        return True, "候选表包含任一目标表"
 
     if "expected_top1_should_be_one_of" in case:
         allowed = set(case["expected_top1_should_be_one_of"])

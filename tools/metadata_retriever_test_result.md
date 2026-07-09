@@ -2,8 +2,8 @@
 
 ## 汇总
 
-- 测试用例总数：18
-- 通过数量：18
+- 测试用例总数：20
+- 通过数量：20
 - 失败数量：0
 - 失败用例列表：无
 - 水质趋势类测试通过数量：4/4
@@ -170,7 +170,25 @@
 - pass/fail：pass
 - reason：字段 outlet_code 已出现在 matched_columns
 
-### 18. 排污口溯源
+### 18. 查询排污口编码
+
+- query：查询排污口编码
+- expected：contains any = rs_outlet, rs_outlet_info_v2
+- actual_top1：rs_outlet
+- actual_candidates：rs_outlet, rs_outlet_info_v2, layer_outlet_sewage, gis_region, wm_uav_info, layer_section, metadata_view, layer_watershed, layer_boundary_park, layer_industrial_lsf
+- pass/fail：pass
+- reason：字段命中：outlet_code, outlet_code_local, outlet_code_national, outlet_code_province
+
+### 19. 查看排污口编码
+
+- query：查看排污口编码
+- expected：contains any = rs_outlet, rs_outlet_info_v2
+- actual_top1：rs_outlet
+- actual_candidates：rs_outlet, rs_outlet_info_v2, layer_outlet_sewage, gis_region, wm_uav_info, layer_section, metadata_view, layer_watershed, layer_boundary_park, layer_industrial_lsf
+- pass/fail：pass
+- reason：字段命中：outlet_code, outlet_code_local, outlet_code_national, outlet_code_province
+
+### 20. 排污口溯源
 
 - query：排污口溯源
 - expected：top1 in rs_outlet_trace_v2, wst_trace_edge, wst_trace_node, wst_trace_topology_issue

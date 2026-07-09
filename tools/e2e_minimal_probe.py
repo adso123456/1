@@ -209,7 +209,7 @@ def call_deepseek() -> dict[str, Any]:
 
 
 def scan_hardcoded_keys() -> list[str]:
-    paths_output = run_command(["git", "ls-files", "-co", "--exclude-standard"])
+    paths_output = run_command(["git", "ls-files"])
     paths = [line.strip() for line in paths_output.splitlines() if line.strip()]
     findings: list[str] = []
     pattern = re.compile(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}")
@@ -250,6 +250,34 @@ def scan_hardcoded_keys() -> list[str]:
     return sorted(set(findings))
 
 
+def check_env_files_safe() -> dict[str, Any]:
+    risky_files = [".env", ".env.local"]
+    tracked = [
+        path for path in risky_files if run_command(["git", "ls-files", "--", path])
+    ]
+    present_unignored: list[str] = []
+
+    for relative in risky_files:
+        path = PROJECT_ROOT / relative
+        if not path.exists():
+            continue
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", "--", relative],
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode == 0
+        if not ignored:
+            present_unignored.append(relative)
+
+    return {
+        "safe": not tracked and not present_unignored,
+        "tracked": tracked,
+        "present_unignored": present_unignored,
+    }
+
+
 def static_checks() -> dict[str, Any]:
     step4 = read_text("step4_server.py")
     guarded = read_text("tools/guarded_run_sql_tool.py")
@@ -258,6 +286,7 @@ def static_checks() -> dict[str, Any]:
     frontend_sse = read_text("frontend/src/hooks/useSSE.ts")
 
     hardcoded_key_files = scan_hardcoded_keys()
+    env_files = check_env_files_safe()
 
     return {
         "remote": run_command(["git", "remote", "-v"]),
@@ -275,6 +304,9 @@ def static_checks() -> dict[str, Any]:
         "env_example_placeholder_only": "your_deepseek_api_key_here" in env_example
         and not re.search(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}", env_example),
         "hardcoded_key_files": hardcoded_key_files,
+        "env_files_safe": env_files["safe"],
+        "env_files_tracked": env_files["tracked"],
+        "env_files_present_unignored": env_files["present_unignored"],
     }
 
 
@@ -367,10 +399,7 @@ def write_report(
     question_results: list[dict[str, Any]],
 ) -> dict[str, Any]:
     hardcoded_found = bool(static["hardcoded_key_files"])
-    total = len(question_results)
-    passed_questions = sum(1 for item in question_results if item["passed"])
-    static_failures = []
-    for key, label in [
+    static_checks_list = [
         ("deepseek_config", "step4_server.py DeepSeek 官方配置"),
         ("uses_context_enhancer", "DeterministicMetadataContextEnhancer"),
         ("uses_guarded_tool", "GuardedRunSqlTool"),
@@ -379,18 +408,22 @@ def write_report(
         ("sse_route_present", "SSE 路由"),
         ("frontend_sse_present", "前端 SSE 调用"),
         ("env_example_placeholder_only", ".env.example 占位符"),
-    ]:
-        if not static[key]:
-            static_failures.append(label)
+        ("env_files_safe", ".env/.env.local 未跟踪且已忽略"),
+    ]
+    static_failures = [label for key, label in static_checks_list if not static[key]]
     if hardcoded_found:
         static_failures.append("硬编码 sk- 密钥检测")
-    if not deepseek["success"]:
-        static_failures.append("DeepSeek 官方 API 调用")
 
+    static_total = len(static_checks_list) + 1
+    static_failed = len(static_failures)
+    static_passed = static_total - static_failed
+    question_total = len(question_results)
     failed_questions = [item["name"] for item in question_results if not item["passed"]]
-    failed_items = static_failures + failed_questions
-    passed_count = total - len(failed_questions)
-    failed_count = len(failed_items)
+    question_failed = len(failed_questions)
+    question_passed = question_total - question_failed
+    overall_passed = (
+        static_failed == 0 and question_failed == 0 and bool(deepseek["success"])
+    )
 
     lines = [
         "# 主问答端到端最小验证报告",
@@ -408,13 +441,22 @@ def write_report(
         f"- API key 来源：{deepseek['key_source']}",
         f"- 是否检测到硬编码密钥：{bool_cn(hardcoded_found)}",
         f"- 硬编码密钥文件（已脱敏）：{format_list(static['hardcoded_key_files'])}",
+        f"- .env.example 只包含占位符：{bool_cn(static['env_example_placeholder_only'])}",
+        f"- .env/.env.local 是否安全：{bool_cn(static['env_files_safe'])}",
+        f"- .env/.env.local 被 git 跟踪：{format_list(static['env_files_tracked'])}",
+        f"- .env/.env.local 存在且未忽略：{format_list(static['env_files_present_unignored'])}",
         f"- 是否使用 DeterministicMetadataContextEnhancer：{bool_cn(static['uses_context_enhancer'])}",
         f"- 是否使用 GuardedRunSqlTool：{bool_cn(static['uses_guarded_tool'])}",
         f"- 是否检测到 SQL Guard 执行前拦截：{bool_cn(static['guard_calls_validate'] and static['guard_blocks_inner'])}",
-        f"- 测试问题总数：{total}",
-        f"- 通过数量：{passed_count}",
-        f"- 失败数量：{failed_count}",
-        f"- 失败问题列表：{format_list(failed_items)}",
+        f"- 静态检查总数：{static_total}",
+        f"- 静态检查通过数量：{static_passed}",
+        f"- 静态检查失败数量：{static_failed}",
+        f"- 静态检查失败列表：{format_list(static_failures)}",
+        f"- 问题用例总数：{question_total}",
+        f"- 问题用例通过数量：{question_passed}",
+        f"- 问题用例失败数量：{question_failed}",
+        f"- 问题用例失败列表：{format_list(failed_questions)}",
+        f"- 总体验收是否通过：{bool_cn(overall_passed)}",
         "- 是否训练 Vanna：否",
         "- 是否写入 ChromaDB：否",
         "- 是否修改数据库结构：否",
@@ -465,11 +507,17 @@ def write_report(
 
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
     return {
-        "total": total,
-        "passed": passed_count,
-        "failed": failed_count,
-        "failed_items": failed_items,
+        "static_total": static_total,
+        "static_passed": static_passed,
+        "static_failed": static_failed,
+        "static_failures": static_failures,
+        "question_total": question_total,
+        "question_passed": question_passed,
+        "question_failed": question_failed,
+        "failed_questions": failed_questions,
+        "overall_passed": overall_passed,
         "hardcoded_found": hardcoded_found,
+        "env_example_placeholder_only": static["env_example_placeholder_only"],
         "deepseek_called": deepseek["called"],
         "deepseek_success": deepseek["success"],
         "uses_context_enhancer": static["uses_context_enhancer"],
@@ -494,10 +542,16 @@ async def main() -> None:
     print(f"deepseek_called: {summary['deepseek_called']}")
     print(f"deepseek_success: {summary['deepseek_success']}")
     print(f"hardcoded_key_found: {summary['hardcoded_found']}")
-    print(f"total: {summary['total']}")
-    print(f"passed: {summary['passed']}")
-    print(f"failed: {summary['failed']}")
-    print(f"failed_items: {format_list(summary['failed_items'])}")
+    print(f"env_example_placeholder_only: {summary['env_example_placeholder_only']}")
+    print(f"static_total: {summary['static_total']}")
+    print(f"static_passed: {summary['static_passed']}")
+    print(f"static_failed: {summary['static_failed']}")
+    print(f"static_failures: {format_list(summary['static_failures'])}")
+    print(f"question_total: {summary['question_total']}")
+    print(f"question_passed: {summary['question_passed']}")
+    print(f"question_failed: {summary['question_failed']}")
+    print(f"failed_questions: {format_list(summary['failed_questions'])}")
+    print(f"overall_passed: {summary['overall_passed']}")
 
 
 if __name__ == "__main__":

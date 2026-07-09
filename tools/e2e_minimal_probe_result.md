@@ -12,15 +12,24 @@ origin	https://github.com/adso123456/1.git (push)
 - DeepSeek 调用是否成功：是
 - DeepSeek 调用结果：HTTP 200
 - API key 来源：machine env DEEPSEEK_API_KEY
-- 是否检测到硬编码密钥：是
-- 硬编码密钥文件（已脱敏）：.env.example
+- 是否检测到硬编码密钥：否
+- 硬编码密钥文件（已脱敏）：无
+- .env.example 只包含占位符：是
+- .env/.env.local 是否安全：是
+- .env/.env.local 被 git 跟踪：无
+- .env/.env.local 存在且未忽略：无
 - 是否使用 DeterministicMetadataContextEnhancer：是
 - 是否使用 GuardedRunSqlTool：是
 - 是否检测到 SQL Guard 执行前拦截：是
-- 测试问题总数：5
-- 通过数量：4
-- 失败数量：3
-- 失败问题列表：.env.example 占位符；硬编码 sk- 密钥检测；排污口编码问题
+- 静态检查总数：10
+- 静态检查通过数量：10
+- 静态检查失败数量：0
+- 静态检查失败列表：无
+- 问题用例总数：5
+- 问题用例通过数量：5
+- 问题用例失败数量：0
+- 问题用例失败列表：无
+- 总体验收是否通过：是
 - 是否训练 Vanna：否
 - 是否写入 ChromaDB：否
 - 是否修改数据库结构：否
@@ -30,7 +39,7 @@ origin	https://github.com/adso123456/1.git (push)
 ## 静态链路验证
 
 - step4_server.py 使用 DeepSeek 官方 API：是
-- .env.example 只包含占位符：否
+- .env.example 只包含占位符：是
 - GuardedRunSqlTool 调用 SQLGuard.validate：是
 - GuardedRunSqlTool 失败时不调用 inner tool：是
 - SSE 路由存在：是
@@ -78,17 +87,17 @@ origin	https://github.com/adso123456/1.git (push)
 ### 排污口编码问题
 
 - query：查询排污口编码
-- P0 candidate top tables：layer_outlet_sewage, gis_region, wm_uav_info, layer_section, metadata_view, layer_watershed, layer_boundary_park, layer_industrial_lsf, layer_industrial_yjf, layer_industrial_ysc
-- matched_columns：layer_outlet_sewage.code, gis_region.code, wm_uav_info.code, layer_section.code, metadata_view.code, layer_watershed.code, layer_boundary_park.code, layer_industrial_lsf.code, layer_industrial_yjf.code, layer_industrial_ysc.code
+- P0 candidate top tables：rs_outlet, rs_outlet_info_v2, layer_outlet_sewage, gis_region, wm_uav_info, layer_section, metadata_view, layer_watershed, layer_boundary_park, layer_industrial_lsf
+- matched_columns：rs_outlet.outlet_code, rs_outlet.outlet_code_province, rs_outlet_info_v2.outlet_code_national, rs_outlet_info_v2.outlet_code_local, layer_outlet_sewage.code, gis_region.code, wm_uav_info.code, layer_section.code, metadata_view.code, layer_watershed.code, layer_boundary_park.code, layer_industrial_lsf.code
 - generated SQL：未调用 Vanna 生成 SQL；使用 probe_sql 验证 SQL Guard
 - probe_sql：SELECT outlet_code FROM rs_outlet LIMIT 10
-- SQL Guard 结果：passed=True；severity=warning；reason=SQL 表不在 deterministic candidate tables 中，需人工关注
+- SQL Guard 结果：passed=True；severity=ok；reason=SQL 静态校验通过
 - used_tables：rs_outlet
 - used_columns：rs_outlet.outlet_code
 - fake inner run_sql 是否被调用：是
 - 是否执行真实 SQL：否
-- 是否通过：否
-- reason：P0 候选、字段或 SQL Guard 结果不符合预期
+- 是否通过：是
+- reason：符合预期
 
 ### 排污口溯源问题
 
