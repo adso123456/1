@@ -12,8 +12,10 @@ from vanna.core.user import UserResolver, User, RequestContext
 from vanna.core.enhancer.default import DefaultLlmContextEnhancer
 from vanna.tools import RunSqlTool, LocalFileSystem
 from agent_config import DB_KWARGS, create_memory
+from tools.guarded_run_sql_tool import GuardedRunSqlTool
 from tools.metadata_context_enhancer import DeterministicMetadataContextEnhancer
 from tools.metadata_retriever import DeterministicMetadataRetriever
+from tools.sql_guard import SQLGuard
 from vanna import Agent, AgentConfig
 from vanna.core.system_prompt.default import DefaultSystemPromptBuilder
 from vanna.servers.fastapi.app import VannaFastAPIServer
@@ -125,8 +127,12 @@ def create_agent():
     print("注册工具 (run_sql)...")
     tool_registry = ToolRegistry()
     file_system = LocalFileSystem(working_directory="E:/3/posgresql/1/agent_data")
+    raw_run_sql_tool = RunSqlTool(sql_runner=pg_runner, file_system=file_system)
     tool_registry.register_local_tool(
-        RunSqlTool(sql_runner=pg_runner, file_system=file_system),
+        GuardedRunSqlTool(
+            inner_tool=raw_run_sql_tool,
+            sql_guard=SQLGuard(),
+        ),
         access_groups=[],
     )
     print("创建 Agent (确定性元数据 + DefaultLlmContextEnhancer 注入检索记忆)...")
