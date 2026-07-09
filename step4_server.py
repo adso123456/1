@@ -12,6 +12,8 @@ from vanna.core.user import UserResolver, User, RequestContext
 from vanna.core.enhancer.default import DefaultLlmContextEnhancer
 from vanna.tools import RunSqlTool, LocalFileSystem
 from agent_config import DB_KWARGS, create_memory
+from tools.metadata_context_enhancer import DeterministicMetadataContextEnhancer
+from tools.metadata_retriever import DeterministicMetadataRetriever
 from vanna import Agent, AgentConfig
 from vanna.core.system_prompt.default import DefaultSystemPromptBuilder
 from vanna.servers.fastapi.app import VannaFastAPIServer
@@ -127,13 +129,16 @@ def create_agent():
         RunSqlTool(sql_runner=pg_runner, file_system=file_system),
         access_groups=[],
     )
-    print("创建 Agent (DefaultLlmContextEnhancer 注入检索记忆)...")
+    print("创建 Agent (确定性元数据 + DefaultLlmContextEnhancer 注入检索记忆)...")
     agent = Agent(
         llm_service=llm,
         tool_registry=tool_registry,
         user_resolver=SimpleUserResolver(),
         agent_memory=memory,
-        llm_context_enhancer=DefaultLlmContextEnhancer(memory),
+        llm_context_enhancer=DeterministicMetadataContextEnhancer(
+            base_enhancer=DefaultLlmContextEnhancer(memory),
+            metadata_retriever=DeterministicMetadataRetriever(),
+        ),
         config=AgentConfig(stream_responses=True),
         system_prompt_builder=OptimizedSystemPromptBuilder(),
     )
