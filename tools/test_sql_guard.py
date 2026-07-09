@@ -19,61 +19,157 @@ TEST_CASES: list[dict[str, Any]] = [
         "query": "某地区某时间段水质变化趋势",
         "sql": "SELECT * FROM wm_waterquality_day_records LIMIT 10",
         "expected_pass": True,
+        "categories": [],
     },
     {
         "query": "某地区某时间段水质小时变化趋势",
         "sql": "SELECT station_id, m1_value FROM wm_waterquality_hour_records LIMIT 10",
         "expected_pass": True,
+        "categories": [],
     },
     {
         "query": "某地区某时间段水质变化趋势",
         "sql": "SELECT * FROM wm_waterquality_threshold",
         "expected_pass": False,
+        "categories": [],
     },
     {
         "query": "排污口溯源",
         "sql": "SELECT * FROM rs_outlet",
         "expected_pass": False,
+        "categories": [],
     },
     {
         "query": "查看系统表",
         "sql": "SELECT * FROM information_schema.tables",
         "expected_pass": False,
+        "categories": [],
     },
     {
         "query": "删除排污口表",
         "sql": "DROP TABLE rs_outlet",
         "expected_pass": False,
+        "categories": [],
     },
     {
         "query": "更新排污口名称",
         "sql": "UPDATE rs_outlet SET outlet_name='x'",
         "expected_pass": False,
+        "categories": [],
     },
     {
         "query": "排污口未知字段",
         "sql": "SELECT unknown_column FROM rs_outlet",
         "expected_pass": False,
+        "categories": [],
     },
     {
         "query": "未知表",
         "sql": "SELECT * FROM unknown_table",
         "expected_pass": False,
+        "categories": [],
     },
     {
         "query": "排污口编码",
         "sql": "SELECT outlet_code FROM rs_outlet LIMIT 10",
         "expected_pass": True,
+        "categories": [],
     },
     {
         "query": "排污口编码",
         "sql": "SELECT outlet_code_national FROM rs_outlet_info_v2 LIMIT 10",
         "expected_pass": True,
+        "categories": [],
     },
     {
         "query": "查看 pg 表",
         "sql": "SELECT * FROM pg_catalog.pg_tables",
         "expected_pass": False,
+        "categories": [],
+    },
+    {
+        "query": "非法 WHERE 字段",
+        "sql": "SELECT station_id FROM wm_waterquality_day_records WHERE unknown_column = 1",
+        "expected_pass": False,
+        "categories": ["where"],
+    },
+    {
+        "query": "合法 WHERE 字段",
+        "sql": "SELECT station_id FROM wm_waterquality_day_records WHERE station_id IS NOT NULL",
+        "expected_pass": True,
+        "categories": ["where"],
+    },
+    {
+        "query": "非法 ORDER BY 字段",
+        "sql": "SELECT station_id FROM wm_waterquality_day_records ORDER BY unknown_column",
+        "expected_pass": False,
+        "categories": ["order_by"],
+    },
+    {
+        "query": "合法 ORDER BY 字段",
+        "sql": "SELECT station_id FROM wm_waterquality_day_records ORDER BY station_id",
+        "expected_pass": True,
+        "categories": ["order_by"],
+    },
+    {
+        "query": "非法 GROUP BY 字段",
+        "sql": "SELECT station_id, COUNT(*) FROM wm_waterquality_day_records GROUP BY unknown_column",
+        "expected_pass": False,
+        "categories": ["group_by"],
+    },
+    {
+        "query": "合法 GROUP BY 字段",
+        "sql": "SELECT station_id, COUNT(*) FROM wm_waterquality_day_records GROUP BY station_id",
+        "expected_pass": True,
+        "categories": ["group_by"],
+    },
+    {
+        "query": "非法 JOIN ON 字段",
+        "sql": "SELECT a.station_id FROM wm_waterquality_day_records a JOIN wm_station_info_v2 s ON a.unknown_column = s.station_id",
+        "expected_pass": False,
+        "categories": ["join_on"],
+    },
+    {
+        "query": "任务给定 JOIN ON SQL 中 s.station_id 不在元数据",
+        "sql": "SELECT a.station_id FROM wm_waterquality_day_records a JOIN wm_station_info_v2 s ON a.station_id = s.station_id",
+        "expected_pass": False,
+        "categories": ["join_on"],
+    },
+    {
+        "query": "合法 JOIN ON 字段",
+        "sql": "SELECT a.station_id FROM wm_waterquality_day_records a JOIN wm_station_info_v2 s ON a.station_id = s.id",
+        "expected_pass": True,
+        "categories": ["join_on"],
+    },
+    {
+        "query": "非法 HAVING 字段",
+        "sql": "SELECT station_id, COUNT(*) FROM wm_waterquality_day_records GROUP BY station_id HAVING unknown_column > 1",
+        "expected_pass": False,
+        "categories": ["having"],
+    },
+    {
+        "query": "合法聚合字段",
+        "sql": "SELECT station_id, AVG(m1_value) FROM wm_waterquality_hour_records GROUP BY station_id",
+        "expected_pass": True,
+        "categories": ["group_by"],
+    },
+    {
+        "query": "合法简单表达式字段",
+        "sql": "SELECT station_id, m1_value + m2_value FROM wm_waterquality_hour_records WHERE m1_value > 0",
+        "expected_pass": True,
+        "categories": ["where"],
+    },
+    {
+        "query": "合法简单子查询字段",
+        "sql": "SELECT station_id FROM wm_waterquality_day_records WHERE station_id IN (SELECT id FROM wm_station_info_v2)",
+        "expected_pass": True,
+        "categories": ["subquery", "where"],
+    },
+    {
+        "query": "合法简单 CTE 字段",
+        "sql": "WITH q AS (SELECT station_id, m1_value FROM wm_waterquality_hour_records) SELECT station_id FROM q WHERE m1_value > 0",
+        "expected_pass": True,
+        "categories": ["cte", "where"],
     },
 ]
 
@@ -100,16 +196,41 @@ def run_tests() -> tuple[list[dict[str, Any]], dict[str, Any]]:
                 "candidate_mismatch": result.candidate_mismatch,
                 "severity": result.severity,
                 "reason": result.reason,
+                "categories": case.get("categories", []),
                 "pass": passed,
             }
         )
 
     passed_count = sum(1 for result in results if result["pass"])
+    category_keys = {
+        "where": "where_passed",
+        "join_on": "join_on_passed",
+        "group_by": "group_by_passed",
+        "order_by": "order_by_passed",
+        "having": "having_passed",
+    }
+    category_summary = {}
+    for category, summary_key in category_keys.items():
+        category_results = [
+            result for result in results if category in result["categories"]
+        ]
+        category_summary[summary_key] = (
+            sum(1 for result in category_results if result["pass"]),
+            len(category_results),
+        )
+
+    subquery_results = [result for result in results if "subquery" in result["categories"]]
+    cte_results = [result for result in results if "cte" in result["categories"]]
     summary = {
         "total": len(results),
         "passed": passed_count,
         "failed": len(results) - passed_count,
         "failed_cases": [result["query"] for result in results if not result["pass"]],
+        **category_summary,
+        "supports_subquery": bool(subquery_results) and all(
+            result["pass"] for result in subquery_results
+        ),
+        "supports_cte": bool(cte_results) and all(result["pass"] for result in cte_results),
         "integrated_run_sql_tool": False,
         "executed_sql": False,
         "connected_database": False,
@@ -134,6 +255,13 @@ def write_report(results: list[dict[str, Any]], summary: dict[str, Any]) -> None
         f"- 通过数量：{summary['passed']}",
         f"- 失败数量：{summary['failed']}",
         f"- 失败用例列表：{', '.join(summary['failed_cases']) if summary['failed_cases'] else '无'}",
+        f"- WHERE 字段校验通过数量：{summary['where_passed'][0]}/{summary['where_passed'][1]}",
+        f"- JOIN ON 字段校验通过数量：{summary['join_on_passed'][0]}/{summary['join_on_passed'][1]}",
+        f"- GROUP BY 字段校验通过数量：{summary['group_by_passed'][0]}/{summary['group_by_passed'][1]}",
+        f"- ORDER BY 字段校验通过数量：{summary['order_by_passed'][0]}/{summary['order_by_passed'][1]}",
+        f"- HAVING 字段校验通过数量：{summary['having_passed'][0]}/{summary['having_passed'][1]}",
+        f"- 是否支持子查询：{'是' if summary['supports_subquery'] else '否'}",
+        f"- 是否支持 CTE：{'是' if summary['supports_cte'] else '否'}",
         f"- 是否接入 RunSqlTool：{'是' if summary['integrated_run_sql_tool'] else '否'}",
         f"- 是否执行 SQL：{'是' if summary['executed_sql'] else '否'}",
         f"- 是否连接数据库：{'是' if summary['connected_database'] else '否'}",
@@ -157,6 +285,7 @@ def write_report(results: list[dict[str, Any]], summary: dict[str, Any]) -> None
                 f"- used_tables：{', '.join(result['used_tables']) if result['used_tables'] else '无'}",
                 f"- used_columns：{', '.join(result['used_columns']) if result['used_columns'] else '无'}",
                 f"- severity：{result['severity']}",
+                f"- categories：{', '.join(result['categories']) if result['categories'] else '无'}",
                 f"- unknown_tables：{', '.join(result['unknown_tables']) if result['unknown_tables'] else '无'}",
                 f"- unknown_columns：{', '.join(result['unknown_columns']) if result['unknown_columns'] else '无'}",
                 f"- forbidden_operations：{', '.join(result['forbidden_operations']) if result['forbidden_operations'] else '无'}",
@@ -178,6 +307,13 @@ def main() -> int:
     print(f"通过数量: {summary['passed']}")
     print(f"失败数量: {summary['failed']}")
     print(f"失败用例列表: {', '.join(summary['failed_cases']) if summary['failed_cases'] else '无'}")
+    print(f"WHERE 字段校验通过数量: {summary['where_passed'][0]}/{summary['where_passed'][1]}")
+    print(f"JOIN ON 字段校验通过数量: {summary['join_on_passed'][0]}/{summary['join_on_passed'][1]}")
+    print(f"GROUP BY 字段校验通过数量: {summary['group_by_passed'][0]}/{summary['group_by_passed'][1]}")
+    print(f"ORDER BY 字段校验通过数量: {summary['order_by_passed'][0]}/{summary['order_by_passed'][1]}")
+    print(f"HAVING 字段校验通过数量: {summary['having_passed'][0]}/{summary['having_passed'][1]}")
+    print(f"是否支持子查询: {'是' if summary['supports_subquery'] else '否'}")
+    print(f"是否支持 CTE: {'是' if summary['supports_cte'] else '否'}")
     print(f"是否接入 RunSqlTool: {'是' if summary['integrated_run_sql_tool'] else '否'}")
     print(f"是否执行 SQL: {'是' if summary['executed_sql'] else '否'}")
     print(f"是否连接数据库: {'是' if summary['connected_database'] else '否'}")

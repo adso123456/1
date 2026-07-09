@@ -34,6 +34,49 @@ SYSTEM_TABLE_PREFIXES = (
     "sqlite_schema",
 )
 
+SQL_KEYWORDS = {
+    "and",
+    "as",
+    "asc",
+    "between",
+    "by",
+    "case",
+    "desc",
+    "else",
+    "end",
+    "false",
+    "from",
+    "group",
+    "having",
+    "in",
+    "is",
+    "join",
+    "left",
+    "like",
+    "limit",
+    "not",
+    "null",
+    "on",
+    "or",
+    "order",
+    "select",
+    "then",
+    "true",
+    "when",
+    "where",
+}
+
+SQL_FUNCTIONS = {
+    "avg",
+    "coalesce",
+    "count",
+    "date_trunc",
+    "max",
+    "min",
+    "round",
+    "sum",
+}
+
 
 @dataclass
 class SQLGuardResult:
@@ -127,15 +170,16 @@ class SQLGuard:
         lower_sql = normalized_sql.lower()
 
         forbidden_operations = self._find_forbidden_operations(lower_sql)
-        used_tables, aliases = self._extract_tables(normalized_sql)
-        used_columns, unknown_columns = self._extract_columns(
-            normalized_sql, used_tables, aliases
-        )
+        used_tables, used_columns, unknown_columns = self._analyze_sql(normalized_sql)
 
         unknown_tables = [
             table
             for table in used_tables
-            if table not in self.table_columns or self._is_system_table(table)
+            if (
+                table not in self.table_columns
+                and not self._is_cte_or_subquery_alias(table, normalized_sql)
+            )
+            or self._is_system_table(table)
         ]
         system_tables = [table for table in used_tables if self._is_system_table(table)]
 
@@ -152,7 +196,7 @@ class SQLGuard:
 
         business_failures = self._business_failures(query, used_tables)
         hard_failures = []
-        if not lower_sql.startswith("select"):
+        if not self._is_select_sql(normalized_sql):
             hard_failures.append("仅允许 SELECT SQL")
         if forbidden_operations:
             hard_failures.append("包含禁止操作：" + ", ".join(forbidden_operations))
@@ -223,6 +267,100 @@ class SQLGuard:
                 found.append(operation.upper())
         return found
 
+    def _is_select_sql(self, sql: str) -> bool:
+        lower_sql = sql.lower().strip()
+        if lower_sql.startswith("select"):
+            return True
+        if not lower_sql.startswith("with"):
+            return False
+
+        _, _, main_sql = self._extract_ctes(sql)
+        return main_sql.lower().startswith("select")
+
+    def _analyze_sql(
+        self,
+        sql: str,
+        outer_virtual_columns: dict[str, set[str]] | None = None,
+    ) -> tuple[list[str], list[str], list[str]]:
+        cte_sqls, cte_columns, main_sql = self._extract_ctes(sql)
+        virtual_columns = dict(outer_virtual_columns or {})
+        virtual_columns.update(cte_columns)
+
+        used_tables: list[str] = []
+        used_columns: list[str] = []
+        unknown_columns: list[str] = []
+
+        for cte_sql in cte_sqls.values():
+            cte_tables, cte_used_columns, cte_unknown_columns = self._analyze_sql(
+                cte_sql, virtual_columns
+            )
+            self._extend_unique(used_tables, cte_tables)
+            self._extend_unique(used_columns, cte_used_columns)
+            self._extend_unique(unknown_columns, cte_unknown_columns)
+
+        tables, aliases = self._extract_tables(main_sql)
+        self._extend_unique(used_tables, tables)
+
+        query_columns, query_unknown_columns = self._extract_columns(
+            main_sql, tables, aliases, virtual_columns
+        )
+        self._extend_unique(used_columns, query_columns)
+        self._extend_unique(unknown_columns, query_unknown_columns)
+
+        for subquery in self._extract_subqueries(main_sql):
+            subquery_tables, subquery_columns, subquery_unknown_columns = self._analyze_sql(
+                subquery, virtual_columns
+            )
+            self._extend_unique(used_tables, subquery_tables)
+            self._extend_unique(used_columns, subquery_columns)
+            self._extend_unique(unknown_columns, subquery_unknown_columns)
+
+        return used_tables, used_columns, sorted(set(unknown_columns))
+
+    def _extract_ctes(self, sql: str) -> tuple[dict[str, str], dict[str, set[str]], str]:
+        stripped_sql = sql.strip()
+        if not stripped_sql.lower().startswith("with "):
+            return {}, {}, sql
+
+        position = 4
+        cte_sqls: dict[str, str] = {}
+        cte_columns: dict[str, set[str]] = {}
+
+        while position < len(stripped_sql):
+            name_match = re.match(
+                r"\s*([a-zA-Z_][\w]*)(?:\s*\(([^)]*)\))?\s+as\s*\(",
+                stripped_sql[position:],
+                flags=re.I,
+            )
+            if not name_match:
+                break
+
+            cte_name = _clean_identifier(name_match.group(1))
+            explicit_columns = {
+                _clean_identifier(column)
+                for column in (name_match.group(2) or "").split(",")
+                if column.strip()
+            }
+            inner_start = position + name_match.end()
+            inner_end = self._find_matching_paren(stripped_sql, inner_start - 1)
+            if inner_end == -1:
+                break
+
+            cte_sql = stripped_sql[inner_start:inner_end]
+            cte_sqls[cte_name] = cte_sql
+            cte_columns[cte_name] = explicit_columns or self._infer_select_output_columns(
+                cte_sql
+            )
+
+            position = inner_end + 1
+            comma_match = re.match(r"\s*,", stripped_sql[position:])
+            if comma_match:
+                position += comma_match.end()
+                continue
+            break
+
+        return cte_sqls, cte_columns, stripped_sql[position:].strip()
+
     def _extract_tables(self, sql: str) -> tuple[list[str], dict[str, str]]:
         used_tables: list[str] = []
         aliases: dict[str, str] = {}
@@ -271,20 +409,14 @@ class SQLGuard:
         sql: str,
         used_tables: list[str],
         aliases: dict[str, str],
+        virtual_columns: dict[str, set[str]] | None = None,
     ) -> tuple[list[str], list[str]]:
-        select_match = re.search(r"\bselect\b\s+(.*?)\s+\bfrom\b", sql, flags=re.I | re.S)
-        if not select_match:
-            return [], []
-
-        select_part = select_match.group(1).strip()
-        if select_part == "*":
-            return [], []
-
         used_columns: list[str] = []
         unknown_columns: list[str] = []
+        virtual_columns = virtual_columns or {}
 
-        for expression in _split_csv(select_part):
-            for table_name, column_name in self._columns_from_expression(expression, aliases):
+        for expression in self._extract_field_expressions(sql):
+            for table_name, column_name in self._columns_from_expression(expression):
                 if column_name == "*":
                     continue
                 resolved_table = table_name
@@ -293,14 +425,18 @@ class SQLGuard:
 
                 if resolved_table:
                     column_ref = f"{resolved_table}.{column_name}"
-                    if not self._column_exists(resolved_table, column_name):
+                    if not self._column_exists(
+                        resolved_table, column_name, virtual_columns
+                    ):
                         unknown_columns.append(column_ref)
                     elif column_ref not in used_columns:
                         used_columns.append(column_ref)
                     continue
 
                 matched_tables = [
-                    table for table in used_tables if self._column_exists(table, column_name)
+                    table
+                    for table in used_tables
+                    if self._column_exists(table, column_name, virtual_columns)
                 ]
                 if matched_tables:
                     for matched_table in matched_tables[:1]:
@@ -312,15 +448,66 @@ class SQLGuard:
 
         return used_columns, sorted(set(unknown_columns))
 
-    def _columns_from_expression(
-        self, expression: str, aliases: dict[str, str]
-    ) -> list[tuple[str, str]]:
+    def _extract_field_expressions(self, sql: str) -> list[str]:
+        expressions: list[str] = []
+
+        select_part = self._extract_between_keywords(sql, "select", ["from"])
+        if select_part and select_part.strip() != "*":
+            expressions.extend(_split_csv(select_part))
+
+        for keyword, end_keywords in [
+            ("where", ["group by", "order by", "having", "limit", "union"]),
+            ("group by", ["having", "order by", "limit", "union"]),
+            ("order by", ["limit", "union"]),
+            ("having", ["order by", "limit", "union"]),
+        ]:
+            clause = self._extract_between_keywords(sql, keyword, end_keywords)
+            if clause:
+                expressions.extend(_split_csv(self._remove_parenthesized_subqueries(clause)))
+
+        expressions.extend(self._extract_join_on_expressions(sql))
+        return expressions
+
+    def _extract_between_keywords(
+        self, sql: str, start_keyword: str, end_keywords: list[str]
+    ) -> str:
+        start = self._find_top_level_keyword(sql, start_keyword)
+        if start == -1:
+            return ""
+        content_start = start + len(start_keyword)
+
+        end_positions = [
+            position
+            for keyword in end_keywords
+            if (position := self._find_top_level_keyword(sql, keyword, content_start)) != -1
+        ]
+        content_end = min(end_positions) if end_positions else len(sql)
+        return sql[content_start:content_end].strip()
+
+    def _extract_join_on_expressions(self, sql: str) -> list[str]:
+        expressions: list[str] = []
+        pattern = re.compile(r"\bon\b", flags=re.I)
+        for match in pattern.finditer(sql):
+            if self._paren_depth(sql, match.start()) != 0:
+                continue
+            start = match.end()
+            end_positions = [
+                position
+                for keyword in ["join", "where", "group by", "order by", "having", "limit"]
+                if (position := self._find_top_level_keyword(sql, keyword, start)) != -1
+            ]
+            end = min(end_positions) if end_positions else len(sql)
+            expressions.append(sql[start:end].strip())
+        return expressions
+
+    def _columns_from_expression(self, expression: str) -> list[tuple[str, str]]:
         expr = re.sub(r"\s+as\s+[a-zA-Z_][\w]*$", "", expression.strip(), flags=re.I)
-        expr = re.sub(r"\s+[a-zA-Z_][\w]*$", "", expr).strip()
+        expr = re.sub(r"'[^']*'", " ", expr)
+        expr = re.sub(r"\"[^\"]*\"", " ", expr)
 
         if re.fullmatch(r"[*]", expr):
             return [("", "*")]
-        if re.fullmatch(r"\d+(?:\.\d+)?|'[^']*'|\"[^\"]*\"", expr):
+        if re.fullmatch(r"\d+(?:\.\d+)?", expr):
             return []
 
         qualified = [
@@ -330,34 +517,122 @@ class SQLGuard:
         if qualified:
             return qualified
 
-        function_match = re.fullmatch(r"[a-zA-Z_][\w]*\((.*)\)", expr)
-        if function_match:
-            inner = function_match.group(1).strip()
-            if inner == "*" or not inner:
-                return []
-            return self._columns_from_expression(inner, aliases)
-
         identifiers = [
             _clean_identifier(item)
             for item in re.findall(r"\b[a-zA-Z_][\w]*\b", expr)
-            if _clean_identifier(item)
-            not in {
-                "case",
-                "when",
-                "then",
-                "else",
-                "end",
-                "null",
-                "true",
-                "false",
-            }
+            if self._is_possible_column_identifier(item)
         ]
-        return [("", identifiers[0])] if len(identifiers) == 1 else []
+        return [("", identifier) for identifier in identifiers]
 
-    def _column_exists(self, table: str, column: str) -> bool:
+    def _column_exists(
+        self,
+        table: str,
+        column: str,
+        virtual_columns: dict[str, set[str]] | None = None,
+    ) -> bool:
         if column == "remaining_missing":
             return False
+        if virtual_columns and column in virtual_columns.get(table, set()):
+            return True
         return column in self.table_columns.get(table, set())
+
+    def _is_possible_column_identifier(self, identifier: str) -> bool:
+        value = _clean_identifier(identifier)
+        return bool(value) and value not in SQL_KEYWORDS and value not in SQL_FUNCTIONS
+
+    def _infer_select_output_columns(self, sql: str) -> set[str]:
+        select_part = self._extract_between_keywords(sql, "select", ["from"])
+        if not select_part:
+            return set()
+
+        columns: set[str] = set()
+        for expression in _split_csv(select_part):
+            alias_match = re.search(r"\s+as\s+([a-zA-Z_][\w]*)$", expression, flags=re.I)
+            if not alias_match:
+                alias_match = re.search(r"\s+([a-zA-Z_][\w]*)$", expression)
+            if alias_match and not expression.strip().lower().endswith(")"):
+                columns.add(_clean_identifier(alias_match.group(1)))
+                continue
+
+            refs = self._columns_from_expression(expression)
+            if len(refs) == 1:
+                columns.add(refs[0][1])
+        return columns
+
+    def _extract_subqueries(self, sql: str) -> list[str]:
+        subqueries: list[str] = []
+        for index, char in enumerate(sql):
+            if char != "(":
+                continue
+            end = self._find_matching_paren(sql, index)
+            if end == -1:
+                continue
+            inner = sql[index + 1 : end].strip()
+            if inner.lower().startswith(("select", "with")):
+                subqueries.append(inner)
+        return subqueries
+
+    def _find_matching_paren(self, sql: str, open_index: int) -> int:
+        depth = 0
+        quote: str | None = None
+        for index in range(open_index, len(sql)):
+            char = sql[index]
+            if quote:
+                if char == quote:
+                    quote = None
+                continue
+            if char in {"'", '"'}:
+                quote = char
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return -1
+
+    def _find_top_level_keyword(
+        self, sql: str, keyword: str, start: int = 0
+    ) -> int:
+        keyword_pattern = r"\s+".join(re.escape(part) for part in keyword.split())
+        pattern = re.compile(rf"\b{keyword_pattern}\b", flags=re.I)
+        for match in pattern.finditer(sql, start):
+            if self._paren_depth(sql, match.start()) == 0:
+                return match.start()
+        return -1
+
+    def _remove_parenthesized_subqueries(self, expression: str) -> str:
+        result = expression
+        for subquery in self._extract_subqueries(expression):
+            result = result.replace(f"({subquery})", " ")
+        return result
+
+    def _paren_depth(self, sql: str, position: int) -> int:
+        depth = 0
+        quote: str | None = None
+        for char in sql[:position]:
+            if quote:
+                if char == quote:
+                    quote = None
+                continue
+            if char in {"'", '"'}:
+                quote = char
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth = max(depth - 1, 0)
+        return depth
+
+    def _extend_unique(self, target: list[str], values: list[str]) -> None:
+        for value in values:
+            if value not in target:
+                target.append(value)
+
+    def _is_cte_or_subquery_alias(self, table: str, sql: str) -> bool:
+        _, cte_columns, _ = self._extract_ctes(sql)
+        return table in cte_columns
 
     def _is_system_table(self, table: str) -> bool:
         return table.startswith(SYSTEM_TABLE_PREFIXES)

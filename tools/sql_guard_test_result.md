@@ -2,10 +2,17 @@
 
 ## 汇总
 
-- 测试用例总数：12
-- 通过数量：12
+- 测试用例总数：26
+- 通过数量：26
 - 失败数量：0
 - 失败用例列表：无
+- WHERE 字段校验通过数量：5/5
+- JOIN ON 字段校验通过数量：3/3
+- GROUP BY 字段校验通过数量：3/3
+- ORDER BY 字段校验通过数量：2/2
+- HAVING 字段校验通过数量：1/1
+- 是否支持子查询：是
+- 是否支持 CTE：是
 - 是否接入 RunSqlTool：否
 - 是否执行 SQL：否
 - 是否连接数据库：否
@@ -24,6 +31,7 @@
 - used_tables：wm_waterquality_day_records
 - used_columns：无
 - severity：ok
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：无
@@ -40,6 +48,7 @@
 - used_tables：wm_waterquality_hour_records
 - used_columns：wm_waterquality_hour_records.station_id, wm_waterquality_hour_records.m1_value
 - severity：ok
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：无
@@ -56,6 +65,7 @@
 - used_tables：wm_waterquality_threshold
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：无
@@ -72,6 +82,7 @@
 - used_tables：rs_outlet
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：无
@@ -88,6 +99,7 @@
 - used_tables：information_schema.tables
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：information_schema.tables
 - unknown_columns：无
 - forbidden_operations：无
@@ -104,6 +116,7 @@
 - used_tables：无
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：DROP
@@ -120,6 +133,7 @@
 - used_tables：无
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：UPDATE
@@ -136,6 +150,7 @@
 - used_tables：rs_outlet
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：无
 - unknown_columns：unknown_column
 - forbidden_operations：无
@@ -152,6 +167,7 @@
 - used_tables：unknown_table
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：unknown_table
 - unknown_columns：无
 - forbidden_operations：无
@@ -168,6 +184,7 @@
 - used_tables：rs_outlet
 - used_columns：rs_outlet.outlet_code
 - severity：ok
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：无
@@ -184,6 +201,7 @@
 - used_tables：rs_outlet_info_v2
 - used_columns：rs_outlet_info_v2.outlet_code_national
 - severity：ok
+- categories：无
 - unknown_tables：无
 - unknown_columns：无
 - forbidden_operations：无
@@ -200,9 +218,248 @@
 - used_tables：pg_catalog.pg_tables
 - used_columns：无
 - severity：error
+- categories：无
 - unknown_tables：pg_catalog.pg_tables
 - unknown_columns：无
 - forbidden_operations：无
 - candidate_mismatch：无
 - reason：禁止访问系统表：pg_catalog.pg_tables；存在未知表：pg_catalog.pg_tables
+- pass/fail：pass
+
+### 13. 非法 WHERE 字段
+
+- query：非法 WHERE 字段
+- sql：`SELECT station_id FROM wm_waterquality_day_records WHERE unknown_column = 1`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：error
+- categories：where
+- unknown_tables：无
+- unknown_columns：unknown_column
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：存在未知字段：unknown_column
+- pass/fail：pass
+
+### 14. 合法 WHERE 字段
+
+- query：合法 WHERE 字段
+- sql：`SELECT station_id FROM wm_waterquality_day_records WHERE station_id IS NOT NULL`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：ok
+- categories：where
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 15. 非法 ORDER BY 字段
+
+- query：非法 ORDER BY 字段
+- sql：`SELECT station_id FROM wm_waterquality_day_records ORDER BY unknown_column`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：error
+- categories：order_by
+- unknown_tables：无
+- unknown_columns：unknown_column
+- forbidden_operations：无
+- candidate_mismatch：wm_waterquality_day_records
+- reason：存在未知字段：unknown_column
+- pass/fail：pass
+
+### 16. 合法 ORDER BY 字段
+
+- query：合法 ORDER BY 字段
+- sql：`SELECT station_id FROM wm_waterquality_day_records ORDER BY station_id`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：warning
+- categories：order_by
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：wm_waterquality_day_records
+- reason：SQL 表不在 deterministic candidate tables 中，需人工关注
+- pass/fail：pass
+
+### 17. 非法 GROUP BY 字段
+
+- query：非法 GROUP BY 字段
+- sql：`SELECT station_id, COUNT(*) FROM wm_waterquality_day_records GROUP BY unknown_column`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：error
+- categories：group_by
+- unknown_tables：无
+- unknown_columns：unknown_column
+- forbidden_operations：无
+- candidate_mismatch：wm_waterquality_day_records
+- reason：存在未知字段：unknown_column
+- pass/fail：pass
+
+### 18. 合法 GROUP BY 字段
+
+- query：合法 GROUP BY 字段
+- sql：`SELECT station_id, COUNT(*) FROM wm_waterquality_day_records GROUP BY station_id`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：warning
+- categories：group_by
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：wm_waterquality_day_records
+- reason：SQL 表不在 deterministic candidate tables 中，需人工关注
+- pass/fail：pass
+
+### 19. 非法 JOIN ON 字段
+
+- query：非法 JOIN ON 字段
+- sql：`SELECT a.station_id FROM wm_waterquality_day_records a JOIN wm_station_info_v2 s ON a.unknown_column = s.station_id`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_day_records, wm_station_info_v2
+- used_columns：wm_waterquality_day_records.station_id
+- severity：error
+- categories：join_on
+- unknown_tables：无
+- unknown_columns：wm_station_info_v2.station_id, wm_waterquality_day_records.unknown_column
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：存在未知字段：wm_station_info_v2.station_id, wm_waterquality_day_records.unknown_column
+- pass/fail：pass
+
+### 20. 任务给定 JOIN ON SQL 中 s.station_id 不在元数据
+
+- query：任务给定 JOIN ON SQL 中 s.station_id 不在元数据
+- sql：`SELECT a.station_id FROM wm_waterquality_day_records a JOIN wm_station_info_v2 s ON a.station_id = s.station_id`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_day_records, wm_station_info_v2
+- used_columns：wm_waterquality_day_records.station_id
+- severity：error
+- categories：join_on
+- unknown_tables：无
+- unknown_columns：wm_station_info_v2.station_id
+- forbidden_operations：无
+- candidate_mismatch：wm_station_info_v2
+- reason：存在未知字段：wm_station_info_v2.station_id
+- pass/fail：pass
+
+### 21. 合法 JOIN ON 字段
+
+- query：合法 JOIN ON 字段
+- sql：`SELECT a.station_id FROM wm_waterquality_day_records a JOIN wm_station_info_v2 s ON a.station_id = s.id`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_day_records, wm_station_info_v2
+- used_columns：wm_waterquality_day_records.station_id, wm_station_info_v2.id
+- severity：ok
+- categories：join_on
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 22. 非法 HAVING 字段
+
+- query：非法 HAVING 字段
+- sql：`SELECT station_id, COUNT(*) FROM wm_waterquality_day_records GROUP BY station_id HAVING unknown_column > 1`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：error
+- categories：having
+- unknown_tables：无
+- unknown_columns：unknown_column
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：存在未知字段：unknown_column
+- pass/fail：pass
+
+### 23. 合法聚合字段
+
+- query：合法聚合字段
+- sql：`SELECT station_id, AVG(m1_value) FROM wm_waterquality_hour_records GROUP BY station_id`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_hour_records
+- used_columns：wm_waterquality_hour_records.station_id, wm_waterquality_hour_records.m1_value
+- severity：ok
+- categories：group_by
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 24. 合法简单表达式字段
+
+- query：合法简单表达式字段
+- sql：`SELECT station_id, m1_value + m2_value FROM wm_waterquality_hour_records WHERE m1_value > 0`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_hour_records
+- used_columns：wm_waterquality_hour_records.station_id, wm_waterquality_hour_records.m1_value, wm_waterquality_hour_records.m2_value
+- severity：ok
+- categories：where
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 25. 合法简单子查询字段
+
+- query：合法简单子查询字段
+- sql：`SELECT station_id FROM wm_waterquality_day_records WHERE station_id IN (SELECT id FROM wm_station_info_v2)`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_day_records, wm_station_info_v2
+- used_columns：wm_waterquality_day_records.station_id, wm_station_info_v2.id
+- severity：ok
+- categories：subquery, where
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 26. 合法简单 CTE 字段
+
+- query：合法简单 CTE 字段
+- sql：`WITH q AS (SELECT station_id, m1_value FROM wm_waterquality_hour_records) SELECT station_id FROM q WHERE m1_value > 0`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_hour_records, q
+- used_columns：wm_waterquality_hour_records.station_id, wm_waterquality_hour_records.m1_value, q.station_id, q.m1_value
+- severity：ok
+- categories：cte, where
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
 - pass/fail：pass
