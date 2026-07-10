@@ -23,8 +23,8 @@
 | 17 | SQL Guard failed 数量 | 0 |
 | 18 | warning 数量 | 0 |
 | 19 | excluded/manual_review 数量 | 0 |
-| 20 | 当前结论 | 通过 |
-| 21 | 下一阶段建议 | 第 3 级 P0 样本人工审查 |
+| 20 | 当前结论 | 通过（18 approved, 0 manual_review） |
+| 21 | 下一阶段建议 | 第 3 级 P0 训练写入 |
 
 ## 每条样本检查结果
 

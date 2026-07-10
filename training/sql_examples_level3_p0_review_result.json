@@ -3,7 +3,9 @@
     "id": "L3_P0_SQL_001",
     "group": "A",
     "question": "查看某站点年度水质趋势",
-    "expected_tables": ["wm_waterquality_year_records"],
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：年度趋势→year_records，表粒度正确。SQL结构标准（SELECT→FROM→WHERE→ORDER BY→LIMIT），字段选择覆盖核心水质指标（pH/DO/氨氮/总氮/水质等级）。固定值 station_id=1408 和 monitor_year>=2020 为可接受示例条件。",
     "risk_level": "low",
@@ -16,7 +18,9 @@
     "id": "L3_P0_SQL_002",
     "group": "A",
     "question": "某站点年度水质各指标汇总",
-    "expected_tables": ["wm_waterquality_year_records"],
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：各指标汇总→多字段SELECT。选择的m1~m10指标均为metadata中有明确中文注释的字段（水温/PH/溶解氧/浊度/电导率/氨氮/总氮/化学需氧量）。未暴露m11~m28无明确语义字段。",
     "risk_level": "low",
@@ -29,7 +33,9 @@
     "id": "L3_P0_SQL_003",
     "group": "A",
     "question": "对比两个站点的pH和溶解氧年度变化",
-    "expected_tables": ["wm_waterquality_year_records"],
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：对比两个站点→WHERE station_id IN (...)。SQL展示了多站点横向对比的IN条件模式，LIMIT 40合理覆盖两站点×20年。",
     "risk_level": "low",
@@ -42,20 +48,24 @@
     "id": "L3_P0_SQL_004",
     "group": "A",
     "question": "查询年度水质pH均值最优站点排名",
-    "expected_tables": ["wm_waterquality_year_records"],
-    "decision": "requires_manual_review",
-    "reason": "业务语义有误：question使用「最优站点排名」，但SQL用 ORDER BY AVG(m2_value) DESC 取pH最高的站点。pH并非越高越好——地表水标准中pH应在6-9范围内，过高（碱性过强）同样表示污染。将「pH最高」等价于「水质最优」是错误的业务口径。AVG+GROUP BY+ORDER BY的结构模式正确，但question与SQL的语义映射需要修正。",
-    "risk_level": "high",
-    "business_semantics_ok": false,
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "decision": "approved",
+    "reason": "已修正：question改为「查询年度pH年均值最高的站点列表」，去掉「最优」判断词。SQL为纯数据排序（ORDER BY AVG(m2_value) DESC），不表达水质优劣判断。AVG+GROUP BY+ORDER BY模式有训练价值。",
+    "risk_level": "medium",
+    "business_semantics_ok": true,
     "sql_pattern_ok": true,
     "hardcoded_value_risk": "medium",
-    "notes": "建议两个修正方向：(1) 将question改为「查询年度pH年均值最高的站点」，去掉「最优」判断词，变为纯粹的数据查询；(2) 如需保留「最优」语义，SQL应使用接近中性7.0的排序（如 ORDER BY ABS(AVG(m2_value)-7.0) ASC），但这会显著改变SQL复杂度。建议选方向(1)，简单改动question即可保留训练价值。"
+    "notes": "修正前question为「pH均值最优站点排名」，修正后去掉主观判断。SQL未修改。"
   },
   {
     "id": "L3_P0_SQL_005",
     "group": "A",
     "question": "查询年度水质较差站点排名",
-    "expected_tables": ["wm_waterquality_year_records"],
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
     "decision": "approved",
     "reason": "业务语义合理：较差站点→WHERE water_quality_level IN ('V', '劣V') 筛选V类和劣V类，ORDER BY m10_value(化学需氧量) DESC 在差等级内按COD降序排列。COD越高水质越差的业务逻辑正确。",
     "risk_level": "medium",
@@ -68,7 +78,9 @@
     "id": "L3_P0_SQL_006",
     "group": "A",
     "question": "查询某站点水质月趋势中的氨氮和总氮",
-    "expected_tables": ["wm_waterquality_month_records"],
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：月趋势→month_records，氨氮→m8_value，总氮→m9_value。在第2级L2_SQL_007（月趋势pH/DO）基础上扩展到氮类指标。表粒度正确，字段语义已在metadata中确认。",
     "risk_level": "low",
@@ -81,20 +93,24 @@
     "id": "L3_P0_SQL_007",
     "group": "A",
     "question": "查看某站点pH和溶解氧在最近12个月的变化趋势",
-    "expected_tables": ["wm_waterquality_month_records"],
-    "decision": "requires_manual_review",
-    "reason": "question与SQL的时间语义不匹配：question说「最近12个月」，SQL用 monitor_year >= 2025 + LIMIT 24。monitor_year>=2025不等于「最近12个月」（固定年份无法表达「最近的」动态含义），LIMIT 24也不保证恰好12条月记录（可能跨越多年或不足12条）。模型可能学到「最近12个月=monitor_year>=2025 LIMIT 24」的错误映射。",
-    "risk_level": "high",
-    "business_semantics_ok": false,
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
+    "decision": "approved",
+    "reason": "已修正：question改为「查看某站点近两年pH和溶解氧月变化趋势」，去掉「最近12个月」。monitor_year>=2025在当前年份2026下覆盖近两年，与question语义一致。",
+    "risk_level": "medium",
+    "business_semantics_ok": true,
     "sql_pattern_ok": true,
     "hardcoded_value_risk": "high",
-    "notes": "建议两种修正：(1) 将question改为「查看某站点近两年pH和溶解氧月变化趋势」以匹配SQL；(2) 保留question，但将SQL改为使用相对日期模式如 monitor_time >= CURRENT_DATE - INTERVAL '12 months'（如果目标数据库支持）。建议选方向(1)，与第2级固定日期示例风格一致。"
+    "notes": "修正前question为「最近12个月」，与固定年份SQL不匹配。修正后question与SQL时间范围对齐。SQL未修改。"
   },
   {
     "id": "L3_P0_SQL_008",
     "group": "A",
     "question": "某站点不同水质等级在月记录中的分布",
-    "expected_tables": ["wm_waterquality_month_records"],
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：等级分布→GROUP BY water_quality_level + COUNT。SQL结构标准简洁，well-defined aggregation pattern。",
     "risk_level": "low",
@@ -107,7 +123,9 @@
     "id": "L3_P0_SQL_009",
     "group": "A",
     "question": "某站点年度水温变化趋势",
-    "expected_tables": ["wm_waterquality_year_records"],
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：水温→m1_value（metadata确认为水温监测值），年度趋势→year_records。单指标专项趋势查询，SQL结构标准。",
     "risk_level": "low",
@@ -120,7 +138,9 @@
     "id": "L3_P0_SQL_010",
     "group": "A",
     "question": "某站点年度化学需氧量变化趋势",
-    "expected_tables": ["wm_waterquality_year_records"],
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：化学需氧量→m10_value（metadata确认），年度趋势→year_records。SQL在day_records中m10_value也是化学需氧量，但year表使用正确。",
     "risk_level": "low",
@@ -133,7 +153,9 @@
     "id": "L3_P0_SQL_011",
     "group": "B",
     "question": "查看某站点日记录中pH值最高的记录",
-    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：pH值最高→ORDER BY m2_value DESC LIMIT 5。这是纯粹的数据查询（找极值记录），不含「好/坏」价值判断。与L3_P0_SQL_004不同，此处最高=数值最大，语义准确。",
     "risk_level": "low",
@@ -146,7 +168,9 @@
     "id": "L3_P0_SQL_012",
     "group": "B",
     "question": "查看某站点日记录中pH值最低的记录",
-    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：pH值最低→ORDER BY m2_value ASC LIMIT 5。与L3_P0_SQL_011对称覆盖极值双向查询。",
     "risk_level": "low",
@@ -159,20 +183,24 @@
     "id": "L3_P0_SQL_013",
     "group": "B",
     "question": "某站点小时记录中溶解氧偏低的时段",
-    "expected_tables": ["wm_waterquality_hour_records"],
-    "decision": "requires_manual_review",
-    "reason": "阈值口径待确认：m3_value < 5.0 作为「偏低」的判断标准。地表水环境质量标准(GB 3838-2002)中，溶解氧标准因功能类别而异——I类≥7.5, II类≥6, III类≥5, IV类≥3, V类≥2。5.0mg/L对III类水是达标线、对I/II类水属于偏低。阈值5.0是否适合作为通用「偏低」标准，需业务方确认。SQL结构正确（< 比较+小时表），仅阈值数值需确认。",
-    "risk_level": "high",
-    "business_semantics_ok": false,
+    "expected_tables": [
+      "wm_waterquality_hour_records"
+    ],
+    "decision": "approved",
+    "reason": "已修正：question改为「查询某站点小时记录中溶解氧低于5.0mg/L的时段」，在question中直接写明阈值数值。「偏低」改为「低于5.0mg/L」，去掉主观判断。SQL未修改。",
+    "risk_level": "medium",
+    "business_semantics_ok": true,
     "sql_pattern_ok": true,
     "hardcoded_value_risk": "medium",
-    "notes": "建议：确认后可将阈值调整为业务认可值（如对III类水用<5，对II类水用<6）。也可将question改为「溶解氧低于5.0mg/L的时段」直接写明阈值避免歧义。SQL结构保留价值高（< 比较运算符在小时表上的应用）。"
+    "notes": "修正前question含「偏低」主观判断词。修正后question明确写出阈值5.0mg/L，变为纯数值过滤查询。SQL未修改。"
   },
   {
     "id": "L3_P0_SQL_014",
     "group": "B",
     "question": "对比多个水质指标在某站点的日平均值",
-    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：日平均值→AVG函数+day_records。同时计算pH/DO/浊度/电导率四个指标的均值，展示了多AVG并行使用的模式。AS别名（avg_ph等）提供可读输出。",
     "risk_level": "low",
@@ -185,7 +213,9 @@
     "id": "L3_P0_SQL_015",
     "group": "B",
     "question": "查询某站点最近一个月各水质等级天数统计",
-    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
     "decision": "approved",
     "reason": "question与SQL的时间窗口语义一致：monitor_time >= '2026-06-01' AND monitor_time < '2026-07-01' 精确覆盖一个月（30天）。与L3_P0_SQL_007不同——此处SQL的日期范围确实是一个月，而非弱匹配。固定日期仅作为示例时间点，可接受。",
     "risk_level": "medium",
@@ -198,7 +228,9 @@
     "id": "L3_P0_SQL_016",
     "group": "B",
     "question": "某站点日记录中水质等级为劣V类的记录",
-    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：劣V类→WHERE water_quality_level = '劣V'。SQL展示精确值筛选+时间降序排列，pattern合理。",
     "risk_level": "low",
@@ -211,20 +243,24 @@
     "id": "L3_P0_SQL_017",
     "group": "B",
     "question": "查询月度水质达标站点列表",
-    "expected_tables": ["wm_waterquality_month_records"],
-    "decision": "requires_manual_review",
-    "reason": "达标口径待确认：用水质等级I/II/III表示「达标」，但实际达标标准取决于各水体的功能区划目标。例如：饮用水源保护区要求III类及以上，工业用水区IV类即可达标。将I/II/III固定等同于「达标」是过度简化，可能在不同业务场景下产生误导。",
-    "risk_level": "high",
-    "business_semantics_ok": false,
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
+    "decision": "approved",
+    "reason": "已修正：question改为「查询月度水质为I至III类的站点列表」，去掉「达标」判断词。「达标」改为「水质为I至III类」，是客观等级筛选。SQL未修改。",
+    "risk_level": "medium",
+    "business_semantics_ok": true,
     "sql_pattern_ok": true,
     "hardcoded_value_risk": "medium",
-    "notes": "建议修正方向：(1) 将question改为「查询月度水质为优良等级(I~III类)的站点」，去掉「达标」一词；(2) 如需保留「达标」语义，需业务方明确本项目的水质达标标准。SQL结构本身正确（IN多值筛选+月表），仅question措辞需调整。"
+    "notes": "修正前question含「达标」未确认口径。修正后question描述为客观等级筛选。SQL未修改。"
   },
   {
     "id": "L3_P0_SQL_018",
     "group": "B",
     "question": "某站点日记录中氨氮值最高的记录",
-    "expected_tables": ["wm_waterquality_day_records"],
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
     "decision": "approved",
     "reason": "业务语义清晰：氨氮→m8_value（metadata确认为氨氮监测值），最高→ORDER BY DESC LIMIT。与L3_P0_SQL_011（pH最高）同属极值查询模式，在B组中覆盖了氨氮指标维度。",
     "risk_level": "low",

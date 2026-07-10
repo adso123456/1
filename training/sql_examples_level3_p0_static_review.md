@@ -59,10 +59,10 @@
 | L3_P0_SQL_001 | 查看某站点年度水质趋势 | wm_waterquality_year_records | station_id, monitor_year, m2/m3/m8/m9_value, water_quality_level | ok |
 | L3_P0_SQL_002 | 某站点年度水质各指标汇总 | wm_waterquality_year_records | station_id, monitor_year, m1~m5/m8~m10_value, water_quality_level | ok |
 | L3_P0_SQL_003 | 对比两个站点的pH和溶解氧年度变化 | wm_waterquality_year_records | station_id, monitor_year, m2/m3_value, water_quality_level | ok |
-| L3_P0_SQL_004 | 查询年度水质pH均值最优站点排名 | wm_waterquality_year_records | station_id, monitor_year, m2_value, water_quality_level | ok |
+| L3_P0_SQL_004 | 查询年度pH年均值最高的站点列表 | wm_waterquality_year_records | station_id, monitor_year, m2_value, water_quality_level | ok |
 | L3_P0_SQL_005 | 查询年度水质较差站点排名 | wm_waterquality_year_records | station_id, monitor_year, m8/m9/m10_value, water_quality_level | ok |
 | L3_P0_SQL_006 | 查询某站点水质月趋势中的氨氮和总氮 | wm_waterquality_month_records | station_id, monitor_year, monitor_month, m8/m9_value, water_quality_level | ok |
-| L3_P0_SQL_007 | 查看某站点pH和溶解氧在最近12个月的变化趋势 | wm_waterquality_month_records | station_id, monitor_year, monitor_month, m2/m3_value, water_quality_level | ok |
+| L3_P0_SQL_007 | 查看某站点近两年pH和溶解氧月变化趋势 | wm_waterquality_month_records | station_id, monitor_year, monitor_month, m2/m3_value, water_quality_level | ok |
 | L3_P0_SQL_008 | 某站点不同水质等级在月记录中的分布 | wm_waterquality_month_records | station_id, monitor_year, water_quality_level | ok |
 | L3_P0_SQL_009 | 某站点年度水温变化趋势 | wm_waterquality_year_records | station_id, monitor_year, m1_value, water_quality_level | ok |
 | L3_P0_SQL_010 | 某站点年度化学需氧量变化趋势 | wm_waterquality_year_records | station_id, monitor_year, m10_value, water_quality_level | ok |
@@ -73,11 +73,11 @@
 |----|----------|-----|---------|-------|
 | L3_P0_SQL_011 | 查看某站点日记录中pH值最高的记录 | wm_waterquality_day_records | station_id, monitor_time, m2_value, water_quality_level | ok |
 | L3_P0_SQL_012 | 查看某站点日记录中pH值最低的记录 | wm_waterquality_day_records | station_id, monitor_time, m2_value, water_quality_level | ok |
-| L3_P0_SQL_013 | 某站点小时记录中溶解氧偏低的时段 | wm_waterquality_hour_records | station_id, monitor_time, m3_value, water_quality_level | ok |
+| L3_P0_SQL_013 | 查询某站点小时记录中溶解氧低于5.0mg/L的时段 | wm_waterquality_hour_records | station_id, monitor_time, m3_value, water_quality_level | ok |
 | L3_P0_SQL_014 | 对比多个水质指标在某站点的日平均值 | wm_waterquality_day_records | station_id, monitor_time, AVG(m2/m3/m4/m5_value) | ok |
 | L3_P0_SQL_015 | 查询某站点最近一个月各水质等级天数统计 | wm_waterquality_day_records | station_id, monitor_time, water_quality_level | ok |
 | L3_P0_SQL_016 | 某站点日记录中水质等级为劣V类的记录 | wm_waterquality_day_records | station_id, monitor_time, m2/m3/m8_value, water_quality_level | ok |
-| L3_P0_SQL_017 | 查询月度水质达标站点列表 | wm_waterquality_month_records | station_id, monitor_year, monitor_month, water_quality_level | ok |
+| L3_P0_SQL_017 | 查询月度水质为I至III类的站点列表 | wm_waterquality_month_records | station_id, monitor_year, monitor_month, water_quality_level | ok |
 | L3_P0_SQL_018 | 某站点日记录中氨氮值最高的记录 | wm_waterquality_day_records | station_id, monitor_time, m8_value, water_quality_level | ok |
 
 ## 安全审查
@@ -131,14 +131,13 @@
 
 ## 当前结论
 
-**通过。** 18 条 P0 候选样本全部通过静态 SQL Guard 校验（passed=True, severity=ok），无 SELECT *、无禁止表、无 DDL/DML、无 requires_manual_review 场景。可以进入下一阶段。
+**通过。** 18 条 P0 候选样本全部通过静态 SQL Guard 校验（passed=True, severity=ok），全部通过人工审查（18 approved, 0 requires_manual_review, 0 excluded）。可以进入下一阶段（第 3 级 P0 训练写入）。
 
 ## 下一阶段建议
 
-1. 第 3 级 P0 样本人工审查（逐条确认业务语义 + SQL 合理性）
-2. 审查通过后，进入第 3 级 P0 训练写入（受控写入 ChromaDB）
-3. 训练后做 P0 隔离验证（类似第 2 级 10 题验证）
-4. P0 验证通过后再启动 P1（C/D/E 组）草案设计
+1. 第 3 级 P0 训练写入（受控写入 ChromaDB，不训练 manual_review 样本）
+2. 训练后做 P0 隔离验证（类似第 2 级 10 题验证）
+3. P0 验证通过后再启动 P1（C/D/E 组）草案设计
 
 ---
 

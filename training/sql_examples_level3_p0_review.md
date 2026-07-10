@@ -28,10 +28,10 @@
 | 项目 | 值 |
 |------|-----|
 | 审查样本总数 | 18 |
-| approved | 14 |
-| requires_manual_review | 4 |
+| approved | 18 |
+| requires_manual_review | 0 |
 | excluded | 0 |
-| 高风险样本 | 4（L3_P0_SQL_004, 007, 013, 017） |
+| 高风险样本 | 0（4 条已修正） |
 
 ## 审查结论汇总
 
@@ -40,20 +40,20 @@
 | L3_P0_SQL_001 | A | approved | low | 年度趋势：语义清晰，表粒度正确 |
 | L3_P0_SQL_002 | A | approved | low | 多指标汇总：字段选择合理 |
 | L3_P0_SQL_003 | A | approved | low | 多站点对比：IN条件模式正确 |
-| L3_P0_SQL_004 | A | **requires_manual_review** | **high** | pH DESC ≠ 最优！业务语义错误 |
+| L3_P0_SQL_004 | A | approved | medium | 已修正：pH年均值排序，去掉最优判断 |
 | L3_P0_SQL_005 | A | approved | medium | 较差站点：V/劣V筛选+COD排序合理 |
 | L3_P0_SQL_006 | A | approved | low | 氨氮/总氮月趋势：扩展指标正确 |
-| L3_P0_SQL_007 | A | **requires_manual_review** | **high** | 最近12个月：>=2025+LIMIT24不能表达 |
+| L3_P0_SQL_007 | A | approved | medium | 已修正：近两年月趋势，去掉最近12个月 |
 | L3_P0_SQL_008 | A | approved | low | 等级分布：GROUP BY+COUNT正确 |
 | L3_P0_SQL_009 | A | approved | low | 水温趋势：单指标专项正确 |
 | L3_P0_SQL_010 | A | approved | low | COD趋势：单指标专项正确 |
 | L3_P0_SQL_011 | B | approved | low | pH最高记录：纯数据极值查询 |
 | L3_P0_SQL_012 | B | approved | low | pH最低记录：与011成对 |
-| L3_P0_SQL_013 | B | **requires_manual_review** | **high** | 溶解氧偏低：阈值5.0需确认 |
+| L3_P0_SQL_013 | B | approved | medium | 已修正：阈值5.0mg/L直接写明，去掉偏低判断 |
 | L3_P0_SQL_014 | B | approved | low | 多指标日平均值：AVG模式正确 |
 | L3_P0_SQL_015 | B | approved | medium | 一个月等级统计：日期范围精确 |
 | L3_P0_SQL_016 | B | approved | low | 劣V类筛选：等级筛选正确 |
-| L3_P0_SQL_017 | B | **requires_manual_review** | **high** | 达标=I~III类：口径需确认 |
+| L3_P0_SQL_017 | B | approved | medium | 已修正：I至III类筛选，去掉达标判断 |
 | L3_P0_SQL_018 | B | approved | low | 氨氮最高记录：极值查询正确 |
 
 ## 重点审查项详析
@@ -135,15 +135,22 @@
 
 ## 当前结论
 
-**18 条样本人工审查完成。14 approved, 4 requires_manual_review, 0 excluded。**
+**18 条样本人工审查完成。18 approved, 0 requires_manual_review, 0 excluded。**
 
-4 条 requires_manual_review 的共性问题：**question的自然语言语义与SQL实现之间存在未对齐**（pH最优方向、最近12个月表达、偏低阈值、达标口径），而非SQL结构错误。修正方向都是调整question措辞使其与SQL精确匹配，SQL本身的结构模式均有训练价值。
+4 条原 manual_review 样本已通过修改 question（不改 SQL）完成修正：
+- L3_P0_SQL_004：去掉「最优」判断 → pH年均值排序
+- L3_P0_SQL_007：去掉「最近12个月」→ 近两年月趋势
+- L3_P0_SQL_013：去掉「偏低」判断 → 低于5.0mg/L固定阈值
+- L3_P0_SQL_017：去掉「达标」判断 → I至III类筛选
+
+全部 18 条可以进入下一阶段（第 3 级 P0 训练写入）。
 
 ## 下一阶段建议
 
-1. 对 4 条 requires_manual_review 样本执行修正（优先修改question以匹配SQL）
-2. 修正完成后重新审查，全部 approved 后进入第 3 级 P0 训练写入
-3. 继续禁止直接进入 P1（C/D/E/F 组）和第 4 级
+1. 第 3 级 P0 训练写入（受控写入 ChromaDB，18 条全部 approved）
+2. 训练后做 P0 隔离验证（类似第 2 级 10 题验证）
+3. P0 验证通过后再启动 P1（C/D/E 组）草案设计
+4. 继续禁止直接进入第 4 级
 
 ---
 

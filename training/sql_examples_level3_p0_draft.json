@@ -74,7 +74,7 @@
     "id": "L3_P0_SQL_004",
     "group": "A",
     "priority": "P0",
-    "question": "查询年度水质pH均值最优站点排名",
+    "question": "查询年度pH年均值最高的站点列表",
     "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE monitor_year = 2025 AND m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
     "expected_tables": [
       "wm_waterquality_year_records"
@@ -85,8 +85,8 @@
       "wm_waterquality_year_records.m2_value",
       "wm_waterquality_year_records.water_quality_level"
     ],
-    "business_intent": "站点排名：训练模型使用聚合函数 AVG 和 GROUP BY 对站点年度水质指标做排序排名。",
-    "risk_notes": "monitor_year=2025 仅为示例年份；AVG + GROUP BY 是合法聚合操作，SQL Guard 不拦截；以 pH 均值降序表示最优站点。",
+    "business_intent": "pH年均值极值排序：训练模型使用AVG+GROUP BY+ORDER BY DESC对站点年度pH均值排序，不表达水质最优判断。",
+    "risk_notes": "这是纯数据排序（pH年均值从高到低），不表示pH越高水质越优。monitor_year=2025仅为示例年份；AVG+GROUP BY是合法聚合操作。",
     "train_decision": "draft",
     "review_status": "pending_static_check"
   },
@@ -138,7 +138,7 @@
     "id": "L3_P0_SQL_007",
     "group": "A",
     "priority": "P0",
-    "question": "查看某站点pH和溶解氧在最近12个月的变化趋势",
+    "question": "查看某站点近两年pH和溶解氧月变化趋势",
     "sql": "SELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 24",
     "expected_tables": [
       "wm_waterquality_month_records"
@@ -151,8 +151,8 @@
       "wm_waterquality_month_records.m3_value",
       "wm_waterquality_month_records.water_quality_level"
     ],
-    "business_intent": "最近12个月趋势：训练模型使用月表查询 pH(m2) 和溶解氧(m3) 的跨年月变化。",
-    "risk_notes": "问题中「最近12个月」在 SQL 中通过 monitor_year>=2025 + LIMIT 24 表达，固定年份为避免模型学到硬编码年份；不退化到 year records。",
+    "business_intent": "近两年月度趋势：训练模型使用月表查询pH(m2)和溶解氧(m3)的近两年月变化。",
+    "risk_notes": "monitor_year>=2025是示例年份条件（当前年份为2026，>=2025覆盖近两年），不表示动态「最近N个月」。不退化到year records。",
     "train_decision": "draft",
     "review_status": "pending_static_check"
   },
@@ -259,7 +259,7 @@
     "id": "L3_P0_SQL_013",
     "group": "B",
     "priority": "P0",
-    "question": "某站点小时记录中溶解氧偏低的时段",
+    "question": "查询某站点小时记录中溶解氧低于5.0mg/L的时段",
     "sql": "SELECT station_id, monitor_time, m3_value, water_quality_level\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408 AND monitor_time >= '2026-01-01' AND m3_value < 5.0\nORDER BY monitor_time\nLIMIT 50",
     "expected_tables": [
       "wm_waterquality_hour_records"
@@ -270,8 +270,8 @@
       "wm_waterquality_hour_records.m3_value",
       "wm_waterquality_hour_records.water_quality_level"
     ],
-    "business_intent": "阈值过滤查询：训练模型使用 < 比较运算符筛选低于阈值的记录，处理偏低/低于类比较语义。",
-    "risk_notes": "m3_value < 5.0 中 5.0 仅为示例阈值，不暗示实际溶解氧标准；不退化到 day/month records。",
+    "business_intent": "固定阈值过滤查询：训练模型使用<比较运算符按固定阈值筛选记录，处理数值比较类语义。",
+    "risk_notes": "m3_value < 5.0中5.0是示例阈值，不代表所有业务场景的溶解氧偏低标准。不退化到day/month records。比较运算符不在SQL Guard forbidden_operations中。",
     "train_decision": "draft",
     "review_status": "pending_static_check"
   },
@@ -342,7 +342,7 @@
     "id": "L3_P0_SQL_017",
     "group": "B",
     "priority": "P0",
-    "question": "查询月度水质达标站点列表",
+    "question": "查询月度水质为I至III类的站点列表",
     "sql": "SELECT station_id, monitor_year, monitor_month, water_quality_level\nFROM wm_waterquality_month_records\nWHERE monitor_year = 2025 AND monitor_month = 6 AND water_quality_level IN ('I', 'II', 'III')\nORDER BY station_id\nLIMIT 50",
     "expected_tables": [
       "wm_waterquality_month_records"
@@ -353,8 +353,8 @@
       "wm_waterquality_month_records.monitor_month",
       "wm_waterquality_month_records.water_quality_level"
     ],
-    "business_intent": "达标筛选：训练模型使用 WHERE water_quality_level IN 多值筛选达标等级（I/II/III 类），处理达标/合格类语义。",
-    "risk_notes": "water_quality_level IN (I, II, III) 表示达标等级（I~III 类为优良），不意味着实际水质标准；固定年份和月份仅为示例。",
+    "business_intent": "水质等级筛选：训练模型使用WHERE water_quality_level IN多值筛选I/II/III类站点，不表达达标判断。",
+    "risk_notes": "water_quality_level IN (I, II, III)是等级筛选条件，不等同于所有场景的达标口径。固定年份和月份仅为示例。",
     "train_decision": "draft",
     "review_status": "pending_static_check"
   },
