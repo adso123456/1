@@ -644,7 +644,7 @@ def main() -> int:
     q3_pass = any(case["id"] == "Q3" and case["status"] == "pass" for case in case_results)
     q4_pass = any(case["id"] == "Q4" and case["status"] == "pass" for case in case_results)
     q9_pass = any(case["id"] == "Q9" and case["status"] == "pass" for case in case_results)
-    q10_ok = any(case["id"] == "Q10" and case["status"] in {"warning", "fail"} for case in case_results)
+    q10_ok = any(case["id"] == "Q10" and case["status"] in {"warning", "pass"} for case in case_results)
     executed_real_sql = any(case["true_sql_executed"] for case in case_results)
     selected_ids = {case["id"] for case in selected_test_cases()}
     if selected_ids == {"Q9"}:
@@ -659,6 +659,24 @@ def main() -> int:
             and q9_pass
             and q10_ok
         )
+    quality_fail_ids = {"Q1", "Q3", "Q5", "Q7"}
+    quality_fail_exists = bool(quality_fail_ids.intersection(fail_cases))
+    if pass_standard:
+        conclusion = "通过"
+        next_step = "可进入人工复核验证报告；不要进入第 3/4 级"
+    elif formal_vanna_changed or formal_query_added:
+        conclusion = "未通过"
+        next_step = "正式 vanna_data 或 agent_data/query_results 出现变化，先隔离并清理；禁止进入第 3/4 级"
+    elif not q9_pass:
+        conclusion = "未通过"
+        next_step = "继续修 SQL Guard 拦截链路；禁止进入第 3/4 级"
+    elif quality_fail_exists:
+        conclusion = "部分通过"
+        next_step = "SQL Guard 阻塞已解决，但问答质量仍需分阶段修复；禁止进入第 3/4 级"
+    else:
+        conclusion = "未通过"
+        next_step = "先分析 fail/warning 明细，禁止进入第 3/4 级"
+
     summary = {
         "remote": remote,
         "commit": commit,
@@ -682,8 +700,8 @@ def main() -> int:
         "startup_failure": startup_failure,
         "formal_vanna_before": formal_vanna_before,
         "formal_vanna_after": formal_vanna_after,
-        "conclusion": "通过" if pass_standard else "未通过",
-        "next_step": "可进入人工复核验证报告；不要进入第 3/4 级" if pass_standard else "先分析 fail/warning 明细，禁止进入第 3/4 级",
+        "conclusion": conclusion,
+        "next_step": next_step,
     }
     write_report(summary, case_results)
     print(f"报告: {REPORT_PATH}")
