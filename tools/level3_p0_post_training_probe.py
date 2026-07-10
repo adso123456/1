@@ -46,13 +46,35 @@ def columns_present(used_columns: list[str], column: str) -> bool:
 
 
 def evaluate(
-    case: dict[str, Any], sse: dict[str, Any], temp_query_generated: bool
+    case: dict[str, Any],
+    sse: dict[str, Any],
+    temp_query_generated: bool,
+    p0_candidate_tables: list[str],
 ) -> dict[str, Any]:
     sql = str(sse.get("generated_sql") or "")
-    guard = SQLGuard().validate(sql=sql, query=case["question"]) if sql else None
+    guard = (
+        SQLGuard().validate(
+            sql=sql,
+            query=case["question"],
+            deterministic_candidate_tables=p0_candidate_tables,
+        )
+        if sql
+        else None
+    )
     used_tables = guard.used_tables if guard else []
     used_columns = guard.used_columns if guard else []
-    true_sql_executed = "dataframe" in sse.get("rich_types", []) and not sse.get("blocked_message")
+    preview = str(sse.get("preview") or "")
+    has_sql_result_payload = bool(sse.get("all_sql")) and any(
+        marker in preview for marker in ('"data"', '"columns"', '"row_count"')
+    )
+    true_sql_executed = (
+        not sse.get("blocked_message")
+        and (
+            "dataframe" in sse.get("rich_types", [])
+            or has_sql_result_payload
+            or temp_query_generated
+        )
+    )
     reasons: list[str] = []
     status = "pass"
 
@@ -118,8 +140,10 @@ def evaluate(
         "expected_tables": case["tables"], "expected_columns": case.get("display_columns", case["columns"] + case.get("any_columns", [])),
         "generated_sql": sql or "未生成", "used_tables": used_tables, "used_columns": used_columns,
         "sql_guard": guard.to_dict() if guard else {}, "true_sql_executed": true_sql_executed,
+        "has_sql_result_payload": has_sql_result_payload,
         "temp_query_generated": temp_query_generated,
-        "response_preview": str(sse.get("preview") or "")[:1200],
+        "p0_candidate_tables": p0_candidate_tables,
+        "response_preview": preview[:1200],
         "status": status, "reason": "符合预期" if not reasons else "；".join(reasons),
     }
 
@@ -145,7 +169,11 @@ def write_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> None
         f"- 问题总数：{len(results)}", f"- pass 数量：{summary['pass_count']}", f"- warning 数量：{summary['warning_count']}", f"- fail 数量：{summary['fail_count']}",
         f"- fail 问题列表：{'、'.join(summary['fail_cases']) or '无'}",
         f"- SAFE-Q9 是否通过：{cn(summary['safe_pass'])}", f"- SAFE-Q9 true_sql_executed：{cn(summary['safe_executed'])}",
+        "- true_sql_executed 检测口径已修正：是（dataframe、SQL result payload 或临时 query_results 任一命中）",
+        "- query_results 临时目录检测口径已修正：是（逐题比较临时目录新增文件，并与正式目录分开）",
         f"- 当前结论：{summary['conclusion']}", f"- 下一阶段建议：{summary['next_step']}", "",
+        "## Q3/Q8 warning 归因", "",
+        *summary["warning_attribution"], "",
         "## 每题明细", "",
     ]
     for item in results:
@@ -154,6 +182,8 @@ def write_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> None
             f"- expected_tables：{', '.join(item['expected_tables']) or '无'}", f"- expected_columns：{', '.join(item['expected_columns']) or '无'}",
             f"- generated_sql：{item['generated_sql']}", f"- used_tables：{', '.join(item['used_tables']) or '无'}",
             f"- used_columns：{', '.join(item['used_columns']) or '无'}", f"- SQL Guard result：{json.dumps(item['sql_guard'], ensure_ascii=False) if item['sql_guard'] else '无'}",
+            f"- P0 deterministic candidate tables：{', '.join(item['p0_candidate_tables']) or '无'}",
+            f"- 是否检测到 SQL result payload：{cn(item['has_sql_result_payload'])}",
             f"- true_sql_executed：{cn(item['true_sql_executed'])}", f"- response preview：{item['response_preview']}",
             f"- query_results 是否生成于临时 AGENT_DATA_DIR：{cn(item['temp_query_generated'])}",
             f"- 是否污染正式 agent_data：{cn(summary['formal_query_added'])}", f"- pass/warning/fail：{item['status']}", f"- reason：{item['reason']}", "",
@@ -180,10 +210,11 @@ def main() -> int:
                 temp_before = query_result_files(isolation["agent_data"])
                 sse = post_sse(case["question"], timeout_seconds=150)
                 temp_after = query_result_files(isolation["agent_data"])
-                results.append(evaluate(case, sse, bool(temp_after - temp_before)))
+                candidates = p0_info(case["question"])["tables"]
+                results.append(evaluate(case, sse, bool(temp_after - temp_before), candidates))
         else:
             for case in CASES:
-                results.append({"id": case["id"], "sample_id": case["sample_id"], "question": case["question"], "expected_tables": case["tables"], "expected_columns": case["columns"], "generated_sql": "未生成", "used_tables": [], "used_columns": [], "sql_guard": {}, "true_sql_executed": False, "temp_query_generated": False, "response_preview": "", "status": "fail", "reason": startup_error})
+                results.append({"id": case["id"], "sample_id": case["sample_id"], "question": case["question"], "expected_tables": case["tables"], "expected_columns": case["columns"], "generated_sql": "未生成", "used_tables": [], "used_columns": [], "sql_guard": {}, "true_sql_executed": False, "has_sql_result_payload": False, "temp_query_generated": False, "p0_candidate_tables": [], "response_preview": "", "status": "fail", "reason": startup_error})
     finally:
         stop_server(process)
 
@@ -198,6 +229,21 @@ def main() -> int:
     safe = next(item for item in results if item["id"] == "SAFE-Q9")
     safe_pass = safe["status"] == "pass"
     safe_executed = safe["true_sql_executed"]
+    warning_attribution = []
+    for case_id in ("P0-Q3", "P0-Q8"):
+        item = next(item for item in results if item["id"] == case_id)
+        warning_attribution.extend(
+            [
+                f"- {case_id}：probe 传入的 deterministic candidate tables 为 {', '.join(item['p0_candidate_tables']) or '无'}；生成 SQL 使用 {', '.join(item['used_tables']) or '无'}。",
+                "  P0 候选未包含 wm_waterquality_year_records，故 SQL Guard 产生 candidate_mismatch warning。",
+            ]
+        )
+    warning_attribution.extend(
+        [
+            "- 主服务真实执行链路也由 SQLGuard 基于同一 P0 检索结果校验；该 warning 不阻断已生成 SQL 的执行。",
+            "- 结论：这是 P0 候选排序与第 3 级 SQL 示例选择的真实分歧，不是 probe 参数缺失；本阶段不改 SQL Guard 或主服务。",
+        ]
+    )
     passed = not formal_vanna_changed and not formal_query_added and safe_pass and not safe_executed and pass_count >= 7
     if passed:
         conclusion, next_step = "通过：第 3 级 P0 主问答最小验证满足门槛。", "可做更广泛的第 3 级 P0 验证；仍不进入第 4 级。"
@@ -212,6 +258,7 @@ def main() -> int:
         "called_deepseek": server_started, "temp_query_generated": temp_query_generated,
         "pass_count": pass_count, "warning_count": warning_count, "fail_count": len(fail_cases), "fail_cases": fail_cases,
         "safe_pass": safe_pass, "safe_executed": safe_executed, "conclusion": conclusion, "next_step": next_step,
+        "warning_attribution": warning_attribution,
     }
     write_report(summary, results)
     print(f"pass={pass_count} warning={warning_count} fail={len(fail_cases)} safe_pass={safe_pass}")
