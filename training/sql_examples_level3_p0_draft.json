@@ -1,0 +1,381 @@
+[
+  {
+    "id": "L3_P0_SQL_001",
+    "group": "A",
+    "priority": "P0",
+    "question": "查看某站点年度水质趋势",
+    "sql": "SELECT station_id, monitor_year, m2_value, m3_value, m8_value, m9_value, water_quality_level\nFROM wm_waterquality_year_records\nWHERE station_id = 1408 AND monitor_year >= 2020\nORDER BY monitor_year\nLIMIT 20",
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m2_value",
+      "wm_waterquality_year_records.m3_value",
+      "wm_waterquality_year_records.m8_value",
+      "wm_waterquality_year_records.m9_value",
+      "wm_waterquality_year_records.water_quality_level"
+    ],
+    "business_intent": "年度水质趋势：训练模型使用 wm_waterquality_year_records 查询年度粒度水质核心指标变化。",
+    "risk_notes": "避免误用 wm_waterquality_threshold；避免退化到 day/hour/month records；station_id=1408 和 monitor_year>=2020 仅为示例条件。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_002",
+    "group": "A",
+    "priority": "P0",
+    "question": "某站点年度水质各指标汇总",
+    "sql": "SELECT station_id, monitor_year, m1_value, m2_value, m3_value, m4_value, m5_value, m8_value, m9_value, m10_value, water_quality_level\nFROM wm_waterquality_year_records\nWHERE station_id = 1408 AND monitor_year >= 2020\nORDER BY monitor_year\nLIMIT 20",
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m1_value",
+      "wm_waterquality_year_records.m2_value",
+      "wm_waterquality_year_records.m3_value",
+      "wm_waterquality_year_records.m4_value",
+      "wm_waterquality_year_records.m5_value",
+      "wm_waterquality_year_records.m8_value",
+      "wm_waterquality_year_records.m9_value",
+      "wm_waterquality_year_records.m10_value",
+      "wm_waterquality_year_records.water_quality_level"
+    ],
+    "business_intent": "年度水质多指标汇总：训练模型在年度粒度上同时查询水温、pH、溶解氧、浊度、电导率、氨氮、总氮、化学需氧量等多指标。",
+    "risk_notes": "仅选择有明确业务含义的 m1~m10 指标，不暴露 m11~m28 未确认语义字段；station_id=1408 仅为示例。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_003",
+    "group": "A",
+    "priority": "P0",
+    "question": "对比两个站点的pH和溶解氧年度变化",
+    "sql": "SELECT station_id, monitor_year, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_year_records\nWHERE station_id IN (1408, 1409) AND monitor_year >= 2020\nORDER BY station_id, monitor_year\nLIMIT 40",
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m2_value",
+      "wm_waterquality_year_records.m3_value",
+      "wm_waterquality_year_records.water_quality_level"
+    ],
+    "business_intent": "多站点对比：训练模型使用 IN 条件同时对多个站点的年度水质指标做横向对比。",
+    "risk_notes": "station_id IN (1408, 1409) 仅为示例，不表示只支持这两个站点；LIMIT 40 考虑两站点×20年的数据量。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_004",
+    "group": "A",
+    "priority": "P0",
+    "question": "查询年度水质pH均值最优站点排名",
+    "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE monitor_year = 2025 AND m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m2_value",
+      "wm_waterquality_year_records.water_quality_level"
+    ],
+    "business_intent": "站点排名：训练模型使用聚合函数 AVG 和 GROUP BY 对站点年度水质指标做排序排名。",
+    "risk_notes": "monitor_year=2025 仅为示例年份；AVG + GROUP BY 是合法聚合操作，SQL Guard 不拦截；以 pH 均值降序表示最优站点。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_005",
+    "group": "A",
+    "priority": "P0",
+    "question": "查询年度水质较差站点排名",
+    "sql": "SELECT station_id, monitor_year, m8_value, m9_value, m10_value, water_quality_level\nFROM wm_waterquality_year_records\nWHERE monitor_year = 2025 AND water_quality_level IN ('V', '劣V')\nORDER BY m10_value DESC\nLIMIT 20",
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m8_value",
+      "wm_waterquality_year_records.m9_value",
+      "wm_waterquality_year_records.m10_value",
+      "wm_waterquality_year_records.water_quality_level"
+    ],
+    "business_intent": "水质较差站点筛选：训练模型使用 WHERE water_quality_level IN 条件筛选特定等级站点，按化学需氧量降序展示较差站点。",
+    "risk_notes": "water_quality_level 值使用 V 和 劣V 为 metadata 中存在的等级值；monitor_year=2025 仅为示例。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_006",
+    "group": "A",
+    "priority": "P0",
+    "question": "查询某站点水质月趋势中的氨氮和总氮",
+    "sql": "SELECT station_id, monitor_year, monitor_month, m8_value, m9_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 36",
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_month_records.station_id",
+      "wm_waterquality_month_records.monitor_year",
+      "wm_waterquality_month_records.monitor_month",
+      "wm_waterquality_month_records.m8_value",
+      "wm_waterquality_month_records.m9_value",
+      "wm_waterquality_month_records.water_quality_level"
+    ],
+    "business_intent": "月趋势扩展：在第 2 级月趋势基础上扩展氨氮(m8)和总氮(m9)指标，训练月表多指标选择。",
+    "risk_notes": "m8_value=氨氮监测值、m9_value=总氮监测值已在 metadata 中确认；LIMIT 36 覆盖 3 年×12 月；不退化到 day/hour records。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_007",
+    "group": "A",
+    "priority": "P0",
+    "question": "查看某站点pH和溶解氧在最近12个月的变化趋势",
+    "sql": "SELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 24",
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_month_records.station_id",
+      "wm_waterquality_month_records.monitor_year",
+      "wm_waterquality_month_records.monitor_month",
+      "wm_waterquality_month_records.m2_value",
+      "wm_waterquality_month_records.m3_value",
+      "wm_waterquality_month_records.water_quality_level"
+    ],
+    "business_intent": "最近12个月趋势：训练模型使用月表查询 pH(m2) 和溶解氧(m3) 的跨年月变化。",
+    "risk_notes": "问题中「最近12个月」在 SQL 中通过 monitor_year>=2025 + LIMIT 24 表达，固定年份为避免模型学到硬编码年份；不退化到 year records。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_008",
+    "group": "A",
+    "priority": "P0",
+    "question": "某站点不同水质等级在月记录中的分布",
+    "sql": "SELECT station_id, water_quality_level, COUNT(*) AS record_count\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025 AND water_quality_level IS NOT NULL\nGROUP BY station_id, water_quality_level\nORDER BY COUNT(*) DESC\nLIMIT 10",
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_month_records.monitor_year",
+      "wm_waterquality_month_records.station_id",
+      "wm_waterquality_month_records.water_quality_level"
+    ],
+    "business_intent": "等级分布统计：训练模型使用 GROUP BY + COUNT 对月记录按水质等级做分布统计。",
+    "risk_notes": "COUNT 聚合合法，SQL Guard 不拦截；不退化到 day/hour/year records；water_quality_level IS NOT NULL 过滤缺失数据。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_009",
+    "group": "A",
+    "priority": "P0",
+    "question": "某站点年度水温变化趋势",
+    "sql": "SELECT station_id, monitor_year, m1_value, water_quality_level\nFROM wm_waterquality_year_records\nWHERE station_id = 1408 AND monitor_year >= 2020 AND m1_value IS NOT NULL\nORDER BY monitor_year\nLIMIT 20",
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m1_value",
+      "wm_waterquality_year_records.water_quality_level"
+    ],
+    "business_intent": "年度水温趋势：训练模型使用 year_records 查询水温(m1_value)年度变化，作为单指标专项趋势示例。",
+    "risk_notes": "m1_value=水温监测值已确认；避免退化到 day/hour/month records；注意区分水温与气温。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_010",
+    "group": "A",
+    "priority": "P0",
+    "question": "某站点年度化学需氧量变化趋势",
+    "sql": "SELECT station_id, monitor_year, m10_value, water_quality_level\nFROM wm_waterquality_year_records\nWHERE station_id = 1408 AND monitor_year >= 2020 AND m10_value IS NOT NULL\nORDER BY monitor_year\nLIMIT 20",
+    "expected_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m10_value",
+      "wm_waterquality_year_records.water_quality_level"
+    ],
+    "business_intent": "年度化学需氧量趋势：训练模型使用 year_records 查询化学需氧量(m10_value)年度变化。",
+    "risk_notes": "m10_value=化学需氧量监测值已确认；避免误用 m12_value；不退化到其他粒度表。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_011",
+    "group": "B",
+    "priority": "P0",
+    "question": "查看某站点日记录中pH值最高的记录",
+    "sql": "SELECT station_id, monitor_time, m2_value, water_quality_level\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL\nORDER BY m2_value DESC\nLIMIT 5",
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.m2_value",
+      "wm_waterquality_day_records.water_quality_level"
+    ],
+    "business_intent": "极值查询：训练模型使用 ORDER BY DESC + LIMIT 查找指标极值记录，处理最高/最大类语义。",
+    "risk_notes": "ORDER BY m2_value DESC 合法；不涉及 wm_waterquality_threshold；pH 极值只选取前 5 条。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_012",
+    "group": "B",
+    "priority": "P0",
+    "question": "查看某站点日记录中pH值最低的记录",
+    "sql": "SELECT station_id, monitor_time, m2_value, water_quality_level\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL\nORDER BY m2_value ASC\nLIMIT 5",
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.m2_value",
+      "wm_waterquality_day_records.water_quality_level"
+    ],
+    "business_intent": "极值查询(最低)：训练模型使用 ORDER BY ASC + LIMIT 查找指标最小值记录，处理最低/最小类语义。",
+    "risk_notes": "ORDER BY m2_value ASC 合法；与 L3_P0_SQL_011 成对覆盖最高和最低两种极值问法。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_013",
+    "group": "B",
+    "priority": "P0",
+    "question": "某站点小时记录中溶解氧偏低的时段",
+    "sql": "SELECT station_id, monitor_time, m3_value, water_quality_level\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408 AND monitor_time >= '2026-01-01' AND m3_value < 5.0\nORDER BY monitor_time\nLIMIT 50",
+    "expected_tables": [
+      "wm_waterquality_hour_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_hour_records.station_id",
+      "wm_waterquality_hour_records.monitor_time",
+      "wm_waterquality_hour_records.m3_value",
+      "wm_waterquality_hour_records.water_quality_level"
+    ],
+    "business_intent": "阈值过滤查询：训练模型使用 < 比较运算符筛选低于阈值的记录，处理偏低/低于类比较语义。",
+    "risk_notes": "m3_value < 5.0 中 5.0 仅为示例阈值，不暗示实际溶解氧标准；不退化到 day/month records。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_014",
+    "group": "B",
+    "priority": "P0",
+    "question": "对比多个水质指标在某站点的日平均值",
+    "sql": "SELECT station_id, AVG(m2_value) AS avg_ph, AVG(m3_value) AS avg_do, AVG(m4_value) AS avg_turbidity, AVG(m5_value) AS avg_conductivity\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND monitor_time >= '2026-01-01' AND m2_value IS NOT NULL\nGROUP BY station_id\nLIMIT 10",
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_day_records.m2_value",
+      "wm_waterquality_day_records.m3_value",
+      "wm_waterquality_day_records.m4_value",
+      "wm_waterquality_day_records.m5_value",
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.station_id"
+    ],
+    "business_intent": "多指标均值对比：训练模型使用 AVG 聚合函数对多个水质指标同时计算日均值，处理平均值/均值类语义。",
+    "risk_notes": "AVG 是 SQL Guard 允许的聚合函数；使用 AS 别名使输出更具可读性；不退化到 hour/month/year records。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_015",
+    "group": "B",
+    "priority": "P0",
+    "question": "查询某站点最近一个月各水质等级天数统计",
+    "sql": "SELECT station_id, water_quality_level, COUNT(*) AS day_count\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND monitor_time >= '2026-06-01' AND monitor_time < '2026-07-01' AND water_quality_level IS NOT NULL\nGROUP BY station_id, water_quality_level\nORDER BY COUNT(*) DESC\nLIMIT 10",
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.water_quality_level"
+    ],
+    "business_intent": "时间范围聚合统计：训练模型在指定时间窗口内按水质等级做 COUNT 聚合，处理最近一个月/各等级分布类语义。",
+    "risk_notes": "使用固定日期范围 2026-06-01 ~ 2026-07-01 表达最近一个月；不退化到 hour/month records；water_quality_level IS NOT NULL 过滤空值。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_016",
+    "group": "B",
+    "priority": "P0",
+    "question": "某站点日记录中水质等级为劣V类的记录",
+    "sql": "SELECT station_id, monitor_time, m2_value, m3_value, m8_value, water_quality_level\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND water_quality_level = '劣V' AND monitor_time >= '2026-01-01'\nORDER BY monitor_time DESC\nLIMIT 50",
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.m2_value",
+      "wm_waterquality_day_records.m3_value",
+      "wm_waterquality_day_records.m8_value",
+      "wm_waterquality_day_records.water_quality_level"
+    ],
+    "business_intent": "等级筛选查询：训练模型使用 WHERE water_quality_level = 精确值筛选特定等级记录，处理劣V类/某等级类筛选语义。",
+    "risk_notes": "water_quality_level=劣V 为 metadata 中存在的等级值；不退化到 wm_waterquality_threshold；注意劣V中文编码问题。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_017",
+    "group": "B",
+    "priority": "P0",
+    "question": "查询月度水质达标站点列表",
+    "sql": "SELECT station_id, monitor_year, monitor_month, water_quality_level\nFROM wm_waterquality_month_records\nWHERE monitor_year = 2025 AND monitor_month = 6 AND water_quality_level IN ('I', 'II', 'III')\nORDER BY station_id\nLIMIT 50",
+    "expected_tables": [
+      "wm_waterquality_month_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_month_records.station_id",
+      "wm_waterquality_month_records.monitor_year",
+      "wm_waterquality_month_records.monitor_month",
+      "wm_waterquality_month_records.water_quality_level"
+    ],
+    "business_intent": "达标筛选：训练模型使用 WHERE water_quality_level IN 多值筛选达标等级（I/II/III 类），处理达标/合格类语义。",
+    "risk_notes": "water_quality_level IN (I, II, III) 表示达标等级（I~III 类为优良），不意味着实际水质标准；固定年份和月份仅为示例。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  },
+  {
+    "id": "L3_P0_SQL_018",
+    "group": "B",
+    "priority": "P0",
+    "question": "某站点日记录中氨氮值最高的记录",
+    "sql": "SELECT station_id, monitor_time, m8_value, water_quality_level\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m8_value IS NOT NULL\nORDER BY m8_value DESC\nLIMIT 5",
+    "expected_tables": [
+      "wm_waterquality_day_records"
+    ],
+    "expected_columns": [
+      "wm_waterquality_day_records.station_id",
+      "wm_waterquality_day_records.monitor_time",
+      "wm_waterquality_day_records.m8_value",
+      "wm_waterquality_day_records.water_quality_level"
+    ],
+    "business_intent": "氨氮极值查询：训练模型在日表上查询氨氮(m8_value)最高记录，作为单指标极值示例。",
+    "risk_notes": "m8_value=氨氮监测值已确认；ORDER BY m8_value DESC 合法；SQL Guard 不拦截比较运算符。",
+    "train_decision": "draft",
+    "review_status": "pending_static_check"
+  }
+]
