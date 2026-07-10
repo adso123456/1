@@ -15,6 +15,7 @@ from agent_config import DB_KWARGS, create_memory
 from tools.guarded_run_sql_tool import GuardedRunSqlTool
 from tools.metadata_context_enhancer import DeterministicMetadataContextEnhancer
 from tools.metadata_retriever import DeterministicMetadataRetriever
+from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
 from tools.sql_guard import SQLGuard
 from vanna import Agent, AgentConfig
 from vanna.core.system_prompt.default import DefaultSystemPromptBuilder
@@ -136,23 +137,40 @@ def create_agent():
     tool_registry = ToolRegistry()
     file_system = LocalFileSystem(working_directory=AGENT_DATA_DIR)
     raw_run_sql_tool = RunSqlTool(sql_runner=pg_runner, file_system=file_system)
+    # GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用同一个 SQLGuard 实例
+    sql_guard = SQLGuard()
     tool_registry.register_local_tool(
         GuardedRunSqlTool(
             inner_tool=raw_run_sql_tool,
-            sql_guard=SQLGuard(),
+            sql_guard=sql_guard,
         ),
         access_groups=[],
     )
-    print("创建 Agent (确定性元数据 + DefaultLlmContextEnhancer 注入检索记忆)...")
+    print("创建 Agent (确定性元数据 + SQL示例上下文 + DefaultLlmContextEnhancer 注入检索记忆)...")
+
+    # 第1层：Vanna 默认 context enhancer（DDL/文档检索注入）
+    default_enhancer = DefaultLlmContextEnhancer(memory)
+
+    # 第2层：确定性元数据 context enhancer（P0 候选表+字段）
+    deterministic_enhancer = DeterministicMetadataContextEnhancer(
+        base_enhancer=default_enhancer,
+        metadata_retriever=DeterministicMetadataRetriever(),
+    )
+
+    # 第3层：SQL 示例 context enhancer（L2 approved SQL 示例注入到 system prompt）
+    llm_context_enhancer = SqlExampleContextEnhancer(
+        base_enhancer=deterministic_enhancer,
+        memory=memory,
+        sql_guard=sql_guard,
+        top_k=5,
+    )
+
     agent = Agent(
         llm_service=llm,
         tool_registry=tool_registry,
         user_resolver=SimpleUserResolver(),
         agent_memory=memory,
-        llm_context_enhancer=DeterministicMetadataContextEnhancer(
-            base_enhancer=DefaultLlmContextEnhancer(memory),
-            metadata_retriever=DeterministicMetadataRetriever(),
-        ),
+        llm_context_enhancer=llm_context_enhancer,
         config=AgentConfig(stream_responses=True),
         system_prompt_builder=OptimizedSystemPromptBuilder(),
     )
