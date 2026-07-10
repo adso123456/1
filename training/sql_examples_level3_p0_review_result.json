@@ -47,7 +47,7 @@
   {
     "id": "L3_P0_SQL_004",
     "group": "A",
-    "question": "查询年度水质pH均值最优站点排名",
+    "question": "查询年度pH年均值最高的站点列表",
     "expected_tables": [
       "wm_waterquality_year_records"
     ],
@@ -92,7 +92,7 @@
   {
     "id": "L3_P0_SQL_007",
     "group": "A",
-    "question": "查看某站点pH和溶解氧在最近12个月的变化趋势",
+    "question": "查看某站点近两年pH和溶解氧月变化趋势",
     "expected_tables": [
       "wm_waterquality_month_records"
     ],
@@ -182,7 +182,7 @@
   {
     "id": "L3_P0_SQL_013",
     "group": "B",
-    "question": "某站点小时记录中溶解氧偏低的时段",
+    "question": "查询某站点小时记录中溶解氧低于5.0mg/L的时段",
     "expected_tables": [
       "wm_waterquality_hour_records"
     ],
@@ -242,7 +242,7 @@
   {
     "id": "L3_P0_SQL_017",
     "group": "B",
-    "question": "查询月度水质达标站点列表",
+    "question": "查询月度水质为I至III类的站点列表",
     "expected_tables": [
       "wm_waterquality_month_records"
     ],
