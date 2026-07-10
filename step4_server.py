@@ -110,7 +110,11 @@ if not DEEPSEEK_API_KEY:
 
 class SimpleUserResolver(UserResolver):
     async def resolve_user(self, request_context: RequestContext):
-        return User(id="demo", username="demo")
+        return User(
+            id="demo",
+            username="demo",
+            metadata=dict(request_context.metadata or {}),
+        )
 
 
 def create_agent():

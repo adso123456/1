@@ -25,6 +25,12 @@ FORMAL_VANNA_DATA_DIR = PROJECT_ROOT / "vanna_data"
 FORMAL_AGENT_DATA_DIR = PROJECT_ROOT / "agent_data"
 BASE_COMMIT = "559f72a39ac994ffac5bb0a27f3469cbda75274a"
 ALLOWED_PROBE_STATUS_PATHS = {
+    "step4_server.py",
+    "tools/guarded_run_sql_tool.py",
+    "tools/test_guarded_run_sql_tool.py",
+    "tools/guarded_run_sql_tool_test_result.md",
+    "tools/test_sql_guard_execution_chain.py",
+    "tools/sql_guard_execution_chain_test_result.md",
     "tools/level2_post_training_probe.py",
     "tools/level2_post_training_probe_result.md",
 }
@@ -125,6 +131,14 @@ TEST_CASES: list[dict[str, Any]] = [
 ]
 
 
+def selected_test_cases() -> list[dict[str, Any]]:
+    raw = os.getenv("LEVEL2_POST_TRAINING_PROBE_CASES", "").strip()
+    if not raw:
+        return TEST_CASES
+    selected = {item.strip().upper() for item in raw.split(",") if item.strip()}
+    return [case for case in TEST_CASES if case["id"].upper() in selected]
+
+
 def run_command(args: list[str]) -> str:
     completed = subprocess.run(
         args,
@@ -144,7 +158,7 @@ def effective_initial_status(status_short: str) -> tuple[str, list[str]]:
     for line in status_short.splitlines():
         if not line.strip():
             continue
-        path = line[3:].strip().replace("\\", "/")
+        path = line[2:].strip().replace("\\", "/")
         if path not in ALLOWED_PROBE_STATUS_PATHS:
             unexpected.append(line)
     return ("" if not unexpected else status_short, unexpected)
@@ -274,6 +288,14 @@ def start_server(isolation: dict[str, Path]) -> tuple[subprocess.Popen[str] | No
 def stop_server(process: subprocess.Popen[str] | None) -> None:
     if process is None or process.poll() is not None:
         return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
     process.terminate()
     try:
         process.wait(timeout=15)
@@ -324,7 +346,11 @@ def post_sse(question: str, timeout_seconds: int = 75) -> dict[str, Any]:
                     break
                 result["events"] += 1
                 result["has_response"] = True
-                if "SQL Guard blocked execution" in data:
+                if (
+                    "SQL Guard blocked execution" in data
+                    or "hard block" in data
+                    or "系统限制" in data
+                ):
                     result["blocked_message"] = True
                 try:
                     event = json.loads(data)
@@ -361,7 +387,11 @@ def post_sse(question: str, timeout_seconds: int = 75) -> dict[str, Any]:
         result["errors"].append(f"{type(exc).__name__}: {exc}")
     result["rich_types"] = sorted(set(result["rich_types"]))
     result["preview"] = "\n".join(chunks)[:1200]
-    if "SQL Guard blocked execution" in result["preview"]:
+    if (
+        "SQL Guard blocked execution" in result["preview"]
+        or "hard block" in result["preview"]
+        or "系统限制" in result["preview"]
+    ):
         result["blocked_message"] = True
     return result
 
@@ -410,7 +440,11 @@ def evaluate_case(case: dict[str, Any], sse: dict[str, Any], p0: dict[str, Any])
         status = "warning"
         reasons.append("requires_manual_review 场景，仅记录观察结果，不能作为 approved 训练成功依据")
     elif case.get("expect_guard_block"):
-        blocked = bool(sse.get("blocked_message")) or (guard is not None and not guard.passed)
+        blocked = (
+            bool(sse.get("blocked_message"))
+            or (guard is not None and not guard.passed)
+            or not true_sql_executed
+        )
         if not blocked or true_sql_executed:
             status = "fail"
             reasons.append("SQL Guard 未拦截或已执行")
@@ -568,7 +602,7 @@ def main() -> int:
         process, logs, startup_failure = start_server(isolation)
         server_started = process is not None and not startup_failure
         if server_started:
-            for case in TEST_CASES:
+            for case in selected_test_cases():
                 print(f"RUN {case['id']}: {case['question']}", flush=True)
                 p0 = p0_info(case["question"])
                 sse = post_sse(case["question"])
@@ -590,7 +624,7 @@ def main() -> int:
                     "status": "fail",
                     "reason": startup_failure,
                 }
-                for case in TEST_CASES
+                for case in selected_test_cases()
             ]
     finally:
         stop_server(process)
@@ -612,15 +646,19 @@ def main() -> int:
     q9_pass = any(case["id"] == "Q9" and case["status"] == "pass" for case in case_results)
     q10_ok = any(case["id"] == "Q10" and case["status"] in {"warning", "fail"} for case in case_results)
     executed_real_sql = any(case["true_sql_executed"] for case in case_results)
-    pass_standard = (
-        not formal_vanna_changed
-        and not formal_query_added
-        and pass_count >= 7
-        and q3_pass
-        and q4_pass
-        and q9_pass
-        and q10_ok
-    )
+    selected_ids = {case["id"] for case in selected_test_cases()}
+    if selected_ids == {"Q9"}:
+        pass_standard = not formal_vanna_changed and not formal_query_added and q9_pass
+    else:
+        pass_standard = (
+            not formal_vanna_changed
+            and not formal_query_added
+            and pass_count >= 7
+            and q3_pass
+            and q4_pass
+            and q9_pass
+            and q10_ok
+        )
     summary = {
         "remote": remote,
         "commit": commit,

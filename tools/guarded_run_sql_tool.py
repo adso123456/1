@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Type
 
 from vanna.capabilities.sql_runner import RunSqlToolArgs
@@ -33,33 +34,32 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
 
     async def execute(self, context: ToolContext, args: RunSqlToolArgs) -> ToolResult:
         sql = getattr(args, "sql", "")
-        query = self._extract_query(context, args)
+        query, query_source = self._extract_query(context, args)
+        if self._is_hard_blocked_context(context):
+            guard_result = self._make_hard_block_result(sql, "同一问题已触发 SQL Guard hard block")
+            return self._blocked_result(guard_result, query_source=query_source)
+
+        if self._is_threshold_trend_request(query):
+            guard_result = self._make_hard_block_result(
+                sql,
+                "用户问题要求使用 wm_waterquality_threshold 回答水质趋势，禁止执行任何 SQL",
+            )
+            self._mark_hard_blocked_context(context)
+            return self._blocked_result(guard_result, query_source=query_source)
+
         guard_result = self.sql_guard.validate(sql=sql, query=query)
+        if guard_result.passed and query_source == "missing" and self._should_block_missing_query_threshold_sql(sql):
+            guard_result = self.sql_guard.validate(sql=sql, query="水质趋势")
 
         if not guard_result.passed:
-            message = self._format_block_message(guard_result)
-            return ToolResult(
-                success=False,
-                result_for_llm=message,
-                ui_component=UiComponent(
-                    rich_component=NotificationComponent(
-                        type=ComponentType.NOTIFICATION,
-                        level="error",
-                        message=message,
-                    ),
-                    simple_component=SimpleTextComponent(text=message),
-                ),
-                error=message,
-                metadata={
-                    "sql_guard": guard_result.to_dict(),
-                    "blocked_by_sql_guard": True,
-                },
-            )
+            self._mark_hard_blocked_context(context)
+            return self._blocked_result(guard_result, query_source=query_source)
 
         result = await self.inner_tool.execute(context, args)
         result.metadata = dict(result.metadata or {})
         result.metadata["sql_guard"] = guard_result.to_dict()
         result.metadata["blocked_by_sql_guard"] = False
+        result.metadata["query_source"] = query_source
 
         if guard_result.severity == "warning":
             warning = self._format_warning_message(guard_result)
@@ -68,7 +68,28 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
 
         return result
 
-    def _extract_query(self, context: ToolContext, args: RunSqlToolArgs) -> str:
+    def _blocked_result(self, guard_result: SQLGuardResult, *, query_source: str) -> ToolResult:
+        message = self._format_block_message(guard_result, query_source=query_source)
+        return ToolResult(
+            success=False,
+            result_for_llm=message,
+            ui_component=UiComponent(
+                rich_component=NotificationComponent(
+                    type=ComponentType.NOTIFICATION,
+                    level="error",
+                    message=message,
+                ),
+                simple_component=SimpleTextComponent(text=message),
+            ),
+            error=message,
+            metadata={
+                "sql_guard": guard_result.to_dict(),
+                "blocked_by_sql_guard": True,
+                "query_source": query_source,
+            },
+        )
+
+    def _extract_query(self, context: ToolContext, args: RunSqlToolArgs) -> tuple[str, str]:
         metadata = getattr(context, "metadata", None) or {}
         for key in (
             "query",
@@ -79,7 +100,24 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
         ):
             value = metadata.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return value.strip(), f"metadata.{key}"
+
+        user_metadata = getattr(getattr(context, "user", None), "metadata", None) or {}
+        for key in (
+            "query",
+            "question",
+            "user_question",
+            "original_question",
+            "last_user_message",
+        ):
+            value = user_metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip(), f"user.metadata.{key}"
+
+        for attr in ("message", "last_user_message", "user_message"):
+            value = getattr(context, attr, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip(), f"context.{attr}"
 
         args_dict: dict[str, Any] = {}
         if hasattr(args, "model_dump"):
@@ -90,14 +128,57 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
         for key in ("query", "question", "user_question"):
             value = args_dict.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return value.strip(), f"args.{key}"
 
-        return ""
+        return "", "missing"
 
-    def _format_block_message(self, guard_result: SQLGuardResult) -> str:
+    def _should_block_missing_query_threshold_sql(self, sql: str) -> bool:
+        normalized = re.sub(r"\s+", " ", sql).lower()
+        if not re.search(r"\bwm_waterquality_threshold\b", normalized):
+            return False
+        return bool(
+            re.search(
+                r"select\s+\*|\bm\d+_value\b|\bstation_id\b|\bmonitor_\w+\b|\border\s+by\b|\blimit\b|\b(count|min|max|avg|sum)\s*\(",
+                normalized,
+            )
+        )
+
+    def _is_threshold_trend_request(self, query: str) -> bool:
+        normalized = query.lower()
+        return (
+            "wm_waterquality_threshold" in normalized
+            and "水质" in query
+            and any(word in query for word in ("趋势", "变化", "时间段"))
+        )
+
+    def _make_hard_block_result(self, sql: str, reason: str) -> SQLGuardResult:
+        probe_result = self.sql_guard.validate(sql=sql, query="")
+        return SQLGuardResult(
+            passed=False,
+            severity="error",
+            used_tables=probe_result.used_tables,
+            used_columns=probe_result.used_columns,
+            unknown_tables=probe_result.unknown_tables,
+            unknown_columns=probe_result.unknown_columns,
+            forbidden_operations=probe_result.forbidden_operations,
+            candidate_mismatch=probe_result.candidate_mismatch,
+            reason=reason,
+        )
+
+    def _is_hard_blocked_context(self, context: ToolContext) -> bool:
+        metadata = getattr(context, "metadata", None)
+        return isinstance(metadata, dict) and metadata.get("sql_guard_hard_blocked") is True
+
+    def _mark_hard_blocked_context(self, context: ToolContext) -> None:
+        metadata = getattr(context, "metadata", None)
+        if isinstance(metadata, dict):
+            metadata["sql_guard_hard_blocked"] = True
+
+    def _format_block_message(self, guard_result: SQLGuardResult, *, query_source: str) -> str:
         return "\n".join(
             [
                 "SQL Guard blocked execution",
+                f"query_source: {query_source}",
                 f"severity: {guard_result.severity}",
                 f"used_tables: {', '.join(guard_result.used_tables) or 'none'}",
                 f"used_columns: {', '.join(guard_result.used_columns) or 'none'}",

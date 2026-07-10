@@ -35,6 +35,40 @@ TEST_CASES: list[dict[str, Any]] = [
         "sql": "SELECT * FROM wm_waterquality_threshold",
         "expected_pass": False,
         "expected_inner_called": False,
+        "expected_query_source": "metadata.query",
+    },
+    {
+        "name": "metadata original_question 拦截阈值表",
+        "metadata": {"original_question": "查询 wm_waterquality_threshold 中的水质趋势"},
+        "sql": "SELECT * FROM wm_waterquality_threshold LIMIT 50",
+        "expected_pass": False,
+        "expected_inner_called": False,
+        "expected_query_source": "metadata.original_question",
+    },
+    {
+        "name": "query 缺失时阈值趋势兜底拦截",
+        "metadata": {},
+        "sql": "SELECT * FROM wm_waterquality_threshold LIMIT 50",
+        "expected_pass": False,
+        "expected_inner_called": False,
+        "expected_query_source": "missing",
+    },
+    {
+        "name": "user metadata query 拦截阈值表",
+        "metadata": {},
+        "user_metadata": {"query": "查询 wm_waterquality_threshold 中的水质趋势"},
+        "sql": "SELECT * FROM wm_waterquality_threshold LIMIT 50",
+        "expected_pass": False,
+        "expected_inner_called": False,
+        "expected_query_source": "user.metadata.query",
+    },
+    {
+        "name": "阈值趋势问题改查日记录也阻断",
+        "query": "查询 wm_waterquality_threshold 中的水质趋势",
+        "sql": "SELECT monitor_time, water_quality_level FROM wm_waterquality_day_records ORDER BY monitor_time LIMIT 50",
+        "expected_pass": False,
+        "expected_inner_called": False,
+        "expected_query_source": "metadata.query",
     },
     {
         "name": "非法排污口溯源基础表",
@@ -92,10 +126,23 @@ TEST_CASES: list[dict[str, Any]] = [
         "expected_pass": False,
         "expected_inner_called": False,
     },
+    {
+        "name": "candidate mismatch warning 不阻断",
+        "query": "查询区域编码和区域名称",
+        "sql": "SELECT area_code, area_name FROM rs_outlet GROUP BY area_code, area_name LIMIT 50",
+        "expected_pass": True,
+        "expected_inner_called": True,
+        "expected_severity": "warning",
+    },
 ]
 
 
 class FakeContext(BaseModel):
+    metadata: dict[str, Any]
+    user: Any | None = None
+
+
+class FakeUser(BaseModel):
     metadata: dict[str, Any]
 
 
@@ -131,7 +178,10 @@ async def _run_one(case: dict[str, Any]) -> dict[str, Any]:
         inner_tool=fake_inner_tool,
         sql_guard=SQLGuard(),
     )
-    context = FakeContext(metadata={"query": case["query"]})
+    context = FakeContext(
+        metadata=case.get("metadata", {"query": case.get("query", "")}),
+        user=FakeUser(metadata=case["user_metadata"]) if "user_metadata" in case else None,
+    )
     result = await guarded_tool.execute(context, RunSqlToolArgs(sql=case["sql"]))
     inner_called = fake_inner_tool.call_count > 0
     actual_pass = result.success
@@ -142,17 +192,27 @@ async def _run_one(case: dict[str, Any]) -> dict[str, Any]:
         else True
     )
     has_guard_metadata = "sql_guard" in result.metadata
+    query_source_matches = result.metadata.get("query_source") == case.get(
+        "expected_query_source",
+        "metadata.query",
+    )
+    severity_matches = result.metadata.get("sql_guard", {}).get("severity") == case.get(
+        "expected_severity",
+        result.metadata.get("sql_guard", {}).get("severity"),
+    )
     wrong_inner_call = inner_called != case["expected_inner_called"]
     passed = (
         actual_pass == case["expected_pass"]
         and inner_called == case["expected_inner_called"]
         and blocked_message_present
         and has_guard_metadata
+        and query_source_matches
+        and severity_matches
     )
 
     return {
         "name": case["name"],
-        "query": case["query"],
+        "query": case.get("query") or case.get("metadata", {}).get("original_question", ""),
         "sql": case["sql"],
         "expected_pass": case["expected_pass"],
         "actual_pass": actual_pass,
@@ -161,6 +221,7 @@ async def _run_one(case: dict[str, Any]) -> dict[str, Any]:
         "wrong_inner_call": wrong_inner_call,
         "result_for_llm": result.result_for_llm,
         "guard_metadata": result.metadata.get("sql_guard", {}),
+        "query_source": result.metadata.get("query_source", ""),
         "pass": passed,
         "reason": "符合预期" if passed else "放行/拦截或返回结构不符合预期",
     }
@@ -265,6 +326,7 @@ def write_report(results: list[dict[str, Any]], summary: dict[str, Any]) -> None
                 f"- actual_pass：{_bool_text(result['actual_pass'])}",
                 f"- expected_inner_called：{_bool_text(result['expected_inner_called'])}",
                 f"- actual_inner_called：{_bool_text(result['actual_inner_called'])}",
+                f"- query_source：{result['query_source'] or 'missing'}",
                 f"- severity：{guard_metadata.get('severity', 'unknown')}",
                 f"- used_tables：{', '.join(guard_metadata.get('used_tables', [])) or '无'}",
                 f"- unknown_tables：{', '.join(guard_metadata.get('unknown_tables', [])) or '无'}",
