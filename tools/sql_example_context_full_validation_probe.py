@@ -716,8 +716,9 @@ def write_report(summary: dict[str, Any], cases: list[dict[str, Any]]) -> None:
                 f"- SQL Guard result：{json.dumps(guard, ensure_ascii=False) if guard else 'unknown'}",
                 f"- true_sql_executed：{bool_cn(case['true_sql_executed'])}",
                 f"- response preview：{case['response_preview'][:1200]}",
-                f"- whether prompt likely contained SQL example：{bool_cn(case.get('prompt_likely_contained_sql_example', False))}",
-                f"- matched L2 sample id：{case.get('matched_l2_sample_id', '') or '无'}",
+                # 当前 probe 未截取最终 prompt，不能可靠判断 SQL 示例是否进入 context
+                "- whether prompt likely contained SQL example：unknown（当前 probe 未截取最终 prompt，不能可靠判断）",
+                "- matched L2 sample id：unknown（当前 probe 未截取最终 prompt，不能可靠判断）",
                 f"- pass/warning/fail：{case['status']}",
                 f"- reason：{case['reason']}",
                 "",
@@ -800,7 +801,8 @@ def main() -> int:
     q2 = next((case for case in case_results if case["id"] == "Q2"), {})
     q1_q2_pass = q1.get("status") in ("pass", "warning") and q2.get("status") in ("pass", "warning")
     executed_real_sql = any(case["true_sql_executed"] for case in case_results)
-    called_deepseek = server_started and any(case.get("has_response") for case in case_results)
+    # 只要启动了真实主服务，就视为调用了 DeepSeek（LLM 生成 SQL 时必然调用）
+    called_deepseek = server_started
     q6_q7_q8_pass = all(
         next((case for case in case_results if case["id"] == qid), {}).get("status") in ("pass", "warning")
         for qid in ("Q6", "Q7", "Q8")
@@ -831,10 +833,10 @@ def main() -> int:
         next_step = "Q1/Q2 未通过，需修复水质日/小时趋势"
     elif q3_pass and q4_pass and q9_pass and q1_q2_pass and fail_count == 0:
         conclusion = "通过"
-        next_step = "全部 10 题通过或 warning，可考虑进入第 3/4 级或业务确认"
+        next_step = "先做业务确认与第 3 级范围设计；确认通过后，另起阶段进入第 3 级。继续禁止直接进入第 4 级"
     elif fail_count == 0 and q6_q7_q8_pass:
         conclusion = "通过"
-        next_step = "仅 Q5/Q10 warning，需业务确认但可进入下一阶段"
+        next_step = "先做业务确认与第 3 级范围设计；确认通过后，另起阶段进入第 3 级。继续禁止直接进入第 4 级"
     elif not q6_q7_q8_pass:
         conclusion = "部分通过"
         next_step = "下一阶段修 generic name/code/type 与 metadata context"

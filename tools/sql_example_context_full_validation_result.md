@@ -22,7 +22,7 @@ clean
 - 正式 agent_data/query_results_*.csv 是否新增：否
 - 是否连接数据库：是
 - 是否执行真实 SQL：是
-- 是否调用 DeepSeek：否
+- 是否调用 DeepSeek：是（真实验证阶段调用了 LLM/DeepSeek；本阶段收口不再调用）
 - 是否训练 Vanna：否
 - 是否调用 vn.train()：否
 - 是否写入正式 ChromaDB：否
@@ -39,7 +39,7 @@ clean
 - Q9 是否通过：是
 - Q9 true_sql_executed：否
 - 当前结论：通过
-- 下一阶段建议：全部 10 题通过或 warning，可考虑进入第 3/4 级或业务确认
+- 下一阶段建议：先做业务确认与第 3 级范围设计；确认通过后，另起阶段进入第 3 级。继续禁止直接进入第 4 级
 
 ## 正式 vanna_data 指纹
 
@@ -69,8 +69,8 @@ LIMIT 100
 {"sql": "\nSELECT station_id, monitor_time, m2_value, m3_value\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL AND m3_value IS NOT NULL\nORDER BY monitor_time\nLIMIT 100\n", "data": [{"station_id": 1408, "monitor_time": "2025-09-10T19:00:00", "m2_value": 7.567, "m3_value": 6.082}, {"station_id": 1408, "monitor_time": "2025-09-11T18:00:00", "m2_value": 7.541, "m3_value": 5.952}, {"station_id": 1408, "monitor_time": "2025-09-12T18:00:00", "m2_value": 7.549, "m3_
 {"status": "idle", "message": "Response complete", "detail": "Ready for next message"}
 {"
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期
 
@@ -94,8 +94,8 @@ LIMIT 200
 {"operation": "update_task", "task": null, "task_id": "15e17a82-7b99-4dda-8318-376b297f55d7", "status": "completed", "progress": null, "detail": null}
 {"status": "working", "message": "针对\"某站点水质小时变化趋势\"，我先使用示例中的默认站点（ID=1408），拉取近期的小时级水质监测数据。", "detail": ""}
 {"sql": "\nSELECT station_id, monitor_time, m1_value, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408 AND monitor_time >= '2026-07-01'\nORDER BY monitor_time\nLIMIT 200\n", "data": [], "columns": [], "title": "Query Results", "description": "No rows returned", "row_count": 0, "column_count": 0, "max_rows_displayed": 100, "searchable": true, "sortable": true, "filterable": true, "exportable": true, "striped": true, "bordered": tr
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期
 
@@ -119,8 +119,8 @@ LIMIT 60
 {"operation": "update_task", "task": null, "task_id": "b19f49e0-2e34-4505-8693-05e4313fab41", "status": "completed", "progress": null, "detail": null}
 {"status": "working", "message": "用户提到\"某站点\"，但没有指定具体站点ID。我将参考SQL示例，使用示例中的站点（station_id=1408）来展示水质月变化趋势。让我为您查询。", "detail": ""}
 {"sql": "\nSELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 60\n", "data": [{"station_id": 1408, "monitor_year": 2026, "monitor_month": 3, "m2_value": 7.86, "m3_value": 9.38, "water_quality_level": "I"}, {"station_id": 1408, "monitor_year": 2026, "monitor_month": 5, "m2_value": 7.74, "m3_val
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期
 
@@ -144,8 +144,8 @@ LIMIT 50
 {"sql": "\nSELECT outlet_name, outlet_code, outlet_code_province\nFROM rs_outlet\nORDER BY outlet_name\nLIMIT 50\n", "data": [{"outlet_name": "七河里东北340米其它排口", "outlet_code": "", "outlet_code_province": ""}, {"outlet_name": "七河里东北410米其它排口", "outlet_code": "", "outlet_code_province": ""}, {"outlet_name": "七河里东北550米其它排口", "outlet_code": "", "outlet_code_province": ""}, {"outlet_name": "七河里东北600米其它排口", "outlet_code": "", "outlet_code_province": ""}, {"outlet_name": "七河里南490米其它排口", "outlet_code": "",
 {"status": "idle", "message": "Response complete", "detail": "Ready for next message"}
 {"
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期
 
@@ -169,8 +169,8 @@ LIMIT 50
 {"status": "working", "message": "我来为您查询排污口的基础信息。", "detail": ""}
 {"sql": "SELECT outlet_name, area_name, county_name, river_basin, outlet_address\nFROM rs_outlet\nORDER BY outlet_name\nLIMIT 50", "data": [{"outlet_name": "七河里东北340米其它排口", "area_name": "湾潭镇", "county_name": "五峰土家族自治县", "river_basin": "长江流域", "outlet_address": "七河里东北340米其它排口"}, {"outlet_name": "七河里东北410米其它排口", "area_name": "湾潭镇", "county_name": "五峰土家族自治县", "river_basin": "长江流域", "outlet_address": "七河里东北410米其它排口"}, {"outlet_name": "七河里东北550米其它排口", "area_name": "湾潭镇", "county_name": "五峰土家族自治县", "r
 {"status": "idle", "mes
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：使用了 rs_outlet，符合预期
 
@@ -194,8 +194,8 @@ LIMIT 50
 {"status": "working", "message": "我来为您查询站点名称和所属区域信息。", "detail": ""}
 {"sql": "\nSELECT station_code, station_name, region_code, region_name, station_type\nFROM wm_station_info_v2\nORDER BY station_name\nLIMIT 50\n", "data": [{"station_code": null, "station_name": "万家坝", "region_code": "420527", "region_name": "秭归县", "station_type": "1"}, {"station_code": "420500601132495", "station_name": "万寿桥", "region_code": "420503", "region_name": "宜昌市", "station_type": "1"}, {"station_code": "HBYC0012", "station_name": "下牢溪姜家庙站", "region_code": "420506", "region_name": "夷陵区"
 {"status": "idle", "
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期
 
@@ -219,8 +219,8 @@ LIMIT 100
 {"sql": "SELECT region_code, region_name, region_level, parent_code\nFROM gis_region\nORDER BY region_code\nLIMIT 100", "data": [{"region_code": "42", "region_name": "湖北省", "region_level": "1", "parent_code": "0"}, {"region_code": "4201", "region_name": "武汉市", "region_level": "2", "parent_code": "42"}, {"region_code": "420102", "region_name": "江岸区", "region_level": "3", "parent_code": "4201"}, {"region_code": "420102002", "region_name": "大智街道", "region_level": "4", "parent_code": "420102"}, {"re
 {"status": "idle", "message": "Response complete", "detail": "Ready for next message"}
 {"
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期
 
@@ -244,8 +244,8 @@ LIMIT 50
 {"sql": "\nSELECT name, region_name, city, county, water_type, code\nFROM wm_water_intake\nORDER BY name\nLIMIT 50\n", "data": [{"name": "七星台镇源泉水厂水源地", "region_name": "杨林桥镇", "city": "宜昌市", "county": "枝江市", "water_type": "河流型", "code": "FC0000420583107S0001"}, {"name": "三斗坪镇黛狮沟水源地", "region_name": "杨林桥镇", "city": "宜昌市", "county": "夷陵区", "water_type": "河流型", "code": "FC0000420506104S0010"}, {"name": "下堡坪乡黑滩坡水源地", "region_name": "杨林桥镇", "city": "宜昌市", "county": "夷陵区", "water_type": "河流型", "code": 
 {"status": "idle", "message": "Response complete", "detail": "Ready for next message"}
 {"
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期
 
@@ -268,8 +268,8 @@ LIMIT 50
 {"status": "idle", "message": "Response complete", "detail": "Ready for next message"}
 {"placeholder": "Ask a follow-up question...", "disabled": false, "value": null, "focus": null}
 {"content": "查询被系统安全策略阻止。总结情况如下：\n\n---\n\n### 查询结果说明\n\n**`wm_waterquality_threshold`** 表在当前数据库中**不可
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：pass
 - reason：符合预期：SQL Guard 已拦截
 
@@ -293,7 +293,7 @@ LIMIT 50
 {"status": "working", "message": "我需要先查询水源地取水口表的供水能力相关数据。让我尝试查询该表。", "detail": ""}
 {"sql": "\nSELECT name, region_name, city, county, water_type, code\nFROM wm_water_intake\nORDER BY name\nLIMIT 50\n", "data": [{"name": "七星台镇源泉水厂水源地", "region_name": "杨林桥镇", "city": "宜昌市", "county": "枝江市", "water_type": "河流型", "code": "FC0000420583107S0001"}, {"name": "三斗坪镇黛狮沟水源地", "region_name": "杨林桥镇", "city": "宜昌市", "county": "夷陵区", "water_type": "河流型", "code": "FC0000420506104S0010"}, {"name": "下堡坪乡黑滩坡水源地", "region_name": "杨林桥镇", "city": "宜昌市", "county": "夷陵区", "water_type": "河流型", "code": 
 {"stat
-- whether prompt likely contained SQL example：否
-- matched L2 sample id：无
+- whether prompt likely contained SQL example：unknown
+- matched L2 sample id：unknown
 - pass/warning/fail：warning
 - reason：requires_manual_review 场景，仅记录观察结果，不能作为 approved 训练成功依据
