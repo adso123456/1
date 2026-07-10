@@ -9,6 +9,11 @@ from vanna.core.enhancer import LlmContextEnhancer
 
 from tools.sql_guard import SQLGuard
 
+ALLOWED_TRAINING_LEVELS = {
+    "level2_sql_examples",
+    "level3_p0_sql_examples",
+}
+
 
 @dataclass
 class SqlExampleContextStats:
@@ -21,7 +26,7 @@ class SqlExampleContextStats:
 
 
 class SqlExampleContextEnhancer(LlmContextEnhancer):
-    """Append approved level-2 run_sql examples to the system prompt."""
+    """Append approved level-2 and level-3 P0 run_sql examples to the prompt."""
 
     def __init__(
         self,
@@ -111,8 +116,9 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
 
         if tool_name != "run_sql":
             return example, "tool_name is not run_sql"
-        if metadata.get("training_level") != "level2_sql_examples":
-            return example, "training_level is not level2_sql_examples"
+        training_level = metadata.get("training_level")
+        if training_level not in ALLOWED_TRAINING_LEVELS:
+            return example, f"training_level is not allowed: {training_level}"
         if metadata.get("train_decision") != "approved":
             return example, "train_decision is not approved"
         if not sample_id:
@@ -126,7 +132,15 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
         if self._has_select_star(sql):
             return example, "sql contains SELECT *"
 
-        guard_result = self.sql_guard.validate(sql=sql, query=question or user_message)
+        expected_tables = metadata.get("expected_tables")
+        deterministic_candidate_tables = (
+            expected_tables if isinstance(expected_tables, list) else None
+        )
+        guard_result = self.sql_guard.validate(
+            sql=sql,
+            query=question or user_message,
+            deterministic_candidate_tables=deterministic_candidate_tables,
+        )
         if not guard_result.passed:
             return example, "SQL Guard failed: " + guard_result.reason
         if guard_result.severity != "ok":
@@ -168,4 +182,3 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
                 ]
             )
         return "\n".join(lines)
-

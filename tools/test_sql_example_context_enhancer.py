@@ -12,11 +12,16 @@ from typing import Any
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 REPORT_PATH = CURRENT_DIR / "sql_example_context_enhancer_test_result.md"
-BASE_COMMIT = "944590cdf80eff70b458353a9af0039ae522237b"
+BASE_COMMIT = "ca12e77ba24b3d12df0aeb0421094500caff3d3d"
 ALLOWED_STATUS_PATHS = {
     "tools/sql_example_context_enhancer.py",
     "tools/test_sql_example_context_enhancer.py",
     "tools/sql_example_context_enhancer_test_result.md",
+}
+ALLOWED_PREEXISTING_STATUS_PATHS = {
+    "vanna_data/68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
+    "vanna_data/68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
+    "vanna_data/chroma.sqlite3",
 }
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -52,9 +57,9 @@ def effective_status(status_short: str) -> tuple[str, list[str]]:
         if not line.strip():
             continue
         path = line[2:].strip().replace("\\", "/")
-        if path not in ALLOWED_STATUS_PATHS:
+        if path not in ALLOWED_STATUS_PATHS | ALLOWED_PREEXISTING_STATUS_PATHS:
             unexpected.append(line)
-    return ("" if not unexpected else status_short, unexpected)
+    return status_short, unexpected
 
 
 def memory_item(
@@ -65,17 +70,21 @@ def memory_item(
     train_decision: str = "approved",
     training_level: str = "level2_sql_examples",
     tool_name: str = "run_sql",
+    expected_tables: list[str] | None = None,
 ) -> SimpleNamespace:
+    metadata = {
+        "training_level": training_level,
+        "sample_id": sample_id,
+        "train_decision": train_decision,
+    }
+    if expected_tables is not None:
+        metadata["expected_tables"] = expected_tables
     return SimpleNamespace(
         memory=SimpleNamespace(
             question=question,
             tool_name=tool_name,
             args={"sql": sql},
-            metadata={
-                "training_level": training_level,
-                "sample_id": sample_id,
-                "train_decision": train_decision,
-            },
+            metadata=metadata,
         )
     )
 
@@ -108,6 +117,19 @@ SAMPLES = {
             "SELECT station_code, station_name, region_code, region_name, station_type "
             "FROM wm_station_info_v2 ORDER BY station_name LIMIT 50"
         ),
+    ),
+    "L3_P0_SQL_004": memory_item(
+        sample_id="L3_P0_SQL_004",
+        question="查询年度pH年均值最高的站点列表",
+        sql=(
+            "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level "
+            "FROM wm_waterquality_year_records "
+            "WHERE monitor_year = 2025 AND m2_value IS NOT NULL "
+            "GROUP BY station_id, monitor_year, water_quality_level "
+            "ORDER BY AVG(m2_value) DESC LIMIT 20"
+        ),
+        training_level="level3_p0_sql_examples",
+        expected_tables=["wm_waterquality_year_records"],
     ),
 }
 
@@ -196,6 +218,15 @@ async def test_q6_station_example() -> TestResult:
     return TestResult("Q6 站点信息 approved 示例进入 prompt", passed, "关键内容均已出现" if passed else "缺少：" + ", ".join(item for item in expected if item not in prompt))
 
 
+async def test_level3_p0_example() -> TestResult:
+    sample = SAMPLES["L3_P0_SQL_004"]
+    prompt, enhancer, _, _ = await build_prompt("查询年度pH年均值最高的站点列表", [sample])
+    sql = sample.memory.args["sql"]
+    expected = ["L3_P0_SQL_004", "wm_waterquality_year_records", "AVG(m2_value)", sql]
+    passed = all(item in prompt for item in expected) and enhancer.last_stats.injected_count == 1
+    return TestResult("level3_p0_sql_examples approved 示例进入 prompt 并保留 sample_id/SQL", passed, "sample_id、SQL 和年度表均已注入" if passed else "第 3 级示例未完整注入")
+
+
 async def test_manual_review_filtered() -> TestResult:
     manual = [
         memory_item(sample_id="L2_SQL_011", question="排污口溯源责任主体统计", sql="SELECT primary_entity_name FROM rs_outlet_trace_v2 LIMIT 50", train_decision="requires_manual_review"),
@@ -205,6 +236,43 @@ async def test_manual_review_filtered() -> TestResult:
     prompt, enhancer, _, _ = await build_prompt("排污口溯源", manual)
     passed = all(sample_id not in prompt for sample_id in ["L2_SQL_011", "L2_SQL_012", "L2_SQL_019"]) and enhancer.last_stats.injected_count == 0
     return TestResult("requires_manual_review 不进入 prompt", passed, f"injected_count={enhancer.last_stats.injected_count}")
+
+
+async def test_excluded_filtered() -> TestResult:
+    excluded = memory_item(
+        sample_id="L3_P0_SQL_EXCLUDED",
+        question="查看某站点年度水质趋势",
+        sql="SELECT station_id, monitor_year, m2_value FROM wm_waterquality_year_records LIMIT 20",
+        training_level="level3_p0_sql_examples",
+        train_decision="excluded",
+    )
+    prompt, enhancer, _, _ = await build_prompt("查看某站点年度水质趋势", [excluded])
+    passed = "L3_P0_SQL_EXCLUDED" not in prompt and enhancer.last_stats.injected_count == 0
+    return TestResult("excluded 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
+
+
+async def test_unknown_training_level_filtered() -> TestResult:
+    unknown = memory_item(
+        sample_id="UNKNOWN_LEVEL",
+        question="查看某站点年度水质趋势",
+        sql="SELECT station_id, monitor_year, m2_value FROM wm_waterquality_year_records LIMIT 20",
+        training_level="level3_p1_sql_examples",
+    )
+    prompt, enhancer, _, _ = await build_prompt("查看某站点年度水质趋势", [unknown])
+    passed = "UNKNOWN_LEVEL" not in prompt and enhancer.last_stats.injected_count == 0
+    return TestResult("未知 training_level 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
+
+
+async def test_empty_training_level_filtered() -> TestResult:
+    empty = memory_item(
+        sample_id="EMPTY_LEVEL",
+        question="查看某站点年度水质趋势",
+        sql="SELECT station_id, monitor_year, m2_value FROM wm_waterquality_year_records LIMIT 20",
+        training_level="",
+    )
+    prompt, enhancer, _, _ = await build_prompt("查看某站点年度水质趋势", [empty])
+    passed = "EMPTY_LEVEL" not in prompt and enhancer.last_stats.injected_count == 0
+    return TestResult("空 training_level 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
 
 
 async def test_guard_warning_filtered() -> TestResult:
@@ -218,6 +286,18 @@ async def test_guard_warning_filtered() -> TestResult:
     return TestResult("SQL Guard warning 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
 
 
+async def test_guard_error_filtered() -> TestResult:
+    error = memory_item(
+        sample_id="L3_P0_SQL_GUARD_ERROR",
+        question="查看某站点年度水质趋势",
+        sql="SELECT unknown_column FROM wm_waterquality_year_records LIMIT 20",
+        training_level="level3_p0_sql_examples",
+    )
+    prompt, enhancer, _, _ = await build_prompt("查看某站点年度水质趋势", [error])
+    passed = "L3_P0_SQL_GUARD_ERROR" not in prompt and enhancer.last_stats.injected_count == 0
+    return TestResult("SQL Guard error 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
+
+
 async def test_select_star_filtered() -> TestResult:
     select_star = memory_item(
         sample_id="L2_SQL_SELECT_STAR",
@@ -227,6 +307,31 @@ async def test_select_star_filtered() -> TestResult:
     prompt, enhancer, _, _ = await build_prompt("查询取水口名称和水源类型", [select_star])
     passed = "L2_SQL_SELECT_STAR" not in prompt and enhancer.last_stats.injected_count == 0
     return TestResult("SELECT * 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
+
+
+async def test_non_run_sql_filtered() -> TestResult:
+    non_run_sql = memory_item(
+        sample_id="NON_RUN_SQL",
+        question="查看某站点年度水质趋势",
+        sql="SELECT station_id, monitor_year, m2_value FROM wm_waterquality_year_records LIMIT 20",
+        training_level="level3_p0_sql_examples",
+        tool_name="visualize_data",
+    )
+    prompt, enhancer, _, _ = await build_prompt("查看某站点年度水质趋势", [non_run_sql])
+    passed = "NON_RUN_SQL" not in prompt and enhancer.last_stats.injected_count == 0
+    return TestResult("非 run_sql 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
+
+
+async def test_no_limit_filtered() -> TestResult:
+    no_limit = memory_item(
+        sample_id="NO_LIMIT",
+        question="查看某站点年度水质趋势",
+        sql="SELECT station_id, monitor_year, m2_value FROM wm_waterquality_year_records",
+        training_level="level3_p0_sql_examples",
+    )
+    prompt, enhancer, _, _ = await build_prompt("查看某站点年度水质趋势", [no_limit])
+    passed = "NO_LIMIT" not in prompt and enhancer.last_stats.injected_count == 0
+    return TestResult("无 LIMIT 不进入 prompt", passed, f"filtered={enhancer.last_stats.filtered}")
 
 
 async def test_empty_recall_keeps_prompt() -> TestResult:
@@ -257,9 +362,16 @@ async def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
         test_q3_month_example,
         test_q1_day_example,
         test_q6_station_example,
+        test_level3_p0_example,
         test_manual_review_filtered,
+        test_excluded_filtered,
+        test_unknown_training_level_filtered,
+        test_empty_training_level_filtered,
         test_guard_warning_filtered,
+        test_guard_error_filtered,
         test_select_star_filtered,
+        test_non_run_sql_filtered,
+        test_no_limit_filtered,
         test_empty_recall_keeps_prompt,
         test_top_k_limit,
     ]
@@ -290,6 +402,9 @@ async def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
             any(result.name.startswith(prefix) and result.passed for result in results)
             for prefix in ["Q1", "Q3", "Q6"]
         ),
+        "level2_allowed": any(result.name.startswith("Q3") and result.passed for result in results),
+        "level3_allowed": any(result.name.startswith("level3_p0") and result.passed for result in results),
+        "unknown_level_filtered": any(result.name == "未知 training_level 不进入 prompt" and result.passed for result in results),
         "manual_review_filtered": any(result.name == "requires_manual_review 不进入 prompt" and result.passed for result in results),
         "select_star_filtered": any(result.name == "SELECT * 不进入 prompt" and result.passed for result in results),
         "guard_warning_filtered": any(result.name == "SQL Guard warning 不进入 prompt" and result.passed for result in results),
@@ -321,6 +436,9 @@ def write_report(results: list[TestResult], summary: dict[str, Any]) -> None:
         f"- 是否调用 search_similar_usage：{'是' if summary['called_search_similar_usage'] else '否'}",
         f"- tool_name_filter 是否为 run_sql：{'是' if summary['tool_name_filter_run_sql'] else '否'}",
         f"- approved 示例是否进入 prompt：{'是' if summary['approved_examples_enter_prompt'] else '否'}",
+        f"- 是否允许 level2_sql_examples：{'是' if summary['level2_allowed'] else '否'}",
+        f"- 是否允许 level3_p0_sql_examples：{'是' if summary['level3_allowed'] else '否'}",
+        f"- 未知 training_level 是否被过滤：{'是' if summary['unknown_level_filtered'] else '否'}",
         f"- requires_manual_review 是否被过滤：{'是' if summary['manual_review_filtered'] else '否'}",
         f"- SELECT * 是否被过滤：{'是' if summary['select_star_filtered'] else '否'}",
         f"- SQL Guard warning/error 是否被过滤：{'是' if summary['guard_warning_filtered'] else '否'}",
