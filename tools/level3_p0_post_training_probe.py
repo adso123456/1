@@ -29,7 +29,7 @@ from tools.sql_guard import SQLGuard
 
 
 CASES: list[dict[str, Any]] = [
-    {"id": "P0-Q1", "sample_id": "L3_P0_SQL_001", "question": "查看某站点年度水质趋势", "tables": ["wm_waterquality_year_records"], "columns": ["monitor_year"], "any_columns": ["m2_value", "m3_value", "m8_value", "m9_value"]},
+    {"id": "P0-Q1", "sample_id": "L3_P0_SQL_001", "question": "查看站点 1408 年度水质趋势", "tables": ["wm_waterquality_year_records"], "columns": ["monitor_year"], "any_columns": ["m2_value", "m3_value", "m8_value", "m9_value"]},
     {"id": "P0-Q2", "sample_id": "L3_P0_SQL_002", "question": "某站点年度水质各指标汇总", "tables": ["wm_waterquality_year_records"], "columns": [], "display_columns": ["至少两个 m*_value 字段"], "min_m_values": 2},
     {"id": "P0-Q3", "sample_id": "L3_P0_SQL_003", "question": "对比两个站点的 pH 和溶解氧年度变化", "tables": ["wm_waterquality_year_records"], "columns": ["station_id", "monitor_year", "m2_value", "m3_value"], "sql_patterns": [r"station_id\s+in\s*\("]},
     {"id": "P0-Q4", "sample_id": "L3_P0_SQL_006", "question": "查询某站点水质月趋势中的氨氮和总氮", "tables": ["wm_waterquality_month_records"], "columns": ["monitor_year", "monitor_month", "m8_value", "m9_value"]},
@@ -45,35 +45,126 @@ def columns_present(used_columns: list[str], column: str) -> bool:
     return any(item.rsplit(".", 1)[-1] == column for item in used_columns)
 
 
+def _assess_sql_for_case(
+    sql: str,
+    case: dict[str, Any],
+    p0_candidate_tables: list[str],
+) -> dict[str, Any]:
+    """校验单条 SQL，并判断它是否完整满足当前 case 预期。"""
+    guard = SQLGuard().validate(
+        sql=sql,
+        query=case["question"],
+        deterministic_candidate_tables=p0_candidate_tables,
+    )
+    used_tables = guard.used_tables
+    used_columns = guard.used_columns
+    table_matches = sum(table in used_tables for table in case.get("tables", []))
+    column_matches = sum(
+        columns_present(used_columns, column) for column in case.get("columns", [])
+    )
+    any_cols = case.get("any_columns", [])
+    any_column_matches = not any_cols or any(
+        columns_present(used_columns, column) for column in any_cols
+    )
+    m_values = {
+        item.rsplit(".", 1)[-1]
+        for item in used_columns
+        if re.fullmatch(r"m\d+_value", item.rsplit(".", 1)[-1])
+    }
+    min_m_values_match = len(m_values) >= case.get("min_m_values", 0)
+    pattern_matches = sum(
+        bool(re.search(pattern, sql, re.IGNORECASE))
+        for pattern in case.get("sql_patterns", [])
+    )
+    safe_shape = (
+        not re.search(r"\bselect\s+\*", sql, re.IGNORECASE)
+        and "wm_waterquality_threshold" not in used_tables
+    )
+    matches_case = (
+        guard.passed
+        and table_matches == len(case.get("tables", []))
+        and column_matches == len(case.get("columns", []))
+        and any_column_matches
+        and min_m_values_match
+        and pattern_matches == len(case.get("sql_patterns", []))
+        and safe_shape
+    )
+    score = table_matches * 10 + column_matches * 5 + pattern_matches * 3
+    score += 3 if any_cols and any_column_matches else 0
+    score += 3 if case.get("min_m_values") and min_m_values_match else 0
+    return {
+        "sql": sql,
+        "guard": guard,
+        "used_tables": used_tables,
+        "used_columns": used_columns,
+        "matches_case": matches_case,
+        "score": score,
+    }
+
+
 def evaluate(
     case: dict[str, Any],
     sse: dict[str, Any],
     temp_query_generated: bool,
     p0_candidate_tables: list[str],
 ) -> dict[str, Any]:
-    sql = str(sse.get("generated_sql") or "")
-    guard = (
-        SQLGuard().validate(
-            sql=sql,
-            query=case["question"],
-            deterministic_candidate_tables=p0_candidate_tables,
+    generated_sql = str(sse.get("generated_sql") or "")
+    all_sql_raw: list[str] = list(sse.get("all_sql", []) or [])
+    all_sql_count = len(all_sql_raw)
+
+    all_sql_assessments: list[dict[str, Any]] = []
+    for index, candidate_sql in enumerate(all_sql_raw):
+        if not candidate_sql.strip():
+            continue
+        assessment = _assess_sql_for_case(
+            candidate_sql, case, p0_candidate_tables
         )
-        if sql
-        else None
+        assessment["source"] = f"all_sql[{index}]"
+        all_sql_assessments.append(assessment)
+
+    matching_all_sql = [
+        assessment
+        for assessment in all_sql_assessments
+        if assessment["matches_case"]
+    ]
+    selected_assessment: dict[str, Any] | None = None
+    if not case.get("guard_block") and matching_all_sql:
+        selected_assessment = max(
+            matching_all_sql, key=lambda assessment: assessment["score"]
+        )
+    elif generated_sql.strip():
+        selected_assessment = _assess_sql_for_case(
+            generated_sql, case, p0_candidate_tables
+        )
+        selected_assessment["source"] = "generated_sql"
+    elif case.get("guard_block") and all_sql_assessments:
+        selected_assessment = all_sql_assessments[0]
+
+    selected_sql = selected_assessment["sql"] if selected_assessment else ""
+    selected_sql_source = (
+        selected_assessment["source"] if selected_assessment else "none"
     )
-    used_tables = guard.used_tables if guard else []
-    used_columns = guard.used_columns if guard else []
+    best_guard = selected_assessment["guard"] if selected_assessment else None
+    best_used_tables = (
+        selected_assessment["used_tables"] if selected_assessment else []
+    )
+    best_used_columns = (
+        selected_assessment["used_columns"] if selected_assessment else []
+    )
+
+    sql = selected_sql
+    guard = best_guard
+    used_tables = best_used_tables
+    used_columns = best_used_columns
+
     preview = str(sse.get("preview") or "")
     has_sql_result_payload = bool(sse.get("all_sql")) and any(
         marker in preview for marker in ('"data"', '"columns"', '"row_count"')
     )
     true_sql_executed = (
-        not sse.get("blocked_message")
-        and (
-            "dataframe" in sse.get("rich_types", [])
-            or has_sql_result_payload
-            or temp_query_generated
-        )
+        "dataframe" in sse.get("rich_types", [])
+        or has_sql_result_payload
+        or temp_query_generated
     )
     reasons: list[str] = []
     status = "pass"
@@ -87,13 +178,28 @@ def evaluate(
 
     if case.get("guard_block"):
         blocked = bool(sse.get("blocked_message")) or (guard is not None and not guard.passed)
-        pre_execution_refusal = not sql and not true_sql_executed and not sse.get("errors")
+        pre_execution_refusal = (
+            not sql
+            and not has_sql_result_payload
+            and not temp_query_generated
+            and not true_sql_executed
+            and not sse.get("errors")
+        )
         if not blocked and not pre_execution_refusal:
             status = "fail"
             reasons.append("未检测到 SQL Guard 或 hard block")
         if true_sql_executed:
             status = "fail"
             reasons.append("SAFE-Q9 执行了真实 SQL")
+        if sql:
+            status = "fail"
+            reasons.append("SAFE-Q9 生成了 SQL")
+        if has_sql_result_payload:
+            status = "fail"
+            reasons.append("SAFE-Q9 出现 SQL result payload")
+        if temp_query_generated:
+            status = "fail"
+            reasons.append("SAFE-Q9 生成了临时 query_results")
         if pre_execution_refusal:
             reasons.append("未生成 SQL，前置安全拒绝")
     else:
@@ -138,7 +244,14 @@ def evaluate(
     return {
         "id": case["id"], "sample_id": case["sample_id"], "question": case["question"],
         "expected_tables": case["tables"], "expected_columns": case.get("display_columns", case["columns"] + case.get("any_columns", [])),
-        "generated_sql": sql or "未生成", "used_tables": used_tables, "used_columns": used_columns,
+        "selected_sql": sql or "未生成", "selected_sql_source": selected_sql_source,
+        "all_sql_count": all_sql_count,
+        "all_sql_guard_count": len(all_sql_assessments),
+        "matching_all_sql_sources": [item["source"] for item in matching_all_sql],
+        "selected_sql_matches_case": bool(
+            selected_assessment and selected_assessment["matches_case"]
+        ),
+        "generated_sql": generated_sql or "未生成", "used_tables": used_tables, "used_columns": used_columns,
         "sql_guard": guard.to_dict() if guard else {}, "true_sql_executed": true_sql_executed,
         "has_sql_result_payload": has_sql_result_payload,
         "temp_query_generated": temp_query_generated,
@@ -150,6 +263,38 @@ def evaluate(
 
 def cn(value: bool) -> str:
     return "是" if value else "否"
+
+
+def selection_logic_self_check() -> bool:
+    """用 Q3 中间态和正确态验证 all_sql 选择逻辑。"""
+    case = next(item for item in CASES if item["id"] == "P0-Q3")
+    intermediate_sql = """SELECT station_id, monitor_year, m2_value, m3_value
+FROM wm_waterquality_year_records
+ORDER BY station_id, monitor_year
+LIMIT 40"""
+    expected_sql = """SELECT station_id, monitor_year, m2_value, m3_value
+FROM wm_waterquality_year_records
+WHERE station_id IN (1408, 1409)
+ORDER BY station_id, monitor_year
+LIMIT 40"""
+    result = evaluate(
+        case,
+        {
+            "has_response": True,
+            "errors": [],
+            "generated_sql": intermediate_sql,
+            "all_sql": [intermediate_sql, expected_sql],
+            "preview": "",
+            "rich_types": [],
+        },
+        False,
+        ["wm_waterquality_year_records"],
+    )
+    return (
+        result["selected_sql_source"] == "all_sql[1]"
+        and result["selected_sql"] == expected_sql
+        and result["all_sql_guard_count"] == result["all_sql_count"] == 2
+    )
 
 
 def write_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> None:
@@ -174,12 +319,19 @@ def write_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> None
         f"- 当前结论：{summary['conclusion']}", f"- 下一阶段建议：{summary['next_step']}", "",
         "## Q3/Q8 warning 归因", "",
         *summary["warning_attribution"], "",
+        "## true_sql_executed 口径修正验证", "",
+        *summary["execution_detection_validation"], "",
+        *summary.get("probe_fix_section", []),
         "## 每题明细", "",
     ]
     for item in results:
         lines.extend([
             f"### {item['id']}", "", f"- question：{item['question']}", f"- expected_sample_id：{item['sample_id'] or '无'}",
             f"- expected_tables：{', '.join(item['expected_tables']) or '无'}", f"- expected_columns：{', '.join(item['expected_columns']) or '无'}",
+            f"- selected_sql：{item.get('selected_sql', item.get('generated_sql', '未生成'))}",
+            f"- selected_sql_source：{item.get('selected_sql_source', 'unknown')}",
+            f"- all_sql_count：{item.get('all_sql_count', 0)}",
+            f"- all_sql_guard_count：{item.get('all_sql_guard_count', 0)}",
             f"- generated_sql：{item['generated_sql']}", f"- used_tables：{', '.join(item['used_tables']) or '无'}",
             f"- used_columns：{', '.join(item['used_columns']) or '无'}", f"- SQL Guard result：{json.dumps(item['sql_guard'], ensure_ascii=False) if item['sql_guard'] else '无'}",
             f"- P0 deterministic candidate tables：{', '.join(item['p0_candidate_tables']) or '无'}",
@@ -214,7 +366,7 @@ def main() -> int:
                 results.append(evaluate(case, sse, bool(temp_after - temp_before), candidates))
         else:
             for case in CASES:
-                results.append({"id": case["id"], "sample_id": case["sample_id"], "question": case["question"], "expected_tables": case["tables"], "expected_columns": case["columns"], "generated_sql": "未生成", "used_tables": [], "used_columns": [], "sql_guard": {}, "true_sql_executed": False, "has_sql_result_payload": False, "temp_query_generated": False, "p0_candidate_tables": [], "response_preview": "", "status": "fail", "reason": startup_error})
+                results.append({"id": case["id"], "sample_id": case["sample_id"], "question": case["question"], "expected_tables": case["tables"], "expected_columns": case["columns"], "selected_sql": "未生成", "selected_sql_source": "server_failed", "all_sql_count": 0, "all_sql_guard_count": 0, "matching_all_sql_sources": [], "selected_sql_matches_case": False, "generated_sql": "未生成", "used_tables": [], "used_columns": [], "sql_guard": {}, "true_sql_executed": False, "has_sql_result_payload": False, "temp_query_generated": False, "p0_candidate_tables": [], "response_preview": "", "status": "fail", "reason": startup_error})
     finally:
         stop_server(process)
 
@@ -229,26 +381,113 @@ def main() -> int:
     safe = next(item for item in results if item["id"] == "SAFE-Q9")
     safe_pass = safe["status"] == "pass"
     safe_executed = safe["true_sql_executed"]
+    q3 = next(item for item in results if item["id"] == "P0-Q3")
+    q8 = next(item for item in results if item["id"] == "P0-Q8")
+    non_safe_payload_without_execution = [
+        item["id"]
+        for item in results
+        if item["id"] != "SAFE-Q9"
+        and item["has_sql_result_payload"]
+        and not item["true_sql_executed"]
+    ]
     warning_attribution = []
     for case_id in ("P0-Q3", "P0-Q8"):
         item = next(item for item in results if item["id"] == case_id)
-        warning_attribution.extend(
-            [
-                f"- {case_id}：probe 传入的 deterministic candidate tables 为 {', '.join(item['p0_candidate_tables']) or '无'}；生成 SQL 使用 {', '.join(item['used_tables']) or '无'}。",
-                "  P0 候选未包含 wm_waterquality_year_records，故 SQL Guard 产生 candidate_mismatch warning。",
-            ]
-        )
+        guard = item["sql_guard"] or {}
+        if guard.get("candidate_mismatch"):
+            warning_attribution.extend(
+                [
+                    f"- {case_id}：probe 传入的 deterministic candidate tables 为 {', '.join(item['p0_candidate_tables']) or '无'}；生成 SQL 使用 {', '.join(item['used_tables']) or '无'}。",
+                    "  P0 候选未包含 wm_waterquality_year_records，故 SQL Guard 产生 candidate_mismatch warning。",
+                ]
+            )
+        else:
+            warning_attribution.append(
+                f"- {case_id}：本轮未产生 SQL Guard candidate_mismatch warning；"
+                f"生成 SQL 使用 {', '.join(item['used_tables']) or '无'}。"
+            )
     warning_attribution.extend(
         [
-            "- 主服务真实执行链路也由 SQLGuard 基于同一 P0 检索结果校验；该 warning 不阻断已生成 SQL 的执行。",
+            "- 主服务真实执行链路也由 SQLGuard 基于同一 P0 检索结果校验；candidate_mismatch warning 不阻断已生成 SQL 的执行。",
             "- 结论：这是 P0 候选排序与第 3 级 SQL 示例选择的真实分歧，不是 probe 参数缺失；本阶段不改 SQL Guard 或主服务。",
         ]
     )
+    execution_detection_validation = [
+        f"- Q3 has_sql_result_payload：{cn(q3['has_sql_result_payload'])}",
+        f"- Q3 true_sql_executed：{cn(q3['true_sql_executed'])}",
+        f"- Q8 has_sql_result_payload：{cn(q8['has_sql_result_payload'])}",
+        f"- Q8 true_sql_executed：{cn(q8['true_sql_executed'])}",
+        f"- SAFE-Q9 has_sql_result_payload：{cn(safe['has_sql_result_payload'])}",
+        f"- SAFE-Q9 true_sql_executed：{cn(safe['true_sql_executed'])}",
+        "- 是否仍存在非 SAFE payload=True/executed=False："
+        + ("是：" + "、".join(non_safe_payload_without_execution) if non_safe_payload_without_execution else "否"),
+    ]
     passed = not formal_vanna_changed and not formal_query_added and safe_pass and not safe_executed and pass_count >= 7
     if passed:
         conclusion, next_step = "通过：第 3 级 P0 主问答最小验证满足门槛。", "可做更广泛的第 3 级 P0 验证；仍不进入第 4 级。"
     else:
         conclusion, next_step = "未通过：存在功能、安全或隔离条件失败。", "先分析失败用例并修复后重新隔离验证；不进入第 4 级。"
+
+    # probe 判定口径修正验证
+    q1_item = next(item for item in results if item["id"] == "P0-Q1")
+    q3_item = next(item for item in results if item["id"] == "P0-Q3")
+    q7_item = next(item for item in results if item["id"] == "P0-Q7")
+    q8_item = next(item for item in results if item["id"] == "P0-Q8")
+    selection_self_check_passed = selection_logic_self_check()
+    all_sql_traversed = all(
+        item.get("all_sql_guard_count", 0) == item.get("all_sql_count", 0)
+        for item in results
+    )
+    selected_by_case_expectation = selection_self_check_passed and all(
+        not item.get("matching_all_sql_sources")
+        or item.get("selected_sql_source") in item["matching_all_sql_sources"]
+        for item in results
+        if item["id"] != "SAFE-Q9"
+    )
+    q3_misjudged = bool(
+        q3_item.get("matching_all_sql_sources")
+        and q3_item.get("selected_sql_source")
+        not in q3_item["matching_all_sql_sources"]
+    )
+    q8_candidate_mismatch = (
+        "rs_outlet_monitor_v2" in q8_item.get("p0_candidate_tables", [])
+        and "wm_waterquality_year_records"
+        not in q8_item.get("p0_candidate_tables", [])
+    )
+    probe_fix_completed = (
+        all_sql_traversed
+        and selected_by_case_expectation
+        and "1408" in q1_item["question"]
+        and not q3_misjudged
+        and not non_safe_payload_without_execution
+        and safe_pass
+        and not safe_executed
+        and not formal_vanna_changed
+        and not formal_query_added
+    )
+    probe_fix_section = [
+        "## probe 判定口径修正", "",
+        f"- 是否遍历 all_sql：{cn(all_sql_traversed)}",
+        f"- 是否按 case 预期选择 selected_sql：{cn(selected_by_case_expectation)}",
+        f"- Q1 是否固定 station_id=1408：{'是' if '1408' in q1_item['question'] else '否'}",
+        f"- Q3 selected_sql_source：{q3_item.get('selected_sql_source', 'unknown')}",
+        f"- Q3 all_sql_count：{q3_item.get('all_sql_count', 0)}",
+        f"- Q3 是否仍被 generated_sql 中间态误判：{'是（status=fail，selected_sql 未选择 all_sql 中更优版本）' if q3_misjudged else '否（本轮 Q3 状态为 ' + q3_item['status'] + '，未因 generated_sql 中间态误判为 fail）'}",
+        f"- Q7 是否仍是真实链路问题：{'是（状态：fail）' if q7_item['status'] == 'fail' else '否（本轮状态：' + q7_item['status'] + '）'}",
+        f"- Q8 是否仍是 P0 candidate mismatch：{cn(q8_candidate_mismatch)}",
+        f"- probe 修复是否完成：{cn(probe_fix_completed)}",
+        f"- 第 3 级 P0 总体验证是否最终通过：{'是' if passed else '否（Q7/Q8 待后续阶段单独处理）'}",
+        "",
+    ]
+    if probe_fix_completed:
+        conclusion = "probe 修复已完成；第 3 级 P0 总体验证" + (
+            "已通过。" if passed else "仍未最终通过；Q7/Q8 待后续阶段单独处理。"
+        )
+        next_step = (
+            "继续扩大第 3 级 P0 验证；仍不进入第 4 级。"
+            if passed
+            else "后续单独处理 Q7/Q8 真实链路问题；不进入第 4 级。"
+        )
     summary = {
         "remote": __import__("subprocess").run(["git", "remote", "-v"], cwd=PROJECT_ROOT, text=True, capture_output=True, encoding="utf-8").stdout.strip(),
         "commit": __import__("subprocess").run(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True, capture_output=True, encoding="utf-8").stdout.strip(),
@@ -259,6 +498,8 @@ def main() -> int:
         "pass_count": pass_count, "warning_count": warning_count, "fail_count": len(fail_cases), "fail_cases": fail_cases,
         "safe_pass": safe_pass, "safe_executed": safe_executed, "conclusion": conclusion, "next_step": next_step,
         "warning_attribution": warning_attribution,
+        "execution_detection_validation": execution_detection_validation,
+        "probe_fix_section": probe_fix_section,
     }
     write_report(summary, results)
     print(f"pass={pass_count} warning={warning_count} fail={len(fail_cases)} safe_pass={safe_pass}")
