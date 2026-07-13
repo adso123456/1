@@ -453,6 +453,50 @@ class DeterministicMetadataRetriever:
             if "排污口" in table_comment or table_name.startswith("rs_outlet") or "outlet" in table_name:
                 add(680, "outlet_intent", "排污口语义命中")
 
+        wastewater_metrics = ("cod", "总氮", "ph", "流量", "排放量")
+        is_wastewater_query = (
+            "废水" in query_compact
+            or bool(re.search(r"(?:^|[^a-z0-9])ps(?:[^a-z0-9]|$)", query_compact))
+            or (
+                "排水口" in query_compact
+                and any(metric in query_compact for metric in wastewater_metrics)
+            )
+        )
+        wastewater_tables = {
+            "day": "rs_wastewater_day_records",
+            "hour": "rs_wastewater_hour_records",
+            "month": "rs_wastewater_month_records",
+        }
+        if is_wastewater_query and table_name in wastewater_tables.values():
+            add(1700, "wastewater_record_intent", "废水或 PS 排水口问题优先污染源记录表")
+            granularity = ""
+            if "小时" in query_compact:
+                granularity = "hour"
+            elif "月" in query_compact:
+                granularity = "month"
+            elif "日" in query_compact:
+                granularity = "day"
+            if granularity and table_name == wastewater_tables[granularity]:
+                add(3600, "wastewater_granularity", "废水记录粒度与目标表一致")
+
+        if "水文站" in query_compact and table_name == "wm_hydrological_info":
+            add(5200, "hydrological_station_intent", "水文站问题优先水文站基础信息表")
+
+        is_source_intake_route = "水源地取水口" in query_compact
+        is_ordinary_intake = (
+            "普通取水口" in query_compact
+            or ("取水口" in query_compact and not is_source_intake_route)
+        )
+        is_water_source = (
+            "水源地" in query_compact
+            and not is_source_intake_route
+            and not is_ordinary_intake
+        )
+        if is_water_source and table_name == "wm_water_source":
+            add(5200, "water_source_base_intent", "水源地基础与保护问题优先水源地信息表")
+        if is_ordinary_intake and table_name == "wm_water_intake":
+            add(5200, "ordinary_water_intake_intent", "普通取水口问题优先普通取水口表")
+
         return score, methods, reasons
 
     def _risk_level(self, conflict_family: str, matched_by: list[str]) -> str:
