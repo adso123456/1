@@ -1,6 +1,6 @@
 # Level 3 P1 Metadata 候选排序测试结果
 
-- 基础 commit：2915199a7c688f8a2a4e1f4330c56e47526a6f0b
+- 基础 commit：392be6ff8c9fd11a597b7b185e80a47afa497bdf
 - 修改文件：tools/metadata_retriever.py、tools/test_metadata_retriever_level3_p1.py、tools/metadata_retriever_level3_p1_test_result.md
 - 测试总数：23
 - 通过数量：23

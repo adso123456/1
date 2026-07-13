@@ -13,7 +13,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 REVIEW_PATH = PROJECT_ROOT / "training" / "sql_examples_level3_p1_review_result.json"
 REPORT_PATH = CURRENT_DIR / "metadata_retriever_level3_p1_test_result.md"
-BASE_COMMIT = "2915199a7c688f8a2a4e1f4330c56e47526a6f0b"
+BASE_COMMIT = "392be6ff8c9fd11a597b7b185e80a47afa497bdf"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
