@@ -26,10 +26,11 @@
         "evidence": "metadata 注释：rs_outlet_info_v2.id 为主键ID，rs_outlet_remediation_v2.outlet_id 为关联排污口ID；两侧均为 bigint。"
       }
     ],
-    "business_intent": "关联排污口基础信息与整治记录，不解释整治状态枚举值。",
-    "risk_notes": "真实审计J1匹配率100.0000%，有效整治记录每个outlet_id最大1条，当前为一对一且无孤儿；问题已明确为记录明细，后续数据变化仍需关注子表基数。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_001"
   },
   {
     "id": "L3_P2_SQL_002",
@@ -55,10 +56,11 @@
         "evidence": "metadata 注释证明主键ID与关联排污口ID，类型均为 bigint；仅统计是否存在整治记录，不计算未确认的完成率。"
       }
     ],
-    "business_intent": "比较各行政区排污口实体数与存在整治记录的排污口覆盖数。",
-    "risk_notes": "真实审计J1匹配率100.0000%，最大子表基数1；两个COUNT(DISTINCT ...)分别统计主表排污口实体和存在整治记录的排污口实体；按潜在一对多风险使用DISTINCT去重，不表达整治完成率，LEFT JOIN保留无记录主表实体。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_002"
   },
   {
     "id": "L3_P2_SQL_003",
@@ -88,10 +90,11 @@
         "evidence": "metadata 注释：主键ID关联实况表的排污口ID；两侧均为 bigint。"
       }
     ],
-    "business_intent": "关联排污口基础信息与实况记录，展示状态而不固定解释状态值。",
-    "risk_notes": "真实审计J2匹配率100.0000%，有效实况记录每个outlet_id最大1条，当前为一对一且无孤儿；问题已明确为记录明细，不筛选冻结的异常或采样固定值。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_003"
   },
   {
     "id": "L3_P2_SQL_004",
@@ -117,10 +120,11 @@
         "evidence": "metadata 注释证明主键ID与关联排污口ID，类型均为 bigint。"
       }
     ],
-    "business_intent": "统计各行政区排污口实体数和实况记录覆盖数。",
-    "risk_notes": "真实审计J2匹配率100.0000%，最大子表基数1；两个COUNT(DISTINCT ...)分别统计主表排污口实体和存在实况记录的排污口实体；按潜在一对多风险使用DISTINCT去重，LEFT JOIN保留无记录主表实体。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_004"
   },
   {
     "id": "L3_P2_SQL_005",
@@ -150,10 +154,11 @@
         "evidence": "metadata 两侧注释均为断面id，类型均为 bigint；month=0 的注释明确表示全年。"
       }
     ],
-    "business_intent": "把断面基础信息与年度全年水质目标关联展示。",
-    "risk_notes": "真实审计J3左实体匹配率100.0000%；month=0共108条，每个断面年度最多1条且重复组合0个。右表孤儿记录通过INNER JOIN排除。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_005"
   },
   {
     "id": "L3_P2_SQL_006",
@@ -182,10 +187,11 @@
         "evidence": "metadata 两侧注释均为断面id且类型均为 bigint；is_examine 注释明确 0/1，month 注释明确 0 表示全年。"
       }
     ],
-    "business_intent": "按年度目标等级汇总考核断面实体数。",
-    "risk_notes": "真实值域确认month=0表示全年且有108条，is_examine='1'实际存在；目标表对断面一对多，COUNT(DISTINCT s.id)按年度和目标等级去重，避免月份与重复记录放大。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_006"
   },
   {
     "id": "L3_P2_SQL_007",
@@ -215,10 +221,11 @@
         "evidence": "metadata 注释：section.water_body_id 为水体id，waterbody.id 为主记录id；类型均为 bigint。"
       }
     ],
-    "business_intent": "关联断面与其所属水体基础信息。",
-    "risk_notes": "真实审计J4左实体匹配率100.0000%，右表每个水体主键最大1条；一个水体可对应多个断面，查询保持断面记录粒度。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_007"
   },
   {
     "id": "L3_P2_SQL_008",
@@ -246,10 +253,11 @@
         "evidence": "metadata 注释证明水体主记录id与断面所属水体id，类型均为 bigint。"
       }
     ],
-    "business_intent": "在保留无断面水体的前提下统计水体对应的断面实体数。",
-    "risk_notes": "真实审计J4左实体匹配率100.0000%，存在20个未被断面引用的水体；COUNT(DISTINCT s.id)按一对多关系去重，LEFT JOIN保留没有断面的水体。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "静态JOIN证据、真实匹配、固定值口径和只读SQL执行均通过。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_008"
   },
   {
     "id": "L3_P2_SQL_009",
@@ -277,10 +285,11 @@
         "evidence": "metadata 两侧字段均为行政区划编码且为字符类型；右表明确是区县行政区，采用精确等值 JOIN。"
       }
     ],
-    "business_intent": "按区县级行政区编码关联水文站与区域名称。",
-    "risk_notes": "真实审计J5精确匹配率0.0000%；水文站region_code长度为4位，区县编码为6位，当前INNER JOIN返回0行。真实数据证明区县级精确编码关系不成立，本样本不得训练。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "excluded",
+    "review_status": "reviewed",
+    "review_notes": "J5真实精确匹配为0；水文站为4位城市码，区县表为6位编码，JOIN关系被真实数据否定。",
+    "business_risk": "high",
+    "source_draft_id": "L3_P2_SQL_009"
   },
   {
     "id": "L3_P2_SQL_010",
@@ -307,10 +316,11 @@
         "evidence": "metadata 两侧字段均为行政区划编码且为字符类型；固定使用区县表精确关联。"
       }
     ],
-    "business_intent": "在保留无水文站区县的前提下统计站点实体数。",
-    "risk_notes": "真实审计J5精确匹配率0.0000%；唯一水文站编码为4位城市码，13个区县编码均为6位。SQL按潜在一对多风险使用DISTINCT去重；LEFT JOIN虽可执行并返回区县列表，但站点计数全部不能证明区县归属，本样本不得训练。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "excluded",
+    "review_status": "reviewed",
+    "review_notes": "J5真实精确匹配为0；水文站为4位城市码，区县表为6位编码，JOIN关系被真实数据否定。",
+    "business_risk": "high",
+    "source_draft_id": "L3_P2_SQL_010"
   },
   {
     "id": "L3_P2_SQL_011",
@@ -349,9 +359,10 @@
         "evidence": "metadata 注释证明排污口主键ID与实况表关联排污口ID，两侧均为 bigint。"
       }
     ],
-    "business_intent": "使用两条独立 confirmed 边联合展示排污口基础、整治和实况信息。",
-    "risk_notes": "真实审计J1/J2匹配率均为100%，两子表每个outlet_id最大基数均为1；三表最大乘法放大倍数1，乘积大于1的排污口0个。当前无组合放大，问题明确为联合记录明细。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "J1/J2均一对一，三表最大放大倍数为1，真实SQL执行成功。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P2_SQL_011"
   }
 ]
