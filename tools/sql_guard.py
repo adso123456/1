@@ -298,16 +298,19 @@ class SQLGuard:
             self._extend_unique(used_columns, cte_used_columns)
             self._extend_unique(unknown_columns, cte_unknown_columns)
 
-        tables, aliases = self._extract_tables(main_sql)
+        subqueries = self._extract_subqueries(main_sql)
+        outer_sql = self._remove_parenthesized_subqueries(main_sql)
+
+        tables, aliases = self._extract_tables(outer_sql)
         self._extend_unique(used_tables, tables)
 
         query_columns, query_unknown_columns = self._extract_columns(
-            main_sql, tables, aliases, virtual_columns
+            outer_sql, tables, aliases, virtual_columns
         )
         self._extend_unique(used_columns, query_columns)
         self._extend_unique(unknown_columns, query_unknown_columns)
 
-        for subquery in self._extract_subqueries(main_sql):
+        for subquery in subqueries:
             subquery_tables, subquery_columns, subquery_unknown_columns = self._analyze_sql(
                 subquery, virtual_columns
             )
@@ -560,17 +563,29 @@ class SQLGuard:
         return columns
 
     def _extract_subqueries(self, sql: str) -> list[str]:
-        subqueries: list[str] = []
-        for index, char in enumerate(sql):
-            if char != "(":
+        return [
+            sql[start + 1 : end].strip()
+            for start, end in self._extract_subquery_spans(sql)
+        ]
+
+    def _extract_subquery_spans(self, sql: str) -> list[tuple[int, int]]:
+        spans: list[tuple[int, int]] = []
+        position = 0
+        while position < len(sql):
+            if sql[position] != "(":
+                position += 1
                 continue
-            end = self._find_matching_paren(sql, index)
+            end = self._find_matching_paren(sql, position)
             if end == -1:
+                position += 1
                 continue
-            inner = sql[index + 1 : end].strip()
+            inner = sql[position + 1 : end].strip()
             if inner.lower().startswith(("select", "with")):
-                subqueries.append(inner)
-        return subqueries
+                spans.append((position, end))
+                position = end + 1
+                continue
+            position += 1
+        return spans
 
     def _find_matching_paren(self, sql: str, open_index: int) -> int:
         depth = 0
@@ -604,8 +619,8 @@ class SQLGuard:
 
     def _remove_parenthesized_subqueries(self, expression: str) -> str:
         result = expression
-        for subquery in self._extract_subqueries(expression):
-            result = result.replace(f"({subquery})", " ")
+        for start, end in reversed(self._extract_subquery_spans(expression)):
+            result = result[:start] + " " + result[end + 1 :]
         return result
 
     def _paren_depth(self, sql: str, position: int) -> int:

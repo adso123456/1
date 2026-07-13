@@ -171,6 +171,80 @@ TEST_CASES: list[dict[str, Any]] = [
         "expected_pass": True,
         "categories": ["cte", "where"],
     },
+    {
+        "query": "Q7 合法 tuple 子查询",
+        "sql": """SELECT station_id, monitor_year, monitor_month, water_quality_level
+FROM wm_waterquality_month_records
+WHERE (monitor_year, monitor_month) IN (
+    SELECT monitor_year, monitor_month
+    FROM wm_waterquality_month_records
+    ORDER BY monitor_year DESC, monitor_month DESC
+    LIMIT 1
+)
+AND water_quality_level IN ('I', 'II', 'III')
+ORDER BY station_id
+LIMIT 50;""",
+        "expected_pass": True,
+        "expected_severity": "ok",
+        "expected_unknown_columns": [],
+        "expected_used_tables": ["wm_waterquality_month_records"],
+        "deterministic_candidate_tables": ["wm_waterquality_month_records"],
+        "categories": ["subquery", "tuple_subquery"],
+    },
+    {
+        "query": "tuple 子查询不存在字段",
+        "sql": """SELECT station_id
+FROM wm_waterquality_month_records
+WHERE (monitor_year, monitor_month) IN (
+    SELECT monitor_year, fake_month
+    FROM wm_waterquality_month_records
+)
+LIMIT 50;""",
+        "expected_pass": False,
+        "expected_unknown_columns": ["fake_month"],
+        "deterministic_candidate_tables": ["wm_waterquality_month_records"],
+        "categories": ["subquery", "tuple_subquery"],
+    },
+    {
+        "query": "tuple 左值不存在字段",
+        "sql": """SELECT station_id
+FROM wm_waterquality_month_records
+WHERE (fake_year, monitor_month) IN (
+    SELECT monitor_year, monitor_month
+    FROM wm_waterquality_month_records
+)
+LIMIT 50;""",
+        "expected_pass": False,
+        "expected_unknown_columns": ["fake_year"],
+        "deterministic_candidate_tables": ["wm_waterquality_month_records"],
+        "categories": ["subquery", "tuple_subquery"],
+    },
+    {
+        "query": "普通单字段 IN 子查询",
+        "sql": """SELECT station_id
+FROM wm_waterquality_month_records
+WHERE monitor_year IN (
+    SELECT monitor_year
+    FROM wm_waterquality_year_records
+)
+LIMIT 50;""",
+        "expected_pass": True,
+        "expected_severity": "ok",
+        "deterministic_candidate_tables": [
+            "wm_waterquality_month_records",
+            "wm_waterquality_year_records",
+        ],
+        "categories": ["subquery", "tuple_subquery"],
+    },
+    {
+        "query": "candidate mismatch 保持 warning",
+        "sql": "SELECT station_id FROM wm_waterquality_day_records LIMIT 10",
+        "expected_pass": True,
+        "expected_severity": "warning",
+        "expected_candidate_mismatch": ["wm_waterquality_day_records"],
+        "deterministic_candidate_tables": ["wm_waterquality_hour_records"],
+        "categories": ["candidate_mismatch"],
+    },
 ]
 
 
@@ -179,9 +253,26 @@ def run_tests() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
     for case in TEST_CASES:
-        result = guard.validate(sql=case["sql"], query=case["query"])
+        result = guard.validate(
+            sql=case["sql"],
+            query=case["query"],
+            deterministic_candidate_tables=case.get("deterministic_candidate_tables"),
+        )
         actual_pass = result.passed
         passed = actual_pass == case["expected_pass"]
+        if "expected_severity" in case:
+            passed = passed and result.severity == case["expected_severity"]
+        if "expected_unknown_columns" in case:
+            passed = passed and all(
+                column in result.unknown_columns
+                for column in case["expected_unknown_columns"]
+            )
+            if not case["expected_unknown_columns"]:
+                passed = passed and not result.unknown_columns
+        if "expected_used_tables" in case:
+            passed = passed and result.used_tables == case["expected_used_tables"]
+        if "expected_candidate_mismatch" in case:
+            passed = passed and result.candidate_mismatch == case["expected_candidate_mismatch"]
         results.append(
             {
                 "query": case["query"],
@@ -221,6 +312,11 @@ def run_tests() -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
     subquery_results = [result for result in results if "subquery" in result["categories"]]
     cte_results = [result for result in results if "cte" in result["categories"]]
+    tuple_results = [
+        result for result in results if "tuple_subquery" in result["categories"]
+    ]
+    original_results = results[:26]
+    result_by_query = {result["query"]: result for result in results}
     summary = {
         "total": len(results),
         "passed": passed_count,
@@ -231,6 +327,13 @@ def run_tests() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             result["pass"] for result in subquery_results
         ),
         "supports_cte": bool(cte_results) and all(result["pass"] for result in cte_results),
+        "tuple_subquery_total": len(tuple_results),
+        "original_regression_passed": sum(result["pass"] for result in original_results),
+        "original_regression_total": len(original_results),
+        "tuple_legal_result": result_by_query["Q7 合法 tuple 子查询"],
+        "tuple_subquery_unknown_result": result_by_query["tuple 子查询不存在字段"],
+        "tuple_left_unknown_result": result_by_query["tuple 左值不存在字段"],
+        "single_in_subquery_result": result_by_query["普通单字段 IN 子查询"],
         "integrated_run_sql_tool": False,
         "executed_sql": False,
         "connected_database": False,
@@ -262,6 +365,14 @@ def write_report(results: list[dict[str, Any]], summary: dict[str, Any]) -> None
         f"- HAVING 字段校验通过数量：{summary['having_passed'][0]}/{summary['having_passed'][1]}",
         f"- 是否支持子查询：{'是' if summary['supports_subquery'] else '否'}",
         f"- 是否支持 CTE：{'是' if summary['supports_cte'] else '否'}",
+        f"- 新增 tuple 子查询测试数量：{summary['tuple_subquery_total']}",
+        f"- 原有回归测试结果：{summary['original_regression_passed']}/{summary['original_regression_total']}",
+        "- 修复前错误：passed=false, unknown_columns=[wm_waterquality_month_records]",
+        f"- 修复后结果：passed={_bool_text(summary['tuple_legal_result']['actual_pass'])}, severity={summary['tuple_legal_result']['severity']}, unknown_tables={summary['tuple_legal_result']['unknown_tables']}, unknown_columns={summary['tuple_legal_result']['unknown_columns']}, used_tables={summary['tuple_legal_result']['used_tables']}",
+        f"- 子查询未知字段阻断：{'通过' if summary['tuple_subquery_unknown_result']['pass'] else '失败'}（unknown_columns={summary['tuple_subquery_unknown_result']['unknown_columns']}）",
+        f"- tuple 左值未知字段阻断：{'通过' if summary['tuple_left_unknown_result']['pass'] else '失败'}（unknown_columns={summary['tuple_left_unknown_result']['unknown_columns']}）",
+        f"- 普通单字段 IN 子查询：{'通过' if summary['single_in_subquery_result']['pass'] else '失败'}",
+        f"- 原有安全与字段回归测试：{'全部通过' if summary['original_regression_passed'] == summary['original_regression_total'] else '存在失败'}",
         f"- 是否接入 RunSqlTool：{'是' if summary['integrated_run_sql_tool'] else '否'}",
         f"- 是否执行 SQL：{'是' if summary['executed_sql'] else '否'}",
         f"- 是否连接数据库：{'是' if summary['connected_database'] else '否'}",

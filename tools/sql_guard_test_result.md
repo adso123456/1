@@ -2,8 +2,8 @@
 
 ## 汇总
 
-- 测试用例总数：26
-- 通过数量：26
+- 测试用例总数：31
+- 通过数量：31
 - 失败数量：0
 - 失败用例列表：无
 - WHERE 字段校验通过数量：5/5
@@ -13,6 +13,14 @@
 - HAVING 字段校验通过数量：1/1
 - 是否支持子查询：是
 - 是否支持 CTE：是
+- 新增 tuple 子查询测试数量：4
+- 原有回归测试结果：26/26
+- 修复前错误：passed=false, unknown_columns=[wm_waterquality_month_records]
+- 修复后结果：passed=true, severity=ok, unknown_tables=[], unknown_columns=[], used_tables=['wm_waterquality_month_records']
+- 子查询未知字段阻断：通过（unknown_columns=['fake_month']）
+- tuple 左值未知字段阻断：通过（unknown_columns=['fake_year']）
+- 普通单字段 IN 子查询：通过
+- 原有安全与字段回归测试：全部通过
 - 是否接入 RunSqlTool：否
 - 是否执行 SQL：否
 - 是否连接数据库：否
@@ -462,4 +470,117 @@
 - forbidden_operations：无
 - candidate_mismatch：无
 - reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 27. Q7 合法 tuple 子查询
+
+- query：Q7 合法 tuple 子查询
+- sql：`SELECT station_id, monitor_year, monitor_month, water_quality_level
+FROM wm_waterquality_month_records
+WHERE (monitor_year, monitor_month) IN (
+    SELECT monitor_year, monitor_month
+    FROM wm_waterquality_month_records
+    ORDER BY monitor_year DESC, monitor_month DESC
+    LIMIT 1
+)
+AND water_quality_level IN ('I', 'II', 'III')
+ORDER BY station_id
+LIMIT 50;`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_month_records
+- used_columns：wm_waterquality_month_records.station_id, wm_waterquality_month_records.monitor_year, wm_waterquality_month_records.monitor_month, wm_waterquality_month_records.water_quality_level
+- severity：ok
+- categories：subquery, tuple_subquery
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 28. tuple 子查询不存在字段
+
+- query：tuple 子查询不存在字段
+- sql：`SELECT station_id
+FROM wm_waterquality_month_records
+WHERE (monitor_year, monitor_month) IN (
+    SELECT monitor_year, fake_month
+    FROM wm_waterquality_month_records
+)
+LIMIT 50;`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_month_records
+- used_columns：wm_waterquality_month_records.station_id, wm_waterquality_month_records.monitor_year, wm_waterquality_month_records.monitor_month
+- severity：error
+- categories：subquery, tuple_subquery
+- unknown_tables：无
+- unknown_columns：fake_month
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：存在未知字段：fake_month
+- pass/fail：pass
+
+### 29. tuple 左值不存在字段
+
+- query：tuple 左值不存在字段
+- sql：`SELECT station_id
+FROM wm_waterquality_month_records
+WHERE (fake_year, monitor_month) IN (
+    SELECT monitor_year, monitor_month
+    FROM wm_waterquality_month_records
+)
+LIMIT 50;`
+- expected_pass：false
+- actual_pass：false
+- used_tables：wm_waterquality_month_records
+- used_columns：wm_waterquality_month_records.station_id, wm_waterquality_month_records.monitor_month, wm_waterquality_month_records.monitor_year
+- severity：error
+- categories：subquery, tuple_subquery
+- unknown_tables：无
+- unknown_columns：fake_year
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：存在未知字段：fake_year
+- pass/fail：pass
+
+### 30. 普通单字段 IN 子查询
+
+- query：普通单字段 IN 子查询
+- sql：`SELECT station_id
+FROM wm_waterquality_month_records
+WHERE monitor_year IN (
+    SELECT monitor_year
+    FROM wm_waterquality_year_records
+)
+LIMIT 50;`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_month_records, wm_waterquality_year_records
+- used_columns：wm_waterquality_month_records.station_id, wm_waterquality_month_records.monitor_year, wm_waterquality_year_records.monitor_year
+- severity：ok
+- categories：subquery, tuple_subquery
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：无
+- reason：SQL 静态校验通过
+- pass/fail：pass
+
+### 31. candidate mismatch 保持 warning
+
+- query：candidate mismatch 保持 warning
+- sql：`SELECT station_id FROM wm_waterquality_day_records LIMIT 10`
+- expected_pass：true
+- actual_pass：true
+- used_tables：wm_waterquality_day_records
+- used_columns：wm_waterquality_day_records.station_id
+- severity：warning
+- categories：candidate_mismatch
+- unknown_tables：无
+- unknown_columns：无
+- forbidden_operations：无
+- candidate_mismatch：wm_waterquality_day_records
+- reason：SQL 表不在 deterministic candidate tables 中，需人工关注
 - pass/fail：pass
