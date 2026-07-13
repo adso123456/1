@@ -9,7 +9,7 @@
 origin	https://github.com/adso123456/1.git (fetch)
 origin	https://github.com/adso123456/1.git (push)
 ```
-- 基础 commit：`e7f88188cc5f8f0d9e91af43620b1aff6e64d83f`
+- 基础 commit：`ad10a44c802154ede2e1296826ca63732a6b523e`
 - 初始 `git status --short`：
 
 ```text
@@ -53,18 +53,18 @@ origin	https://github.com/adso123456/1.git (push)
 | L3_P1_SQL_010 | C | 统计具备采样条件的排污口数量 | rs_outlet_live_v2 | rs_outlet_live_v2 | rs_outlet_live_v2.has_sampling_condition | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_011 | D | 查询断面编码、名称、级别、属性和考核状态 | wm_section_info | wm_section_info | wm_section_info.is_examine, wm_section_info.section_code, wm_section_info.section_level, wm_section_info.section_name, wm_section_info.section_nature, wm_section_info.water_body_id | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_012 | D | 查询水文站基础信息和建设状态 | wm_hydrological_info | wm_hydrological_info | wm_hydrological_info.belong_to_city, wm_hydrological_info.build_state, wm_hydrological_info.region_code, wm_hydrological_info.station_code, wm_hydrological_info.station_name, wm_hydrological_info.station_type, wm_hydrological_info.water_type | 无 | 无 | 是 | ok | 无 | pass |
-| L3_P1_SQL_013 | D | 按城市统计水文站数量 | wm_hydrological_info | wm_hydrological_info | wm_hydrological_info.belong_to_city, wm_hydrological_info.station_code | 无 | 无 | 是 | ok | 无 | pass |
+| L3_P1_SQL_013 | D | 按城市统计水文站记录数 | wm_hydrological_info | wm_hydrological_info | wm_hydrological_info.belong_to_city | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_014 | D | 查询水体基础信息、类型、功能和所在流域 | wm_waterbody_info | wm_waterbody_info | wm_waterbody_info.area, wm_waterbody_info.basin, wm_waterbody_info.length, wm_waterbody_info.water_body_code, wm_waterbody_info.water_body_function, wm_waterbody_info.water_body_name, wm_waterbody_info.water_body_type | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_015 | D | 查询摄像头设备基础信息和监控对象 | wm_camera_info | wm_camera_info | wm_camera_info.address, wm_camera_info.camera_name, wm_camera_info.device_code, wm_camera_info.device_supplier, wm_camera_info.device_type, wm_camera_info.monitor_subject | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_016 | D | 查询摄像头平台设备、厂商、型号和在线状态 | wm_camera_platform | wm_camera_platform | wm_camera_platform.device_code, wm_camera_platform.manufacturer, wm_camera_platform.model, wm_camera_platform.name, wm_camera_platform.online, wm_camera_platform.transport | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_017 | D | 查询无人机名称、品牌、型号和在线状态 | wm_uav_info | wm_uav_info | wm_uav_info.brand, wm_uav_info.code, wm_uav_info.drone_callsign, wm_uav_info.drone_device_model, wm_uav_info.drone_device_online_status, wm_uav_info.drone_sn, wm_uav_info.gateway_device_online_status, wm_uav_info.name | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_018 | D | 查询区县级行政区名称、编码和所属城市 | gis_region_county | gis_region_county | gis_region_county.city, gis_region_county.region_code, gis_region_county.region_name | 无 | 无 | 是 | ok | 无 | pass |
-| L3_P1_SQL_019 | E | 按水源类型统计普通取水口数量 | wm_water_intake | wm_water_intake | wm_water_intake.name, wm_water_intake.water_type | 无 | 无 | 是 | ok | 无 | pass |
+| L3_P1_SQL_019 | E | 按水源类型统计普通取水口记录数 | wm_water_intake | wm_water_intake | wm_water_intake.water_type | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_020 | E | 按城市和区县查询普通取水口 | wm_water_intake | wm_water_intake | wm_water_intake.city, wm_water_intake.county, wm_water_intake.name, wm_water_intake.water_type | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_021 | E | 查询普通取水口行政区域和使用状态 | wm_water_intake | wm_water_intake | wm_water_intake.name, wm_water_intake.region_code, wm_water_intake.region_name, wm_water_intake.used_mark, wm_water_intake.water_type | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_022 | E | 查询水源地名称、类型、状态和所在区域 | wm_water_source | wm_water_source | wm_water_source.name, wm_water_source.region_name, wm_water_source.source_state, wm_water_source.source_type | 无 | 无 | 是 | ok | 无 | pass |
 | L3_P1_SQL_023 | E | 查询水源地保护等级和保护区划定状态 | wm_water_source | wm_water_source | wm_water_source.name, wm_water_source.protect_area_cert, wm_water_source.protect_area_status, wm_water_source.protect_level | 无 | 无 | 是 | ok | 无 | pass |
-| L3_P1_SQL_024 | E | 查询服务人口较多及年实际取水量较高的水源地 | wm_water_source | wm_water_source | wm_water_source.name, wm_water_source.service_people_count, wm_water_source.supply_water_daily, wm_water_source.supply_water_year | 无 | 无 | 是 | ok | 无 | pass |
+| L3_P1_SQL_024 | E | 按年实际取水量从高到低查看水源地及其服务人口 | wm_water_source | wm_water_source | wm_water_source.name, wm_water_source.service_people_count, wm_water_source.supply_water_daily, wm_water_source.supply_water_year | 无 | 无 | 是 | ok | 无 | pass |
 
 ## warning 和 fail 明细
 

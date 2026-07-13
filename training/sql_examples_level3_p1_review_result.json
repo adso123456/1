@@ -5,17 +5,20 @@
     "priority": "P1",
     "question": "查询排污口监测数据中的COD和氨氮记录",
     "sql": "SELECT outlet_name, sampling_time, cod, ammonia_nitrogen\nFROM rs_outlet_monitor_v2\nWHERE cod IS NOT NULL OR ammonia_nitrogen IS NOT NULL\nORDER BY sampling_time DESC\nLIMIT 50",
-    "expected_tables": ["rs_outlet_monitor_v2"],
+    "expected_tables": [
+      "rs_outlet_monitor_v2"
+    ],
     "expected_columns": [
       "rs_outlet_monitor_v2.outlet_name",
       "rs_outlet_monitor_v2.sampling_time",
       "rs_outlet_monitor_v2.cod",
       "rs_outlet_monitor_v2.ammonia_nitrogen"
     ],
-    "business_intent": "排污口监测指标查询：使用排污口监测表查看COD和氨氮的最近监测记录。",
-    "risk_notes": "仅查询排污口监测表，不与水质记录表或排污口基础表混用；固定LIMIT仅用于控制示例结果量。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "metadata明确支持outlet_name、sampling_time、cod和ammonia_nitrogen；问题、字段和按采样时间倒序的SQL一致。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_001"
   },
   {
     "id": "L3_P1_SQL_002",
@@ -23,7 +26,9 @@
     "priority": "P1",
     "question": "查看排污口最近的pH、BOD和流量监测记录",
     "sql": "SELECT outlet_name, sampling_time, ph, bod, flow\nFROM rs_outlet_monitor_v2\nWHERE outlet_name IS NOT NULL\nORDER BY sampling_time DESC\nLIMIT 20",
-    "expected_tables": ["rs_outlet_monitor_v2"],
+    "expected_tables": [
+      "rs_outlet_monitor_v2"
+    ],
     "expected_columns": [
       "rs_outlet_monitor_v2.outlet_name",
       "rs_outlet_monitor_v2.sampling_time",
@@ -31,10 +36,11 @@
       "rs_outlet_monitor_v2.bod",
       "rs_outlet_monitor_v2.flow"
     ],
-    "business_intent": "排污口最近监测记录：按采样时间查看pH、BOD和流量。",
-    "risk_notes": "ph是rs_outlet_monitor_v2的排污口监测字段，不得与水质记录表的m2_value混淆。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "metadata明确支持排污口监测表的ph、bod和flow；SQL按sampling_time倒序表达最近记录，未混用水质m字段。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_002"
   },
   {
     "id": "L3_P1_SQL_003",
@@ -42,16 +48,19 @@
     "priority": "P1",
     "question": "查询排污口排水特征和在线监测状态",
     "sql": "SELECT outlet_name, drainage_feature, has_online_monitor\nFROM rs_outlet_live_v2\nWHERE outlet_name IS NOT NULL\nORDER BY outlet_name\nLIMIT 50",
-    "expected_tables": ["rs_outlet_live_v2"],
+    "expected_tables": [
+      "rs_outlet_live_v2"
+    ],
     "expected_columns": [
       "rs_outlet_live_v2.outlet_name",
       "rs_outlet_live_v2.drainage_feature",
       "rs_outlet_live_v2.has_online_monitor"
     ],
-    "business_intent": "排污口实况查询：查看排水特征和是否实现在线监测。",
-    "risk_notes": "仅使用实况表的明确业务字段，不查询geom，不与排污口基础表关联。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "只展示drainage_feature和has_online_monitor原始状态，不对状态枚举作判断，单表边界清晰。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_003"
   },
   {
     "id": "L3_P1_SQL_004",
@@ -59,15 +68,18 @@
     "priority": "P1",
     "question": "筛选存在异常状况的排污口",
     "sql": "SELECT outlet_name, has_abnormal\nFROM rs_outlet_live_v2\nWHERE has_abnormal = '是'\nORDER BY outlet_name\nLIMIT 50",
-    "expected_tables": ["rs_outlet_live_v2"],
+    "expected_tables": [
+      "rs_outlet_live_v2"
+    ],
     "expected_columns": [
       "rs_outlet_live_v2.outlet_name",
       "rs_outlet_live_v2.has_abnormal"
     ],
-    "business_intent": "排污口异常状态筛选：从实况表中查询存在异常状况的排污口。",
-    "risk_notes": "状态值'是'仅作为示例筛选条件，人工审查阶段需确认实际枚举值；不做跨表数量统计。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "requires_manual_review",
+    "review_status": "reviewed",
+    "review_notes": "has_abnormal为varchar，metadata仅说明“有无异常状况”，未提供允许值、示例值或枚举；无法确认'是'为真实值。",
+    "business_risk": "medium",
+    "source_draft_id": "L3_P1_SQL_004"
   },
   {
     "id": "L3_P1_SQL_005",
@@ -75,16 +87,19 @@
     "priority": "P1",
     "question": "查询已整治排污口及整治类型",
     "sql": "SELECT outlet_name, is_remediated, remediation_type\nFROM rs_outlet_remediation_v2\nWHERE is_remediated = '是'\nORDER BY outlet_name\nLIMIT 50",
-    "expected_tables": ["rs_outlet_remediation_v2"],
+    "expected_tables": [
+      "rs_outlet_remediation_v2"
+    ],
     "expected_columns": [
       "rs_outlet_remediation_v2.outlet_name",
       "rs_outlet_remediation_v2.is_remediated",
       "rs_outlet_remediation_v2.remediation_type"
     ],
-    "business_intent": "排污口整治查询：筛选已完成整治的排污口并展示整治类型。",
-    "risk_notes": "只使用整治表，不JOIN rs_outlet；状态值'是'需在人工审查阶段复核实际枚举。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "requires_manual_review",
+    "review_status": "reviewed",
+    "review_notes": "is_remediated为varchar，metadata仅说明“是否完成整治”，未提供允许值、示例值或枚举；无法确认'是'为真实值。",
+    "business_risk": "medium",
+    "source_draft_id": "L3_P1_SQL_005"
   },
   {
     "id": "L3_P1_SQL_006",
@@ -92,15 +107,18 @@
     "priority": "P1",
     "question": "查询排污口规范化建设状态",
     "sql": "SELECT outlet_name, is_standardized\nFROM rs_outlet_remediation_v2\nWHERE is_standardized IS NOT NULL\nORDER BY outlet_name\nLIMIT 50",
-    "expected_tables": ["rs_outlet_remediation_v2"],
+    "expected_tables": [
+      "rs_outlet_remediation_v2"
+    ],
     "expected_columns": [
       "rs_outlet_remediation_v2.outlet_name",
       "rs_outlet_remediation_v2.is_standardized"
     ],
-    "business_intent": "规范化建设状态查询：展示排污口是否完成规范化建设。",
-    "risk_notes": "只展示数据库记录的状态，不把非空解释为已完成规范化建设；不推断整治完成率，不与排污口基础表关联。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "SQL只筛选已记录状态并展示is_standardized；已补充risk_notes，明确非空不等于已完成规范化建设。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_006"
   },
   {
     "id": "L3_P1_SQL_007",
@@ -108,7 +126,9 @@
     "priority": "P1",
     "question": "查询PS类型排水口的COD、总氮和pH日记录",
     "sql": "SELECT pollutant_id, timestamp, type, status, m1_value, m2_value, m3_value\nFROM rs_wastewater_day_records\nWHERE type = 'PS'\nORDER BY timestamp DESC\nLIMIT 50",
-    "expected_tables": ["rs_wastewater_day_records"],
+    "expected_tables": [
+      "rs_wastewater_day_records"
+    ],
     "expected_columns": [
       "rs_wastewater_day_records.pollutant_id",
       "rs_wastewater_day_records.timestamp",
@@ -118,10 +138,11 @@
       "rs_wastewater_day_records.m2_value",
       "rs_wastewater_day_records.m3_value"
     ],
-    "business_intent": "PS排水口废水日记录：查询COD、总氮和pH的日统计值。",
-    "risk_notes": "m1/m2/m3的污染物语义仅在type=PS前提下使用；不得套用PQ排气口指标语义。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "metadata字段注释明确给出PS条件下m1=COD、m2=总氮、m3=pH，SQL保持type='PS'，指标映射有直接证据。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P1_SQL_007"
   },
   {
     "id": "L3_P1_SQL_008",
@@ -129,7 +150,9 @@
     "priority": "P1",
     "question": "查询废水小时流量、排放量和状态趋势",
     "sql": "SELECT pollutant_id, timestamp, type, status, ll, pfl\nFROM rs_wastewater_hour_records\nWHERE timestamp IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 72",
-    "expected_tables": ["rs_wastewater_hour_records"],
+    "expected_tables": [
+      "rs_wastewater_hour_records"
+    ],
     "expected_columns": [
       "rs_wastewater_hour_records.pollutant_id",
       "rs_wastewater_hour_records.timestamp",
@@ -138,10 +161,11 @@
       "rs_wastewater_hour_records.ll",
       "rs_wastewater_hour_records.pfl"
     ],
-    "business_intent": "废水小时记录趋势：按时间查看流量、排放量和监测状态。",
-    "risk_notes": "小时表m1_value至m22_value语义未明确，本样本严格排除这些字段，只使用ll和pfl。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "小时表仅使用timestamp、type、status、ll和pfl，未使用语义不明确的m1-m22字段。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_008"
   },
   {
     "id": "L3_P1_SQL_009",
@@ -149,7 +173,9 @@
     "priority": "P1",
     "question": "查询PS类型废水月度COD、总氮、pH和排放数据",
     "sql": "SELECT pollutant_id, monitor_year, monitor_month, type, status, ll, pfl, m1_value, m2_value, m3_value\nFROM rs_wastewater_month_records\nWHERE type = 'PS'\nORDER BY monitor_year DESC, monitor_month DESC\nLIMIT 60",
-    "expected_tables": ["rs_wastewater_month_records"],
+    "expected_tables": [
+      "rs_wastewater_month_records"
+    ],
     "expected_columns": [
       "rs_wastewater_month_records.pollutant_id",
       "rs_wastewater_month_records.monitor_year",
@@ -162,10 +188,11 @@
       "rs_wastewater_month_records.m2_value",
       "rs_wastewater_month_records.m3_value"
     ],
-    "business_intent": "PS排水口废水月记录：查询COD、总氮、pH、流量和排放量。",
-    "risk_notes": "m1/m2/m3的污染物语义仅在type=PS前提下使用；不使用其他未确认m字段。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "metadata字段注释明确给出PS条件下月度m1=COD、m2=总氮、m3=pH，SQL保持type='PS'。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P1_SQL_009"
   },
   {
     "id": "L3_P1_SQL_010",
@@ -173,12 +200,17 @@
     "priority": "P1",
     "question": "统计具备采样条件的排污口数量",
     "sql": "SELECT COUNT(has_sampling_condition) AS sampling_ready_count\nFROM rs_outlet_live_v2\nWHERE has_sampling_condition = '是'\nLIMIT 1",
-    "expected_tables": ["rs_outlet_live_v2"],
-    "expected_columns": ["rs_outlet_live_v2.has_sampling_condition"],
-    "business_intent": "排污口采样条件统计：统计实况表中具备采样条件的排污口数量。",
-    "risk_notes": "固定使用rs_outlet_live_v2单表；状态值'是'需在人工审查阶段确认，不与其他排污口表合并统计。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "expected_tables": [
+      "rs_outlet_live_v2"
+    ],
+    "expected_columns": [
+      "rs_outlet_live_v2.has_sampling_condition"
+    ],
+    "decision": "requires_manual_review",
+    "review_status": "reviewed",
+    "review_notes": "has_sampling_condition为varchar，metadata仅说明“是否具备采样条件”，未提供允许值、示例值或枚举；无法确认'是'为真实值。",
+    "business_risk": "medium",
+    "source_draft_id": "L3_P1_SQL_010"
   },
   {
     "id": "L3_P1_SQL_011",
@@ -186,7 +218,9 @@
     "priority": "P1",
     "question": "查询断面编码、名称、级别、属性和考核状态",
     "sql": "SELECT section_code, section_name, section_level, section_nature, is_examine, water_body_id\nFROM wm_section_info\nWHERE section_name IS NOT NULL\nORDER BY section_name\nLIMIT 50",
-    "expected_tables": ["wm_section_info"],
+    "expected_tables": [
+      "wm_section_info"
+    ],
     "expected_columns": [
       "wm_section_info.section_code",
       "wm_section_info.section_name",
@@ -195,10 +229,11 @@
       "wm_section_info.is_examine",
       "wm_section_info.water_body_id"
     ],
-    "business_intent": "断面基础信息查询：展示断面身份、级别、属性、考核状态和所属水体ID。",
-    "risk_notes": "water_body_id只展示，不JOIN水体表；不查询geom。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "断面字段均有明确metadata注释；water_body_id仅展示，未进入断面与水体JOIN。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_011"
   },
   {
     "id": "L3_P1_SQL_012",
@@ -206,7 +241,9 @@
     "priority": "P1",
     "question": "查询水文站基础信息和建设状态",
     "sql": "SELECT station_code, station_name, water_type, region_code, belong_to_city, station_type, build_state\nFROM wm_hydrological_info\nWHERE station_name IS NOT NULL\nORDER BY station_name\nLIMIT 50",
-    "expected_tables": ["wm_hydrological_info"],
+    "expected_tables": [
+      "wm_hydrological_info"
+    ],
     "expected_columns": [
       "wm_hydrological_info.station_code",
       "wm_hydrological_info.station_name",
@@ -216,10 +253,11 @@
       "wm_hydrological_info.station_type",
       "wm_hydrological_info.build_state"
     ],
-    "business_intent": "水文站基础查询：查看编码、名称、水体类型、区域、站型和建站状态。",
-    "risk_notes": "禁止联系人、联系电话和geom字段，不与断面、区域或水体表关联。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "水文站基础字段语义明确，已排除联系人、电话、geom及跨表关联。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_012"
   },
   {
     "id": "L3_P1_SQL_013",
@@ -227,14 +265,17 @@
     "priority": "P1",
     "question": "按城市统计水文站记录数",
     "sql": "SELECT belong_to_city, COUNT(*) AS station_record_count\nFROM wm_hydrological_info\nWHERE belong_to_city IS NOT NULL\nGROUP BY belong_to_city\nORDER BY COUNT(*) DESC\nLIMIT 50",
-    "expected_tables": ["wm_hydrological_info"],
+    "expected_tables": [
+      "wm_hydrological_info"
+    ],
     "expected_columns": [
       "wm_hydrological_info.belong_to_city"
     ],
-    "business_intent": "水文站单表记录统计：按归属城市统计表内记录数。",
-    "risk_notes": "COUNT(*)统计表内记录数，不声称按station_code去重后的唯一站点数；不关联行政区域表。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "已将问题修正为按城市统计记录数，并改用COUNT(*)；不再声称按station_code去重或统计唯一站点。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P1_SQL_013"
   },
   {
     "id": "L3_P1_SQL_014",
@@ -242,7 +283,9 @@
     "priority": "P1",
     "question": "查询水体基础信息、类型、功能和所在流域",
     "sql": "SELECT water_body_code, water_body_name, water_body_type, water_body_function, basin, length, area\nFROM wm_waterbody_info\nWHERE water_body_name IS NOT NULL\nORDER BY water_body_name\nLIMIT 50",
-    "expected_tables": ["wm_waterbody_info"],
+    "expected_tables": [
+      "wm_waterbody_info"
+    ],
     "expected_columns": [
       "wm_waterbody_info.water_body_code",
       "wm_waterbody_info.water_body_name",
@@ -252,10 +295,11 @@
       "wm_waterbody_info.length",
       "wm_waterbody_info.area"
     ],
-    "business_intent": "水体基础查询：展示水体编码、名称、类型、功能、流域和规模信息。",
-    "risk_notes": "不查询geom，不与断面或控制单元表关联；长度和面积只按数据库原值展示。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "水体编码、名称、类型、功能、流域、长度和面积均有明确metadata支持，未查询geom。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_014"
   },
   {
     "id": "L3_P1_SQL_015",
@@ -263,7 +307,9 @@
     "priority": "P1",
     "question": "查询摄像头设备基础信息和监控对象",
     "sql": "SELECT camera_name, device_type, device_code, device_supplier, address, monitor_subject\nFROM wm_camera_info\nWHERE camera_name IS NOT NULL\nORDER BY camera_name\nLIMIT 50",
-    "expected_tables": ["wm_camera_info"],
+    "expected_tables": [
+      "wm_camera_info"
+    ],
     "expected_columns": [
       "wm_camera_info.camera_name",
       "wm_camera_info.device_type",
@@ -272,10 +318,11 @@
       "wm_camera_info.address",
       "wm_camera_info.monitor_subject"
     ],
-    "business_intent": "摄像头设备基础查询：查看设备身份、厂商、地址和监控对象。",
-    "risk_notes": "不与站点表JOIN，不查询经纬度，不将地址推断为行政区。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "摄像头设备字段语义明确，问题只覆盖单表基础信息和监控对象，未关联站点。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_015"
   },
   {
     "id": "L3_P1_SQL_016",
@@ -283,7 +330,9 @@
     "priority": "P1",
     "question": "查询摄像头平台设备、厂商、型号和在线状态",
     "sql": "SELECT device_code, name, manufacturer, model, transport, online\nFROM wm_camera_platform\nWHERE name IS NOT NULL\nORDER BY name\nLIMIT 50",
-    "expected_tables": ["wm_camera_platform"],
+    "expected_tables": [
+      "wm_camera_platform"
+    ],
     "expected_columns": [
       "wm_camera_platform.device_code",
       "wm_camera_platform.name",
@@ -292,10 +341,11 @@
       "wm_camera_platform.transport",
       "wm_camera_platform.online"
     ],
-    "business_intent": "摄像头平台基础查询：展示平台设备、厂商、型号、传输方式和在线状态。",
-    "risk_notes": "不查询IP、端口或账号凭据，不与wm_camera_info关联。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "平台设备、厂商、型号、传输和在线状态字段明确，未查询IP、端口或账号凭据。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_016"
   },
   {
     "id": "L3_P1_SQL_017",
@@ -303,7 +353,9 @@
     "priority": "P1",
     "question": "查询无人机名称、品牌、型号和在线状态",
     "sql": "SELECT code, name, brand, drone_sn, drone_callsign, drone_device_model, drone_device_online_status, gateway_device_online_status\nFROM wm_uav_info\nWHERE name IS NOT NULL\nORDER BY name\nLIMIT 50",
-    "expected_tables": ["wm_uav_info"],
+    "expected_tables": [
+      "wm_uav_info"
+    ],
     "expected_columns": [
       "wm_uav_info.code",
       "wm_uav_info.name",
@@ -314,10 +366,11 @@
       "wm_uav_info.drone_device_online_status",
       "wm_uav_info.gateway_device_online_status"
     ],
-    "business_intent": "无人机设备基础查询：展示无人机身份、品牌、型号和设备在线状态。",
-    "risk_notes": "drone_device_model可能为JSON文本，本样本只做展示或简单筛选，不解析内部结构。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "drone_device_model仅作为原始字段展示，SQL未解析JSON内部结构；设备身份和在线状态字段有metadata支持。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P1_SQL_017"
   },
   {
     "id": "L3_P1_SQL_018",
@@ -325,16 +378,19 @@
     "priority": "P1",
     "question": "查询区县级行政区名称、编码和所属城市",
     "sql": "SELECT region_name, region_code, city\nFROM gis_region_county\nWHERE region_name IS NOT NULL\nORDER BY city, region_name\nLIMIT 100",
-    "expected_tables": ["gis_region_county"],
+    "expected_tables": [
+      "gis_region_county"
+    ],
     "expected_columns": [
       "gis_region_county.region_name",
       "gis_region_county.region_code",
       "gis_region_county.city"
     ],
-    "business_intent": "区县行政区层级查询：展示区县名称、编码和所属城市。",
-    "risk_notes": "固定使用gis_region_county单表，不与gis_region_city或gis_region联合查询，不查询geom。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "固定使用gis_region_county单表，region_name、region_code和city字段语义明确。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_018"
   },
   {
     "id": "L3_P1_SQL_019",
@@ -342,14 +398,17 @@
     "priority": "P1",
     "question": "按水源类型统计普通取水口记录数",
     "sql": "SELECT water_type, COUNT(*) AS intake_record_count\nFROM wm_water_intake\nWHERE water_type IS NOT NULL\nGROUP BY water_type\nORDER BY COUNT(*) DESC\nLIMIT 20",
-    "expected_tables": ["wm_water_intake"],
+    "expected_tables": [
+      "wm_water_intake"
+    ],
     "expected_columns": [
       "wm_water_intake.water_type"
     ],
-    "business_intent": "普通取水口单表记录统计：按水源类型统计表内记录数。",
-    "risk_notes": "COUNT(*)统计表内记录数，不声称按名称或编码去重后的唯一取水口数；统计对象不是水源地取水口。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "已将问题修正为按水源类型统计记录数，并改用COUNT(*)；不声称名称唯一或按取水口去重。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P1_SQL_019"
   },
   {
     "id": "L3_P1_SQL_020",
@@ -357,17 +416,20 @@
     "priority": "P1",
     "question": "按城市和区县查询普通取水口",
     "sql": "SELECT name, city, county, water_type\nFROM wm_water_intake\nWHERE city IS NOT NULL OR county IS NOT NULL\nORDER BY city, county, name\nLIMIT 100",
-    "expected_tables": ["wm_water_intake"],
+    "expected_tables": [
+      "wm_water_intake"
+    ],
     "expected_columns": [
       "wm_water_intake.name",
       "wm_water_intake.city",
       "wm_water_intake.county",
       "wm_water_intake.water_type"
     ],
-    "business_intent": "普通取水口区域筛选：按城市和区县查看取水口名称及水源类型。",
-    "risk_notes": "不关联行政区域表，不表述为水源地取水口，城市和区县只按表内字段使用。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "普通取水口的name、city、county和water_type字段明确，未关联区域表。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_020"
   },
   {
     "id": "L3_P1_SQL_021",
@@ -375,7 +437,9 @@
     "priority": "P1",
     "question": "查询普通取水口行政区域和使用状态",
     "sql": "SELECT name, region_code, region_name, water_type, used_mark\nFROM wm_water_intake\nWHERE name IS NOT NULL\nORDER BY region_name, name\nLIMIT 100",
-    "expected_tables": ["wm_water_intake"],
+    "expected_tables": [
+      "wm_water_intake"
+    ],
     "expected_columns": [
       "wm_water_intake.name",
       "wm_water_intake.region_code",
@@ -383,10 +447,11 @@
       "wm_water_intake.water_type",
       "wm_water_intake.used_mark"
     ],
-    "business_intent": "普通取水口状态查询：展示行政区域、水源类型和使用状态。",
-    "risk_notes": "查询对象明确为普通取水口，不得表述为水源地取水口或使用wm_water_source_intake_v2口径。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "查询对象明确为wm_water_intake普通取水口，状态和区域字段均有metadata支持，未混入水源地取水口。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_021"
   },
   {
     "id": "L3_P1_SQL_022",
@@ -394,17 +459,20 @@
     "priority": "P1",
     "question": "查询水源地名称、类型、状态和所在区域",
     "sql": "SELECT name, source_type, source_state, region_name\nFROM wm_water_source\nWHERE name IS NOT NULL\nORDER BY region_name, name\nLIMIT 100",
-    "expected_tables": ["wm_water_source"],
+    "expected_tables": [
+      "wm_water_source"
+    ],
     "expected_columns": [
       "wm_water_source.name",
       "wm_water_source.source_type",
       "wm_water_source.source_state",
       "wm_water_source.region_name"
     ],
-    "business_intent": "水源地基础查询：查看水源地名称、类型、状态和行政区域。",
-    "risk_notes": "只查询wm_water_source水源地基础信息，不与普通取水口或水源地取水口表混用。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "wm_water_source的名称、类型、状态和区域字段明确，问题与SQL一致。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_022"
   },
   {
     "id": "L3_P1_SQL_023",
@@ -412,17 +480,20 @@
     "priority": "P1",
     "question": "查询水源地保护等级和保护区划定状态",
     "sql": "SELECT name, protect_level, protect_area_status, protect_area_cert\nFROM wm_water_source\nWHERE protect_area_status IS NOT NULL\nORDER BY protect_level, name\nLIMIT 100",
-    "expected_tables": ["wm_water_source"],
+    "expected_tables": [
+      "wm_water_source"
+    ],
     "expected_columns": [
       "wm_water_source.name",
       "wm_water_source.protect_level",
       "wm_water_source.protect_area_status",
       "wm_water_source.protect_area_cert"
     ],
-    "business_intent": "水源地保护信息查询：展示保护等级、保护区划定状态和文号。",
-    "risk_notes": "只展示数据库记录，不推断未记录的保护结论或合规状态。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "只展示数据库记录的保护等级、划定状态和文号，不推断保护合规结论。",
+    "business_risk": "none",
+    "source_draft_id": "L3_P1_SQL_023"
   },
   {
     "id": "L3_P1_SQL_024",
@@ -430,16 +501,19 @@
     "priority": "P1",
     "question": "按年实际取水量从高到低查看水源地及其服务人口",
     "sql": "SELECT name, service_people_count, supply_water_year, supply_water_daily\nFROM wm_water_source\nWHERE supply_water_year IS NOT NULL\nORDER BY supply_water_year DESC, service_people_count DESC\nLIMIT 20",
-    "expected_tables": ["wm_water_source"],
+    "expected_tables": [
+      "wm_water_source"
+    ],
     "expected_columns": [
       "wm_water_source.name",
       "wm_water_source.service_people_count",
       "wm_water_source.supply_water_year",
       "wm_water_source.supply_water_daily"
     ],
-    "business_intent": "水源地年实际取水量排序：以supply_water_year降序为主排序，同时展示服务人口。",
-    "risk_notes": "service_people_count仅为辅助展示和同取水量时的次级排序；禁止表述为独立的双指标评选或水源地取水口供水能力。",
-    "train_decision": "draft",
-    "review_status": "pending_static_check"
+    "decision": "approved",
+    "review_status": "reviewed",
+    "review_notes": "问题已修正为按年实际取水量降序，supply_water_year为主排序，service_people_count仅辅助展示和次级排序。",
+    "business_risk": "low",
+    "source_draft_id": "L3_P1_SQL_024"
   }
 ]

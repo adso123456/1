@@ -23,7 +23,7 @@ DRAFT_PATH = Path(__file__).with_name("sql_examples_level3_p1_draft.json")
 P0_DRAFT_PATH = Path(__file__).with_name("sql_examples_level3_p0_draft.json")
 METADATA_PATH = PROJECT_ROOT / "agent_data" / "column_metadata_index.json"
 REPORT_PATH = Path(__file__).with_name("sql_examples_level3_p1_static_check_result.md")
-BASE_COMMIT = "e7f88188cc5f8f0d9e91af43620b1aff6e64d83f"
+BASE_COMMIT = "ad10a44c802154ede2e1296826ca63732a6b523e"
 
 REQUIRED_FIELDS = {
     "id", "group", "priority", "question", "sql", "expected_tables",
@@ -63,6 +63,11 @@ ALLOWED_CHANGED_PATHS = {
     "training/sql_examples_level3_p1_draft.json",
     "training/check_sql_examples_level3_p1.py",
     "training/sql_examples_level3_p1_static_check_result.md",
+    "training/review_sql_examples_level3_p1.py",
+    "training/sql_examples_level3_p1_review_result.json",
+    "training/sql_examples_level3_p1_review_report.md",
+    "training/validate_sql_examples_level3_p1_pretraining.py",
+    "training/sql_examples_level3_p1_pretraining_validation_result.md",
 }
 
 
