@@ -411,21 +411,57 @@ class DeterministicMetadataRetriever:
                 methods.append(method)
             reasons.append(reason)
 
-        if "水质" in query_compact:
+        waterquality_indicators = (
+            "ph",
+            "溶解氧",
+            "高锰酸盐指数",
+            "氨氮",
+            "总磷",
+            "总氮",
+            "水质等级",
+        )
+        annual_granularity_terms = ("年度", "按年", "年均", "年平均", "年际", "每年")
+        explicit_waterquality = "水质" in query_compact
+        implicit_station_waterquality = (
+            any(word in query_compact for word in ("站点", "监测站", "断面"))
+            and any(indicator in query_compact for indicator in waterquality_indicators)
+            and "排污口" not in query_compact
+        )
+        is_waterquality_query = explicit_waterquality or implicit_station_waterquality
+
+        if is_waterquality_query:
             is_waterquality_record = re.fullmatch(
                 r"wm_waterquality_(day|hour|month|year)_records", table_name
             )
             is_trend_query = any(word in query_compact for word in ("时间段", "变化", "趋势"))
-            has_granularity = any(word in query_compact for word in ("日", "小时", "月", "年"))
+            is_annual_granularity = any(
+                word in query_compact for word in annual_granularity_terms
+            )
+            has_granularity = (
+                any(word in query_compact for word in ("日", "小时", "月"))
+                or is_annual_granularity
+            )
 
             if is_waterquality_record or "水质监测" in table_comment:
                 add(1800, "waterquality_intent", "水质问题优先匹配水质监测记录表")
+            if implicit_station_waterquality and is_waterquality_record:
+                add(
+                    900,
+                    "implicit_station_waterquality_intent",
+                    "站点或断面水质指标问题命中水质记录表",
+                )
             if "日" in query_compact and table_name == "wm_waterquality_day_records":
                 add(1450, "waterquality_granularity", "水质日粒度命中")
             if "小时" in query_compact and table_name == "wm_waterquality_hour_records":
                 add(1450, "waterquality_granularity", "水质小时粒度命中")
             if "月" in query_compact and table_name == "wm_waterquality_month_records":
                 add(1450, "waterquality_granularity", "水质月粒度命中")
+            if is_annual_granularity and table_name == "wm_waterquality_year_records":
+                add(
+                    3600,
+                    "annual_waterquality_granularity",
+                    "年度粒度与站点水质指标语义命中年记录表",
+                )
             if is_trend_query and is_waterquality_record:
                 add(900, "waterquality_trend_intent", "水质趋势问题优先记录表")
             if (

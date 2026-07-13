@@ -33,6 +33,8 @@ class Case:
     contains_all: tuple[str, ...] = ()
     frozen_route: bool = False
     threshold_guard: bool = False
+    annual_non_waterquality_guard: bool = False
+    forbidden_top1: tuple[str, ...] = ()
 
 
 def load_review_questions() -> dict[str, str]:
@@ -60,6 +62,27 @@ def build_cases() -> list[Case]:
         Case("T12", "区分回归", questions["L3_P1_SQL_021"], "wm_water_intake", "wm_water_intake"),
         Case("T13", "冻结保护", "查询水源地取水口供水能力", "wm_water_source", frozen_route=True),
         Case("T14", "安全回归", "查询 wm_waterquality_threshold 中的水质趋势", threshold_guard=True),
+        Case("N1", "年度水质", "查询年度pH年均值最高的站点列表", "wm_waterquality_year_records", "wm_waterquality_year_records"),
+        Case("N2", "年度水质", "按年查看各站点溶解氧平均值", "wm_waterquality_year_records", "wm_waterquality_year_records"),
+        Case("N3", "年度水质", "查询各监测站点年度氨氮平均值", "wm_waterquality_year_records", "wm_waterquality_year_records"),
+        Case("N4", "年度水质", "查询年度水质等级为I至III类的站点", "wm_waterquality_year_records", "wm_waterquality_year_records"),
+        Case(
+            "N5", "冲突保护", questions["L3_P1_SQL_002"], "rs_outlet_monitor_v2",
+            "rs_outlet_monitor_v2", forbidden_top1=("wm_waterquality_year_records",),
+        ),
+        Case(
+            "N6", "冲突保护", questions["L3_P1_SQL_024"], "wm_water_source",
+            "wm_water_source", forbidden_top1=("wm_waterquality_year_records",),
+        ),
+        Case("N7", "粒度回归", "查询月度水质为I至III类的站点列表", "wm_waterquality_month_records", "wm_waterquality_month_records"),
+        Case(
+            "N8", "非水质保护", "查询年度企业数量", "wm_waterquality_year_records",
+            annual_non_waterquality_guard=True,
+        ),
+        Case(
+            "N9", "粒度回归", "查看某站点近两年pH和溶解氧月变化趋势",
+            "wm_waterquality_month_records", "wm_waterquality_month_records",
+        ),
     ]
 
 
@@ -81,6 +104,19 @@ def check_case(case: Case, candidates: list[dict[str, Any]]) -> tuple[bool, str]
         records = {"wm_waterquality_day_records", "wm_waterquality_hour_records", "wm_waterquality_month_records", "wm_waterquality_year_records"}
         passed = top1 in records and top1 != "wm_waterquality_threshold"
         return passed, f"top1={top1}"
+    if case.annual_non_waterquality_guard:
+        year_candidate = next(
+            (item for item in candidates if item["table_name"] == "wm_waterquality_year_records"),
+            None,
+        )
+        annual_method_added = bool(
+            year_candidate
+            and "annual_waterquality_granularity" in year_candidate["matched_by"]
+        )
+        passed = top1 != "wm_waterquality_year_records" and not annual_method_added
+        return passed, "年度非水质问题未获得年度水质意图加分" if passed else "年度非水质问题被水质年表污染"
+    if top1 in case.forbidden_top1:
+        return False, f"top1 不得为 {top1}"
     if case.top1 and top1 != case.top1:
         return False, f"期望 top1={case.top1}，实际 top1={top1}"
     if case.top1_any and top1 not in case.top1_any:

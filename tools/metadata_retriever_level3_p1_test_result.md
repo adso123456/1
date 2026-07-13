@@ -2,8 +2,8 @@
 
 - 基础 commit：2915199a7c688f8a2a4e1f4330c56e47526a6f0b
 - 修改文件：tools/metadata_retriever.py、tools/test_metadata_retriever_level3_p1.py、tools/metadata_retriever_level3_p1_test_result.md
-- 测试总数：14
-- 通过数量：14
+- 测试总数：23
+- 通过数量：23
 - 失败数量：0
 - 失败列表：无
 - 原有 P0 检索回归：20/20
@@ -42,6 +42,15 @@
 | T12 | 区分回归 | 查询普通取水口行政区域和使用状态 | wm_water_intake, wst_asset_trace_snap, wst_trace_topology_issue, wm_waterquality_day_records | 1 | 6620 | column_comment_substring, ordinary_water_intake_intent | 字段名或字段注释命中；普通取水口问题优先普通取水口表 | pass |
 | T13 | 冻结保护 | 查询水源地取水口供水能力 | wm_water_intake | - | - | - | 冻结口径未获得 water_source_base_intent | pass |
 | T14 | 安全回归 | 查询 wm_waterquality_threshold 中的水质趋势 | wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_year_records, wm_waterquality_month_records, layer_section, layer_industrial_ysc, layer_industrial_yjsgc, layer_outlet_sewage | - | - | - | top1=wm_waterquality_day_records | pass |
+| N1 | 年度水质 | 查询年度pH年均值最高的站点列表 | wm_waterquality_year_records, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_month_records, rs_outlet_monitor_v2 | 1 | 6300 | waterquality_intent, implicit_station_waterquality_intent, annual_waterquality_granularity | 水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表；年度粒度与站点水质指标语义命中年记录表 | pass |
+| N2 | 年度水质 | 按年查看各站点溶解氧平均值 | wm_waterquality_year_records, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_month_records | 1 | 6300 | waterquality_intent, implicit_station_waterquality_intent, annual_waterquality_granularity | 水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表；年度粒度与站点水质指标语义命中年记录表 | pass |
+| N3 | 年度水质 | 查询各监测站点年度氨氮平均值 | wm_waterquality_year_records, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_month_records | 1 | 6300 | waterquality_intent, implicit_station_waterquality_intent, annual_waterquality_granularity | 水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表；年度粒度与站点水质指标语义命中年记录表 | pass |
+| N4 | 年度水质 | 查询年度水质等级为I至III类的站点 | wm_waterquality_year_records, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_month_records | 1 | 6300 | waterquality_intent, implicit_station_waterquality_intent, annual_waterquality_granularity | 水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表；年度粒度与站点水质指标语义命中年记录表 | pass |
+| N5 | 冲突保护 | 查看排污口最近的pH、BOD和流量监测记录 | rs_outlet_monitor_v2, rs_wastewater_hour_records, rs_outlet, rs_outlet_info_v2, rs_outlet_live_v2, rs_outlet_trace_v2, layer_outlet_sewage, rs_outlet_remediation_v2 | 1 | 2820 | column_name_substring, column_comment_substring, outlet_intent | 字段名或字段注释命中；排污口语义命中 | pass |
+| N6 | 冲突保护 | 按年实际取水量从高到低查看水源地及其服务人口 | wm_water_source | 1 | 5200 | water_source_base_intent | 水源地基础与保护问题优先水源地信息表 | pass |
+| N7 | 粒度回归 | 查询月度水质为I至III类的站点列表 | wm_waterquality_month_records, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_year_records | 1 | 3250 | waterquality_intent, waterquality_granularity | 水质问题优先匹配水质监测记录表；水质月粒度命中 | pass |
+| N8 | 非水质保护 | 查询年度企业数量 |  | - | - | - | 年度非水质问题未获得年度水质意图加分 | pass |
+| N9 | 粒度回归 | 查看某站点近两年pH和溶解氧月变化趋势 | wm_waterquality_month_records, wm_waterquality_day_records, wm_waterquality_hour_records, wm_waterquality_year_records, rs_outlet_monitor_v2 | 1 | 5050 | waterquality_intent, implicit_station_waterquality_intent, waterquality_granularity, waterquality_trend_intent | 水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表；水质月粒度命中；水质趋势问题优先记录表 | pass |
 
 ## 执行约束
 
