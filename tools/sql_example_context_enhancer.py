@@ -12,6 +12,7 @@ from tools.sql_guard import SQLGuard
 ALLOWED_TRAINING_LEVELS = {
     "level2_sql_examples",
     "level3_p0_sql_examples",
+    "level3_p1_sql_examples",
 }
 
 
@@ -26,7 +27,7 @@ class SqlExampleContextStats:
 
 
 class SqlExampleContextEnhancer(LlmContextEnhancer):
-    """Append approved level-2 and level-3 P0 run_sql examples to the prompt."""
+    """Append approved Level 2, Level 3 P0 and Level 3 P1 run_sql examples."""
 
     def __init__(
         self,
