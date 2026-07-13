@@ -489,6 +489,38 @@ class DeterministicMetadataRetriever:
             if "排污口" in table_comment or table_name.startswith("rs_outlet") or "outlet" in table_name:
                 add(680, "outlet_intent", "排污口语义命中")
 
+        is_outlet_remediation = (
+            "排污口" in query_compact
+            and any(word in query_compact for word in ("整治", "规范化"))
+        )
+        if is_outlet_remediation and table_name in {
+            "rs_outlet_info_v2", "rs_outlet_remediation_v2"
+        }:
+            add(5600, "outlet_remediation_join_intent", "排污口基础信息与整治记录组合意图命中")
+
+        is_outlet_live = (
+            "排污口" in query_compact
+            and any(
+                word in query_compact
+                for word in ("实况", "排水特征", "在线监测", "采样条件")
+            )
+        )
+        if is_outlet_live and table_name in {"rs_outlet_info_v2", "rs_outlet_live_v2"}:
+            add(5600, "outlet_live_join_intent", "排污口基础信息与实况记录组合意图命中")
+
+        is_section_target = (
+            "断面" in query_compact
+            and any(word in query_compact for word in ("水质目标", "目标水质", "目标等级"))
+        )
+        if is_section_target and table_name in {"wm_section_info", "wm_section_wq_info"}:
+            add(6200, "section_waterquality_target_join_intent", "断面与水质目标组合意图命中")
+        if is_section_target and table_name == "wm_waterquality_threshold":
+            add(-3000, "section_waterquality_threshold_guard", "断面水质目标问题降低阈值配置表优先级")
+
+        is_section_waterbody = "断面" in query_compact and "水体" in query_compact
+        if is_section_waterbody and table_name in {"wm_section_info", "wm_waterbody_info"}:
+            add(6200, "section_waterbody_join_intent", "断面与所属水体组合意图命中")
+
         wastewater_metrics = ("cod", "总氮", "ph", "流量", "排放量")
         is_wastewater_query = (
             "废水" in query_compact
