@@ -94,7 +94,10 @@ def git_status() -> str:
     ).stdout
 
 
-def make_plan(batch: dict[str, Any] | None = None):
+def make_plan(
+    batch: dict[str, Any] | None = None,
+    existing_records: dict[str, Any] | None = None,
+):
     data = batch or json.loads(FIXTURE.read_text(encoding="utf-8"))
     validation = validate_training_batch(data, sql_guard=FakeGuard())
     if not validation.valid or not validation.batch_content_sha256:
@@ -102,6 +105,7 @@ def make_plan(batch: dict[str, Any] | None = None):
     return build_memory_write_plan(
         data,
         approved_batch_content_sha256=validation.batch_content_sha256,
+        existing_records=existing_records,
         sql_guard=FakeGuard(),
     )
 
@@ -262,13 +266,23 @@ def main() -> int:
         repeated = adapter.add_planned_record(plan, first)
         record_result(results, "重复 add 不覆盖已有记录", repeated.status == "existing_same", repeated.status)
 
-        conflict_batch = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        conflict_batch["samples"][0]["source"] = "synthetic changed source"
-        conflict_plan = make_plan(conflict_batch)
-        conflict_item = copy.deepcopy(conflict_plan.items[0])
-        object.__setattr__(conflict_item, "record_id", first.record_id)
-        conflict_result = adapter.add_planned_record(conflict_plan, conflict_item)
-        record_result(results, "相同 ID 不同计划内容被拒绝", conflict_result.status in {"blocked", "existing_conflict"}, conflict_result.status)
+        governance_batch = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        governance_batch["samples"][0]["source"] = "synthetic changed source"
+        governance_batch["samples"][0]["review_reason"] = "synthetic changed review"
+        governance_plan = make_plan(governance_batch)
+        governance_preflight = adapter.inspect_plan_records(governance_plan)
+        governance_result = adapter.add_planned_record(
+            governance_plan, governance_plan.items[0]
+        )
+        record_result(
+            results,
+            "治理 metadata 变化不属于内容冲突",
+            first.record_id in governance_preflight.controlled_existing_records
+            and first.record_id not in governance_preflight.malformed_conflicts
+            and governance_result.status == "blocked"
+            and governance_result.error_code == "PLAN_REBUILD_REQUIRED",
+            governance_result,
+        )
 
         legacy_id = "00000000-0000-4000-8000-000000000001"
         legacy_metadata = {
@@ -319,6 +333,77 @@ def main() -> int:
 
         created_second = adapter.add_planned_record(plan, second)
         record_result(results, "第二条受控记录写入成功", created_second.status == "created")
+
+        same_batch_preflight = adapter.inspect_plan_records(plan)
+        same_batch_plan = make_plan(
+            existing_records=dict(same_batch_preflight.controlled_existing_records)
+        )
+        record_result(
+            results,
+            "同批次快照恢复为 resume_same_batch",
+            same_batch_preflight.executable
+            and len(same_batch_preflight.controlled_existing_records) == 2
+            and same_batch_plan.executable
+            and all(item.status == "resume_same_batch" for item in same_batch_plan.items),
+            [item.status for item in same_batch_plan.items],
+        )
+
+        other_batch = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        other_batch["training_batch_id"] = "level4-fixture-20260714-02"
+        other_batch["source"] = "synthetic cross-batch source"
+        for index, sample in enumerate(other_batch["samples"], start=1):
+            sample["sample_id"] = f"L4_FIXTURE_CROSS_{index:03d}"
+            sample["source"] = "synthetic cross-batch sample"
+            sample["review_reason"] = "synthetic cross-batch review"
+        other_initial_plan = make_plan(other_batch)
+        other_preflight = adapter.inspect_plan_records(other_initial_plan)
+        other_rebuilt_plan = make_plan(
+            other_batch,
+            existing_records=dict(other_preflight.controlled_existing_records),
+        )
+        other_codes = {issue.code for issue in other_rebuilt_plan.issues}
+        record_result(
+            results,
+            "其他批次同内容恢复为 preexisting_other_batch",
+            len(other_preflight.controlled_existing_records) == 2
+            and not other_preflight.malformed_conflicts
+            and not any(issue.code == "EXISTING_RECORD_CONFLICT" for issue in other_preflight.issues)
+            and not other_rebuilt_plan.executable
+            and all(
+                item.status == "preexisting_other_batch"
+                for item in other_rebuilt_plan.items
+            )
+            and "PREEXISTING_OTHER_BATCH" in other_codes,
+            [item.status for item in other_rebuilt_plan.items],
+        )
+        other_add = adapter.add_planned_record(
+            other_initial_plan, other_initial_plan.items[0]
+        )
+        record_result(
+            results,
+            "其他批次受控既有记录要求重建计划",
+            other_add.status == "blocked"
+            and other_add.error_code == "PLAN_REBUILD_REQUIRED",
+            other_add,
+        )
+
+        true_conflict_batch = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        true_conflict_batch["samples"][0]["question"] += "（真实内容变化）"
+        true_conflict_item = make_plan(true_conflict_batch).items[0]
+        collection.delete(ids=[first.record_id])
+        add_raw(collection, first.record_id, true_conflict_item)
+        true_conflict_result = adapter.add_planned_record(plan, first)
+        true_conflict_inventory = adapter.inventory_tool_records()
+        record_result(
+            results,
+            "真实 Memory 内容变化属于 content conflict",
+            true_conflict_result.status == "existing_conflict"
+            and first.record_id in true_conflict_inventory.content_address_conflicts,
+            true_conflict_result,
+        )
+        collection.delete(ids=[first.record_id])
+        add_raw(collection, first.record_id, first)
+
         reverse_exact = adapter.get_exact_records([second.record_id, first.record_id])
         record_result(
             results,
@@ -393,6 +478,37 @@ def main() -> int:
         record_result(results, "删除后精确确认不存在", adapter.get_exact_records([first.record_id])[0].status == "missing")
         delete_missing = adapter.delete_exact_created_records([expected_first], plan.batch_content_sha256)
         record_result(results, "删除不存在明确返回 not_found", delete_missing.items[0].status == "not_found")
+
+        expected_second = ExpectedCreatedRecord(second.record_id, second.memory_content_sha256)
+        original_collection = adapter._collection
+
+        class FailingDeleteCollection:
+            def get(self, *args: Any, **kwargs: Any) -> Any:
+                return original_collection.get(*args, **kwargs)
+
+            def delete(self, *args: Any, **kwargs: Any) -> None:
+                del args, kwargs
+                raise RuntimeError("synthetic delete failure")
+
+        adapter._collection = FailingDeleteCollection()
+        delete_failure = adapter.delete_exact_created_records(
+            [expected_second], plan.batch_content_sha256
+        )
+        adapter._collection = original_collection
+        second_after_delete_failure = adapter.get_exact_records([second.record_id])[0]
+        record_result(
+            results,
+            "底层 delete 异常明确返回 storage_error",
+            not delete_failure.deleted
+            and delete_failure.items[0].status == "storage_error",
+            delete_failure,
+        )
+        record_result(
+            results,
+            "底层 delete 异常后记录仍存在",
+            second_after_delete_failure.status == "found",
+            second_after_delete_failure.status,
+        )
 
         original_collection = adapter._collection
 

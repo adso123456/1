@@ -50,3 +50,5 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 适配层集中封装 Vanna 私有 collection 访问，普通训练代码不得直接访问。正式记录创建使用计划中的确定性 ID 和 `add`，不使用随机 UUID、`upsert` 或现有 `save_tool_usage()`。写入前的全量内容索引用于识别旧 UUID、同内容重复和内容寻址冲突，不能只按确定性 ID 查询结果判断记录不存在；适配层不会自动迁移、删除或重写旧记录。
 
 向量检索只用于验证现有问答召回和 compatibility metadata 的兼容性，不用于幂等判断、T6 精确核验、回滚定位或重复检测。本阶段适配层只能运行在 Git 仓库外的隔离 Chroma，拒绝正式 `vanna_data`、`agent_data`、符号链接、junction 和 reparse point，且没有绕过参数。Level 1 Text Memory 能力仍未建立。
+
+合法受控记录的首次创建批次 metadata 不需要与当前计划一致。适配层按 Memory 内容身份、确定性 ID 和存储结构确认记录有效后，使用存储中的首次创建字段生成 `ExistingRecordSnapshot`，再由 0B-3B 写入计划判定 `resume_same_batch` 或 `preexisting_other_batch`。只有 Memory 内容身份、确定性 ID 或存储结构不一致时才属于 content conflict；当前计划的来源、审查原因、样本编号或首次创建批次不同不属于内容冲突。

@@ -423,12 +423,22 @@ def _metadata_for_item(item: MemoryWritePlanItem) -> dict[str, Any]:
     return metadata
 
 
-def _record_matches_item(record: StoredToolRecord, item: MemoryWritePlanItem) -> bool:
+def _record_content_identity_matches_item(
+    record: StoredToolRecord, item: MemoryWritePlanItem
+) -> bool:
     return (
         record.classification == "controlled_tool_record"
         and record.storage_id == item.record_id
         and _canonical_json(record.canonical_content) == _canonical_json(item.canonical_content)
         and record.memory_content_sha256 == item.memory_content_sha256
+    )
+
+
+def _record_exactly_matches_planned_creation(
+    record: StoredToolRecord, item: MemoryWritePlanItem
+) -> bool:
+    return (
+        _record_content_identity_matches_item(record, item)
         and record.metadata == _metadata_for_item(item)
     )
 
@@ -574,7 +584,7 @@ class ChromaToolMemoryAdapter:
             if record is None:
                 absent.append(item.record_id)
                 continue
-            if record.classification != "controlled_tool_record" or not _record_matches_item(record, item):
+            if not _record_content_identity_matches_item(record, item):
                 if item.record_id not in malformed:
                     malformed.append(item.record_id)
                 issues.append(_issue("EXISTING_RECORD_CONFLICT", item.record_id, "已有确定性记录与计划不一致"))
@@ -632,9 +642,14 @@ class ChromaToolMemoryAdapter:
         preflight = self.inspect_plan_records(plan)
         exact_before = self.get_exact_records([plan_item.record_id])[0]
         if exact_before.status == "found":
+            if _record_exactly_matches_planned_creation(exact_before.record, plan_item):  # type: ignore[arg-type]
+                return AddRecordResult(plan_item.record_id, "existing_same")
+            if _record_content_identity_matches_item(exact_before.record, plan_item):  # type: ignore[arg-type]
+                return AddRecordResult(
+                    plan_item.record_id, "blocked", "PLAN_REBUILD_REQUIRED"
+                )
             return AddRecordResult(
-                plan_item.record_id,
-                "existing_same" if _record_matches_item(exact_before.record, plan_item) else "existing_conflict",  # type: ignore[arg-type]
+                plan_item.record_id, "existing_conflict", "CONTENT_IDENTITY_CONFLICT"
             )
         if exact_before.status == "malformed":
             return AddRecordResult(plan_item.record_id, "existing_conflict", exact_before.error_code)
@@ -651,15 +666,22 @@ class ChromaToolMemoryAdapter:
         except Exception:  # noqa: BLE001
             raced = self.get_exact_records([plan_item.record_id])[0]
             if raced.status == "found":
+                if _record_exactly_matches_planned_creation(raced.record, plan_item):  # type: ignore[arg-type]
+                    return AddRecordResult(plan_item.record_id, "existing_same")
+                if _record_content_identity_matches_item(raced.record, plan_item):  # type: ignore[arg-type]
+                    return AddRecordResult(
+                        plan_item.record_id, "blocked", "PLAN_REBUILD_REQUIRED"
+                    )
                 return AddRecordResult(
                     plan_item.record_id,
-                    "existing_same" if _record_matches_item(raced.record, plan_item) else "existing_conflict",  # type: ignore[arg-type]
+                    "existing_conflict",
+                    "CONTENT_IDENTITY_CONFLICT",
                 )
             if raced.status == "malformed":
                 return AddRecordResult(plan_item.record_id, "existing_conflict", raced.error_code)
             return AddRecordResult(plan_item.record_id, "storage_error", "ADD_FAILED")
         written = self.get_exact_records([plan_item.record_id])[0]
-        if written.status != "found" or not _record_matches_item(written.record, plan_item):  # type: ignore[arg-type]
+        if written.status != "found" or not _record_exactly_matches_planned_creation(written.record, plan_item):  # type: ignore[arg-type]
             return AddRecordResult(plan_item.record_id, "storage_error", "POST_ADD_VERIFICATION_FAILED")
         return AddRecordResult(plan_item.record_id, "created")
 
