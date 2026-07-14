@@ -12,10 +12,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Iterator
 from unittest.mock import patch
 
 
@@ -140,6 +141,62 @@ def expect_adapter_error(callback: Any, code: str) -> tuple[bool, str]:
     except Exception as error:  # noqa: BLE001
         return False, f"unexpected {type(error).__name__}: {error}"
     return False, "未抛出异常"
+
+
+@contextmanager
+def isolated_synthetic_adapter() -> Iterator[
+    tuple[ChromaToolMemoryAdapter, Any, Path]
+]:
+    """为单个竞争或恢复场景创建并彻底清理独立 Chroma。"""
+
+    temp_parent = Path(tempfile.mkdtemp(prefix="vanna-0b3c-race-"))
+    isolated_root = temp_parent / "isolated"
+    isolated_root.mkdir()
+    memory = ChromaAgentMemory(
+        persist_directory=str(isolated_root / "synthetic-chroma"),
+        collection_name="tool_memories",
+        embedding_function=DeterministicEmbeddingFunction(),
+    )
+    adapter = ChromaToolMemoryAdapter(memory, isolated_root=isolated_root)
+    try:
+        yield adapter, adapter._collection, temp_parent
+    finally:
+        adapter = None
+        memory._executor.shutdown(wait=True)
+        if memory._client is not None:
+            memory._client._system.stop()
+        memory._collection = None
+        memory._client = None
+        memory = None
+        gc.collect()
+        try:
+            from chromadb.api.client import SharedSystemClient
+
+            SharedSystemClient.clear_system_cache()
+        except Exception:  # noqa: BLE001
+            pass
+        shutil.rmtree(temp_parent, ignore_errors=False)
+
+
+class AddThenRaiseCollection:
+    """确定性模拟 add 竞争：先写入竞争者，再向适配层抛错。"""
+
+    def __init__(self, inner: Any, competitor_writer: Any) -> None:
+        self._inner = inner
+        self._competitor_writer = competitor_writer
+
+    def add(
+        self,
+        *,
+        ids: list[str],
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+    ) -> None:
+        self._competitor_writer(self._inner, ids, documents, metadatas)
+        raise RuntimeError("synthetic add race")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
 
 
 def main() -> int:
@@ -570,6 +627,217 @@ def main() -> int:
         shutil.rmtree(temp_parent, ignore_errors=False)
 
     record_result(results, "系统临时 Chroma 目录已清理", not temp_parent.exists())
+
+    mixed_ok = False
+    with isolated_synthetic_adapter() as (mixed_adapter, _, mixed_root):
+        mixed_plan = make_plan()
+        mixed_first, mixed_second = mixed_plan.items
+        mixed_created = mixed_adapter.add_planned_record(mixed_plan, mixed_first)
+        mixed_preflight = mixed_adapter.inspect_plan_records(mixed_plan)
+        mixed_rebuilt = make_plan(
+            existing_records=dict(mixed_preflight.controlled_existing_records)
+        )
+        mixed_cleanup = mixed_adapter.delete_exact_created_records(
+            [ExpectedCreatedRecord(mixed_first.record_id, mixed_first.memory_content_sha256)],
+            mixed_plan.batch_content_sha256,
+        )
+        mixed_ok = (
+            mixed_created.status == "created"
+            and mixed_rebuilt.items[0].status == "resume_same_batch"
+            and mixed_rebuilt.items[1].status == "create"
+            and mixed_rebuilt.create_count == 1
+            and mixed_rebuilt.resume_same_batch_count == 1
+            and mixed_rebuilt.create_count + mixed_rebuilt.resume_same_batch_count
+            == mixed_rebuilt.expected_new_memory_count
+            and mixed_rebuilt.executable
+            and mixed_second.record_id in mixed_preflight.absent_record_ids
+            and mixed_cleanup.deleted
+        )
+    record_result(
+        results,
+        "部分成功批次恢复为 create + resume_same_batch",
+        mixed_ok and not mixed_root.exists(),
+    )
+
+    race_same_ok = False
+    with isolated_synthetic_adapter() as (race_adapter, race_collection, race_root):
+        race_plan = make_plan()
+        race_item = race_plan.items[0]
+
+        def write_same_competitor(
+            inner: Any,
+            ids: list[str],
+            documents: list[str],
+            metadatas: list[dict[str, Any]],
+        ) -> None:
+            inner.add(ids=ids, documents=documents, metadatas=metadatas)
+
+        race_adapter._collection = AddThenRaiseCollection(
+            race_collection, write_same_competitor
+        )
+        race_same = race_adapter.add_planned_record(race_plan, race_item)
+        race_adapter._collection = race_collection
+        race_same_exact = race_adapter.get_exact_records([race_item.record_id])[0]
+        race_same_record = race_same_exact.record
+        race_same_cleanup = race_adapter.delete_exact_created_records(
+            [ExpectedCreatedRecord(race_item.record_id, race_item.memory_content_sha256)],
+            race_plan.batch_content_sha256,
+        )
+        race_same_ok = (
+            race_same.status == "existing_same"
+            and race_same.error_code == ""
+            and race_same_exact.status == "found"
+            and race_same_record is not None
+            and race_same_record.canonical_content == race_item.canonical_content
+            and race_same_record.compatibility_metadata
+            == race_item.compatibility_metadata
+            and all(
+                (race_same_record.metadata or {}).get(key) == value
+                for key, value in race_item.governance_metadata.items()
+            )
+            and race_same_cleanup.deleted
+        )
+    record_result(
+        results,
+        "add 竞争者写入完全相同记录返回 existing_same",
+        race_same_ok and not race_root.exists(),
+    )
+
+    race_preexisting_ok = False
+    with isolated_synthetic_adapter() as (
+        preexisting_adapter,
+        preexisting_collection,
+        preexisting_root,
+    ):
+        preexisting_plan = make_plan()
+        preexisting_item = preexisting_plan.items[0]
+        competitor_batch_id = "level4-race-20260714-02"
+        competitor_digest = "a" * 64
+        competitor_sample_id = "L4_RACE_OTHER_001"
+
+        def write_other_batch_competitor(
+            inner: Any,
+            ids: list[str],
+            documents: list[str],
+            metadatas: list[dict[str, Any]],
+        ) -> None:
+            competitor_metadata = copy.deepcopy(metadatas[0])
+            competitor_metadata.update(
+                created_by_training_batch_id=competitor_batch_id,
+                created_by_batch_content_sha256=competitor_digest,
+                created_from_sample_id=competitor_sample_id,
+            )
+            compatibility = json.loads(competitor_metadata["metadata_json"])
+            compatibility.update(
+                training_batch_id=competitor_batch_id,
+                batch_content_sha256=competitor_digest,
+                sample_id=competitor_sample_id,
+            )
+            competitor_metadata["metadata_json"] = json.dumps(
+                compatibility,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            inner.add(
+                ids=ids,
+                documents=documents,
+                metadatas=[competitor_metadata],
+            )
+
+        preexisting_adapter._collection = AddThenRaiseCollection(
+            preexisting_collection, write_other_batch_competitor
+        )
+        race_preexisting = preexisting_adapter.add_planned_record(
+            preexisting_plan, preexisting_item
+        )
+        preexisting_adapter._collection = preexisting_collection
+        preexisting_exact = preexisting_adapter.get_exact_records(
+            [preexisting_item.record_id]
+        )[0]
+        preexisting_preflight = preexisting_adapter.inspect_plan_records(
+            preexisting_plan
+        )
+        preexisting_rebuilt = make_plan(
+            existing_records=dict(
+                preexisting_preflight.controlled_existing_records
+            )
+        )
+        preexisting_cleanup = preexisting_adapter.delete_exact_created_records(
+            [
+                ExpectedCreatedRecord(
+                    preexisting_item.record_id,
+                    preexisting_item.memory_content_sha256,
+                )
+            ],
+            competitor_digest,
+        )
+        race_preexisting_ok = (
+            race_preexisting.status == "blocked"
+            and race_preexisting.error_code == "PLAN_REBUILD_REQUIRED"
+            and preexisting_exact.status == "found"
+            and preexisting_exact.record is not None
+            and preexisting_exact.record.classification
+            == "controlled_tool_record"
+            and preexisting_item.record_id
+            in preexisting_preflight.controlled_existing_records
+            and preexisting_rebuilt.items[0].status
+            == "preexisting_other_batch"
+            and not preexisting_rebuilt.executable
+            and preexisting_cleanup.deleted
+        )
+    record_result(
+        results,
+        "add 竞争者写入其他批次同内容记录要求重建计划",
+        race_preexisting_ok and not preexisting_root.exists(),
+    )
+
+    race_conflict_ok = False
+    with isolated_synthetic_adapter() as (
+        conflict_adapter,
+        conflict_collection,
+        conflict_root,
+    ):
+        conflict_plan = make_plan()
+        conflict_item = conflict_plan.items[0]
+
+        def write_conflicting_competitor(
+            inner: Any,
+            ids: list[str],
+            documents: list[str],
+            metadatas: list[dict[str, Any]],
+        ) -> None:
+            conflicting_question = documents[0] + "（竞争者不同内容）"
+            conflicting_metadata = copy.deepcopy(metadatas[0])
+            conflicting_metadata["question"] = conflicting_question
+            inner.add(
+                ids=ids,
+                documents=[conflicting_question],
+                metadatas=[conflicting_metadata],
+            )
+
+        conflict_adapter._collection = AddThenRaiseCollection(
+            conflict_collection, write_conflicting_competitor
+        )
+        race_conflict = conflict_adapter.add_planned_record(
+            conflict_plan, conflict_item
+        )
+        conflict_adapter._collection = conflict_collection
+        conflict_inventory = conflict_adapter.inventory_tool_records()
+        conflict_collection.delete(ids=[conflict_item.record_id])
+        race_conflict_ok = (
+            race_conflict.status == "existing_conflict"
+            and race_conflict.error_code == "CONTENT_ADDRESS_CONFLICT"
+            and race_conflict.error_code != "PLAN_REBUILD_REQUIRED"
+            and conflict_item.record_id
+            in conflict_inventory.content_address_conflicts
+        )
+    record_result(
+        results,
+        "add 竞争者写入同 ID不同内容返回 existing_conflict",
+        race_conflict_ok and not conflict_root.exists(),
+    )
+
     status_after = git_status()
     record_result(results, "测试前后 Git 工作区状态不变", status_before == status_after)
 
