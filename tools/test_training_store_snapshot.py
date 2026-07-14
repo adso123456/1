@@ -281,7 +281,9 @@ def main() -> int:
                 backup_equivalence.equivalent
                 and backup_result.source_before == backup_result.source_after
                 and backup_result.source_before.content_sha256
-                == backup_result.destination.content_sha256,
+                == backup_result.destination.content_sha256
+                and backup_result.destination
+                == build_directory_manifest(backup_destination),
                 backup_result.destination.content_sha256,
             )
         )
@@ -311,6 +313,197 @@ def main() -> int:
                 "恢复副本与源、备份三方一致",
                 len(three_digests) == 1 and restored_destination.is_dir(),
                 str(three_digests),
+            )
+        )
+
+        empty_race_source = temp_root / "sources" / "empty-race-source"
+        make_synthetic_store(empty_race_source)
+        empty_race_destination = temp_root / "copies" / "empty-race-target"
+
+        def create_empty_competitor(destination: Path) -> None:
+            destination.mkdir()
+
+        empty_race_rejected, empty_race_detail = raises_snapshot_error(
+            lambda: create_verified_copy(
+                empty_race_source,
+                empty_race_destination,
+                project_root,
+                _before_publish_hook=create_empty_competitor,
+            )
+        )
+        results.append(
+            (
+                "发布瞬间出现的空目标目录不会被替换",
+                empty_race_rejected
+                and empty_race_destination.is_dir()
+                and not any(empty_race_destination.iterdir()),
+                empty_race_detail,
+            )
+        )
+
+        sentinel_race_source = temp_root / "sources" / "sentinel-race-source"
+        make_synthetic_store(sentinel_race_source)
+        sentinel_race_destination = temp_root / "copies" / "sentinel-race-target"
+        sentinel_text = "competitor-owned\n"
+
+        def create_sentinel_competitor(destination: Path) -> None:
+            destination.mkdir()
+            (destination / "sentinel.txt").write_text(
+                sentinel_text, encoding="utf-8"
+            )
+
+        sentinel_race_rejected, sentinel_race_detail = raises_snapshot_error(
+            lambda: create_verified_copy(
+                sentinel_race_source,
+                sentinel_race_destination,
+                project_root,
+                _before_publish_hook=create_sentinel_competitor,
+            )
+        )
+        results.append(
+            (
+                "竞争者目录和 sentinel 文件保持不变",
+                sentinel_race_rejected
+                and (sentinel_race_destination / "sentinel.txt").read_text(
+                    encoding="utf-8"
+                )
+                == sentinel_text,
+                sentinel_race_detail,
+            )
+        )
+
+        file_race_source = temp_root / "sources" / "file-race-source"
+        make_synthetic_store(file_race_source)
+        file_race_destination = temp_root / "copies" / "file-race-target"
+        competitor_file_text = "competitor-file\n"
+
+        def create_file_competitor(destination: Path) -> None:
+            destination.write_text(competitor_file_text, encoding="utf-8")
+
+        file_race_rejected, file_race_detail = raises_snapshot_error(
+            lambda: create_verified_copy(
+                file_race_source,
+                file_race_destination,
+                project_root,
+                _before_publish_hook=create_file_competitor,
+            )
+        )
+        results.append(
+            (
+                "发布瞬间出现的同名文件不会被替换",
+                file_race_rejected
+                and file_race_destination.read_text(encoding="utf-8")
+                == competitor_file_text,
+                file_race_detail,
+            )
+        )
+        results.append(
+            (
+                "发布竞态失败后仅清理本次临时目录",
+                not list(empty_race_destination.parent.glob(".snapshot-*"))
+                and build_directory_manifest(empty_race_source)
+                == build_directory_manifest(sentinel_race_source)
+                == build_directory_manifest(file_race_source),
+                str(empty_race_destination.parent),
+            )
+        )
+
+        restore_source_mutation = temp_root / "sources" / "restore-source-mutation"
+        make_synthetic_store(restore_source_mutation)
+        restore_source_backup = temp_root / "copies" / "restore-source-backup"
+        create_verified_copy(
+            restore_source_mutation, restore_source_backup, project_root
+        )
+        restore_source_backup_before = build_directory_manifest(
+            restore_source_backup
+        )
+        restore_source_destination = temp_root / "copies" / "restore-source-target"
+
+        def mutate_original_source(source: Path, backup: Path) -> None:
+            del backup
+            (source / "alpha.txt").write_text(
+                "source changed before final validation\n", encoding="utf-8"
+            )
+
+        restore_source_rejected, restore_source_detail = raises_snapshot_error(
+            lambda: create_restore_rehearsal(
+                restore_source_mutation,
+                restore_source_backup,
+                restore_source_destination,
+                project_root,
+                _before_final_validation_hook=mutate_original_source,
+            )
+        )
+        results.append(
+            (
+                "恢复演练期间原始源变化时不发布",
+                restore_source_rejected
+                and not restore_source_destination.exists()
+                and build_directory_manifest(restore_source_backup)
+                == restore_source_backup_before,
+                restore_source_detail,
+            )
+        )
+
+        restore_backup_mutation_source = (
+            temp_root / "sources" / "restore-backup-mutation"
+        )
+        make_synthetic_store(restore_backup_mutation_source)
+        restore_mutating_backup = temp_root / "copies" / "restore-mutating-backup"
+        create_verified_copy(
+            restore_backup_mutation_source, restore_mutating_backup, project_root
+        )
+        restore_backup_destination = temp_root / "copies" / "restore-backup-target"
+
+        def mutate_backup(source: Path, backup: Path) -> None:
+            del source
+            (backup / "alpha.txt").write_text(
+                "backup changed before final validation\n", encoding="utf-8"
+            )
+
+        restore_backup_rejected, restore_backup_detail = raises_snapshot_error(
+            lambda: create_restore_rehearsal(
+                restore_backup_mutation_source,
+                restore_mutating_backup,
+                restore_backup_destination,
+                project_root,
+                _before_final_validation_hook=mutate_backup,
+            )
+        )
+        results.append(
+            (
+                "恢复演练期间备份变化时不发布",
+                restore_backup_rejected and not restore_backup_destination.exists(),
+                restore_backup_detail,
+            )
+        )
+        results.append(
+            (
+                "失败恢复不留下最终目录或临时恢复目录",
+                not restore_source_destination.exists()
+                and not restore_backup_destination.exists()
+                and not list(restore_source_destination.parent.glob(".snapshot-*")),
+                str(restore_source_destination.parent),
+            )
+        )
+
+        unsupported_source = temp_root / "sources" / "unsupported-source"
+        make_synthetic_store(unsupported_source)
+        unsupported_destination = temp_root / "copies" / "unsupported-target"
+        with mock.patch.object(snapshot_module.sys, "platform", "unsupported-test"):
+            unsupported_rejected, unsupported_detail = raises_snapshot_error(
+                lambda: create_verified_copy(
+                    unsupported_source, unsupported_destination, project_root
+                ),
+                snapshot_module.UnsupportedPlatformError,
+            )
+        results.append(
+            (
+                "缺少可靠 no-replace 原语的平台失败关闭",
+                unsupported_rejected
+                and not unsupported_destination.exists()
+                and not list(unsupported_destination.parent.glob(".snapshot-*")),
+                unsupported_detail,
             )
         )
 

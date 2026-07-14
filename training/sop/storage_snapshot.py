@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import json
 import os
 import shutil
 import stat
+import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -32,6 +35,14 @@ class SourceChangedError(SnapshotError):
 
 class VerificationError(SnapshotError):
     """两个目录的规范化清单不一致。"""
+
+
+class PublishConflictError(SnapshotError):
+    """最终目标在原子发布时已经存在。"""
+
+
+class UnsupportedPlatformError(SnapshotError):
+    """当前平台缺少可靠的原子 no-replace 目录发布原语。"""
 
 
 @dataclass(frozen=True)
@@ -88,6 +99,16 @@ class RestoreRehearsalResult:
     source: DirectoryManifest
     backup: DirectoryManifest
     restored: DirectoryManifest
+
+
+@dataclass(frozen=True)
+class _PreparedCopy:
+    source_path: Path
+    destination_path: Path
+    temporary_path: Path
+    source_before: DirectoryManifest
+    source_after: DirectoryManifest
+    temporary_manifest: DirectoryManifest
 
 
 def _canonical_json(value: dict[str, Any]) -> bytes:
@@ -358,15 +379,77 @@ def _remove_temporary_directory(temporary: Path, expected_parent: Path) -> None:
     shutil.rmtree(temporary)
 
 
-def create_verified_copy(
+def _publish_directory_no_replace(temporary: Path, destination: Path) -> None:
+    """使用平台原子原语发布目录；不支持时失败关闭。"""
+
+    temporary_parent = temporary.parent.resolve(strict=True)
+    destination_parent = destination.parent.resolve(strict=True)
+    if temporary_parent != destination_parent:
+        raise UnsafePathError("临时目录与最终目标必须位于同一父目录")
+    temporary_stat = temporary.lstat()
+    _validate_node(temporary, temporary_stat)
+    if not stat.S_ISDIR(temporary_stat.st_mode):
+        raise UnsafePathError(f"待发布路径不是普通目录: {temporary}")
+
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        move_file = kernel32.MoveFileExW
+        move_file.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        move_file.restype = ctypes.c_int
+        if move_file(str(temporary), str(destination), 0):
+            return
+        error_code = ctypes.get_last_error()
+        if error_code in {5, 80, 183} and os.path.lexists(destination):
+            raise PublishConflictError(f"原子发布时目标已经存在: {destination}")
+        raise OSError(error_code, ctypes.FormatError(error_code), str(destination))
+
+    if sys.platform.startswith("linux"):
+        libc = ctypes.CDLL(None, use_errno=True)
+        rename_no_replace = getattr(libc, "renameat2", None)
+        if rename_no_replace is None:
+            raise UnsupportedPlatformError("当前 Linux C 库不提供 renameat2")
+        rename_no_replace.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        rename_no_replace.restype = ctypes.c_int
+        at_fdcwd = -100
+        rename_noreplace = 1
+        if (
+            rename_no_replace(
+                at_fdcwd,
+                os.fsencode(temporary),
+                at_fdcwd,
+                os.fsencode(destination),
+                rename_noreplace,
+            )
+            == 0
+        ):
+            return
+        error_code = ctypes.get_errno()
+        if error_code in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise PublishConflictError(f"原子发布时目标已经存在: {destination}")
+        if error_code in {errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP}:
+            raise UnsupportedPlatformError(
+                "当前 Linux 系统或文件系统不支持 renameat2 RENAME_NOREPLACE"
+            )
+        raise OSError(error_code, os.strerror(error_code), str(destination))
+
+    raise UnsupportedPlatformError(
+        f"平台 {sys.platform!r} 缺少已实现的原子 no-replace 目录发布原语"
+    )
+
+
+def _prepare_verified_copy(
     source: str | Path,
     destination: str | Path,
     project_root: str | Path,
     *,
-    _after_copy_hook: Callable[[Path], None] | None = None,
-) -> VerifiedCopyResult:
-    """复制到临时目录，经三方清单验证后发布全新目标目录。"""
-
+    after_copy_hook: Callable[[Path], None] | None = None,
+) -> _PreparedCopy:
     source_path = _validate_directory_root(source)
     destination_path = _validate_destination(source_path, destination, project_root)
     destination_parent = destination_path.parent
@@ -374,26 +457,61 @@ def create_verified_copy(
     temporary = Path(tempfile.mkdtemp(prefix=".snapshot-", dir=destination_parent))
     try:
         _copy_manifest_content(source_path, temporary, source_before)
-        if _after_copy_hook is not None:
-            _after_copy_hook(source_path)
+        if after_copy_hook is not None:
+            after_copy_hook(source_path)
         source_after = build_directory_manifest(source_path)
         temporary_manifest = build_directory_manifest(temporary)
-
         if _manifest_differences(source_before, source_after):
             raise SourceChangedError("源目录在复制期间发生变化")
         if _manifest_differences(source_before, temporary_manifest):
             raise VerificationError("临时副本与源目录清单不一致")
-        if os.path.lexists(destination_path):
-            raise UnsafePathError(f"发布前目标目录已经出现: {destination_path}")
-
-        os.rename(temporary, destination_path)
-        return VerifiedCopyResult(
+        return _PreparedCopy(
+            source_path=source_path,
+            destination_path=destination_path,
+            temporary_path=temporary,
             source_before=source_before,
             source_after=source_after,
-            destination=temporary_manifest,
+            temporary_manifest=temporary_manifest,
         )
     except Exception:
         _remove_temporary_directory(temporary, destination_parent)
+        raise
+
+
+def create_verified_copy(
+    source: str | Path,
+    destination: str | Path,
+    project_root: str | Path,
+    *,
+    _after_copy_hook: Callable[[Path], None] | None = None,
+    _before_publish_hook: Callable[[Path], None] | None = None,
+) -> VerifiedCopyResult:
+    """复制到临时目录，经三方清单验证后发布全新目标目录。"""
+
+    prepared = _prepare_verified_copy(
+        source,
+        destination,
+        project_root,
+        after_copy_hook=_after_copy_hook,
+    )
+    try:
+        if _before_publish_hook is not None:
+            _before_publish_hook(prepared.destination_path)
+        _publish_directory_no_replace(
+            prepared.temporary_path, prepared.destination_path
+        )
+        final_manifest = build_directory_manifest(prepared.destination_path)
+        if _manifest_differences(prepared.source_before, final_manifest):
+            raise VerificationError("最终目标与源目录清单不一致")
+        return VerifiedCopyResult(
+            source_before=prepared.source_before,
+            source_after=prepared.source_after,
+            destination=final_manifest,
+        )
+    except Exception:
+        _remove_temporary_directory(
+            prepared.temporary_path, prepared.destination_path.parent
+        )
         raise
 
 
@@ -402,22 +520,57 @@ def create_restore_rehearsal(
     backup: str | Path,
     restored_destination: str | Path,
     project_root: str | Path,
+    *,
+    _before_final_validation_hook: Callable[[Path, Path], None] | None = None,
+    _before_publish_hook: Callable[[Path], None] | None = None,
 ) -> RestoreRehearsalResult:
-    """从已验证备份复制到全新目录，并核对源、备份、恢复副本。"""
+    """三方验证临时恢复副本后，以 no-replace 原子发布最终目录。"""
 
     source_backup = verify_directory_equivalence(source, backup)
     if not source_backup.equivalent:
         raise VerificationError(
             "源目录与备份不一致: " + ", ".join(source_backup.differences)
         )
-    restored = create_verified_copy(backup, restored_destination, project_root)
-    source_restored = verify_directory_equivalence(source, restored_destination)
-    if not source_restored.equivalent:
-        raise VerificationError(
-            "恢复副本与源目录不一致: " + ", ".join(source_restored.differences)
-        )
-    return RestoreRehearsalResult(
-        source=source_backup.left,
-        backup=source_backup.right,
-        restored=restored.destination,
+    source_path = _validate_directory_root(source)
+    backup_path = _validate_directory_root(backup)
+    prepared = _prepare_verified_copy(
+        backup_path, restored_destination, project_root
     )
+    try:
+        if _before_final_validation_hook is not None:
+            _before_final_validation_hook(source_path, backup_path)
+
+        backup_final = build_directory_manifest(backup_path)
+        source_final = build_directory_manifest(source_path)
+        temporary_final = build_directory_manifest(prepared.temporary_path)
+        if _manifest_differences(source_backup.left, source_final):
+            raise SourceChangedError("原始源目录在恢复演练期间发生变化")
+        if _manifest_differences(source_backup.right, prepared.source_before):
+            raise SourceChangedError("备份在首次验证后、复制前发生变化")
+        if _manifest_differences(source_backup.right, backup_final):
+            raise SourceChangedError("备份在恢复演练期间发生变化")
+        if _manifest_differences(prepared.temporary_manifest, temporary_final):
+            raise SourceChangedError("临时恢复目录在三方验证前发生变化")
+        if _manifest_differences(source_final, backup_final):
+            raise VerificationError("最终源目录与备份清单不一致")
+        if _manifest_differences(source_final, temporary_final):
+            raise VerificationError("临时恢复目录与源目录清单不一致")
+
+        if _before_publish_hook is not None:
+            _before_publish_hook(prepared.destination_path)
+        _publish_directory_no_replace(
+            prepared.temporary_path, prepared.destination_path
+        )
+        restored_final = build_directory_manifest(prepared.destination_path)
+        if _manifest_differences(source_final, restored_final):
+            raise VerificationError("发布后的恢复目录与源目录清单不一致")
+        return RestoreRehearsalResult(
+            source=source_final,
+            backup=backup_final,
+            restored=restored_final,
+        )
+    except Exception:
+        _remove_temporary_directory(
+            prepared.temporary_path, prepared.destination_path.parent
+        )
+        raise
