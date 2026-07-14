@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level4-fixture-20260714-01",
+  "training_level": "level4_fixture_sql_examples",
+  "status": "frozen",
+  "source": "纯测试夹具，不是正式训练输入",
+  "expected_new_memory_count": 2,
+  "samples": [
+    {
+      "sample_id": "L4_FIXTURE_SQL_001",
+      "question": "测试区域各排污口的名称和所属区域是什么？",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT outlet_name, area_name FROM rs_outlet ORDER BY outlet_name LIMIT 10"
+      },
+      "training_level": "level4_fixture_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "用于验证单表字段选择的静态审查流程",
+      "source": "纯模拟测试问题",
+      "expected_behavior": "返回不超过十条排污口名称与区域测试结果",
+      "expected_tables": [
+        "rs_outlet"
+      ]
+    },
+    {
+      "sample_id": "L4_FIXTURE_SQL_002",
+      "question": "测试各区县排污口数量如何统计？",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT county_name, COUNT(id) FROM rs_outlet GROUP BY county_name LIMIT 10"
+      },
+      "training_level": "level4_fixture_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "用于验证单表聚合查询的静态审查流程",
+      "source": "纯模拟测试问题",
+      "expected_behavior": "返回不超过十组区县及排污口数量测试结果",
+      "expected_tables": [
+        "public.rs_outlet"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level4-fixture-20260714-02",
+  "training_level": "level4_fixture_sql_examples",
+  "status": "frozen",
+  "source": "纯测试夹具，不是正式训练输入",
+  "expected_new_memory_count": 2,
+  "samples": [
+    {
+      "sample_id": "L4_FIXTURE_SQL_001",
+      "question": "测试区域排污口名称有哪些？",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT outlet_name FROM rs_outlet LIMIT 10"
+      },
+      "training_level": "level4_fixture_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "重复编号反例的第一条样本",
+      "source": "纯模拟测试问题",
+      "expected_behavior": "返回测试名称列表",
+      "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "L4_FIXTURE_SQL_001",
+      "question": "测试区域排污口所属区县有哪些？",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT county_name FROM rs_outlet LIMIT 10"
+      },
+      "training_level": "level4_fixture_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "重复编号反例的第二条样本",
+      "source": "纯模拟测试问题",
+      "expected_behavior": "返回测试区县列表",
+      "expected_tables": ["rs_outlet"]
+    }
+  ]
+}

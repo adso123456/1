@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level4-fixture-20260714-03",
+  "training_level": "level4_fixture_sql_examples",
+  "status": "frozen",
+  "source": "纯测试夹具，不是正式训练输入",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "L4_FIXTURE_SQL_003",
+      "question": "这是用于验证非 SELECT 被拒绝的测试问题",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "DELETE FROM rs_outlet WHERE id = 1"
+      },
+      "training_level": "level4_fixture_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "验证 SQLGuard 拒绝写操作",
+      "source": "纯模拟测试问题",
+      "expected_behavior": "静态审查必须拒绝该样本且不得执行 SQL",
+      "expected_tables": ["rs_outlet"]
+    }
+  ]
+}

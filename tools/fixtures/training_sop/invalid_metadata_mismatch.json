@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level4-fixture-20260714-04",
+  "training_level": "level4_fixture_sql_examples",
+  "status": "frozen",
+  "source": "纯测试夹具，不是正式训练输入",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "L4_FIXTURE_SQL_004",
+      "question": "这是用于验证表清单不一致的测试问题",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT outlet_name FROM rs_outlet LIMIT 10"
+      },
+      "training_level": "level4_fixture_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "验证声明表与 SQLGuard 识别表必须一致",
+      "source": "纯模拟测试问题",
+      "expected_behavior": "静态审查必须报告表清单不一致",
+      "expected_tables": ["rs_outlet_info_v2"]
+    }
+  ]
+}
