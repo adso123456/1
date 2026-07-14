@@ -256,7 +256,7 @@ async def test_unknown_training_level_filtered() -> TestResult:
         sample_id="UNKNOWN_LEVEL",
         question="查看某站点年度水质趋势",
         sql="SELECT station_id, monitor_year, m2_value FROM wm_waterquality_year_records LIMIT 20",
-        training_level="level3_p1_sql_examples",
+        training_level="unknown_sql_examples",
     )
     prompt, enhancer, _, _ = await build_prompt("查看某站点年度水质趋势", [unknown])
     passed = "UNKNOWN_LEVEL" not in prompt and enhancer.last_stats.injected_count == 0

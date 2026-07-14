@@ -11,10 +11,14 @@ from vanna.core.registry import ToolRegistry
 from vanna.core.user import UserResolver, User, RequestContext
 from vanna.core.enhancer.default import DefaultLlmContextEnhancer
 from vanna.tools import RunSqlTool, LocalFileSystem
-from agent_config import DB_KWARGS, create_memory
+from agent_config import DB_KWARGS, create_memory, validate_db_config
 from tools.guarded_run_sql_tool import GuardedRunSqlTool
 from tools.metadata_context_enhancer import DeterministicMetadataContextEnhancer
 from tools.metadata_retriever import DeterministicMetadataRetriever
+from tools.query_context import (
+    OriginalQuestionContextEnricher,
+    OriginalQuestionLifecycleHook,
+)
 from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
 from tools.sql_guard import SQLGuard
 from vanna import Agent, AgentConfig
@@ -128,6 +132,7 @@ def create_agent():
     )
 
     print("连接 PostgreSQL...")
+    validate_db_config()
     pg_runner = PostgresRunner(**DB_KWARGS)
 
     print("加载 ChromaDB 记忆库 (中文embedding + 0.55阈值)...")
@@ -171,6 +176,8 @@ def create_agent():
         user_resolver=SimpleUserResolver(),
         agent_memory=memory,
         llm_context_enhancer=llm_context_enhancer,
+        lifecycle_hooks=[OriginalQuestionLifecycleHook()],
+        context_enrichers=[OriginalQuestionContextEnricher()],
         config=AgentConfig(stream_responses=True),
         system_prompt_builder=OptimizedSystemPromptBuilder(),
     )

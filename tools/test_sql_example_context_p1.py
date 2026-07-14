@@ -81,8 +81,13 @@ async def run() -> list[Result]:
     def check(name: str, condition: bool, reason: str) -> None:
         results.append(Result(name, condition, reason))
 
-    expected_levels = {"level2_sql_examples", "level3_p0_sql_examples", "level3_p1_sql_examples"}
-    check("白名单精确包含 L2/P0/P1", ALLOWED_TRAINING_LEVELS == expected_levels,
+    expected_levels = {
+        "level2_sql_examples",
+        "level3_p0_sql_examples",
+        "level3_p1_sql_examples",
+        "level3_p2_sql_examples",
+    }
+    check("白名单精确包含 L2/P0/P1/P2", ALLOWED_TRAINING_LEVELS == expected_levels,
           str(sorted(ALLOWED_TRAINING_LEVELS)))
 
     for name, level in (
@@ -95,7 +100,7 @@ async def run() -> list[Result]:
 
     ok, reason = rejected(candidate(decision="requires_manual_review"), "not approved")
     check("P1 非 approved 被拒绝", ok, reason)
-    ok, reason = rejected(candidate(level="level3_p2_sql_examples"), "not allowed")
+    ok, reason = rejected(candidate(level="unknown_sql_examples"), "not allowed")
     check("未知 training level 被拒绝", ok, reason)
     ok, reason = rejected(candidate(tool_name="visualize_data"), "not run_sql")
     check("非 run_sql 被拒绝", ok, reason)
