@@ -34,3 +34,11 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 最终目录使用平台原子 `no-replace` 发布语义；目标在发布前任何时刻出现，操作都会失败且绝不覆盖。平台缺少已实现的可靠 `no-replace` 原语时失败关闭，不降级为可能覆盖目标的普通重命名。恢复演练在源、备份和临时恢复目录三方验证全部完成前不会发布最终恢复目录。
 
 该工具通过复制前后源目录指纹检测变化，但它不是数据库在线热备份协议。正式 T4 执行时仍必须先停止或阻断所有 Chroma 写入，确认服务和训练进程不会修改正式数据目录，再进行文件级备份。不得声称或假设该工具能在正式 Chroma 持续写入时保证事务一致性。
+
+## 0B-3B：run_sql Tool Memory 写入计划
+
+`memory_write_plan.py` 只建立 run_sql Tool Memory 的确定性 T5 写入计划和 T6 精确核验契约，不连接、不查询、不写入任何 Chroma，也不实现真实执行器或回滚器。计划生成必须复用 `validate_training_batch()` 的完整校验和规范化摘要，并要求调用者提供的批准批次摘要与实际摘要完全一致。
+
+正式 Memory 记录 ID 是 `toolmem-v1-<memory_content_sha256>` 全局内容寻址 ID，只覆盖规范化 question、tool name、args、success 和记录版本，不包含批次摘要、`sample_id`、时间、路径或随机值。批次交付身份通过 `delivery_item_sha256` 和后续执行账本表达；治理字段 `created_by_*` 只表示首次创建该 Memory 的批次，不表示后续引用批次。相同内容若已由其他批次创建，会阻断当前声明“预计新增”的批次，不会静默复用、覆盖或生成另一个记录 ID。
+
+本阶段仅覆盖 run_sql Tool Memory。Level 1 Text Memory、DDL Memory 和图表训练 Memory 的受控交付能力尚未建立；其中 Level 1 Text Memory 路径必须在 0B-4 前另行完成。
