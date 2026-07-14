@@ -1,10 +1,10 @@
 # 仓库事实核查审计证据文档
 
 > 审计日期: 2026-07-14
-> 审计方式: 只读核查
+> 审计方式: 普通文件字节指纹、Chroma 二次副本逻辑核查、数据库系统元数据只读 SELECT、仓库外隔离测试
 > 仓库: E:\3\posgresql\1
 > 分支: master
-> HEAD: 89eb4d75fcaf5ac140a4ff90c31da82c8b7e7ffc
+> 基础 HEAD: 42be3c0e59324f6fa0767ae69b45fa6962aa8729
 
 ---
 
@@ -14,7 +14,7 @@
 
 ```
 分支: master
-HEAD: 89eb4d75fcaf5ac140a4ff90c31da82c8b7e7ffc
+HEAD: 42be3c0e59324f6fa0767ae69b45fa6962aa8729
 ```
 
 审计前已修改的跟踪文件:
@@ -29,12 +29,45 @@ HEAD: 89eb4d75fcaf5ac140a4ff90c31da82c8b7e7ffc
 - `tools/level1_chroma_coverage_result.md`
 - `tools/level1_chroma_inventory.json`
 
-### 1.2 数据指纹
+### 1.2 本阶段正式数据指纹
 
-| 目录 | 审计前 MD5 | 审计后 MD5 | 变更原因 |
-|------|-----------|-----------|---------|
-| `agent_data/` | `16d5216cf3e8a2c1a107329125913bc9` | `16d5216cf3e8a2c1a107329125913bc9` | **未变更** |
-| `vanna_data/` | `93e3cc5d916931cb84ea079349384c41` | `1b872163bbce9e38b48dd82736c168f5` | ChromaDB HNSW 索引文件在搜索时自动重组 (正常行为, 非数据变更) |
+指纹算法：按相对路径排序，对每个普通文件记录 `相对路径 + 文件长度 + SHA-256`，再对规范化清单计算 SHA-256。正式目录只读取普通文件字节；未通过 Chroma、Vanna Memory 或 SQLite 打开。
+
+| 目录 | 文件数 | 本阶段开始清单 SHA-256 | 本阶段结束清单 SHA-256 | 结论 |
+|------|------:|-------------------------|-------------------------|------|
+| `vanna_data/` | 5 | `83fe3fb3c7b735f3b665a8105a8e8d705f801c1da467dd9274292ce732ec1ee5` | `83fe3fb3c7b735f3b665a8105a8e8d705f801c1da467dd9274292ce732ec1ee5` | **未变更** |
+| `agent_data/` | 110 | `c0d4ecf8733ce08121e7b19f59a2d96fece2fbb2d19a72f898cc387515a49a73` | `c0d4ecf8733ce08121e7b19f59a2d96fece2fbb2d19a72f898cc387515a49a73` | **未变更** |
+
+本阶段开始时，正式 `vanna_data/` 已有 3 个既存工作区修改。此前文档把这些变化归因于“搜索时 HNSW 自动重组，非数据变更”，但没有审计前精确副本和内容级对比支撑，故撤销该结论。本阶段不恢复、不覆盖、不暂存这些文件。
+
+### 1.3 Chroma 可信基线与内容级比较
+
+- **可信基线**：`E:\3\_backup\level3_p2_training_20260713_164829`。
+- **创建时间**：2026-07-13 16:48:29。
+- **来源与选择理由**：Level 3 P2 训练时创建的最近正式备份；当前记录中的 P2 写入时间约为 16:51，说明该备份位于 P2 写入前。没有找到上一阶段审计开始前的临时副本，故它是任务指定优先级下最近的可信基线，但不是三项正式文件发生二进制变化前的精确审计基线。
+- **读取隔离**：基线和当前正式目录各先复制为第一副本，再复制为读取副本；所有 Chroma/SQLite 内容读取仅针对 `baseline_read_copy` 与 `current_read_copy`。
+- **结论边界**：无法证明二进制指纹变化前后的绝对一致性；只能证明当前正式目录与最近可信备份之间的逻辑差异。禁止据此声称“仅索引二进制变化”。
+
+比较规范：document 统一换行符并去除首尾空白；metadata 将 `args_json`、`metadata_json` 解析后按键排序、使用紧凑 JSON；所有集合型结果按 ID 排序后计算 SHA-256。
+
+| 指标 | 可信基线读取副本 | 当前正式目录读取副本 | 一致 |
+|------|------------------|----------------------|------|
+| collection 名称 / 数量 | `tool_memories` / 1 | `tool_memories` / 1 | 是 |
+| collection 记录数 | 63 | 72 | 否 |
+| record ID 集哈希 | `0d78797f9bd04ff8323f9de93f677f26523c3f9a8bc0e4e66b46b96c46011af6` | `09a0561d3efebb73d32366b03322342704c41626849d6db666df434d1afff7a2` | 否 |
+| document 规范化内容哈希 | `b45654790b37b66d2eb0b71b8bc6a8228d326d87f5c0fbba6c9c549417584b49` | `fd85ca097ea768746cfd618e239a9c58860b5838ccf6ecd1cb49012472f03a56` | 否 |
+| metadata 规范化 JSON 哈希 | `de61840a7db8d0f7aacd0d07a2139725a9e556ba45b1601fba4eba59900d5896` | `fd494cb766f2c6097d40902b252177699c986a47c3b6cffedc7d2b3c8a969545` | 否 |
+| embedding 数量 | 63 | 72 | 否 |
+| `is_text_memory` 分布 | true=8，缺失=55 | true=8，缺失=64 | 否 |
+| `training_level` 分布 | L2=16，P0=18，P1=21，缺失=8 | L2=16，P0=18，P1=21，P2=9，缺失=8 | 否 |
+| `train_decision` 分布 | approved=55，缺失=8 | approved=64，缺失=8 | 否 |
+| `tool_name` 分布 | run_sql=55，缺失=8 | run_sql=64，缺失=8 | 否 |
+
+基线的 55 个 sample_id 为 L2 16 个、P0 18 个、P1 21 个；当前新增 9 个 P2 sample_id：`L3_P2_SQL_001` 至 `L3_P2_SQL_008` 及 `L3_P2_SQL_011`。无删除 ID；新增 record ID 为：
+
+`13935be4-e76d-4340-b1d5-c125d8e79828`、`25af065d-4d92-4750-9f25-7824c4065e1e`、`3b61e715-8086-41e4-aeee-deb74bce6caa`、`42491fda-23ef-48e0-b961-f18c6b76167e`、`6330fbac-97f0-4f57-bc86-7fe7b6741dba`、`a9169c7c-3fea-4e9a-b578-f703975227bb`、`b55cfce0-f4e4-4c7a-be3e-a80d7440e612`、`e8e727c9-8570-4dbb-9a03-c13805c69a74`、`fe848313-435e-47a5-8877-44e372d75039`。
+
+**内容级结论：逻辑内容存在差异。** 差异与 9 条 P2 approved Tool Memory 的新增一致；由于缺少精确审计前基线，不能判断此前 3 个正式文件的二进制变化是否还包含其他只影响索引的变化。
 
 ---
 
@@ -182,11 +215,15 @@ Vanna ChromaAgentMemory 将 text memories 和 tool usage 存储在同一 collect
 
 ### 4.4 数据质量检查
 
-- **重复 sample_id**: **0** (所有 64 个 tool usage 的 sample_id 唯一)
+- **重复 sample_id 组**: **0**；64 个 sample_id 唯一
 - **缺少 training_level**: **0** (全部 64 个 tool usage 均有 training_level)
 - **缺少 sample_id**: **0** (全部 64 个 tool usage 均有 sample_id)
 - **缺少 train_decision**: **0** (全部 64 个 tool usage 均有 train_decision)
-- **重复问题/SQL**: 未发现 (通过 sample_id 唯一性确认)
+- **重复 question 组**: **0**；64 个 `question_hash` 唯一
+- **重复 SQL 组**: **0**；64 个 `sql_hash` 唯一
+- **重复 question+SQL 组**: **0**；64 个组合哈希唯一
+
+内容去重不再由 sample_id 唯一性间接推断。question 规范化包括去除首尾空白和连续空白归一化；SQL 规范化包括去除首尾空白、连续空白归一化、末尾分号归一化和 SQL 关键字大写归一化，字符串字面量保持不变。随后分别计算 SHA-256。
 
 ### 4.5 Level 1 DDL 覆盖
 
@@ -210,7 +247,18 @@ Vanna ChromaAgentMemory 将 text memories 和 tool usage 存储在同一 collect
 | Level 3 P2 | 9 | 9 (L3_P2_SQL_001-011, 缺 009,010) | ✅ |
 | **合计** | **64** | — | — |
 
-注: sample_id 编号有间隔 (如 L2 缺 011,012)，这是训练过程中移除或跳过的样本，属正常现象。
+这些编号不是“草案中不存在”，而是有 review 证据的冻结或排除样本：
+
+| ID | 存在于草案 | 最终 decision | 未写入原因 | 证据 |
+|----|------------|---------------|------------|------|
+| `L2_SQL_011` | 是 | `requires_manual_review` | 排污口溯源责任主体统计属中风险业务语义，字段口径未人工确认 | `training/sql_examples_level2_draft.json`、`training/sql_examples_level2_review.md`、`training/sql_examples_level2_training_result.md` |
+| `L2_SQL_012` | 是 | `requires_manual_review` | 溯源企业、排放许可证和信用代码字段口径未人工确认 | 同上 |
+| `L2_SQL_019` | 是 | `requires_manual_review` | SQLGuard 为 warning，且 `wm_water_source_intake_v2` 不在 deterministic candidate tables，业务场景稳定性待确认 | 同上 |
+| `L3_P1_SQL_004` | 是 | `requires_manual_review` | `has_abnormal` 未提供允许值、示例值或枚举，无法确认固定值“是”真实存在 | `training/sql_examples_level3_p1_review_result.json`、`training/sql_examples_level3_p1_review_report.md` |
+| `L3_P1_SQL_005` | 是 | `requires_manual_review` | `is_remediated` 未提供允许值、示例值或枚举，无法确认固定值“是”真实存在 | 同上 |
+| `L3_P1_SQL_010` | 是 | `requires_manual_review` | `has_sampling_condition` 未提供允许值、示例值或枚举，无法确认固定值“是”真实存在 | 同上 |
+| `L3_P2_SQL_009` | 是 | `excluded` | J5 真实精确匹配为 0；水文站为 4 位城市码、区县表为 6 位编码，JOIN 被真实数据否定 | `training/sql_examples_level3_p2_review_result.json`、`training/sql_examples_level3_p2_review_report.md`、`training/level3_p2_join_feasibility_result.md` |
+| `L3_P2_SQL_010` | 是 | `excluded` | 同一 J5 编码层级不兼容，精确 JOIN 匹配为 0 | 同上 |
 
 ---
 
@@ -228,24 +276,30 @@ Vanna ChromaAgentMemory 将 text memories 和 tool usage 存储在同一 collect
   - `tools/metadata_retriever.py` (行 12) — 确定性元数据检索
   - 各训练检查脚本 — 表和字段存在性验证
 
-### 5.2 数据库表数量对比
+### 5.2 数据库对象数量与集合差异
 
-| 指标 | 数据库实际 | Metadata Index | 差异 |
-|------|-----------|---------------|------|
-| BASE TABLE | **162** | — | — |
-| VIEW | **5** | — | — |
-| 总数 | **167** | **115** | 52 表/视图不在 index |
+| 指标 | 数量 | 说明 |
+|------|-----:|------|
+| `public` BASE TABLE | **162** | `pg_class.relkind='r'` |
+| `public` VIEW | **5** | `pg_class.relkind='v'` |
+| `public` MATERIALIZED VIEW | **0** | `pg_class.relkind='m'` |
+| 表/视图对象合计 | **167** | 162 + 5 |
+| Metadata Index 对象 | **115** | 2572 条字段记录，115 个唯一 `table` 值 |
+| DB 表/视图 - Index | **52** | 47 个 BASE TABLE + 5 个 VIEW |
+| Index - DB 表/视图 | **0** | index 对象全部存在 |
+| Index 中属于 VIEW 的对象 | **0** | 115 个 index 对象全部是 BASE TABLE |
 
-### 5.3 不在 Index 中的数据库表 (47 张)
+`pg_class` 另有 325 个非表/视图关系：267 个 INDEX、56 个 SEQUENCE、2 个 COMPOSITE TYPE；这些不进入 `167 - 115` 的对象差异。精确关系为：`167 - 115 = 52 = 47 个未索引 BASE TABLE + 5 个未索引 VIEW`。旧报告的“47 张缺失表”只计算 BASE TABLE；52 与 47 的 5 项差异就是 5 个 VIEW，不是额外缺失表。
 
-全部 47 张缺失表分类:
+### 5.3 DB 表/视图不在 Index 的 52 个对象
 
-- **stg_ 前缀表 (34 张)**: 外部系统 staging 导入表 (如 `stg_sjtysj_cbwrwxtzlxxxt_*`, `stg_sslhhpj_*`, `stg_ycsjtysj_*` 等)。这些是 ETL 中间表，通常不需要 NL2SQL 访问。
-- **备份表 (2 张)**: `layer_river_provincial_bak0617`, `rs_industrial_info_yc_bak0305`, `wm_water_source_bak0421`
-- **_stg_ 前缀表 (3 张)**: `_stg_yichang_river_*`
-- **PostGIS 系统表 (1 张)**: `spatial_ref_sys`
+- **staging 表（43 个，均为 BASE TABLE）**：`_stg_yichang_river_counts`、`_stg_yichang_river_import`、`_stg_yichang_river_std`、`stg_sjtj_sxhysjzxpt_dbo_operator_day_burnup_df`、`stg_sjtj_sxhysjzxpt_t_vessel_info_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_anchorage_clean_company_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_anchorage_info_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_clean_company_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_coordination_index_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_day_pollution_weight_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_day_receive_ship_kpi_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_day_subject_num_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_day_sxhy_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_month_receive_ship_kpi_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_order_receive_minute_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_process_unit_info_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_receive_ship_assessment_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_receive_ship_info_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_transfer_car_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_wharf_info_df`、`stg_sjtysj_cbwrwxtzlxxxt_b_wharf_kpi_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_apply_detail_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_ashore_apply_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_handover_trans_detail_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_handover_trans_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_receive_storage_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_trans_apply_detail_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_trans_apply_df`、`stg_sjtysj_cbwrwxtzlxxxt_p_wharf_storage_df`、`stg_sslhhpj_hbsxkqycszhslzhglptjsxm_att_bas_base_df`、`stg_sslhhpj_hbsxkqycszhslzhglptjsxm_att_wmst_base_df`、`stg_sslhhpj_hbsxkqycszhslzhglptjsxm_rcm_rv_lk_res_df`、`stg_sslhhpj_hbsxkqycszhslzhglptjsxm_rel_st_source_df`、`stg_sslhhpj_hbsxkqycszhslzhglptjsxm_warn_stcd_r_df`、`stg_sslhhpj_hbsxkqycszhslzhglptjsxm_wr_mp_b_df`、`stg_ycsjtysj_sxhyzssj_base_channel_df`、`stg_ycsjtysj_sxhyzssj_base_channel_level_df`、`stg_ycsjtysj_sxhyzssj_base_ship_df`、`stg_ycsjtysj_sxhyzssj_data_coverage_wharf_df`、`stg_ycsjtysj_sxhyzssj_data_ship_info_df`、`stg_ycssthjj_ltwsjgpt_t_sjzx_wry_jbxx_df`、`stg_ycssthjj_lysthjjkyjpt_t_sjzx_szzdjcz_df`、`stg_ycssthjj_wryzxjkpt_t_zxjc_s_w_1_df`。
+- **备份表（3 个，均为 BASE TABLE）**：`layer_river_provincial_bak0617`、`rs_industrial_info_yc_bak0305`、`wm_water_source_bak0421`。
+- **系统扩展表（1 个，BASE TABLE）**：`spatial_ref_sys`。
+- **普通 VIEW（5 个）**：`geography_columns`、`geometry_columns`、`v_wst_trace_edge_downstream`、`v_wst_trace_edge_upstream_conservative`、`v_wst_trace_edge_upstream_strict`。
+- **业务正式表、materialized view、其他表/视图对象**：0 个。
 
-**结论**: 47 张缺失表中，34 张为 staging 表，3 张为备份表，1 张为 PostGIS 系统表。这些表对 NL2SQL 问答的价值低，缺失合理。但需确认 staging 表是否确实不需要查询。
+这些对象应按 NL2SQL 允许范围分别评估，不能统称为“缺失表”。staging、备份和系统扩展表通常不应直接开放；5 个 VIEW 是否允许查询需按业务与安全规则决定。
 
 ### 5.4 在 Index 中但不在数据库的表
 
@@ -264,9 +318,9 @@ Vanna ChromaAgentMemory 将 text memories 和 tool usage 存储在同一 collect
 
 验证方式: 通过 `information_schema.columns` 逐表对比，未发现字段差异。
 
-### 5.6 `metadata_view` — 特殊条目
+### 5.6 `metadata_view` — 纠错
 
-Index 中包含 `metadata_view` (9 个字段)。`metadata_view` 是数据库中的 **VIEW** 而非 TABLE。SQLGuard 会将其作为表名校验，但实际执行 SQL 查询 VIEW 时行为正常。
+Index 中包含 `metadata_view`（9 个字段），但本次只读查询确认其在当前数据库中是 **BASE TABLE**，不是 VIEW。Index 中属于 VIEW 的对象数量为 0。
 
 ---
 
@@ -324,48 +378,47 @@ DB_KWARGS = dict(
 
 ### 7.1 后端测试
 
-后端测试文件位于 `tools/test_*.py` (11 个文件)。这些是手动探针/验证脚本，不是标准单元测试框架。执行方式为 `python tools/test_<name>.py`。
+后端测试文件位于 `tools/test_*.py`（11 个文件）。静态审查确认：11 个都不连接数据库、不调用真实 LLM、不打开 Chroma、不执行 DDL/DML；其中 3 个使用内存 `FakeMemory`，其余为纯静态或 fake tool/context。每个脚本都会重写 `tools/*_test_result.md`，故全部在仓库外的基础提交克隆中执行。
 
-**本次审计未执行后端测试**，原因:
-- 多数测试需要 DeepSeek API 调用 (涉及 LLM)
-- 部分测试需要 ChromaDB 写入操作
-- 这些条件超出只读审计范围
+共同环境：`VANNA_DATA_DIR=E:\3\_audit_temp\repository_audit_correction_20260714_102311\backend_runtime_vanna_data`，`AGENT_DATA_DIR=E:\3\_audit_temp\repository_audit_correction_20260714_102311\backend_runtime_agent_data`，`OPENCODE_API_KEY` 为空。命令列以临时克隆为工作目录，Python 为 `E:\3\posgresql\1\vanna_venv\Scripts\python.exe`。
+
+| 文件 / 命令 `python tools/<file>` | 分类 | 退出码 | 主摘要通过/失败 | DB | Memory | 临时目录变化 |
+|---|---|---:|---:|---|---|---|
+| `test_guarded_run_sql_tool.py` | 纯静态 + fake inner tool | 0 | 15/0 | 否 | 否 | 仅重写临时报告 |
+| `test_metadata_context_enhancer.py` | 纯静态 + fake context | 0 | 8/0 | 否 | 否 | 仅重写临时报告 |
+| `test_metadata_retriever.py` | 纯静态 | 0 | 20/0 | 否 | 否 | 仅重写临时报告 |
+| `test_metadata_retriever_level3_p1.py` | 纯静态 | 0 | 23/0；另嵌套既有回归 20/0 | 否 | 否 | 仅重写临时报告 |
+| `test_metadata_retriever_level3_p2.py` | 纯静态 | 0 | 9/0；另嵌套 P1 回归 23/0 | 否 | 否 | 仅重写临时报告 |
+| `test_sql_example_context_enhancer.py` | 仅内存 FakeMemory | 1 | 16/1 | 否 | 否（非 Chroma） | 仅重写临时报告 |
+| `test_sql_example_context_integration.py` | 纯静态源码集成检查 | 0 | 6/0 | 否 | 否 | 仅重写临时报告 |
+| `test_sql_example_context_p1.py` | 仅内存 FakeMemory | 1 | 12/2 | 否 | 否（非 Chroma） | 仅重写临时报告 |
+| `test_sql_example_context_p2.py` | 仅内存 FakeMemory | 0 | 16/0 | 否 | 否（非 Chroma） | 仅重写临时报告 |
+| `test_sql_guard.py` | 纯静态 | 0 | 31/0 | 否 | 否 | 仅重写临时报告 |
+| `test_sql_guard_execution_chain.py` | 纯静态 + fake inner tool | 0 | 7/0 | 否 | 否 | 仅重写临时报告 |
+
+执行汇总：11/11 文件执行；9 个文件退出码 0、2 个退出码 1。按每个脚本主摘要合计 **163 通过、3 失败**；两个嵌套回归另执行 43 个通过用例，若按所有实际函数调用累计则为 206/3。3 个失败均是过期断言：旧测试把当前已允许的 P1 或 P2 `training_level` 当作“未知”，以及期望白名单精确等于 L2/P0/P1；当前实现白名单已合法包含 P2。未执行文件：无。
+
+首次共用临时克隆时，两个带 `git status` 门禁的文件因前序测试已修改临时报告而提前退出；随后各自在全新干净克隆中重跑，上表记录重跑结果。四个受保护临时数据目录前后逐文件哈希完全一致。
 
 ### 7.2 前端测试
 
-**测试命令**:
-```bash
-cd frontend
-npx vitest run --reporter=verbose
+本次补证只针对指定的 6 个文件。静态检查结果：均未导入 Vitest，也没有注册 Vitest 的 `test()`、`it()` 或 `describe()`；其中 5 个定义自己的顶层 `test()`，`shadowComparisonV2.test.ts` 直接执行顶层断言。准确性质为：**自执行验证脚本，被 Vitest 加载但没有注册测试套件**。`--reporter=verbose` 只改变输出格式，不改变 Vitest 的测试发现逻辑。
+
+当前 `frontend/package.json` 未声明 `vitest`、`vite-node` 或 `tsx`。本次使用仓库外 `run_vite_selftest.mjs` 调用项目已安装的 Vite `createServer().ssrLoadModule()`，缓存目录也在仓库外。逐文件命令为：
+
+```powershell
+node E:\3\_audit_temp\repository_audit_correction_20260714_102311\run_vite_selftest.mjs "/src/__tests__/<文件名>"
 ```
 
-**执行结果** (2026-07-14):
-
-使用 `--reporter=verbose` 模式时，14 个测试文件全部通过:
-- `chartCapabilityV2.test.ts`: 44/44 通过
-- `chartCapabilityResolverV2.test.ts`: 107/107 通过
-- `chartDataTransformV2.test.ts`: 43/43 通过
-- `chartPipelineV2.test.ts`: 39/39 通过
-- `chartPlannerV2.test.ts`: 16/16 通过
-- `chartGoldenFixturesV2.test.ts`: 25/25 通过
-- `chartDescriptionV2.test.ts`: 29/29 通过
-- `chartAvailabilityV2.test.ts`: 20/20 通过
-- `chartSwitchMessageUpdate.test.ts`: 10/10 通过
-- `dashboardChartSwitchV2.test.ts`: 12/12 通过
-- `datasetProfilerV2.test.ts`: 37/37 通过
-- `userSwitchV2.test.ts`: 5/5 通过
-- `reTransformFromSource.test.ts`: 4/4 通过
-- `runtimeChartPathV2.test.ts`: 22/22 通过
-
-6 个文件在标准 vitest run (无 --reporter=verbose) 下报 "No test suite found":
-- `chatStorageSlimming.test.ts`
-- `chartAppendDowngrade.test.ts`
-- `chartViewSpecPreservation.test.ts`
-- `shadowComparisonV2.test.ts`
-- `sourceDataPreservation.test.ts`
-- `sseChartDataframeProtection.test.ts`
-
-**特点**: 前端测试使用自定义验证模式 (直接 `console.log` 通过/失败)，不使用 vitest 标准 `test()`/`it()`。vitest 默认 reporter 会将它们识别为无测试套件。
+| 文件 | Vitest `test/it` | 顶层自执行 | 退出码 | 通过/失败 |
+|------|------------------|------------|-------:|----------:|
+| `chatStorageSlimming.test.ts` | 否 | 是 | 0 | 44/0 |
+| `chartAppendDowngrade.test.ts` | 否 | 是 | 0 | 48/0 |
+| `chartViewSpecPreservation.test.ts` | 否 | 是 | 0 | 18/0 |
+| `shadowComparisonV2.test.ts` | 否 | 是 | 0 | 25/0 |
+| `sourceDataPreservation.test.ts` | 否 | 是 | 0 | 5/0 |
+| `sseChartDataframeProtection.test.ts` | 否 | 是 | 0 | 14/0 |
+| **合计** | **标准 Vitest 文件 0** | **自执行文件 6** | **全部 0** | **154/0** |
 
 ### 7.3 CI/CD
 
@@ -461,7 +514,7 @@ npx vitest run --reporter=verbose
 
 8. **column_metadata_index.json 无生成脚本**: 115 表索引文件来源不明，无法重新生成
 9. **ChromaDB 仅覆盖 6 表 DDL**: 115 表有 metadata index 但仅 6 表有 DDL 在 ChromaDB 中
-10. **47 张 DB 表不在 metadata index**: 包括 staging 表、备份表、PostGIS 系统表 (需确认 staging 表是否确实不需要)
+10. **52 个 DB 表/视图对象不在 metadata index**: 43 张 staging 表、3 张备份表、1 张 PostGIS 扩展表、5 个普通 view；不能全部称为“缺失表”
 
 ### 9.4 依赖问题
 
@@ -472,11 +525,11 @@ npx vitest run --reporter=verbose
 
 ## 10. 无法确认的问题
 
-1. **column_metadata_index.json 的生成方式** — 全仓搜索未发现生成脚本。据推测可能由外部工具或已删除的脚本生成。
-2. **staging 表是否需要纳入 NL2SQL 范围** — 47 张未在 index 的表是否需要支持 NL2SQL 查询，需业务方确认。
-3. **Level 2 SQL 样本编号空缺 (L2_SQL_011, L2_SQL_012)** — 可能被有意移除，具体原因需询问训练执行者。
-4. **Level 3 各阶段样本编号空缺** — L3_P1 缺 004,005,010; L3_P2 缺 009,010。原因同上。
-5. **前端 6 个测试文件的标准 vitest 兼容性** — 这些文件是否应该转换为标准 vitest 测试格式，需前端开发者确认。
+1. **正式 Chroma 三个既存修改文件在变化前的精确逻辑内容** — 未找到审计前副本，因此不能证明二进制变化前后绝对一致，也不能证明变化仅发生在索引。
+2. **column_metadata_index.json 的生成方式** — 全仓搜索未发现生成脚本；可能来自外部工具或已删除脚本，但没有证据确认。
+3. **NL2SQL 最终允许对象清单** — 43 张 staging 表、3 张备份表、1 张系统扩展表和 5 个 view 是否需要开放，需业务和安全负责人确认。
+4. **P1/P2 过期测试的处置方式** — 已确认 3 个失败断言与当前允许 P1/P2 的实现不一致，但本阶段只审计文档，未修改测试。
+5. **前端 6 个自执行脚本是否迁移为标准 Vitest** — 当前性质和独立执行结果已确认；是否迁移属于后续工程决策。
 
 ---
 
@@ -499,7 +552,7 @@ npx vitest run --reporter=verbose
 
 | 维度 | 当前覆盖 | 目标 | 差距 |
 |------|---------|------|------|
-| ChromaDB DDL (Level 1) | 6 表 | 全库可用表 | ~109 表需补充 DDL |
+| ChromaDB DDL (Level 1) | 6 表 | 经批准的 NL2SQL 允许表 | 需先确定允许范围，不能用 115 个 index 对象机械计算差距 |
 | SQL 示例 (Level 2) | 16 条 (水质+排污口) | — | 覆盖面可扩展 |
 | SQL 示例 (Level 3 P0) | 18 条 (水质详细查询) | — | — |
 | SQL 示例 (Level 3 P1) | 21 条 (排污口+废水+设备) | — | — |
@@ -507,10 +560,11 @@ npx vitest run --reporter=verbose
 
 ### 12.2 建议训练顺序
 
-1. **先解决安全问题** → 创建只读账号 (避免训练脚本使用超级用户写入数据库)
-2. **补充全库 DDL** → 将 metadata index 中 115 张表的 DDL 写入 ChromaDB (扩大 Level 1 覆盖)
-3. **扩展 Level 2/3 SQL 示例** → 覆盖更多业务领域 (水文、气象、水源地、调查等)
-4. **建立回归测试** → 每次训练后用 `tools/full_levels1_3_regression.py` 验证召回质量
+1. **先解决安全问题** → 创建只读账号，定义数据库层和 SQLGuard 共用的 NL2SQL 允许表清单。
+2. **划分对象范围** → 明确排除内部、staging、备份、系统扩展表；对 5 个 view 单独评估，不把 115 个 metadata 对象视为默认允许表。
+3. **以实际依赖和近期业务定优先级** → 64 条 approved 示例当前依赖 21 张表：`gis_region_county`、4 张排污口相关表、3 张废水记录表、`wm_camera_info`、`wm_camera_platform`、`wm_hydrological_info`、`wm_section_info`、`wm_section_wq_info`、`wm_uav_info`、`wm_water_intake`、`wm_water_source`、`wm_waterbody_info`、4 张水质记录表。先核对这些表与预计近期业务范围。
+4. **补充 Level 1 Text Memory** → 只为已批准查询且属于实际业务域的表生成带中文注释、排除 geometry 的 DDL；训练前后做备份、逻辑清单和回归验证。
+5. **再扩展 Level 2/3 SQL 示例** → 仅覆盖已批准业务领域，并修正当前 3 个过期测试断言后纳入统一测试入口。
 
 ### 12.3 训练风险提示
 
@@ -538,18 +592,18 @@ vanna_venv/Scripts/python.exe --version
 vanna_venv/Scripts/pip.exe freeze
 vanna_venv/Scripts/pip.exe show vanna
 
-# ChromaDB 分析 (通过 Vanna API + SQLite 直读)
-# - search_text_memories() 
-# - search_similar_usage()
-# - sqlite3 直接读取 chroma.sqlite3
+# ChromaDB 分析
+# - 正式目录仅做普通文件字节指纹
+# - 基线与当前目录均经两次复制后，才用 Chroma API 读取二次副本
+# - 比较 collection、record ID、document/metadata 哈希、embedding 和 metadata 分布
 
 # 数据库分析
 # - information_schema.tables 表计数
 # - pg_user 用户权限查询
 # - SHOW default_transaction_read_only / statement_timeout
 
-# 前端测试
-cd frontend && npx vitest run --reporter=verbose
+# 后端测试：仓库外克隆 + 临时 VANNA_DATA_DIR/AGENT_DATA_DIR
+# 前端 6 个自执行脚本：仓库外 Vite SSR 模块加载器逐文件执行
 
 # 元数据索引来源搜索
 grep -rn "column_metadata_index" --include="*.py" --include="*.md" .
@@ -562,8 +616,8 @@ git log --oneline --follow -10 -- agent_data/column_metadata_index.json
 
 2. **文档全面过时**: CLAUDE.md、ARCHITECTURE.md、RUNBOOK.md、PROJECT_STATUS.md 所描述的 LLM 网关 (`opencode.ai`)、API Key (`OPENCODE_API_KEY`)、Agent 架构均与当前 `step4_server.py` 实际代码不符。按文档操作将导致启动失败。
 
-3. **当前 ChromaDB 训练数据质量良好**: 64 条 approved SQL 示例无重复、无缺失 metadata、分布清晰 (L2:16, L3_P0:18, L3_P1:21, L3_P2:9)。但 Level 1 DDL 仅覆盖 6/115 表。
+3. **Chroma 基线与当前逻辑内容不一致**: 当前比最近可信备份多 9 条 P2 Tool Memory，record ID、document 哈希、metadata 哈希均不同；缺少精确审计前基线，不能证明既存二进制变化仅影响索引。
 
-4. **column_metadata_index.json 是关键依赖但无生成脚本**: SQLGuard、DeterministicMetadataContextEnhancer 均依赖此文件，但无法从数据库重新生成。需尽快编写生成脚本。
+4. **64 条 approved Tool Memory 经内容级去重无重复**: 64 个 sample_id、question_hash、sql_hash 和组合哈希均唯一；编号空缺都有 review_result 或训练报告证据。
 
-5. **旧脚本是安全隐患**: `step4_agent.py`、`step4_test2.py`、`diag_tool_calls.py` 绕过所有安全机制 (SQLGuard、确定性元数据、SQL 示例增强器)，直接执行 SQL。如被误用将在无保护状态下操作数据库。
+5. **测试现状已补证但仍有维护缺口**: 后端 11/11 文件实际执行，主摘要 163/3，3 个失败来自 P1/P2 白名单扩展后的过期断言；前端指定 6 个文件是自执行脚本，独立执行 154/0，并非标准 Vitest 套件。

@@ -2,7 +2,7 @@
 
 > 审计日期: 2026-07-14
 > 仓库: E:\3\posgresql\1
-> 分支: master, HEAD: 89eb4d75fcaf5ac140a4ff90c31da82c8b7e7ffc
+> 分支: master, 基础 HEAD: 42be3c0e59324f6fa0767ae69b45fa6962aa8729
 
 ---
 
@@ -51,19 +51,23 @@
 
 ## 4. 工具测试文件 (`tools/`)
 
-| 文件 | 测试对象 |
-|------|---------|
-| `tools/test_sql_guard.py` | SQLGuard |
-| `tools/test_guarded_run_sql_tool.py` | GuardedRunSqlTool |
-| `tools/test_metadata_retriever.py` | DeterministicMetadataRetriever |
-| `tools/test_metadata_context_enhancer.py` | DeterministicMetadataContextEnhancer |
-| `tools/test_sql_example_context_enhancer.py` | SqlExampleContextEnhancer |
-| `tools/test_sql_example_context_integration.py` | SQL Example + Guard 集成 |
-| `tools/test_sql_example_context_p1.py` | P1 级别测试 |
-| `tools/test_sql_example_context_p2.py` | P2 级别测试 |
-| `tools/test_sql_guard_execution_chain.py` | SQLGuard 执行链 |
-| `tools/test_metadata_retriever_level3_p1.py` | Metadata Retriever P1 |
-| `tools/test_metadata_retriever_level3_p2.py` | Metadata Retriever P2 |
+11 个文件均在仓库外克隆中实际执行；共同设置仓库外 `VANNA_DATA_DIR`、`AGENT_DATA_DIR`，未连接数据库、未调用真实 LLM、未打开 Chroma、未执行 DDL/DML。脚本只重写临时克隆中的结果报告。
+
+| 文件 | 测试对象 / 分类 | 退出码 | 主摘要通过/失败 |
+|------|-----------------|------:|----------------:|
+| `tools/test_sql_guard.py` | SQLGuard；纯静态 | 0 | 31/0 |
+| `tools/test_guarded_run_sql_tool.py` | GuardedRunSqlTool；fake inner tool | 0 | 15/0 |
+| `tools/test_metadata_retriever.py` | DeterministicMetadataRetriever；纯静态 | 0 | 20/0 |
+| `tools/test_metadata_context_enhancer.py` | DeterministicMetadataContextEnhancer；fake context | 0 | 8/0 |
+| `tools/test_sql_example_context_enhancer.py` | SqlExampleContextEnhancer；内存 FakeMemory | 1 | 16/1 |
+| `tools/test_sql_example_context_integration.py` | SQL Example + Guard 源码集成检查 | 0 | 6/0 |
+| `tools/test_sql_example_context_p1.py` | P1；内存 FakeMemory | 1 | 12/2 |
+| `tools/test_sql_example_context_p2.py` | P2；内存 FakeMemory | 0 | 16/0 |
+| `tools/test_sql_guard_execution_chain.py` | SQLGuard 执行链；fake inner tool | 0 | 7/0 |
+| `tools/test_metadata_retriever_level3_p1.py` | Metadata Retriever P1；纯静态 | 0 | 23/0，另嵌套回归 20/0 |
+| `tools/test_metadata_retriever_level3_p2.py` | Metadata Retriever P2；纯静态 | 0 | 9/0，另嵌套回归 23/0 |
+
+主摘要合计 163/3，9 个文件退出码 0、2 个文件退出码 1；嵌套回归另有 43/0。3 个失败均来自旧测试把当前已允许的 P1/P2 `training_level` 当作未知值，或仍要求白名单精确等于 L2/P0/P1。未执行文件为 0。
 
 ## 5. 训练脚本 (`training/`)
 
@@ -95,6 +99,12 @@
 | `training/sql_examples_level3_p2_draft.json` | Level 3 P2 草稿 |
 | `training/sql_examples_level3_p2_review_result.json` | Level 3 P2 审查结果 |
 | 各种 `*_result.md`, `*_review.md`, `*_plan.md`, `*_scope.md`, `*_check.md` | 训练报告和计划文档 |
+
+编号空缺均有草案和 review/训练证据，不是“原因未知”：
+
+- L2 冻结：`L2_SQL_011`、`L2_SQL_012` 因业务字段口径未确认；`L2_SQL_019` 因 SQLGuard warning、表不在 deterministic candidate tables 且场景稳定性待确认；decision 均为 `requires_manual_review`。
+- P1 冻结：`L3_P1_SQL_004`、`L3_P1_SQL_005`、`L3_P1_SQL_010` 的状态字段没有允许值、示例值或枚举证据，无法确认固定值“是”；decision 均为 `requires_manual_review`。
+- P2 排除：`L3_P2_SQL_009`、`L3_P2_SQL_010` 的 J5 精确匹配为 0，4 位城市码不能与 6 位区县码精确 JOIN；decision 均为 `excluded`。
 
 ## 7. 文档 (`docs/`)
 
@@ -141,29 +151,29 @@
 
 | 文件 | 类型 | 实际状态 |
 |------|------|---------|
-| `chartCapabilityV2.test.ts` | 自定义验证脚本 | 使用 verbose reporter 时通过 (44/44) |
-| `chartCapabilityResolverV2.test.ts` | 自定义验证脚本 | 通过 (107/107) |
-| `chartDataTransformV2.test.ts` | 自定义验证脚本 | 通过 (43/43) |
-| `chartPipelineV2.test.ts` | 自定义验证脚本 | 通过 (39/39) |
-| `chartPlannerV2.test.ts` | 自定义验证脚本 | 通过 (16/16) |
-| `chartGoldenFixturesV2.test.ts` | 自定义验证脚本 | 通过 (25/25) |
-| `chartDescriptionV2.test.ts` | 自定义验证脚本 | 通过 (29/29) |
-| `chartAvailabilityV2.test.ts` | 自定义验证脚本 | 通过 (20/20) |
-| `chartSwitchMessageUpdate.test.ts` | 自定义验证脚本 | 通过 (10/10) |
-| `dashboardChartSwitchV2.test.ts` | 自定义验证脚本 | 通过 (12/12) |
-| `datasetProfilerV2.test.ts` | 自定义验证脚本 | 通过 (37/37) |
-| `userSwitchV2.test.ts` | 自定义验证脚本 | 通过 (5/5) |
-| `reTransformFromSource.test.ts` | 自定义验证脚本 | 通过 (4/4) |
-| `runtimeChartPathV2.test.ts` | 自定义验证脚本 | 通过 (22/22) |
-| `chatStorageSlimming.test.ts` | 自定义验证脚本 | 标准 vitest run 报 "No test suite found" |
-| `chartAppendDowngrade.test.ts` | 自定义验证脚本 | 同上 |
-| `chartViewSpecPreservation.test.ts` | 自定义验证脚本 | 同上 |
-| `shadowComparisonV2.test.ts` | 自定义验证脚本 | 同上 |
-| `sourceDataPreservation.test.ts` | 自定义验证脚本 | 同上 |
-| `sseChartDataframeProtection.test.ts` | 自定义验证脚本 | 同上 |
+| `chartCapabilityV2.test.ts` | 自定义验证脚本 | 上一阶段记录 44/44，本次未复跑 |
+| `chartCapabilityResolverV2.test.ts` | 自定义验证脚本 | 上一阶段记录 107/107，本次未复跑 |
+| `chartDataTransformV2.test.ts` | 自定义验证脚本 | 上一阶段记录 43/43，本次未复跑 |
+| `chartPipelineV2.test.ts` | 自定义验证脚本 | 上一阶段记录 39/39，本次未复跑 |
+| `chartPlannerV2.test.ts` | 自定义验证脚本 | 上一阶段记录 16/16，本次未复跑 |
+| `chartGoldenFixturesV2.test.ts` | 自定义验证脚本 | 上一阶段记录 25/25，本次未复跑 |
+| `chartDescriptionV2.test.ts` | 自定义验证脚本 | 上一阶段记录 29/29，本次未复跑 |
+| `chartAvailabilityV2.test.ts` | 自定义验证脚本 | 上一阶段记录 20/20，本次未复跑 |
+| `chartSwitchMessageUpdate.test.ts` | 自定义验证脚本 | 上一阶段记录 10/10，本次未复跑 |
+| `dashboardChartSwitchV2.test.ts` | 自定义验证脚本 | 上一阶段记录 12/12，本次未复跑 |
+| `datasetProfilerV2.test.ts` | 自定义验证脚本 | 上一阶段记录 37/37，本次未复跑 |
+| `userSwitchV2.test.ts` | 自定义验证脚本 | 上一阶段记录 5/5，本次未复跑 |
+| `reTransformFromSource.test.ts` | 自定义验证脚本 | 上一阶段记录 4/4，本次未复跑 |
+| `runtimeChartPathV2.test.ts` | 自定义验证脚本 | 上一阶段记录 22/22，本次未复跑 |
+| `chatStorageSlimming.test.ts` | 非标准自执行验证脚本 | 本次独立执行 44/0，退出码 0 |
+| `chartAppendDowngrade.test.ts` | 非标准自执行验证脚本 | 本次独立执行 48/0，退出码 0 |
+| `chartViewSpecPreservation.test.ts` | 非标准自执行验证脚本 | 本次独立执行 18/0，退出码 0 |
+| `shadowComparisonV2.test.ts` | 非标准自执行验证脚本 | 本次独立执行 25/0，退出码 0 |
+| `sourceDataPreservation.test.ts` | 非标准自执行验证脚本 | 本次独立执行 5/0，退出码 0 |
+| `sseChartDataframeProtection.test.ts` | 非标准自执行验证脚本 | 本次独立执行 14/0，退出码 0 |
 | `goldenFixtures.ts` | 测试 fixtures (数据) | 非测试文件 |
 
-**注意:** 所有前端测试文件使用自定义验证模式（直接打印结果），不是标准 vitest `test()`/`it()` 块。使用 `npx vitest run --reporter=verbose` 时可以执行并输出结果；标准 `npx vitest run` 会报 "No test suite found"。没有统一测试入口，不会自动阻止提交。
+**本次指定 6 个文件的准确性质:** 未导入 Vitest，也未注册 Vitest `test()`/`it()`/`describe()`；5 个定义自己的顶层 `test()`，1 个直接执行顶层断言。它们是“自执行验证脚本，被 Vitest 加载但没有注册测试套件”。`--reporter=verbose` 只改变输出格式，不改变测试发现。当前 `package.json` 未声明 `vitest`、`vite-node` 或 `tsx`；本次通过仓库外 Vite SSR 模块加载器逐文件执行，共 154/0。
 
 ## 10. 前端配置文件
 
@@ -191,9 +201,25 @@
 
 | 目录 | 内容 | 当前状态 |
 |------|------|---------|
-| `vanna_data/` | ChromaDB 持久化数据 | 1 collection (tool_memories), 72 embeddings: 8 text (Level 1), 64 tool usage approved |
+| `vanna_data/` | ChromaDB 持久化数据 | 当前二次副本：1 collection，72 embeddings（8 text + 64 approved tool usage）；最近可信备份为 63 条，逻辑内容不一致 |
 | `agent_data/` | Agent 运行时数据 | 含 `column_metadata_index.json` (115 表, 2572 字段) |
 | `capture/` | LLM 调用捕获日志 (4 个 .jsonl 文件) | 诊断用途 |
+
+Chroma 内容级补证：当前相对可信备份新增 9 条 P2 Tool Memory；record ID 集、document 哈希、metadata 哈希均不一致。没有精确审计前副本，不能证明正式二进制变化前后逻辑内容绝对一致。当前 64 条 Tool Memory 的 sample_id、规范化 question、规范化 SQL、question+SQL 组合哈希均为 64 个唯一值，四类重复组均为 0。
+
+正式目录本阶段清单指纹（相对路径、长度、单文件 SHA-256 的规范化清单再哈希）：`vanna_data/` 开始/结束均为 `83fe3fb3c7b735f3b665a8105a8e8d705f801c1da467dd9274292ce732ec1ee5`；`agent_data/` 开始/结束均为 `c0d4ecf8733ce08121e7b19f59a2d96fece2fbb2d19a72f898cc387515a49a73`。两者本阶段均未变更。
+
+### 12.1 数据库对象与 Metadata Index
+
+| 集合 | 数量 | 关系 |
+|------|-----:|------|
+| `public` BASE TABLE | 162 | 其中 47 个不在 index |
+| `public` VIEW | 5 | 5 个均不在 index |
+| `public` MATERIALIZED VIEW | 0 | 无 |
+| 表/视图合计 | 167 | `167 - 115 = 52` |
+| Metadata Index 对象 | 115 | 全部是 BASE TABLE；index - DB 为 0 |
+
+52 个 DB-index 差异对象分类为 43 张 staging 表、3 张备份表、1 张 PostGIS 系统扩展表、5 个普通 view；业务正式表、materialized view 和其他表/视图为 0。`metadata_view` 在当前数据库中实际是 BASE TABLE，不是 VIEW。完整 52 个名称和类型见 `docs/repository_audit_evidence.md` 第 5.3 节。
 
 ## 13. Vanna 源码 (`vanna_src/`)
 
@@ -211,6 +237,12 @@
 ## 15. 启动脚本
 
 无独立启动脚本（`.sh`, `.ps1`, `.bat`）。启动方式见 `CLAUDE.md` 和 `docs/RUNBOOK.md`，需手动激活 venv 并执行 `python step4_server.py`。
+
+## 16. 审计边界与后续训练范围
+
+- 无法确认：正式 Chroma 3 个既存修改文件在变化前的精确逻辑内容、metadata index 的生成方式、NL2SQL 最终允许对象清单，以及是否把 6 个前端自执行脚本迁移为标准 Vitest。
+- Level 1 Text Memory 不应机械覆盖 115 个 metadata 对象。应先确定 NL2SQL 允许表，排除内部/staging/备份/系统对象，并单独评估 view。
+- 64 条 approved 示例实际依赖 21 张表；应结合这 21 张表与近期业务范围确定补充 DDL 和示例的优先级，再进行受控训练和回归。
 
 ## 统计汇总
 
