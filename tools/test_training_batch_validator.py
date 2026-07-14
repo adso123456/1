@@ -73,6 +73,181 @@ def main() -> int:
         )
     )
 
+    expected_top_level_fields = {
+        "schema_version",
+        "training_batch_id",
+        "training_level",
+        "status",
+        "source",
+        "expected_new_memory_count",
+        "sample_count",
+        "sample_ids",
+        "samples",
+    }
+    expected_sample_fields = {
+        "sample_id",
+        "question",
+        "tool_name",
+        "args",
+        "training_level",
+        "train_decision",
+        "review_reason",
+        "source",
+        "expected_behavior",
+        "expected_tables",
+    }
+    summary = valid_result.summary or {}
+    canonical_fields_ok = (
+        set(summary) == expected_top_level_fields
+        and bool(summary.get("samples"))
+        and set(summary["samples"][0]) == expected_sample_fields
+        and set(summary["samples"][0]["args"]) == {"sql"}
+    )
+    results.append(
+        (
+            "规范化摘要覆盖完整有效契约",
+            canonical_fields_ok,
+            f"top={sorted(summary)}; sample={sorted(summary.get('samples', [{}])[0])}",
+        )
+    )
+
+    def change_training_level(data: dict) -> None:
+        data["training_level"] = "level4_changed_sql_examples"
+        for sample in data["samples"]:
+            sample["training_level"] = data["training_level"]
+
+    def change_expected_table_with_sql(data: dict) -> None:
+        data["samples"][0]["args"]["sql"] = (
+            "SELECT outlet_name FROM rs_outlet_info_v2 LIMIT 10"
+        )
+        data["samples"][0]["expected_tables"] = ["rs_outlet_info_v2"]
+
+    meaningful_mutations = [
+        ("顶层 source", lambda data: data.__setitem__("source", "变更后的纯测试来源")),
+        (
+            "training_batch_id",
+            lambda data: data.__setitem__(
+                "training_batch_id", "level4-fixture-20260714-99"
+            ),
+        ),
+        ("training_level", change_training_level),
+        (
+            "样本 question",
+            lambda data: data["samples"][0].__setitem__(
+                "question", "变更后的测试区域排污口问题是什么？"
+            ),
+        ),
+        (
+            "样本 SQL 语义",
+            lambda data: data["samples"][0]["args"].__setitem__(
+                "sql",
+                "SELECT outlet_code, area_name FROM rs_outlet "
+                "ORDER BY outlet_code LIMIT 10",
+            ),
+        ),
+        (
+            "样本 review_reason",
+            lambda data: data["samples"][0].__setitem__(
+                "review_reason", "变更后的静态审查批准原因"
+            ),
+        ),
+        (
+            "样本 source",
+            lambda data: data["samples"][0].__setitem__(
+                "source", "变更后的纯模拟样本来源"
+            ),
+        ),
+        (
+            "样本 expected_behavior",
+            lambda data: data["samples"][0].__setitem__(
+                "expected_behavior", "变更后的预期查询行为"
+            ),
+        ),
+        ("样本 expected_tables 与 SQL", change_expected_table_with_sql),
+    ]
+    for field_name, mutate in meaningful_mutations:
+        changed_data = copy.deepcopy(valid_data)
+        mutate(changed_data)
+        changed_result = validate_training_batch(changed_data)
+        results.append(
+            (
+                f"有效字段变化改变 digest：{field_name}",
+                valid_result.valid
+                and changed_result.valid
+                and changed_result.batch_content_sha256
+                != valid_result.batch_content_sha256,
+                str(changed_result.batch_content_sha256),
+            )
+        )
+
+    whitespace_equivalent = copy.deepcopy(valid_data)
+    whitespace_equivalent["source"] = f"  {whitespace_equivalent['source']}  "
+    for field_name in ("question", "review_reason", "source", "expected_behavior"):
+        value = whitespace_equivalent["samples"][0][field_name]
+        whitespace_equivalent["samples"][0][field_name] = f"  {value}  "
+
+    sql_whitespace_equivalent = copy.deepcopy(valid_data)
+    sql_whitespace_equivalent["samples"][0]["args"]["sql"] = (
+        "  SELECT  outlet_name,  area_name\n"
+        "FROM  rs_outlet\nORDER  BY  outlet_name\nLIMIT  10  "
+    )
+
+    semicolon_equivalent = copy.deepcopy(valid_data)
+    semicolon_equivalent["samples"][0]["args"]["sql"] += ";"
+
+    schema_equivalent = copy.deepcopy(valid_data)
+    schema_equivalent["samples"][1]["expected_tables"] = ["rs_outlet"]
+
+    equivalence_cases = [
+        ("普通字段首尾空白", whitespace_equivalent),
+        ("SQL 外部多余空白", sql_whitespace_equivalent),
+        ("SQL 末尾单个分号", semicolon_equivalent),
+        ("expected_tables schema 前缀", schema_equivalent),
+    ]
+    for case_name, equivalent_data in equivalence_cases:
+        equivalent_result = validate_training_batch(equivalent_data)
+        results.append(
+            (
+                f"规范化等价保持 digest：{case_name}",
+                valid_result.valid
+                and equivalent_result.valid
+                and equivalent_result.batch_content_sha256
+                == valid_result.batch_content_sha256,
+                str(equivalent_result.batch_content_sha256),
+            )
+        )
+
+    def joined_batch(expected_tables: list[str]) -> dict:
+        data = copy.deepcopy(valid_data)
+        data["samples"][0]["question"] = "测试两张排污口表的关联字段是什么？"
+        data["samples"][0]["args"]["sql"] = (
+            "SELECT ro.outlet_name, info.outlet_code_national "
+            "FROM rs_outlet ro "
+            "JOIN rs_outlet_info_v2 info ON ro.outlet_name = info.outlet_name "
+            "LIMIT 10"
+        )
+        data["samples"][0]["expected_tables"] = expected_tables
+        return data
+
+    table_order_first = validate_training_batch(
+        joined_batch(["rs_outlet", "rs_outlet_info_v2"])
+    )
+    table_order_second = validate_training_batch(
+        joined_batch(["public.rs_outlet_info_v2", "public.rs_outlet"])
+    )
+    results.append(
+        (
+            "规范化等价保持 digest：expected_tables 顺序",
+            table_order_first.valid
+            and table_order_second.valid
+            and table_order_first.batch_content_sha256
+            == table_order_second.batch_content_sha256,
+            f"first={table_order_first.batch_content_sha256}; "
+            f"second={table_order_second.batch_content_sha256}; "
+            f"errors={[issue.__dict__ for issue in table_order_first.errors + table_order_second.errors]}",
+        )
+    )
+
     unknown_field = copy.deepcopy(valid_data)
     unknown_field["unexpected"] = True
     schema_result = validate_training_batch(unknown_field)
@@ -194,6 +369,32 @@ def main() -> int:
         )
     )
 
+    invalid_results = [
+        schema_result,
+        frozen_result,
+        count_result,
+        duplicate_result,
+        non_select_result,
+        mismatch_result,
+    ]
+    results.append(
+        (
+            "无效批次不生成正式摘要",
+            all(
+                not result.valid
+                and result.summary is None
+                and result.batch_content_sha256 is None
+                for result in invalid_results
+            ),
+            str(
+                [
+                    (result.valid, result.summary, result.batch_content_sha256)
+                    for result in invalid_results
+                ]
+            ),
+        )
+    )
+
     repeated_result = validate_training_batch(load_fixture())
     results.append(
         (
@@ -290,20 +491,24 @@ def main() -> int:
             ("仓库外机器和人类可读结果可生成", output_ok, str(temp_dir))
         )
 
-    forbidden_paths = [
-        PROJECT_ROOT / "vanna_data" / "stage0b1_should_not_exist.json",
-        PROJECT_ROOT / "agent_data" / "stage0b1_should_not_exist.md",
-    ]
     forbidden_results = []
-    for forbidden_path in forbidden_paths:
-        forbidden_path.unlink(missing_ok=True)
-        option = "--json-output" if forbidden_path.suffix == ".json" else "--markdown-output"
-        process = run_cli(str(VALID_FIXTURE), option, str(forbidden_path))
-        forbidden_results.append(
-            process.returncode != 0
-            and "OUTPUT_PATH_FORBIDDEN" in process.stdout
-            and not forbidden_path.exists()
-        )
+    with tempfile.TemporaryDirectory(prefix="training-sop-forbidden-") as temp_dir:
+        forbidden_paths = [
+            Path(temp_dir) / "vanna_data" / "should_not_exist.json",
+            Path(temp_dir) / "agent_data" / "should_not_exist.md",
+        ]
+        for forbidden_path in forbidden_paths:
+            option = (
+                "--json-output"
+                if forbidden_path.suffix == ".json"
+                else "--markdown-output"
+            )
+            process = run_cli(str(VALID_FIXTURE), option, str(forbidden_path))
+            forbidden_results.append(
+                process.returncode != 0
+                and "OUTPUT_PATH_FORBIDDEN" in process.stdout
+                and not forbidden_path.exists()
+            )
     results.append(
         (
             "禁止输出到 vanna_data 和 agent_data",

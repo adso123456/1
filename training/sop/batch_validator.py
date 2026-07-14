@@ -247,15 +247,23 @@ def _build_summary(batch: TrainingBatch) -> dict[str, Any]:
         "schema_version": batch.schema_version,
         "training_batch_id": batch.training_batch_id,
         "training_level": batch.training_level,
+        "status": batch.status,
+        "source": batch.source.strip(),
+        "expected_new_memory_count": batch.expected_new_memory_count,
         "sample_count": len(batch.samples),
         "sample_ids": [sample.sample_id for sample in batch.samples],
         "samples": [
             {
                 "sample_id": sample.sample_id,
                 "question": sample.question.strip(),
-                "sql": _normalize_sql(sample.args.sql),
-                "expected_tables": _normalized_tables(sample.expected_tables),
+                "tool_name": sample.tool_name,
+                "args": {"sql": _normalize_sql(sample.args.sql)},
+                "training_level": sample.training_level,
                 "train_decision": sample.train_decision,
+                "review_reason": sample.review_reason.strip(),
+                "source": sample.source.strip(),
+                "expected_behavior": sample.expected_behavior.strip(),
+                "expected_tables": _normalized_tables(sample.expected_tables),
             }
             for sample in batch.samples
         ],
