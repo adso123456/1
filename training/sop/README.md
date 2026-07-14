@@ -42,3 +42,11 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 正式 Memory 记录 ID 是 `toolmem-v1-<memory_content_sha256>` 全局内容寻址 ID，只覆盖规范化 question、tool name、args、success 和记录版本，不包含批次摘要、`sample_id`、时间、路径或随机值。批次交付身份通过 `delivery_item_sha256` 和后续执行账本表达；治理字段 `created_by_*` 只表示首次创建该 Memory 的批次，不表示后续引用批次。相同内容若已由其他批次创建，会阻断当前声明“预计新增”的批次，不会静默复用、覆盖或生成另一个记录 ID。
 
 本阶段仅覆盖 run_sql Tool Memory。Level 1 Text Memory、DDL Memory 和图表训练 Memory 的受控交付能力尚未建立；其中 Level 1 Text Memory 路径必须在 0B-4 前另行完成。
+
+## 0B-3C：受控 Chroma Tool Memory 适配层
+
+`chroma_tool_memory_adapter.py` 只建立 run_sql Tool Memory 的受控 Chroma 适配层，为后续 T5 创建、T6 精确核验和回滚提供全量清点、确定性 ID 精确读取、受控创建、批次精确查询和精确删除能力；它不是正式批次执行器，也不执行正式训练。
+
+适配层集中封装 Vanna 私有 collection 访问，普通训练代码不得直接访问。正式记录创建使用计划中的确定性 ID 和 `add`，不使用随机 UUID、`upsert` 或现有 `save_tool_usage()`。写入前的全量内容索引用于识别旧 UUID、同内容重复和内容寻址冲突，不能只按确定性 ID 查询结果判断记录不存在；适配层不会自动迁移、删除或重写旧记录。
+
+向量检索只用于验证现有问答召回和 compatibility metadata 的兼容性，不用于幂等判断、T6 精确核验、回滚定位或重复检测。本阶段适配层只能运行在 Git 仓库外的隔离 Chroma，拒绝正式 `vanna_data`、`agent_data`、符号链接、junction 和 reparse point，且没有绕过参数。Level 1 Text Memory 能力仍未建立。
