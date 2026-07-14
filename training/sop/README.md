@@ -17,3 +17,18 @@ python tools/validate_training_batch.py tools/fixtures/training_sop/valid_batch.
 ```
 
 如需 JSON 或 Markdown 结果，输出路径必须位于仓库外的临时或交付目录，且不得指向任何 `vanna_data` 或 `agent_data` 目录。
+
+## 0B-2A：训练数据目录指纹与验证副本
+
+`storage_snapshot.py` 提供纯文件系统能力：生成包含文件、隐藏文件和空目录的确定性清单；在源目录复制前后检查稳定性；将副本先写入目标同级临时目录，完成逐文件和整体摘要验证后再发布；以及从已验证备份复制到全新目录进行恢复副本演练。CLI 为：
+
+```powershell
+python tools/snapshot_training_store.py manifest <source>
+python tools/snapshot_training_store.py backup <source> <new-destination>
+python tools/snapshot_training_store.py verify <source> <copy>
+python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new-restore-destination>
+```
+
+所有源和目标路径必须显式提供。工具不会搜索或默认使用 `vanna_data`、`agent_data` 或 Chroma 路径；验证副本和恢复目录必须位于项目仓库之外且原本不存在。它不导入 Chroma、SQLite 数据库客户端、数据库驱动或 Memory API。
+
+该工具通过复制前后源目录指纹检测变化，但它不是数据库在线热备份协议。正式 T4 执行时仍必须先停止或阻断所有 Chroma 写入，确认服务和训练进程不会修改正式数据目录，再进行文件级备份。不得声称或假设该工具能在正式 Chroma 持续写入时保证事务一致性。
