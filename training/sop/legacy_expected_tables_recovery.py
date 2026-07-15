@@ -15,13 +15,15 @@ from training.sop.batch_validator import (
 )
 
 
-RECOVERY_SCHEMA_VERSION = "1.0"
+RECOVERY_SCHEMA_VERSION = "1.1"
 RECOVERY_STRATEGY_VERSION = "sqlguard-used-tables-v1"
+APPROVED_RECOVERY_BASE_COMMIT = "c5b88b1ae491850f18536700d29635aa255b6e2a"
 APPROVED_FORMAL_SOURCE_SHA256 = (
     "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8"
 )
 APPROVED_VERIFIED_BACKUP_SHA256 = APPROVED_FORMAL_SOURCE_SHA256
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+TARGET_RECORD_ID_PATTERN = re.compile(r"^toolmem-v1-[0-9a-f]{64}$")
 
 RecoveryState = Literal[
     "SOURCE_BLOCKED",
@@ -78,6 +80,7 @@ class CalibrationItem:
     derived_expected_tables: tuple[str, ...]
     matched: bool
     issue_codes: tuple[str, ...]
+    analysis_item_sha256: str
     calibration_item_sha256: str
 
     def to_public_dict(self) -> dict[str, Any]:
@@ -93,6 +96,7 @@ class RecoveryProposalItem:
     normalized_sql_sha256: str
     proposed_expected_tables: tuple[str, ...]
     issue_codes: tuple[str, ...]
+    analysis_item_sha256: str
     recovery_item_sha256: str
 
     def to_public_dict(self) -> dict[str, Any]:
@@ -101,12 +105,19 @@ class RecoveryProposalItem:
 
 @dataclass(frozen=True)
 class RecoverySourceFacts:
-    formal_source_sha256: str
-    verified_backup_sha256: str
-    audit_copy_sha256: str
+    formal_source_sha256_before: str
+    formal_source_sha256_after: str
+    verified_backup_sha256_before: str
+    verified_backup_sha256_after: str
+    audit_copy_sha256_before_open: str
+    audit_copy_sha256_after_open: str
     audit_inventory_sha256: str
     metadata_index_sha256_before: str
     metadata_index_sha256_after: str
+    sql_guard_source_sha256: str
+    batch_validator_source_sha256: str
+    recovery_module_source_sha256: str
+    audit_entry_source_sha256: str
     store_count: int
     legacy_record_count: int
     text_memory_count: int
@@ -129,6 +140,8 @@ class RecoveryEnvironment:
     metadata_index_sha256: str
     sql_guard_source_sha256: str
     batch_validator_source_sha256: str
+    recovery_module_source_sha256: str
+    audit_entry_source_sha256: str
     expected_store_count: int
     expected_legacy_count: int
     expected_text_memory_count: int
@@ -198,6 +211,20 @@ def _sha256_text(value: str) -> str:
 
 def _valid_sha256(value: Any) -> bool:
     return isinstance(value, str) and bool(SHA256_PATTERN.fullmatch(value))
+
+
+def recompute_sql_analysis_item_sha256(analysis: SqlAnalysisEvidence) -> str:
+    material = analysis.to_public_dict()
+    material.pop("analysis_item_sha256", None)
+    return _sha256_json(material)
+
+
+def recompute_recovery_environment_sha256(
+    environment: RecoveryEnvironment,
+) -> str:
+    material = environment.to_public_dict()
+    material.pop("recovery_environment_sha256", None)
+    return _sha256_json(material)
 
 
 def classify_expected_tables(
@@ -315,6 +342,8 @@ def build_recovery_environment(
     metadata_index_sha256: str,
     sql_guard_source_sha256: str,
     batch_validator_source_sha256: str,
+    recovery_module_source_sha256: str,
+    audit_entry_source_sha256: str,
 ) -> RecoveryEnvironment:
     material = {
         "recovery_schema_version": RECOVERY_SCHEMA_VERSION,
@@ -326,6 +355,8 @@ def build_recovery_environment(
         "metadata_index_sha256": metadata_index_sha256,
         "sql_guard_source_sha256": sql_guard_source_sha256,
         "batch_validator_source_sha256": batch_validator_source_sha256,
+        "recovery_module_source_sha256": recovery_module_source_sha256,
+        "audit_entry_source_sha256": audit_entry_source_sha256,
         "expected_store_count": 72,
         "expected_legacy_count": 64,
         "expected_text_memory_count": 8,
@@ -341,12 +372,15 @@ def build_recovery_environment(
 def _source_issue_codes(
     records: Sequence[LegacyExpectedTablesRecord],
     facts: RecoverySourceFacts,
+    environment: RecoveryEnvironment,
 ) -> tuple[str, ...]:
     issues: list[str] = []
     expected_facts = {
-        "formal_source_sha256": APPROVED_FORMAL_SOURCE_SHA256,
-        "verified_backup_sha256": APPROVED_VERIFIED_BACKUP_SHA256,
-        "audit_copy_sha256": APPROVED_VERIFIED_BACKUP_SHA256,
+        "formal_source_sha256_before": APPROVED_FORMAL_SOURCE_SHA256,
+        "formal_source_sha256_after": APPROVED_FORMAL_SOURCE_SHA256,
+        "verified_backup_sha256_before": APPROVED_VERIFIED_BACKUP_SHA256,
+        "verified_backup_sha256_after": APPROVED_VERIFIED_BACKUP_SHA256,
+        "audit_copy_sha256_before_open": APPROVED_VERIFIED_BACKUP_SHA256,
         "store_count": 72,
         "legacy_record_count": 64,
         "text_memory_count": 8,
@@ -361,6 +395,8 @@ def _source_issue_codes(
     for field, expected in expected_facts.items():
         if facts_dict[field] != expected:
             issues.append(f"SOURCE_{field.upper()}_MISMATCH")
+    if not _valid_sha256(facts.audit_copy_sha256_after_open):
+        issues.append("SOURCE_AUDIT_COPY_SHA256_AFTER_OPEN_INVALID")
     if facts.metadata_index_sha256_before != facts.metadata_index_sha256_after:
         issues.append("METADATA_INDEX_CHANGED")
     if len(records) != 64:
@@ -380,8 +416,15 @@ def _source_issue_codes(
         for record in records
     ):
         issues.append("CANONICAL_SQL_MISSING")
+    if any(not record.legacy_storage_id for record in records):
+        issues.append("EMPTY_LEGACY_STORAGE_ID")
+    if any(
+        not TARGET_RECORD_ID_PATTERN.fullmatch(record.target_record_id)
+        for record in records
+    ):
+        issues.append("INVALID_TARGET_RECORD_ID")
     if any(not _valid_sha256(record.memory_content_sha256) for record in records):
-        issues.append("MEMORY_CONTENT_SHA256_INVALID")
+        issues.append("INVALID_MEMORY_CONTENT_SHA256")
     state_counts = {
         state: sum(record.expected_tables_state == state for record in records)
         for state in ("valid", "missing", "invalid")
@@ -389,13 +432,34 @@ def _source_issue_codes(
     if state_counts != {"valid": 48, "missing": 16, "invalid": 0}:
         issues.append("EXPECTED_TABLES_DISTRIBUTION_MISMATCH")
     for record in records:
-        if record.expected_tables_state == "valid":
+        if record.expected_tables_state == "missing":
+            consistent = record.stored_expected_tables is None
+        elif record.expected_tables_state == "valid":
             state, _ = classify_expected_tables(
                 list(record.stored_expected_tables or ()), field_present=True
             )
-            if state != "valid":
-                issues.append("STORED_EXPECTED_TABLES_INVALID")
-                break
+            consistent = record.stored_expected_tables is not None and state == "valid"
+        else:
+            consistent = False
+        if not consistent:
+            issues.append("EXPECTED_TABLES_STATE_VALUE_MISMATCH")
+            break
+
+    environment_checks = (
+        (environment.base_commit == APPROVED_RECOVERY_BASE_COMMIT, "RECOVERY_BASE_COMMIT_MISMATCH"),
+        (recompute_recovery_environment_sha256(environment) == environment.recovery_environment_sha256, "RECOVERY_ENVIRONMENT_SHA256_MISMATCH"),
+        (environment.recovery_schema_version == RECOVERY_SCHEMA_VERSION, "RECOVERY_ENVIRONMENT_SCHEMA_MISMATCH"),
+        (environment.recovery_strategy_version == RECOVERY_STRATEGY_VERSION, "RECOVERY_ENVIRONMENT_STRATEGY_MISMATCH"),
+        (environment.audit_inventory_sha256 == facts.audit_inventory_sha256, "RECOVERY_ENVIRONMENT_INVENTORY_MISMATCH"),
+        (environment.metadata_index_sha256 == facts.metadata_index_sha256_before == facts.metadata_index_sha256_after, "RECOVERY_ENVIRONMENT_METADATA_INDEX_MISMATCH"),
+        (environment.sql_guard_source_sha256 == facts.sql_guard_source_sha256, "RECOVERY_ENVIRONMENT_SQL_GUARD_SOURCE_MISMATCH"),
+        (environment.batch_validator_source_sha256 == facts.batch_validator_source_sha256, "RECOVERY_ENVIRONMENT_BATCH_VALIDATOR_SOURCE_MISMATCH"),
+        (environment.recovery_module_source_sha256 == facts.recovery_module_source_sha256, "RECOVERY_ENVIRONMENT_MODULE_SOURCE_MISMATCH"),
+        (environment.audit_entry_source_sha256 == facts.audit_entry_source_sha256, "RECOVERY_ENVIRONMENT_AUDIT_SOURCE_MISMATCH"),
+        (environment.approved_formal_source_sha256 == APPROVED_FORMAL_SOURCE_SHA256 and environment.approved_verified_backup_sha256 == APPROVED_VERIFIED_BACKUP_SHA256, "RECOVERY_ENVIRONMENT_SOURCE_APPROVAL_MISMATCH"),
+        ((environment.expected_store_count, environment.expected_legacy_count, environment.expected_text_memory_count, environment.expected_calibration_count, environment.expected_recovery_count) == (72, 64, 8, 48, 16), "RECOVERY_ENVIRONMENT_COUNT_MISMATCH"),
+    )
+    issues.extend(code for passed, code in environment_checks if not passed)
     return tuple(sorted(set(issues)))
 
 
@@ -405,7 +469,7 @@ def _calibration_item(
 ) -> CalibrationItem:
     stored = tuple(_normalized_tables(list(record.stored_expected_tables or ())))
     derived = analysis.used_tables
-    issues = list(analysis.issue_codes)
+    issues = list(_analysis_binding_issue_codes(record, analysis))
     if stored != derived:
         issues.append("CALIBRATION_TABLES_MISMATCH")
     issue_codes = tuple(sorted(set(issues)))
@@ -417,6 +481,7 @@ def _calibration_item(
         "derived_expected_tables": list(derived),
         "matched": not issue_codes,
         "issue_codes": list(issue_codes),
+        "analysis_item_sha256": analysis.analysis_item_sha256,
     }
     return CalibrationItem(
         legacy_storage_id=record.legacy_storage_id,
@@ -426,6 +491,7 @@ def _calibration_item(
         derived_expected_tables=derived,
         matched=not issue_codes,
         issue_codes=issue_codes,
+        analysis_item_sha256=analysis.analysis_item_sha256,
         calibration_item_sha256=_sha256_json(material),
     )
 
@@ -434,7 +500,7 @@ def _recovery_item(
     record: LegacyExpectedTablesRecord,
     analysis: SqlAnalysisEvidence,
 ) -> RecoveryProposalItem:
-    issue_codes = analysis.issue_codes
+    issue_codes = _analysis_binding_issue_codes(record, analysis)
     proposed = analysis.used_tables if not issue_codes else ()
     material = {
         "legacy_storage_id": record.legacy_storage_id,
@@ -444,6 +510,7 @@ def _recovery_item(
         "normalized_sql_sha256": analysis.normalized_sql_sha256,
         "proposed_expected_tables": list(proposed),
         "issue_codes": list(issue_codes),
+        "analysis_item_sha256": analysis.analysis_item_sha256,
     }
     return RecoveryProposalItem(
         legacy_storage_id=record.legacy_storage_id,
@@ -453,16 +520,56 @@ def _recovery_item(
         normalized_sql_sha256=analysis.normalized_sql_sha256,
         proposed_expected_tables=proposed,
         issue_codes=issue_codes,
+        analysis_item_sha256=analysis.analysis_item_sha256,
         recovery_item_sha256=_sha256_json(material),
     )
+
+
+def _analysis_binding_issue_codes(
+    record: LegacyExpectedTablesRecord,
+    analysis: SqlAnalysisEvidence,
+) -> tuple[str, ...]:
+    issues = list(analysis.issue_codes)
+    if (
+        analysis.legacy_storage_id != record.legacy_storage_id
+        or analysis.target_record_id != record.target_record_id
+        or analysis.memory_content_sha256 != record.memory_content_sha256
+    ):
+        issues.append("ANALYSIS_MEMORY_IDENTITY_MISMATCH")
+    if analysis.sql_sha256 != _sha256_text(record.sql):
+        issues.append("ANALYSIS_SQL_SHA256_MISMATCH")
+    if analysis.normalized_sql_sha256 != _sha256_text(_normalize_sql(record.sql)):
+        issues.append("ANALYSIS_NORMALIZED_SQL_SHA256_MISMATCH")
+    if analysis.statement_count != _statement_count(record.sql):
+        issues.append("ANALYSIS_STATEMENT_COUNT_MISMATCH")
+    if recompute_sql_analysis_item_sha256(analysis) != analysis.analysis_item_sha256:
+        issues.append("ANALYSIS_ITEM_SHA256_MISMATCH")
+    ready_invariants = (
+        analysis.guard_passed is True
+        and analysis.guard_severity == "ok"
+        and analysis.statement_count == 1
+        and bool(analysis.used_tables)
+        and not analysis.unknown_tables
+        and not analysis.unknown_columns
+        and not analysis.forbidden_operations
+        and not analysis.candidate_mismatch
+    )
+    status_consistent = (
+        (analysis.analysis_status == "ready" and not analysis.issue_codes and ready_invariants)
+        or (analysis.analysis_status == "blocked" and bool(analysis.issue_codes))
+    )
+    if not status_consistent:
+        issues.append("ANALYSIS_STATUS_INCONSISTENT")
+    return tuple(sorted(set(issues)))
 
 
 def evaluate_calibration_gate(
     records: Sequence[LegacyExpectedTablesRecord],
     analyses: Sequence[SqlAnalysisEvidence],
     facts: RecoverySourceFacts,
+    environment: RecoveryEnvironment,
 ) -> tuple[bool, tuple[CalibrationItem, ...], tuple[str, ...]]:
-    source_issues = _source_issue_codes(records, facts)
+    source_issues = _source_issue_codes(records, facts, environment)
     calibration_records = tuple(
         sorted(
             (
@@ -509,7 +616,7 @@ def build_expected_tables_recovery_proposal(
     analysis_by_key = {
         (item.target_record_id, item.legacy_storage_id): item for item in analyses
     }
-    source_issues = _source_issue_codes(ordered_records, facts)
+    source_issues = _source_issue_codes(ordered_records, facts, environment)
 
     calibration_items: tuple[CalibrationItem, ...] = ()
     recovery_items: tuple[RecoveryProposalItem, ...] = ()
@@ -619,7 +726,10 @@ def build_expected_tables_recovery_proposal(
     }
     return ExpectedTablesRecoveryResult(
         state=state,
-        calibration_ready=state != "SOURCE_BLOCKED",
+        calibration_ready=state in (
+            "RECOVERY_BLOCKED",
+            "PROPOSAL_READY_AWAITING_HUMAN_APPROVAL",
+        ),
         proposal_ready=state == "PROPOSAL_READY_AWAITING_HUMAN_APPROVAL",
         issue_codes=source_issues,
         calibration_items=calibration_items,
@@ -638,6 +748,7 @@ def build_expected_tables_recovery_proposal(
 
 __all__ = [
     "APPROVED_FORMAL_SOURCE_SHA256",
+    "APPROVED_RECOVERY_BASE_COMMIT",
     "APPROVED_VERIFIED_BACKUP_SHA256",
     "CalibrationItem",
     "ExpectedTablesRecoveryResult",
@@ -652,4 +763,6 @@ __all__ = [
     "build_recovery_environment",
     "classify_expected_tables",
     "evaluate_calibration_gate",
+    "recompute_recovery_environment_sha256",
+    "recompute_sql_analysis_item_sha256",
 ]

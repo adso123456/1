@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import ast
 import json
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,12 +19,15 @@ if str(ROOT) not in sys.path:
 
 from training.sop.legacy_expected_tables_recovery import (  # noqa: E402
     APPROVED_FORMAL_SOURCE_SHA256,
+    APPROVED_RECOVERY_BASE_COMMIT,
     LegacyExpectedTablesRecord,
     RecoverySourceFacts,
     analyze_record_sql,
     build_expected_tables_recovery_proposal,
     build_recovery_environment,
     classify_expected_tables,
+    recompute_recovery_environment_sha256,
+    recompute_sql_analysis_item_sha256,
 )
 
 
@@ -58,7 +63,7 @@ def _records() -> list[LegacyExpectedTablesRecord]:
         records.append(
             LegacyExpectedTablesRecord(
                 legacy_storage_id=f"legacy-{index:03d}",
-                target_record_id=f"target-{index:03d}",
+                target_record_id=f"toolmem-v1-{index:064x}"[-75:],
                 memory_content_sha256=f"{index:064x}"[-64:],
                 question=f"PRIVATE QUESTION {index}",
                 sql=f"SELECT id FROM {table}",
@@ -107,8 +112,8 @@ def _analyses(records, overrides=None, raises=None):
     overrides = overrides or {}
     mapping = {
         record.sql: overrides.get(
-            record.target_record_id,
-            _guard_result([f"table_{int(record.target_record_id[-3:])}"]),
+            record.legacy_storage_id,
+            _guard_result([f"table_{int(record.legacy_storage_id[-3:])}"]),
         )
         for record in records
     }
@@ -118,12 +123,19 @@ def _analyses(records, overrides=None, raises=None):
 
 def _facts(**changes):
     values = {
-        "formal_source_sha256": APPROVED_FORMAL_SOURCE_SHA256,
-        "verified_backup_sha256": APPROVED_FORMAL_SOURCE_SHA256,
-        "audit_copy_sha256": APPROVED_FORMAL_SOURCE_SHA256,
+        "formal_source_sha256_before": APPROVED_FORMAL_SOURCE_SHA256,
+        "formal_source_sha256_after": APPROVED_FORMAL_SOURCE_SHA256,
+        "verified_backup_sha256_before": APPROVED_FORMAL_SOURCE_SHA256,
+        "verified_backup_sha256_after": APPROVED_FORMAL_SOURCE_SHA256,
+        "audit_copy_sha256_before_open": APPROVED_FORMAL_SOURCE_SHA256,
+        "audit_copy_sha256_after_open": APPROVED_FORMAL_SOURCE_SHA256,
         "audit_inventory_sha256": "1" * 64,
         "metadata_index_sha256_before": "2" * 64,
         "metadata_index_sha256_after": "2" * 64,
+        "sql_guard_source_sha256": "3" * 64,
+        "batch_validator_source_sha256": "4" * 64,
+        "recovery_module_source_sha256": "5" * 64,
+        "audit_entry_source_sha256": "6" * 64,
         "store_count": 72,
         "legacy_record_count": 64,
         "text_memory_count": 8,
@@ -140,11 +152,13 @@ def _facts(**changes):
 
 def _environment(**changes):
     values = {
-        "base_commit": "base-commit",
+        "base_commit": APPROVED_RECOVERY_BASE_COMMIT,
         "audit_inventory_sha256": "1" * 64,
         "metadata_index_sha256": "2" * 64,
         "sql_guard_source_sha256": "3" * 64,
         "batch_validator_source_sha256": "4" * 64,
+        "recovery_module_source_sha256": "5" * 64,
+        "audit_entry_source_sha256": "6" * 64,
     }
     values.update(changes)
     return build_recovery_environment(**values)
@@ -258,7 +272,7 @@ def main() -> int:
     for name, guard_result in calibration_block_cases.items():
         result = _proposal(
             records,
-            _analyses(records, {"target-001": guard_result}),
+            _analyses(records, {"legacy-001": guard_result}),
         )
         check(name, result.state == "CALIBRATION_FAILED" and not result.proposal_ready)
 
@@ -278,7 +292,7 @@ def main() -> int:
     for name, (changed_candidate, override, raises) in recovery_cases.items():
         changed_records = records.copy()
         changed_records[48] = changed_candidate
-        overrides = {"target-049": override} if override is not None else {}
+        overrides = {"legacy-049": override} if override is not None else {}
         changed_analyses = _analyses(changed_records, overrides, raises)
         result = _proposal(changed_records, changed_analyses)
         check(
@@ -289,7 +303,7 @@ def main() -> int:
         )
     one_failed = _proposal(
         records,
-        _analyses(records, {"target-049": _guard_result([])}),
+        _analyses(records, {"legacy-049": _guard_result([])}),
     )
     check("单条候选失败不产生15条可批准状态", one_failed.state == "RECOVERY_BLOCKED" and not one_failed.proposal_ready)
 
@@ -301,7 +315,7 @@ def main() -> int:
     changed_sql_records[48] = replace(records[48], sql=records[48].sql + " ")
     changed_sql = _proposal(changed_sql_records, _analyses(changed_sql_records))
     check("SQL变化改变项和提案摘要", changed_sql.recovery_items[0].recovery_item_sha256 != ready.recovery_items[0].recovery_item_sha256 and changed_sql.recovery_proposal_sha256 != ready.recovery_proposal_sha256)
-    proposed_change = _proposal(records, _analyses(records, {"target-049": _guard_result(["alternate_table"])}))
+    proposed_change = _proposal(records, _analyses(records, {"legacy-049": _guard_result(["alternate_table"])}))
     check("proposed table变化改变摘要", proposed_change.recovery_items[0].recovery_item_sha256 != ready.recovery_items[0].recovery_item_sha256)
     metadata_environment = _environment(metadata_index_sha256="5" * 64)
     metadata_result = _proposal(records, analyses, environment=metadata_environment)
@@ -310,6 +324,106 @@ def main() -> int:
     check("batch validator源码摘要改变环境", _environment(batch_validator_source_sha256="7" * 64).recovery_environment_sha256 != _environment().recovery_environment_sha256)
     check("路径和时间不进入摘要", "path" not in json.dumps(_environment().to_public_dict()).lower() and "time" not in json.dumps(_environment().to_public_dict()).lower())
     check("校准失败与成功状态摘要不同", mismatch.recovery_proposal_sha256 != ready.recovery_proposal_sha256)
+
+    def rehash_analysis(value):
+        return replace(value, analysis_item_sha256=recompute_sql_analysis_item_sha256(value))
+
+    def rehash_environment(value):
+        return replace(value, recovery_environment_sha256=recompute_recovery_environment_sha256(value))
+
+    original_analysis = analyses[0]
+    analysis_cases = [
+        ("analysis memory identity binding", rehash_analysis(replace(original_analysis, memory_content_sha256="f" * 64)), "ANALYSIS_MEMORY_IDENTITY_MISMATCH"),
+        ("analysis raw SQL digest binding", rehash_analysis(replace(original_analysis, sql_sha256="f" * 64)), "ANALYSIS_SQL_SHA256_MISMATCH"),
+        ("analysis normalized SQL digest binding", rehash_analysis(replace(original_analysis, normalized_sql_sha256="f" * 64)), "ANALYSIS_NORMALIZED_SQL_SHA256_MISMATCH"),
+        ("analysis statement count binding", rehash_analysis(replace(original_analysis, statement_count=2)), "ANALYSIS_STATEMENT_COUNT_MISMATCH"),
+        ("analysis item digest recompute", replace(original_analysis, analysis_item_sha256="f" * 64), "ANALYSIS_ITEM_SHA256_MISMATCH"),
+        ("ready status with issues blocked", rehash_analysis(replace(original_analysis, issue_codes=("SYNTHETIC",))), "ANALYSIS_STATUS_INCONSISTENT"),
+        ("blocked status without issues blocked", rehash_analysis(replace(original_analysis, analysis_status="blocked")), "ANALYSIS_STATUS_INCONSISTENT"),
+    ]
+    for name, changed_analysis, code in analysis_cases:
+        changed = list(analyses)
+        changed[0] = changed_analysis
+        outcome = _proposal(records, changed)
+        check(name, outcome.state == "CALIBRATION_FAILED" and code in outcome.issue_codes)
+    changed_candidate_records = list(records)
+    changed_candidate_records[48] = replace(records[48], sql="SELECT id FROM changed_table")
+    stale_candidate_analysis = _proposal(changed_candidate_records, analyses)
+    check(
+        "stale candidate SQL analysis enters RECOVERY_BLOCKED",
+        stale_candidate_analysis.state == "RECOVERY_BLOCKED"
+        and stale_candidate_analysis.calibration_ready
+        and "ANALYSIS_SQL_SHA256_MISMATCH" in stale_candidate_analysis.issue_codes,
+    )
+    changed_candidate_analysis = list(analyses)
+    changed_candidate_analysis[48] = replace(analyses[48], analysis_item_sha256="f" * 64)
+    changed_candidate_result = _proposal(records, changed_candidate_analysis)
+    check(
+        "analysis digest covered by downstream item and proposal",
+        ready.calibration_items[0].analysis_item_sha256 == analyses[0].analysis_item_sha256
+        and ready.recovery_items[0].analysis_item_sha256 == analyses[48].analysis_item_sha256
+        and ready.recovery_proposal_sha256 != changed_candidate_result.recovery_proposal_sha256,
+    )
+
+    environment_cases = [
+        ("recovery base commit binding", rehash_environment(replace(_environment(), base_commit="f" * 40)), "RECOVERY_BASE_COMMIT_MISMATCH"),
+        ("inventory environment binding", rehash_environment(replace(_environment(), audit_inventory_sha256="a" * 64)), "RECOVERY_ENVIRONMENT_INVENTORY_MISMATCH"),
+        ("metadata environment binding", rehash_environment(replace(_environment(), metadata_index_sha256="a" * 64)), "RECOVERY_ENVIRONMENT_METADATA_INDEX_MISMATCH"),
+        ("SQLGuard source binding", rehash_environment(replace(_environment(), sql_guard_source_sha256="a" * 64)), "RECOVERY_ENVIRONMENT_SQL_GUARD_SOURCE_MISMATCH"),
+        ("batch validator source binding", rehash_environment(replace(_environment(), batch_validator_source_sha256="a" * 64)), "RECOVERY_ENVIRONMENT_BATCH_VALIDATOR_SOURCE_MISMATCH"),
+        ("recovery module source binding", rehash_environment(replace(_environment(), recovery_module_source_sha256="a" * 64)), "RECOVERY_ENVIRONMENT_MODULE_SOURCE_MISMATCH"),
+        ("audit entry source binding", rehash_environment(replace(_environment(), audit_entry_source_sha256="a" * 64)), "RECOVERY_ENVIRONMENT_AUDIT_SOURCE_MISMATCH"),
+        ("environment digest recompute", replace(_environment(), recovery_environment_sha256="a" * 64), "RECOVERY_ENVIRONMENT_SHA256_MISMATCH"),
+        ("environment schema binding", rehash_environment(replace(_environment(), recovery_schema_version="9")), "RECOVERY_ENVIRONMENT_SCHEMA_MISMATCH"),
+        ("environment strategy binding", rehash_environment(replace(_environment(), recovery_strategy_version="other")), "RECOVERY_ENVIRONMENT_STRATEGY_MISMATCH"),
+        ("environment count binding", rehash_environment(replace(_environment(), expected_store_count=71)), "RECOVERY_ENVIRONMENT_COUNT_MISMATCH"),
+    ]
+    for name, changed_environment, code in environment_cases:
+        outcome = _proposal(records, analyses, _facts(), changed_environment)
+        check(name, outcome.state == "SOURCE_BLOCKED" and code in outcome.issue_codes)
+
+    source_cases_r1 = [
+        (0, "empty legacy ID blocked", replace(records[0], legacy_storage_id=""), "EMPTY_LEGACY_STORAGE_ID"),
+        (0, "invalid target ID blocked", replace(records[0], target_record_id="bad"), "INVALID_TARGET_RECORD_ID"),
+        (0, "invalid memory digest blocked", replace(records[0], memory_content_sha256="ABC"), "INVALID_MEMORY_CONTENT_SHA256"),
+        (48, "missing state value mismatch", replace(records[48], stored_expected_tables=("table_49",)), "EXPECTED_TABLES_STATE_VALUE_MISMATCH"),
+        (0, "valid state value mismatch", replace(records[0], stored_expected_tables=None), "EXPECTED_TABLES_STATE_VALUE_MISMATCH"),
+    ]
+    for index, name, changed_record, code in source_cases_r1:
+        changed_records = list(records)
+        changed_records[index] = changed_record
+        outcome = _proposal(changed_records, analyses)
+        check(name, outcome.state == "SOURCE_BLOCKED" and code in outcome.issue_codes)
+
+    source_blocked = _proposal(records, analyses, _facts(store_count=71))
+    check("SOURCE_BLOCKED flags", not source_blocked.calibration_ready and not source_blocked.proposal_ready)
+    check("CALIBRATION_FAILED flags", not mismatch.calibration_ready and not mismatch.proposal_ready)
+    check("RECOVERY_BLOCKED flags", one_failed.calibration_ready and not one_failed.proposal_ready)
+    check("PROPOSAL_READY flags", ready.calibration_ready and ready.proposal_ready)
+
+    from tools.audit_legacy_expected_tables_recovery import _remove_audit_copy
+    with tempfile.TemporaryDirectory() as temp_root:
+        root = Path(temp_root)
+        for name, failure_point in (("success cleanup", None), ("inventory failure cleanup", "inventory"), ("guard failure cleanup", "guard"), ("proposal failure cleanup", "proposal")):
+            copy_path = root / name
+            copy_path.mkdir()
+            try:
+                if failure_point:
+                    raise RuntimeError(failure_point)
+            except RuntimeError:
+                pass
+            finally:
+                _remove_audit_copy(copy_path)
+            check(name, not copy_path.exists())
+        failed_copy = root / "cleanup-failure"
+        failed_copy.mkdir()
+        cleanup_code = ""
+        try:
+            _remove_audit_copy(failed_copy, remover=lambda path: (_ for _ in ()).throw(OSError("synthetic")))
+        except RuntimeError as exc:
+            cleanup_code = str(exc)
+        check("cleanup failure stable code", failed_copy.exists() and cleanup_code == "AUDIT_COPY_CLEANUP_FAILED")
+        shutil.rmtree(failed_copy)
 
     public_text = json.dumps(ready.to_public_dict(), ensure_ascii=False)
     check("公开证据不含question和SQL正文", records[0].question not in public_text and records[0].sql not in public_text)

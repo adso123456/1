@@ -73,4 +73,8 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 
 M2A 只生成 `expected_tables` 恢复提案，不修改 Memory。恢复依据严格等于 `SQLGuard.used_tables`，并复用 batch validator 的 SQL 与表名规范化规则；必须先使用 48 条已有有效 `expected_tables` 的记录完成 48/48 校准，才能为 16 条缺失记录生成可供人工审查的提案。
 
+R1 要求每条 SQL 分析证据同时绑定 legacy record 的身份、内容摘要、原始 SQL 摘要、规范化 SQL 摘要、语句数和可重算分析项摘要；仅有相同 ID 不构成有效证据。`RecoveryEnvironment` 必须绑定同一次 inventory、metadata index、SQLGuard、batch validator、恢复模块和审计入口源码摘要，并通过可重算环境摘要校验。
+
+`calibration_ready` 仅表示 48 条校准记录已经完整通过；`SOURCE_BLOCKED` 和 `CALIBRATION_FAILED` 均为 false。所有成功和失败路径都必须关闭并删除 audit-copy，清理失败使用稳定错误码 `AUDIT_COPY_CLEANUP_FAILED`。旧 M2A proposal SHA `b39e0a9a55cb9c25f83aec0a210752040516b4c190b0e8736fbba57b413cee4a` 已废止，只有 R1 重新生成的 proposal SHA 可以进入后续人工审查。
+
 `PROPOSAL_READY_AWAITING_HUMAN_APPROVAL` 不等于已批准，也不等于可以执行迁移。M2A 完成后，0B-3D、正式迁移和 Level 1 仍然阻断。
