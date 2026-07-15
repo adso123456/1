@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, Mapping, Sequence
 
@@ -34,6 +35,13 @@ HISTORICAL_OPTIONAL_FIELDS = (
     "source",
     "expected_behavior",
 )
+CHECKED_COMPATIBILITY_FIELDS = tuple(
+    sorted(
+        set(REQUIRED_COMPATIBILITY_FIELDS)
+        | set(ENHANCER_REQUIRED_FIELDS)
+        | set(HISTORICAL_OPTIONAL_FIELDS)
+    )
+)
 MIGRATION_COMPATIBILITY_FIELDS = (
     "legacy_storage_id",
     "legacy_metadata_sha256",
@@ -42,7 +50,9 @@ MIGRATION_COMPATIBILITY_FIELDS = (
     "migration_item_sha256",
     "memory_content_sha256",
     "legacy_missing_fields",
+    "legacy_invalid_fields",
 )
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 PhaseAAction = Literal[
     "create_target",
@@ -70,6 +80,22 @@ class ExistingMigrationTargetSnapshot:
     memory_content_sha256: str
     top_level_metadata: Mapping[str, Any]
     compatibility_metadata: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class PhaseAVerificationSnapshot:
+    migration_plan_content_sha256: str
+    verified_target_record_ids: tuple[str, ...]
+    retained_legacy_storage_ids: tuple[str, ...]
+    store_count_after_phase_a: int
+    controlled_tool_record_count: int
+    legacy_tool_record_count: int
+    text_memory_count: int
+    malformed_record_count: int
+    unknown_record_count: int
+    duplicate_content_group_count: int
+    content_address_conflict_count: int
+    inventory_sha256: str
 
 
 @dataclass(frozen=True)
@@ -128,6 +154,9 @@ class LegacyToolMemoryMigrationPlan:
     migration_plan_content_sha256: str
     items: tuple[LegacyToolMemoryMigrationItem, ...]
     phase_a_possible_rollback_ids: tuple[str, ...]
+    phase_a_verification_provided: bool
+    phase_a_verified: bool
+    phase_a_verification_issues: tuple[MigrationPlanIssue, ...]
     phase_b_approved: bool
     proposed_legacy_delete_ids: tuple[str, ...]
     phase_b_executable_delete_ids: tuple[str, ...]
@@ -155,6 +184,13 @@ class LegacyToolMemoryMigrationPlan:
             "phase_a_possible_rollback_ids": list(
                 self.phase_a_possible_rollback_ids
             ),
+            "phase_a_verification_provided": (
+                self.phase_a_verification_provided
+            ),
+            "phase_a_verified": self.phase_a_verified,
+            "phase_a_verification_issues": [
+                asdict(issue) for issue in self.phase_a_verification_issues
+            ],
             "phase_b_approved": self.phase_b_approved,
             "proposed_legacy_delete_ids": list(
                 self.proposed_legacy_delete_ids
@@ -208,6 +244,25 @@ def _valid_expected_tables(value: Any) -> bool:
     )
 
 
+def _compatibility_field_lists(
+    metadata: Mapping[str, Any],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    missing = tuple(
+        field for field in CHECKED_COMPATIBILITY_FIELDS if field not in metadata
+    )
+    invalid = tuple(
+        field
+        for field in CHECKED_COMPATIBILITY_FIELDS
+        if field in metadata
+        and not (
+            _valid_expected_tables(metadata[field])
+            if field == "expected_tables"
+            else _is_nonempty_string(metadata[field])
+        )
+    )
+    return missing, invalid
+
+
 def _legacy_metadata_sha256(snapshot: LegacyToolRecordSnapshot) -> str:
     return _sha256(dict(snapshot.raw_metadata))
 
@@ -232,6 +287,137 @@ def _migration_item_sha256(
             "legacy_metadata_sha256": legacy_metadata_sha256,
         }
     )
+
+
+def _phase_a_verification_material(
+    verification: PhaseAVerificationSnapshot | None,
+) -> dict[str, Any] | None:
+    if verification is None:
+        return None
+    return {
+        "migration_plan_content_sha256": (
+            verification.migration_plan_content_sha256
+        ),
+        "verified_target_record_ids": sorted(
+            verification.verified_target_record_ids
+        ),
+        "retained_legacy_storage_ids": sorted(
+            verification.retained_legacy_storage_ids
+        ),
+        "store_count_after_phase_a": verification.store_count_after_phase_a,
+        "controlled_tool_record_count": (
+            verification.controlled_tool_record_count
+        ),
+        "legacy_tool_record_count": verification.legacy_tool_record_count,
+        "text_memory_count": verification.text_memory_count,
+        "malformed_record_count": verification.malformed_record_count,
+        "unknown_record_count": verification.unknown_record_count,
+        "duplicate_content_group_count": (
+            verification.duplicate_content_group_count
+        ),
+        "content_address_conflict_count": (
+            verification.content_address_conflict_count
+        ),
+        "inventory_sha256": verification.inventory_sha256,
+    }
+
+
+def _validate_phase_a_verification(
+    plan_content_sha256: str,
+    expected_target_ids: Sequence[str],
+    expected_legacy_ids: Sequence[str],
+    verification: PhaseAVerificationSnapshot | None,
+) -> tuple[MigrationPlanIssue, ...]:
+    if verification is None:
+        return (
+            _issue(
+                "PHASE_A_VERIFICATION_NOT_PROVIDED",
+                message="未提供阶段 A 匿名验证快照",
+            ),
+        )
+    if not isinstance(verification, PhaseAVerificationSnapshot):
+        raise TypeError("phase_a_verification 类型无效")
+
+    issues: list[MigrationPlanIssue] = []
+    if verification.migration_plan_content_sha256 != plan_content_sha256:
+        issues.append(
+            _issue(
+                "PHASE_A_PLAN_DIGEST_MISMATCH",
+                message="阶段 A 验证快照与当前计划摘要不一致",
+            )
+        )
+
+    expected_targets = tuple(sorted(expected_target_ids))
+    verified_targets = verification.verified_target_record_ids
+    if (
+        any(not isinstance(value, str) for value in verified_targets)
+        or len(verified_targets) != len(set(verified_targets))
+        or tuple(sorted(verified_targets)) != expected_targets
+    ):
+        issues.append(
+            _issue(
+                "PHASE_A_TARGET_SET_MISMATCH",
+                message="阶段 A 已验证 target 集合不精确",
+            )
+        )
+
+    expected_legacy = tuple(sorted(expected_legacy_ids))
+    retained_legacy = verification.retained_legacy_storage_ids
+    if (
+        any(not isinstance(value, str) for value in retained_legacy)
+        or len(retained_legacy) != len(set(retained_legacy))
+        or tuple(sorted(retained_legacy)) != expected_legacy
+    ):
+        issues.append(
+            _issue(
+                "PHASE_A_LEGACY_SET_MISMATCH",
+                message="阶段 A 保留 legacy 集合不精确",
+            )
+        )
+
+    if verification.store_count_after_phase_a != 136:
+        issues.append(
+            _issue(
+                "PHASE_A_STORE_COUNT_MISMATCH",
+                message="阶段 A 后存储总数不符合 136 条不变量",
+            )
+        )
+    if (
+        verification.controlled_tool_record_count != 64
+        or verification.legacy_tool_record_count != 64
+        or verification.text_memory_count != 8
+    ):
+        issues.append(
+            _issue(
+                "PHASE_A_CLASSIFICATION_COUNT_MISMATCH",
+                message="阶段 A 后分类数量不变量不满足",
+            )
+        )
+    if any(
+        count != 0
+        for count in (
+            verification.malformed_record_count,
+            verification.unknown_record_count,
+            verification.duplicate_content_group_count,
+            verification.content_address_conflict_count,
+        )
+    ):
+        issues.append(
+            _issue(
+                "PHASE_A_INVALID_RECORDS_PRESENT",
+                message="阶段 A 验证发现无效、未知、重复或冲突记录",
+            )
+        )
+    if not isinstance(
+        verification.inventory_sha256, str
+    ) or not SHA256_PATTERN.fullmatch(verification.inventory_sha256):
+        issues.append(
+            _issue(
+                "PHASE_A_INVENTORY_SHA256_INVALID",
+                message="阶段 A 清点摘要格式无效",
+            )
+        )
+    return tuple(issues)
 
 
 def analyze_legacy_metadata_coverage(
@@ -418,20 +604,22 @@ def _target_metadata(
     legacy_metadata_sha256: str,
     migration_plan_content_sha256: str,
     legacy_missing_fields: Sequence[str],
+    legacy_invalid_fields: Sequence[str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     compatibility = dict(snapshot.compatibility_metadata)
-    compatibility.update(
-        {
-            "legacy_storage_id": snapshot.legacy_storage_id,
-            "legacy_metadata_sha256": legacy_metadata_sha256,
-            "migration_batch_id": migration_batch_id,
-            "migration_plan_content_sha256": migration_plan_content_sha256,
-            "migration_item_sha256": migration_item_sha256,
-            "memory_content_sha256": snapshot.memory_content_sha256,
-        }
-    )
-    if legacy_missing_fields:
-        compatibility["legacy_missing_fields"] = list(legacy_missing_fields)
+    migration_metadata = {
+        "legacy_storage_id": snapshot.legacy_storage_id,
+        "legacy_metadata_sha256": legacy_metadata_sha256,
+        "migration_batch_id": migration_batch_id,
+        "migration_plan_content_sha256": migration_plan_content_sha256,
+        "migration_item_sha256": migration_item_sha256,
+        "memory_content_sha256": snapshot.memory_content_sha256,
+        "legacy_missing_fields": list(legacy_missing_fields),
+        "legacy_invalid_fields": list(legacy_invalid_fields),
+    }
+    for field, value in migration_metadata.items():
+        if field not in compatibility:
+            compatibility[field] = value
 
     canonical = snapshot.canonical_content
     governance = {
@@ -524,6 +712,7 @@ def build_legacy_tool_memory_migration_plan(
     existing_targets: Mapping[
         str, ExistingMigrationTargetSnapshot
     ] | None = None,
+    phase_a_verification: PhaseAVerificationSnapshot | None = None,
     phase_b_approved: bool = False,
 ) -> LegacyToolMemoryMigrationPlan:
     """生成不访问任何存储的两阶段确定性迁移计划。"""
@@ -621,10 +810,8 @@ def build_legacy_tool_memory_migration_plan(
     for index, snapshot in enumerate(ordered, start=1):
         migration_sample_id = f"{MIGRATION_SAMPLE_PREFIX}{index:03d}"
         legacy_digest = _legacy_metadata_sha256(snapshot)
-        missing_fields = tuple(
-            field
-            for field in HISTORICAL_OPTIONAL_FIELDS
-            if field not in snapshot.compatibility_metadata
+        missing_fields, invalid_fields = _compatibility_field_lists(
+            snapshot.compatibility_metadata
         )
         item_digest = _migration_item_sha256(
             migration_batch_id=migration_batch_id,
@@ -641,6 +828,7 @@ def build_legacy_tool_memory_migration_plan(
                 "legacy_metadata_sha256": legacy_digest,
                 "migration_item_sha256": item_digest,
                 "legacy_missing_fields": missing_fields,
+                "legacy_invalid_fields": invalid_fields,
                 "issues": list(_snapshot_issues(snapshot)),
             }
         )
@@ -666,6 +854,7 @@ def build_legacy_tool_memory_migration_plan(
             legacy_metadata_sha256=row["legacy_metadata_sha256"],
             migration_plan_content_sha256=migration_plan_content_sha256,
             legacy_missing_fields=row["legacy_missing_fields"],
+            legacy_invalid_fields=row["legacy_invalid_fields"],
         )
         action, existing_issues = _existing_target_action(
             existing=targets.get(snapshot.target_record_id),
@@ -704,8 +893,20 @@ def build_legacy_tool_memory_migration_plan(
     )
     executable = not all_issues
     proposed_deletes = tuple(sorted(legacy_ids))
+    phase_a_verification_issues = _validate_phase_a_verification(
+        migration_plan_content_sha256,
+        tuple(item.target_record_id for item in items),
+        proposed_deletes,
+        phase_a_verification,
+    )
+    phase_a_verification_provided = phase_a_verification is not None
+    phase_a_verified = (
+        phase_a_verification_provided and not phase_a_verification_issues
+    )
     executable_deletes = (
-        proposed_deletes if phase_b_approved and executable else ()
+        proposed_deletes
+        if phase_b_approved and phase_a_verified and executable
+        else ()
     )
     rollback_ids = tuple(sorted(target_ids))
     create_count = sum(item.phase_a_action == "create_target" for item in items)
@@ -724,6 +925,14 @@ def build_legacy_tool_memory_migration_plan(
         "migration_plan_content_sha256": migration_plan_content_sha256,
         "items": [item.to_dict() for item in items],
         "phase_a_possible_rollback_ids": list(rollback_ids),
+        "phase_a_verification_provided": phase_a_verification_provided,
+        "phase_a_verified": phase_a_verified,
+        "phase_a_verification": _phase_a_verification_material(
+            phase_a_verification
+        ),
+        "phase_a_verification_issues": [
+            asdict(issue) for issue in phase_a_verification_issues
+        ],
         "phase_b_approved": phase_b_approved,
         "proposed_legacy_delete_ids": list(proposed_deletes),
         "phase_b_executable_delete_ids": list(executable_deletes),
@@ -746,6 +955,9 @@ def build_legacy_tool_memory_migration_plan(
         migration_plan_content_sha256=migration_plan_content_sha256,
         items=tuple(items),
         phase_a_possible_rollback_ids=rollback_ids,
+        phase_a_verification_provided=phase_a_verification_provided,
+        phase_a_verified=phase_a_verified,
+        phase_a_verification_issues=phase_a_verification_issues,
         phase_b_approved=phase_b_approved,
         proposed_legacy_delete_ids=proposed_deletes,
         phase_b_executable_delete_ids=executable_deletes,
@@ -769,6 +981,7 @@ def build_public_migration_evidence(
         "migration_item_sha256",
         "metadata_field_names",
         "missing_fields",
+        "invalid_fields",
         "issue_codes",
         "phase_a_action",
         "phase_b_action",
@@ -789,6 +1002,11 @@ def build_public_migration_evidence(
             "missing_fields": list(
                 item.target_compatibility_metadata.get(
                     "legacy_missing_fields", []
+                )
+            ),
+            "invalid_fields": list(
+                item.target_compatibility_metadata.get(
+                    "legacy_invalid_fields", []
                 )
             ),
             "issue_codes": sorted(issue.code for issue in item.issues),
@@ -819,6 +1037,7 @@ __all__ = [
     "LegacyToolRecordSnapshot",
     "MIGRATION_SCHEMA_VERSION",
     "MigrationPlanIssue",
+    "PhaseAVerificationSnapshot",
     "analyze_legacy_metadata_coverage",
     "build_legacy_tool_memory_migration_plan",
     "build_public_migration_evidence",

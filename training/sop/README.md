@@ -62,3 +62,7 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 计划使用两层摘要避免自引用：`migration_plan_content_sha256` 覆盖尚未填入 `created_by_batch_content_sha256` 的原始计划材料；新记录的 `created_by_batch_content_sha256` 使用该内容摘要；`migration_plan_sha256` 再覆盖填充治理字段后的最终完整计划。`created_by_*` 表示首次创建受控确定性记录的迁移批次，不代表旧 UUID 记录不可恢复的原始历史批次。
 
 缺失的历史说明字段不会被虚构，而是记录在 `legacy_missing_fields`。正式迁移完成并经过验证前，0B-3D 继续阻断。
+
+阶段 B 需要两个独立门禁：阶段 A 的匿名验证快照必须完整通过，并且阶段 B 必须另行获得人工批准。仅设置 `phase_b_approved=true` 不足以生成旧 UUID 的可执行删除集合；迁移计划本身存在阻断时同样不会生成删除集合。
+
+公开迁移证据逐项区分 `legacy_missing_fields` 和 `legacy_invalid_fields`。缺少 `expected_tables` 的匿名记录可通过 legacy storage ID 和 target ID 精确定位，但证据不会保存问题、SQL、`args_json` 或 `metadata_json` 正文。

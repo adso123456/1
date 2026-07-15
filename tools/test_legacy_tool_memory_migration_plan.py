@@ -18,6 +18,7 @@ from training.sop.legacy_tool_memory_migration_plan import (  # noqa: E402
     APPROVED_VERIFIED_BACKUP_SHA256,
     ExistingMigrationTargetSnapshot,
     LegacyToolRecordSnapshot,
+    PhaseAVerificationSnapshot,
     analyze_legacy_metadata_coverage,
     build_legacy_tool_memory_migration_plan,
     build_public_migration_evidence,
@@ -123,6 +124,31 @@ def _existing_from_item(snapshot: LegacyToolRecordSnapshot, item: object):
     )
 
 
+def _phase_a_snapshot(plan: object, **overrides: object):
+    arguments = {
+        "migration_plan_content_sha256": plan.migration_plan_content_sha256,
+        "verified_target_record_ids": tuple(
+            item.target_record_id for item in plan.items
+        ),
+        "retained_legacy_storage_ids": plan.proposed_legacy_delete_ids,
+        "store_count_after_phase_a": 136,
+        "controlled_tool_record_count": 64,
+        "legacy_tool_record_count": 64,
+        "text_memory_count": 8,
+        "malformed_record_count": 0,
+        "unknown_record_count": 0,
+        "duplicate_content_group_count": 0,
+        "content_address_conflict_count": 0,
+        "inventory_sha256": "a" * 64,
+    }
+    arguments.update(overrides)
+    return PhaseAVerificationSnapshot(**arguments)
+
+
+def _has_phase_a_issue(plan: object, code: str) -> bool:
+    return any(issue.code == code for issue in plan.phase_a_verification_issues)
+
+
 def main() -> int:
     initial_status = _git_status()
     snapshots = _snapshots()
@@ -178,7 +204,40 @@ def main() -> int:
     metadata = dict(missing_required[0].compatibility_metadata)
     del metadata["expected_tables"]
     missing_required[0] = replace(missing_required[0], compatibility_metadata=metadata)
-    check("必须兼容字段缺失阻断", _has_issue(_plan(missing_required), "REQUIRED_COMPATIBILITY_FIELD_INVALID"))
+    missing_required_plan = _plan(missing_required)
+    missing_required_item = next(item for item in missing_required_plan.items if item.legacy_storage_id == missing_required[0].legacy_storage_id)
+    check("必须兼容字段缺失阻断", _has_issue(missing_required_plan, "REQUIRED_COMPATIBILITY_FIELD_INVALID"))
+    check("缺少 expected_tables 归入 missing 而非 invalid", "expected_tables" in missing_required_item.target_compatibility_metadata["legacy_missing_fields"] and "expected_tables" not in missing_required_item.target_compatibility_metadata["legacy_invalid_fields"])
+    invalid_expected = snapshots.copy()
+    metadata = dict(invalid_expected[0].compatibility_metadata)
+    metadata["expected_tables"] = []
+    invalid_expected[0] = replace(invalid_expected[0], compatibility_metadata=metadata)
+    invalid_expected_plan = _plan(invalid_expected)
+    invalid_expected_item = next(item for item in invalid_expected_plan.items if item.legacy_storage_id == invalid_expected[0].legacy_storage_id)
+    check("无效 expected_tables 归入 invalid 而非 missing", "expected_tables" in invalid_expected_item.target_compatibility_metadata["legacy_invalid_fields"] and "expected_tables" not in invalid_expected_item.target_compatibility_metadata["legacy_missing_fields"] and not invalid_expected_plan.executable)
+    optional_missing = snapshots.copy()
+    metadata = dict(optional_missing[0].compatibility_metadata)
+    del metadata["review_reason"]
+    optional_missing[0] = replace(optional_missing[0], compatibility_metadata=metadata)
+    optional_missing_plan = _plan(optional_missing)
+    optional_item = next(item for item in optional_missing_plan.items if item.legacy_storage_id == optional_missing[0].legacy_storage_id)
+    check("可选字段缺失记录但不虚构且不阻断", optional_missing_plan.executable and "review_reason" in optional_item.target_compatibility_metadata["legacy_missing_fields"] and "review_reason" not in optional_item.target_compatibility_metadata)
+    multiple_missing = snapshots.copy()
+    metadata = dict(multiple_missing[0].compatibility_metadata)
+    for field in ("source", "review_reason", "expected_behavior"):
+        del metadata[field]
+    multiple_missing[0] = replace(multiple_missing[0], compatibility_metadata=metadata)
+    multiple_missing_plan = _plan(multiple_missing)
+    multiple_item = next(item for item in multiple_missing_plan.items if item.legacy_storage_id == multiple_missing[0].legacy_storage_id)
+    missing_list = multiple_item.target_compatibility_metadata["legacy_missing_fields"]
+    check("多个缺失字段稳定排序且无重复", missing_list == sorted(set(missing_list)))
+    invalid_field_conflict = snapshots.copy()
+    metadata = dict(invalid_field_conflict[0].compatibility_metadata)
+    metadata["legacy_invalid_fields"] = ["preexisting"]
+    invalid_field_conflict[0] = replace(invalid_field_conflict[0], compatibility_metadata=metadata)
+    invalid_field_conflict_plan = _plan(invalid_field_conflict)
+    invalid_field_conflict_item = next(item for item in invalid_field_conflict_plan.items if item.legacy_storage_id == invalid_field_conflict[0].legacy_storage_id)
+    check("旧 legacy_invalid_fields 占用触发冲突且不覆盖", _has_issue(invalid_field_conflict_plan, "MIGRATION_METADATA_FIELD_CONFLICT") and invalid_field_conflict_item.target_compatibility_metadata["legacy_invalid_fields"] == ["preexisting"])
 
     check("target 不存在规划创建", all(x.phase_a_action == "create_target" for x in plan.items))
     first_item = plan.items[0]
@@ -201,9 +260,42 @@ def main() -> int:
     check("阶段 A 回滚集合仅 target ID", set(plan.phase_a_possible_rollback_ids) == {x.target_record_id for x in plan.items})
     check("阶段 B 默认未批准", plan.phase_b_approved is False)
     check("未批准时无可执行删除", plan.phase_b_executable_delete_ids == ())
-    approved = _plan(snapshots, phase_b_approved=True)
-    check("批准后删除集合恰为 64 个 legacy ID", len(approved.phase_b_executable_delete_ids) == 64 and set(approved.phase_b_executable_delete_ids) == {x.legacy_storage_id for x in snapshots})
+    approved_only = _plan(snapshots, phase_b_approved=True)
+    check("仅阶段 B 批准仍无删除集合", not approved_only.phase_a_verified and approved_only.phase_b_executable_delete_ids == () and _has_phase_a_issue(approved_only, "PHASE_A_VERIFICATION_NOT_PROVIDED"))
+    valid_verification = _phase_a_snapshot(plan)
+    verified_only = _plan(snapshots, phase_a_verification=valid_verification)
+    check("阶段 A 已验证但未批准仍无删除集合", verified_only.phase_a_verified and verified_only.phase_b_executable_delete_ids == ())
+    approved = _plan(snapshots, phase_a_verification=valid_verification, phase_b_approved=True)
+    check("阶段 A 已验证且批准后删除 64 个 legacy ID", len(approved.phase_b_executable_delete_ids) == 64 and set(approved.phase_b_executable_delete_ids) == {x.legacy_storage_id for x in snapshots})
     check("阶段 B 删除集合不含 target ID", set(approved.phase_b_executable_delete_ids).isdisjoint({x.target_record_id for x in plan.items}))
+
+    missing_target = replace(valid_verification, verified_target_record_ids=valid_verification.verified_target_record_ids[:-1])
+    extra_target = replace(valid_verification, verified_target_record_ids=valid_verification.verified_target_record_ids + ("toolmem-v1-" + "f" * 64,))
+    missing_target_plan = _plan(snapshots, phase_a_verification=missing_target, phase_b_approved=True)
+    extra_target_plan = _plan(snapshots, phase_a_verification=extra_target, phase_b_approved=True)
+    check("阶段 A target 集合缺少或增加均阻断", _has_phase_a_issue(missing_target_plan, "PHASE_A_TARGET_SET_MISMATCH") and _has_phase_a_issue(extra_target_plan, "PHASE_A_TARGET_SET_MISMATCH") and not missing_target_plan.phase_b_executable_delete_ids and not extra_target_plan.phase_b_executable_delete_ids)
+    missing_legacy = replace(valid_verification, retained_legacy_storage_ids=valid_verification.retained_legacy_storage_ids[:-1])
+    missing_legacy_plan = _plan(snapshots, phase_a_verification=missing_legacy, phase_b_approved=True)
+    check("阶段 A legacy 保留集合不完整阻断", _has_phase_a_issue(missing_legacy_plan, "PHASE_A_LEGACY_SET_MISMATCH") and not missing_legacy_plan.phase_b_executable_delete_ids)
+    bad_store_count = _plan(snapshots, phase_a_verification=replace(valid_verification, store_count_after_phase_a=135), phase_b_approved=True)
+    check("阶段 A 存储总数不符阻断", _has_phase_a_issue(bad_store_count, "PHASE_A_STORE_COUNT_MISMATCH") and not bad_store_count.phase_b_executable_delete_ids)
+    bad_classification_plans = [
+        _plan(snapshots, phase_a_verification=replace(valid_verification, **{field: value}), phase_b_approved=True)
+        for field, value in (("controlled_tool_record_count", 63), ("legacy_tool_record_count", 63), ("text_memory_count", 7))
+    ]
+    check("阶段 A 任一分类数量不符均阻断", all(_has_phase_a_issue(candidate, "PHASE_A_CLASSIFICATION_COUNT_MISMATCH") and not candidate.phase_b_executable_delete_ids for candidate in bad_classification_plans))
+    invalid_record_plans = [
+        _plan(snapshots, phase_a_verification=replace(valid_verification, **{field: 1}), phase_b_approved=True)
+        for field in ("malformed_record_count", "unknown_record_count", "duplicate_content_group_count", "content_address_conflict_count")
+    ]
+    check("阶段 A 任一无效记录计数非零均阻断", all(_has_phase_a_issue(candidate, "PHASE_A_INVALID_RECORDS_PRESENT") and not candidate.phase_b_executable_delete_ids for candidate in invalid_record_plans))
+    bad_inventory = _plan(snapshots, phase_a_verification=replace(valid_verification, inventory_sha256="invalid"), phase_b_approved=True)
+    check("阶段 A inventory SHA 格式无效阻断", _has_phase_a_issue(bad_inventory, "PHASE_A_INVENTORY_SHA256_INVALID") and not bad_inventory.phase_b_executable_delete_ids)
+    bad_phase_digest = _plan(snapshots, phase_a_verification=replace(valid_verification, migration_plan_content_sha256="0" * 64), phase_b_approved=True)
+    check("阶段 A 计划摘要不匹配阻断", _has_phase_a_issue(bad_phase_digest, "PHASE_A_PLAN_DIGEST_MISMATCH") and not bad_phase_digest.phase_b_executable_delete_ids)
+    reversed_verification = replace(valid_verification, verified_target_record_ids=tuple(reversed(valid_verification.verified_target_record_ids)), retained_legacy_storage_ids=tuple(reversed(valid_verification.retained_legacy_storage_ids)))
+    reversed_verified_plan = _plan(snapshots, phase_a_verification=reversed_verification, phase_b_approved=True)
+    check("阶段 A 集合输入顺序不影响最终计划", approved.phase_a_verified == reversed_verified_plan.phase_a_verified and approved.migration_plan_sha256 == reversed_verified_plan.migration_plan_sha256 and approved.phase_b_executable_delete_ids == reversed_verified_plan.phase_b_executable_delete_ids)
     check("最终预期总数 72", plan.expected_final_store_count == 72)
     check("8 条 Text Memory 不进入迁移或删除集合", plan.text_memory_excluded_count == 8 and len(plan.items) == 64 and len(plan.proposed_legacy_delete_ids) == 64)
 
@@ -213,15 +305,25 @@ def main() -> int:
     check("公开证据无完整 SQL", snapshots[0].canonical_content["args"]["sql"] not in public_text)
     check("公开证据无 args_json 正文", "args_json" not in public["items"][0])
     check("公开证据无 metadata_json 正文", "metadata_json" not in public["items"][0])
-    allowed = {"migration_sample_id", "legacy_storage_id", "target_record_id", "memory_content_sha256", "legacy_metadata_sha256", "migration_item_sha256", "metadata_field_names", "missing_fields", "issue_codes", "phase_a_action", "phase_b_action", "executable"}
+    allowed = {"migration_sample_id", "legacy_storage_id", "target_record_id", "memory_content_sha256", "legacy_metadata_sha256", "migration_item_sha256", "metadata_field_names", "missing_fields", "invalid_fields", "issue_codes", "phase_a_action", "phase_b_action", "executable"}
     check("公开迁移项仅含允许字段", all(set(item) == allowed for item in public["items"]))
+    missing_public = build_public_migration_evidence(missing_required_plan)
+    missing_public_item = next(item for item in missing_public["items"] if item["legacy_storage_id"] == missing_required[0].legacy_storage_id)
+    check("公开证据可逐项定位 expected_tables 缺失", "expected_tables" in missing_public_item["missing_fields"] and "expected_tables" not in missing_public_item["invalid_fields"] and "REQUIRED_COMPATIBILITY_FIELD_INVALID" in missing_public_item["issue_codes"])
+    invalid_public = build_public_migration_evidence(invalid_expected_plan)
+    invalid_public_item = next(item for item in invalid_public["items"] if item["legacy_storage_id"] == invalid_expected[0].legacy_storage_id)
+    check("公开证据区分 expected_tables 无效", "expected_tables" in invalid_public_item["invalid_fields"] and "expected_tables" not in invalid_public_item["missing_fields"])
+    missing_public_text = json.dumps(missing_public, ensure_ascii=False, sort_keys=True)
+    check("逐项缺失证据仍不泄露问题或 SQL", missing_required[0].canonical_content["question"] not in missing_public_text and missing_required[0].canonical_content["args"]["sql"] not in missing_public_text)
 
     coverage = analyze_legacy_metadata_coverage(snapshots)
     check("字段覆盖统计包含存在/类型/非空", all(set(value) == {"present_count", "type_valid_count", "nonempty_valid_count", "total"} for value in coverage["fields"].values()))
     check("未知业务字段被保留", all(x.target_compatibility_metadata["preserved_unknown_field"] for x in plan.items))
     check("顶层治理 metadata 全为标量", all(all(isinstance(v, (str, int, float, bool)) for v in x.target_governance_metadata.values()) for x in plan.items))
     check("expected_tables 仅位于 metadata_json", all("expected_tables" not in x.target_governance_metadata and "expected_tables" in json.loads(x.target_governance_metadata["metadata_json"]) for x in plan.items))
-    check("不可执行计划即使批准也无删除集合", _plan(missing_required, phase_b_approved=True).phase_b_executable_delete_ids == ())
+    blocked_verification = _phase_a_snapshot(missing_required_plan)
+    blocked_approved = _plan(missing_required, phase_a_verification=blocked_verification, phase_b_approved=True)
+    check("不可执行计划即使阶段 A 验证且批准也无删除集合", blocked_approved.phase_a_verified and not blocked_approved.executable and blocked_approved.phase_b_executable_delete_ids == ())
 
     module_source = (ROOT / "training/sop/legacy_tool_memory_migration_plan.py").read_text(encoding="utf-8")
     forbidden_imports = ("import chromadb", "import sqlite3", "import sqlalchemy", "import psycopg", "AgentMemory", "ChromaAgentMemory", "import agent_config")
