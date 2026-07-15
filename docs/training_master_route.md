@@ -96,10 +96,12 @@
 ### 2. 已存在训练资产
 
 ```text
-正式 Chroma 当前记录总数：72
+正式运行 Chroma 总记录数：188
 
-Text Memory：8 条
-旧 UUID Tool Memory：64 条
+原有 Text Memory：8
+Level 1 DDL Text Memory：115
+LEGACY_READ_ONLY Tool Memory：64
+确定性受控 Tool Memory：1
 ```
 
 64 条旧 Tool Memory 来源于已经执行过的 Level 2 / Level 3 训练，主要覆盖 6 张试点表。
@@ -508,6 +510,21 @@ metadata index 中的对象和字段全部存在于实时数据库
 
 `metadata_retriever.py` 只有在真实测试证明候选排序错误时才增加规则，不为所有新表提前硬编码意图。
 
+### F5 Batch 01
+
+```text
+F5 Batch 01 ✅
+ad_dict 基础查询，1 条标准 Level 2 受控 Tool Memory
+```
+
+SQLGuard 已支持 `FROM/JOIN` 派生表；派生表别名不计入真实表集合，底层真实表和派生表输出字段仍严格校验。
+
+当前阶段：
+
+```text
+F5 Batch 02 范围选择
+```
+
 ---
 
 ## 十、阶段 F6：可维护性和安全治理
@@ -638,7 +655,7 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5首批Tool Memory扩展准备
+当前阶段：F5 Batch 02 范围选择
 
 后续：
 → F5 Level 2 / Level 3 扩展
@@ -652,27 +669,10 @@ F4 ✅ 正式 Level 1 已切换
 当前只授权执行：
 
 ```text
-修改 train_step3.py 读取 115 表 metadata index
-修正 step4_server.py 中“只有6张表”的过时提示
-新增无副作用训练逻辑测试
-在验证备份创建的独立 Chroma 副本写入115条DDL
-完成检索验证
+F5 Batch 02 范围选择
 ```
 
-当前不授权：
-
-```text
-正式 Chroma 写入
-旧 UUID 迁移
-M2B-R1
-0B-4
-服务启动和端到端问答
-DDL adapter 架构建设
-metadata index 自动更新机制
-目录重构
-```
-
-F1 完成后立即停止并验收，不提前进入 F2。
+范围确认前不创建 Batch 02，不写入新的正式 Memory，不迁移旧 UUID。
 
 ---
 

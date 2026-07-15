@@ -94,6 +94,15 @@ class SQLGuardResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class _DerivedTable:
+    alias: str
+    sql: str
+    output_columns: frozenset[str]
+    start: int
+    end: int
+
+
 def _clean_identifier(identifier: str) -> str:
     value = identifier.strip().strip('"`[]')
     return value.lower()
@@ -298,11 +307,25 @@ class SQLGuard:
             self._extend_unique(used_columns, cte_used_columns)
             self._extend_unique(unknown_columns, cte_unknown_columns)
 
-        subqueries = self._extract_subqueries(main_sql)
-        outer_sql = self._remove_parenthesized_subqueries(main_sql)
+        derived_tables = self._extract_derived_tables(main_sql)
+        derived_aliases = {item.alias for item in derived_tables}
+        for item in derived_tables:
+            virtual_columns[item.alias] = set(item.output_columns)
+            derived_used_tables, derived_used_columns, derived_unknown_columns = (
+                self._analyze_sql(item.sql, virtual_columns)
+            )
+            self._extend_unique(used_tables, derived_used_tables)
+            self._extend_unique(used_columns, derived_used_columns)
+            self._extend_unique(unknown_columns, derived_unknown_columns)
+
+        rewritten_sql = self._rewrite_derived_tables(main_sql, derived_tables)
+        subqueries = self._extract_subqueries(rewritten_sql)
+        outer_sql = self._remove_parenthesized_subqueries(rewritten_sql)
 
         tables, aliases = self._extract_tables(outer_sql)
-        self._extend_unique(used_tables, tables)
+        self._extend_unique(
+            used_tables, [table for table in tables if table not in derived_aliases]
+        )
 
         query_columns, query_unknown_columns = self._extract_columns(
             outer_sql, tables, aliases, virtual_columns
@@ -319,6 +342,75 @@ class SQLGuard:
             self._extend_unique(unknown_columns, subquery_unknown_columns)
 
         return used_tables, used_columns, sorted(set(unknown_columns))
+
+    def _extract_derived_tables(self, sql: str) -> list[_DerivedTable]:
+        derived_tables: list[_DerivedTable] = []
+        keyword_pattern = re.compile(r"\b(?:from|join)\b", flags=re.I)
+        reserved_aliases = {
+            "where",
+            "on",
+            "join",
+            "left",
+            "right",
+            "inner",
+            "outer",
+            "full",
+            "cross",
+            "group",
+            "order",
+            "having",
+            "limit",
+            "union",
+        }
+
+        for match in keyword_pattern.finditer(sql):
+            if self._paren_depth(sql, match.start()) != 0:
+                continue
+            open_index = match.end()
+            while open_index < len(sql) and sql[open_index].isspace():
+                open_index += 1
+            if open_index >= len(sql) or sql[open_index] != "(":
+                continue
+
+            close_index = self._find_matching_paren(sql, open_index)
+            if close_index == -1:
+                continue
+            inner_sql = sql[open_index + 1 : close_index].strip()
+            if not inner_sql.lower().startswith(("select", "with")):
+                continue
+
+            alias_match = re.match(
+                r"\s+(?:as\s+)?([a-zA-Z_][\w]*)",
+                sql[close_index + 1 :],
+                flags=re.I,
+            )
+            if not alias_match:
+                continue
+            alias = _clean_identifier(alias_match.group(1))
+            if alias in reserved_aliases:
+                continue
+            end = close_index + 1 + alias_match.end()
+            derived_tables.append(
+                _DerivedTable(
+                    alias=alias,
+                    sql=inner_sql,
+                    output_columns=frozenset(
+                        self._infer_select_output_columns(inner_sql)
+                    ),
+                    start=open_index,
+                    end=end,
+                )
+            )
+
+        return derived_tables
+
+    def _rewrite_derived_tables(
+        self, sql: str, derived_tables: list[_DerivedTable]
+    ) -> str:
+        rewritten = sql
+        for item in reversed(derived_tables):
+            rewritten = rewritten[: item.start] + item.alias + rewritten[item.end :]
+        return rewritten
 
     def _extract_ctes(self, sql: str) -> tuple[dict[str, str], dict[str, set[str]], str]:
         stripped_sql = sql.strip()

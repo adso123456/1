@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 TRAINING_BATCH_ID_PATTERN = (
     r"^level[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*-[0-9]{8}-[0-9]{2}$"
 )
-TRAINING_LEVEL_PATTERN = r"^level[1-9][0-9]*(?:_[a-z0-9]+)+_sql_examples$"
+TRAINING_LEVEL_PATTERN = r"^level[1-9][0-9]*(?:_[a-z0-9]+)*_sql_examples$"
 SAMPLE_ID_PATTERN = r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$"
 
 

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
 import re
 from typing import Any, Type
 
@@ -37,6 +41,14 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
         query, query_source = self._extract_query(context, args)
         if self._is_hard_blocked_context(context):
             guard_result = self._make_hard_block_result(sql, "同一问题已触发 SQL Guard hard block")
+            self._trace_attempt(
+                query=query,
+                query_source=query_source,
+                sql=sql,
+                guard_result=guard_result,
+                blocked_by_sql_guard=True,
+                hard_blocked_before_validation=True,
+            )
             return self._blocked_result(guard_result, query_source=query_source)
 
         if self._is_threshold_trend_request(query):
@@ -45,12 +57,28 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
                 "用户问题要求使用 wm_waterquality_threshold 回答水质趋势，禁止执行任何 SQL",
             )
             self._mark_hard_blocked_context(context)
+            self._trace_attempt(
+                query=query,
+                query_source=query_source,
+                sql=sql,
+                guard_result=guard_result,
+                blocked_by_sql_guard=True,
+                hard_blocked_before_validation=False,
+            )
             return self._blocked_result(guard_result, query_source=query_source)
 
         guard_result = self.sql_guard.validate(sql=sql, query=query)
         if guard_result.passed and query_source == "missing" and self._should_block_missing_query_threshold_sql(sql):
             guard_result = self.sql_guard.validate(sql=sql, query="水质趋势")
 
+        self._trace_attempt(
+            query=query,
+            query_source=query_source,
+            sql=sql,
+            guard_result=guard_result,
+            blocked_by_sql_guard=not guard_result.passed,
+            hard_blocked_before_validation=False,
+        )
         if not guard_result.passed:
             self._mark_hard_blocked_context(context)
             return self._blocked_result(guard_result, query_source=query_source)
@@ -67,6 +95,49 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
             result.result_for_llm = f"{warning}\n\n{result.result_for_llm}"
 
         return result
+
+    def _trace_attempt(
+        self,
+        *,
+        query: str,
+        query_source: str,
+        sql: str,
+        guard_result: SQLGuardResult,
+        blocked_by_sql_guard: bool,
+        hard_blocked_before_validation: bool,
+    ) -> None:
+        raw_path = os.getenv("VANNA_SQL_GUARD_TRACE_PATH", "").strip()
+        if not raw_path:
+            return
+
+        trace_path = Path(raw_path)
+        if not trace_path.is_absolute():
+            raise RuntimeError("SQL_GUARD_TRACE_PATH_NOT_ABSOLUTE")
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "query": query,
+            "query_source": query_source,
+            "attempted_sql": sql,
+            "guard_passed": guard_result.passed,
+            "guard_severity": guard_result.severity,
+            "used_tables": guard_result.used_tables,
+            "used_columns": guard_result.used_columns,
+            "unknown_tables": guard_result.unknown_tables,
+            "unknown_columns": guard_result.unknown_columns,
+            "forbidden_operations": guard_result.forbidden_operations,
+            "candidate_mismatch": guard_result.candidate_mismatch,
+            "guard_reason": guard_result.reason,
+            "blocked_by_sql_guard": blocked_by_sql_guard,
+            "hard_blocked_before_validation": hard_blocked_before_validation,
+        }
+        try:
+            with trace_path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+                handle.write("\n")
+        except Exception as error:
+            raise RuntimeError(
+                f"SQL_GUARD_TRACE_WRITE_FAILED: {type(error).__name__}: {error}"
+            ) from error
 
     def _blocked_result(self, guard_result: SQLGuardResult, *, query_source: str) -> ToolResult:
         message = self._format_block_message(guard_result, query_source=query_source)
