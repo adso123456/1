@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch02-20260715-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 02-D1候选发现阶段真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B02_SQL_001",
+      "question": "查询流域河流的河流名称、别名、河流长度、流域面积和源头省份，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT river_name,\n       river_alias,\n       river_length,\n       watershed_area,\n       source_province\nFROM se_watershed_river\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 02-D1已通过SQLGuard、PostgreSQL只读执行、非空结果和现有65条Tool Memory重复检查",
+      "source": "F5 Batch 02-D1 D1_L2_SE_WATERSHED_RIVER_001",
+      "expected_behavior": "返回最多50条流域河流名称、别名、河流长度、流域面积和源头省份",
+      "expected_tables": [
+        "se_watershed_river"
+      ]
+    }
+  ]
+}
