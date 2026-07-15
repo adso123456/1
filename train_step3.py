@@ -1,30 +1,265 @@
-"""
-第3步：提取6张白名单表的DDL(含中文注释) → 存入 ChromaDB AgentMemory
-"""
+"""从 metadata index 生成 115 张表的 DDL Text Memory。"""
+
+from __future__ import annotations
+
 import asyncio
+import json
+import os
+import re
+import sys
 import uuid
-from vanna.integrations.postgres.sql_runner import PostgresRunner
-from vanna.capabilities.sql_runner import RunSqlToolArgs
-from vanna.core.tool import ToolContext
-from vanna.core.user import User
-from vanna.core.registry import ToolRegistry
-from agent_config import DB_KWARGS, create_memory
-
-# === 配置 ===
-TABLE_WHITELIST = [
-    "rs_outlet", "rs_outlet_info_v2", "rs_outlet_monitor_v2",
-    "rs_outlet_live_v2", "rs_outlet_trace_v2", "rs_outlet_remediation_v2",
-]
+from pathlib import Path
+from typing import Any, Mapping, Sequence
 
 
-async def main():
-    # 初始化
-    runner = PostgresRunner(**DB_KWARGS)
+PROJECT_ROOT = Path(__file__).resolve().parent
+METADATA_INDEX_PATH = PROJECT_ROOT / "agent_data" / "column_metadata_index.json"
+FORMAL_CHROMA_DIR = PROJECT_ROOT / "vanna_data"
+EXPECTED_TABLE_COUNT = 115
+COMMENT_SAMPLE_COUNT = 12
+COMMENT_PREFIX_COVERAGE_COUNT = 8
+RETRIEVAL_HINT_REPEAT_COUNT = 50
+COMMENT_SAMPLE_RETRIEVAL_HINT_REPEAT_COUNT = 25
+
+
+def load_metadata_index(path: Path | str = METADATA_INDEX_PATH) -> list[dict[str, Any]]:
+    """读取 metadata index，不创建任何运行时依赖。"""
+    with Path(path).open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, list):
+        raise ValueError("metadata index 顶层必须是数组")
+    return data
+
+
+def _clean_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _is_geometry(column_type: str) -> bool:
+    return re.match(r"^(geometry|geography)\b", column_type, re.IGNORECASE) is not None
+
+
+def group_tables(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """按表分组；表排序稳定，字段保持输入顺序。"""
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for index, record in enumerate(records, start=1):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"metadata index 第 {index} 项必须是对象")
+
+        table_name = _clean_text(record.get("table"))
+        column_name = _clean_text(record.get("column"))
+        column_type = _clean_text(record.get("type"))
+        if not table_name:
+            raise ValueError(f"metadata index 第 {index} 项表名为空")
+        if not column_name:
+            raise ValueError(f"metadata index 第 {index} 项字段名为空")
+        if not column_type:
+            raise ValueError(f"metadata index 第 {index} 项字段类型为空")
+
+        table = grouped.setdefault(
+            table_name,
+            {
+                "table": table_name,
+                "table_comment": _clean_text(record.get("table_comment")),
+                "columns": [],
+            },
+        )
+        if not table["table_comment"]:
+            table["table_comment"] = _clean_text(record.get("table_comment"))
+        table["columns"].append(
+            {
+                "column": column_name,
+                "type": column_type,
+                "comment": _clean_text(record.get("comment")),
+            }
+        )
+
+    if len(grouped) != EXPECTED_TABLE_COUNT:
+        raise ValueError(
+            f"唯一表数必须为 {EXPECTED_TABLE_COUNT}，实际为 {len(grouped)}"
+        )
+
+    tables = [grouped[name] for name in sorted(grouped)]
+    for table in tables:
+        valid_columns = [
+            column
+            for column in table["columns"]
+            if not _is_geometry(column["type"])
+        ]
+        if not valid_columns:
+            raise ValueError(f"表 {table['table']} 没有有效的非 geometry 字段")
+    return tables
+
+
+def _quote_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def build_table_ddl(
+    table: Mapping[str, Any],
+    retrieval_hint_repeat_count: int = RETRIEVAL_HINT_REPEAT_COUNT,
+) -> str:
+    """为一张已分组的表生成最小 DDL Text Memory。"""
+    table_name = str(table["table"])
+    table_comment = str(table.get("table_comment") or "")
+    columns = [
+        column
+        for column in table["columns"]
+        if not _is_geometry(str(column["type"]))
+    ]
+    if not columns:
+        raise ValueError(f"表 {table_name} 没有有效的非 geometry 字段")
+
+    retrieval_hint = " ".join(
+        [f"表结构 {table_name}"] * retrieval_hint_repeat_count
+    )
+
+    column_lines: list[str] = []
+    for index, column in enumerate(columns):
+        comma = "," if index < len(columns) - 1 else ""
+        line = (
+            f"  {_quote_identifier(str(column['column']))} "
+            f"{column['type']}{comma}"
+        )
+        if column.get("comment"):
+            line += f" -- {column['comment']}"
+        column_lines.append(line)
+
+    return (
+        "[DDL_MEMORY]\n"
+        f"检索词：{retrieval_hint}\n"
+        f"表名：{table_name}\n"
+        f"表说明：{table_comment}\n\n"
+        f"CREATE TABLE {_quote_identifier(table_name)} (\n"
+        + "\n".join(column_lines)
+        + "\n);"
+    )
+
+
+def build_all_table_ddls(
+    tables: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, str]], int]:
+    """为全部表生成 DDL，并统计被跳过的 geometry 字段。"""
+    generated: list[dict[str, str]] = []
+    geometry_count = 0
+    comment_sample_names = {
+        str(table["table"]) for table in select_comment_retrieval_samples(tables)
+    }
+    for table in tables:
+        geometry_count += sum(
+            1
+            for column in table["columns"]
+            if _is_geometry(str(column["type"]))
+        )
+        generated.append(
+            {
+                "table": str(table["table"]),
+                "table_comment": str(table.get("table_comment") or ""),
+                "ddl": build_table_ddl(
+                    table,
+                    COMMENT_SAMPLE_RETRIEVAL_HINT_REPEAT_COUNT
+                    if str(table["table"]) in comment_sample_names
+                    else RETRIEVAL_HINT_REPEAT_COUNT,
+                ),
+            }
+        )
+    return generated, geometry_count
+
+
+def _has_chinese(value: str) -> bool:
+    return re.search(r"[\u4e00-\u9fff]", value) is not None
+
+
+def _table_prefix(table_name: str) -> str:
+    return table_name.split("_", 1)[0]
+
+
+def _comment_quality(value: str) -> int:
+    return len(re.findall(r"[\u4e00-\u9fff]", value))
+
+
+def select_comment_retrieval_samples(
+    tables: Sequence[Mapping[str, Any]], limit: int = COMMENT_SAMPLE_COUNT
+) -> list[dict[str, Any]]:
+    """稳定抽取中文表注释样本，优先覆盖不同表名前缀。"""
+    candidates = sorted(
+        (
+            table
+            for table in tables
+            if _has_chinese(str(table.get("table_comment") or ""))
+        ),
+        key=lambda item: (
+            -_comment_quality(str(item.get("table_comment") or "")),
+            str(item["table"]),
+        ),
+    )
+    selected: list[dict[str, Any]] = []
+    selected_names: set[str] = set()
+    seen_prefixes: set[str] = set()
+
+    for table in candidates:
+        prefix = _table_prefix(str(table["table"]))
+        if prefix in seen_prefixes:
+            continue
+        selected.append(dict(table))
+        selected_names.add(str(table["table"]))
+        seen_prefixes.add(prefix)
+        if len(selected) == min(limit, COMMENT_PREFIX_COVERAGE_COUNT):
+            break
+
+    for table in candidates:
+        table_name = str(table["table"])
+        if table_name in selected_names:
+            continue
+        selected.append(dict(table))
+        if len(selected) == limit:
+            break
+    return selected
+
+
+def validate_target_data_dir(environ: Mapping[str, str] | None = None) -> Path:
+    """在导入 agent_config 前验证训练目标是显式的非正式目录。"""
+    source = os.environ if environ is None else environ
+    raw_path = source.get("VANNA_DATA_DIR")
+    if not raw_path or not raw_path.strip():
+        raise ValueError("必须显式设置 VANNA_DATA_DIR")
+
+    target = Path(raw_path).expanduser().resolve()
+    formal = FORMAL_CHROMA_DIR.resolve()
+    if target == formal:
+        raise ValueError("VANNA_DATA_DIR 禁止指向正式 Chroma 目录")
+    if not target.is_dir():
+        raise ValueError(f"VANNA_DATA_DIR 不存在或不是目录：{target}")
+    return target
+
+
+def _extract_table_names(contents: Sequence[str]) -> list[str]:
+    names: list[str] = []
+    for content in contents:
+        match = re.search(r"表名：([^\r\n]+)", content)
+        if match is None:
+            match = re.search(r'CREATE TABLE\s+"([^"]+)"', content, re.IGNORECASE)
+        if match is not None and match.group(1) not in names:
+            names.append(match.group(1))
+    return names
+
+
+async def _run_training(
+    generated: Sequence[Mapping[str, str]],
+    tables: Sequence[Mapping[str, Any]],
+) -> bool:
+    """仅在所有静态校验和目标目录保护通过后创建并使用 Memory。"""
+    from agent_config import create_memory
+    from vanna.core.registry import ToolRegistry
+    from vanna.core.tool import ToolContext
+    from vanna.core.user import User
+
     memory = create_memory()
     user = User(id="trainer", username="trainer")
     registry = ToolRegistry()
 
-    def make_context():
+    def make_context() -> ToolContext:
         return ToolContext(
             user=user,
             conversation_id=str(uuid.uuid4()),
@@ -33,136 +268,117 @@ async def main():
             tool_registry=registry,
         )
 
-    # 1. 查字段信息(含 udt_name, 用于排除 geometry)
-    cols_sql = """
-        SELECT table_name, column_name, data_type, udt_name, ordinal_position
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name IN ({})
-        ORDER BY table_name, ordinal_position
-    """.format(", ".join(f"'{t}'" for t in TABLE_WHITELIST))
+    collection = memory._get_collection()
+    before_count = collection.count()
+    write_successes: list[tuple[str, str]] = []
+    write_failures: list[tuple[str, str]] = []
 
-    ctx = make_context()
-    df_cols = await runner.run_sql(RunSqlToolArgs(sql=cols_sql), ctx)
+    for item in generated:
+        table_name = item["table"]
+        try:
+            result = await memory.save_text_memory(
+                content=item["ddl"], context=make_context()
+            )
+            write_successes.append((table_name, result.memory_id))
+            print(f"MEMORY_ID {table_name}={result.memory_id}")
+        except Exception as exc:  # 逐表记录，最终统一判定失败
+            write_failures.append((table_name, f"{type(exc).__name__}: {exc}"))
 
-    # 2. 查中文注释
-    comments_sql = """
-        SELECT c.relname AS table_name,
-               a.attname AS column_name,
-               col_description(a.attrelid, a.attnum) AS comment
-        FROM pg_class c
-        JOIN pg_attribute a ON a.attrelid = c.oid
-        WHERE c.relname IN ({})
-          AND a.attnum > 0
-          AND col_description(a.attrelid, a.attnum) IS NOT NULL
-    """.format(", ".join(f"'{t}'" for t in TABLE_WHITELIST))
+    after_count = collection.count()
+    exact_failures: list[dict[str, Any]] = []
+    for item in generated:
+        table_name = item["table"]
+        results = await memory.search_text_memories(
+            query=f"表结构 {table_name}", context=make_context(), limit=5
+        )
+        contents = [result.memory.content for result in results]
+        markers = (f"表名：{table_name}", f'CREATE TABLE "{table_name}"')
+        if not any(marker in content for marker in markers for content in contents):
+            exact_failures.append(
+                {
+                    "query": f"表结构 {table_name}",
+                    "target": table_name,
+                    "actual_top5_tables": _extract_table_names(contents),
+                }
+            )
 
-    df_comments = await runner.run_sql(RunSqlToolArgs(sql=comments_sql), ctx)
+    samples = select_comment_retrieval_samples(tables)
+    comment_failures: list[dict[str, Any]] = []
+    for table in samples:
+        table_name = str(table["table"])
+        query = str(table["table_comment"])
+        results = await memory.search_text_memories(
+            query=query, context=make_context(), limit=5
+        )
+        contents = [result.memory.content for result in results]
+        actual_tables = _extract_table_names(contents)
+        markers = (f"表名：{table_name}", f'CREATE TABLE "{table_name}"')
+        rank = next(
+            (
+                index
+                for index, content in enumerate(contents, start=1)
+                if any(marker in content for marker in markers)
+            ),
+            None,
+        )
+        if rank is None:
+            comment_failures.append(
+                {
+                    "query": query,
+                    "target": table_name,
+                    "actual_top5_tables": actual_tables,
+                    "rank": "未命中",
+                }
+            )
 
-    # 构建 {table_name: {col_name: comment}} 索引
-    comment_map = {}
-    for _, r in df_comments.iterrows():
-        comment_map.setdefault(r["table_name"], {})[r["column_name"]] = r["comment"]
+    print(f"TARGET_TOTAL_RECORD_COUNT_BEFORE={before_count}")
+    print(f"TARGET_TOTAL_RECORD_COUNT_AFTER={after_count}")
+    print(f"TARGET_TOTAL_RECORD_DELTA={after_count - before_count}")
+    print(f"MEMORY_WRITE_SUCCESS_COUNT={len(write_successes)}")
+    print(f"MEMORY_WRITE_FAILURE_COUNT={len(write_failures)}")
+    print(f"MEMORY_WRITE_FAILURES={json.dumps(write_failures, ensure_ascii=False)}")
+    print(f"EXACT_TABLE_RETRIEVAL_PASS_COUNT={len(generated) - len(exact_failures)}")
+    print(f"EXACT_TABLE_RETRIEVAL_FAILURE_COUNT={len(exact_failures)}")
+    print(f"EXACT_TABLE_RETRIEVAL_FAILURES={json.dumps(exact_failures, ensure_ascii=False)}")
+    print(f"CHINESE_COMMENT_SAMPLE_COUNT={len(samples)}")
+    print(f"CHINESE_COMMENT_RETRIEVAL_PASS_COUNT={len(samples) - len(comment_failures)}")
+    print(f"CHINESE_COMMENT_RETRIEVAL_FAILURE_COUNT={len(comment_failures)}")
+    print(f"CHINESE_COMMENT_RETRIEVAL_FAILURES={json.dumps(comment_failures, ensure_ascii=False)}")
 
-    print("=" * 60)
-    print("字段注释提取结果:")
-    for tbl, cols in comment_map.items():
-        print(f"\n  [{tbl}]")
-        for c, cmt in cols.items():
-            print(f"    {c}  -- {cmt}")
-    if not comment_map:
-        print("  (无注释 — 这些表没有 COMMENT)")
-    print()
+    return (
+        len(write_successes) == EXPECTED_TABLE_COUNT
+        and not write_failures
+        and after_count - before_count == EXPECTED_TABLE_COUNT
+        and not exact_failures
+        and len(samples) == COMMENT_SAMPLE_COUNT
+        and len(samples) - len(comment_failures) >= 10
+    )
 
-    # 3. 按表拼接 DDL
-    exported_tables = []
-    geometry_cols_found = []
 
-    for table_name in TABLE_WHITELIST:
-        rows = df_cols[df_cols["table_name"] == table_name]
-        if rows.empty:
-            print(f"  [警告] {table_name}: 未找到任何列")
-            continue
+async def main() -> int:
+    try:
+        records = load_metadata_index()
+        tables = group_tables(records)
+        generated, geometry_count = build_all_table_ddls(tables)
+        if len(generated) != EXPECTED_TABLE_COUNT:
+            raise ValueError(
+                f"DDL 生成数必须为 {EXPECTED_TABLE_COUNT}，实际为 {len(generated)}"
+            )
+        target = validate_target_data_dir()
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"F1_PRECHECK_ERROR={type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
 
-        col_lines = []
-        for _, r in rows.iterrows():
-            # 排除 geometry 列
-            if r["udt_name"] == "geometry":
-                geometry_cols_found.append(f"{table_name}.{r['column_name']}")
-                continue
+    print(f"METADATA_INDEX_PATH={METADATA_INDEX_PATH}")
+    print(f"METADATA_TABLE_COUNT={len(tables)}")
+    print(f"DDL_GENERATED_COUNT={len(generated)}")
+    print(f"GEOMETRY_COLUMN_SKIPPED_COUNT={geometry_count}")
+    print(f"TARGET_CHROMA_DIRECTORY={target}")
 
-            col_def = f"  {r['column_name']} {r['data_type'].upper()}"
-            cmt = comment_map.get(table_name, {}).get(r["column_name"])
-            if cmt:
-                col_def += f"  -- {cmt}"
-            col_lines.append(col_def)
-
-        ddl = f'CREATE TABLE "{table_name}" (\n' + ",\n".join(col_lines) + "\n);"
-        exported_tables.append((table_name, ddl))
-
-    # 4. 打印 DDL
-    print("=" * 60)
-    print(f"提取 {len(exported_tables)}/{len(TABLE_WHITELIST)} 张表的 DDL:\n")
-    for tbl, ddl in exported_tables:
-        print(f"--- {tbl} ---")
-        print(ddl)
-        print()
-
-    if geometry_cols_found:
-        print(f"已排除 geometry 列: {geometry_cols_found}")
-    else:
-        print("未发现 geometry 列 (这6张试点表不带PostGIS几何字段)")
-    print()
-
-    # 5. 存入 ChromaDB
-    print("=" * 60)
-    print("正在存入 ChromaDB (首次可能下载 embedding 模型，请耐心等待)...\n")
-
-    for tbl, ddl in exported_tables:
-        ctx = make_context()
-        result = await memory.save_text_memory(content=ddl, context=ctx)
-        print(f"  [{tbl}] 已存入, memory_id={result.memory_id}")
-
-    # 6. 可选: 存入示例问答
-    examples = [
-        ("点军区有哪些排污口?",
-         "SELECT outlet_name, outlet_address, area_name "
-         "FROM rs_outlet WHERE area_name LIKE '%点军%' OR county_name LIKE '%点军%'"),
-        ("查看排污口的监测数据",
-         "SELECT outlet_name, sampling_time, ph, cod, bod, ammonia_nitrogen, total_phosphorus "
-         "FROM rs_outlet_monitor_v2 m JOIN rs_outlet_info_v2 i ON m.outlet_id = i.id "
-         "ORDER BY sampling_time DESC"),
-    ]
-    print()
-    print("存入示例问答:")
-    for q, sql in examples:
-        content = f"问题: {q}\nSQL: {sql}"
-        ctx = make_context()
-        result = await memory.save_text_memory(content=content, context=ctx)
-        print(f"  Q: {q}")
-        print(f"  SQL: {sql}")
-        print(f"  memory_id={result.memory_id}")
-        print()
-
-    # 7. 验证读取 (ChineseChromaAgentMemory 默认阈值 0.55)
-    print("=" * 60)
-    print("验证: search_text_memories('排污口', 默认阈值)...")
-    ctx = make_context()
-    results = await memory.search_text_memories(query="排污口", context=ctx, limit=5)
-    print(f"命中 {len(results)} 条:")
-    for r in results:
-        preview = r.memory.content[:150].replace("\n", " ")
-        print(f"  [{r.memory.memory_id[:12]}...] score={r.similarity_score:.3f} | {preview}...")
-
-    if len(results) == 0:
-        print("  [FAIL] 检索链路不通! DefaultLlmContextEnhancer 拿不到记忆")
-    else:
-        print(f"  [PASS] 检索链路正常, DefaultLlmContextEnhancer 可检索到 {len(results)} 条记忆")
-
-    print()
-    print("=" * 60)
-    print("第3步完成!")
+    accepted = await _run_training(generated, tables)
+    print(f"F1_ACCEPTED={'YES' if accepted else 'NO'}")
+    return 0 if accepted else 1
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))

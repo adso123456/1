@@ -48,8 +48,8 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
    - DO NOT query information_schema, pg_catalog, or any system tables.
    - DO NOT run SELECT * or SELECT DISTINCT to explore table structures.
    - DO NOT run queries whose ONLY purpose is to discover column names or data types.
-   The complete DDL with Chinese column descriptions for all 6 available tables
-   is injected into your context automatically. TRUST IT. Use it directly.
+   Relevant table structures, column details, and Chinese descriptions are provided
+   by the metadata index and retrieved Text Memory context. TRUST and use that context.
 
 2. **ABSOLUTELY FORBIDDEN: SELECT geometry columns (geom).**
    These contain binary data. Never include them.

@@ -15,7 +15,7 @@
 当前首要目标不是继续完善迁移和审批体系，而是尽快完成：
 
 ```text
-107 张表结构进入可检索上下文
+115 张表结构进入可检索上下文
 → Agent 能定位正确表和字段
 → 生成正确 SQL
 → SQLGuard 通过
@@ -116,7 +116,7 @@ Text Memory：8 条
 
 ```text
 0B-4     ⏳ Tool Memory 全链演练
-Level 1  ⏳ 107 张表 DDL / 元数据全覆盖
+Level 1  ⏳ 115 张表 DDL / 元数据全覆盖
 Level 2  ⚠️ 仅有 6 表旧式基础 SQL 训练
 Level 3  ⚠️ 仅有 6 表旧式业务 SQL 训练
 Level 4  ⏳ 图表与多图表训练未系统化验收
@@ -180,7 +180,7 @@ Tool Memory
 ```text
 8 条现有 Text Memory
 + 64 条 legacy Tool Memory
-+ 107 条新增 DDL Text Memory
++ 115 条新增 DDL Text Memory
 ```
 
 旧 UUID 未迁移不影响 Level 1 功能验证。
@@ -190,7 +190,7 @@ Tool Memory
 只有出现以下任一真实症状时，旧 UUID 迁移才重新提升为主线：
 
 1. 运行时代码无法正确读取旧记录。
-2. 旧 SQL 示例明显污染 107 表问题的 SQL 生成。
+2. 旧 SQL 示例明显污染 115 表问题的 SQL 生成。
 3. 新 Tool Memory 批次必须与旧记录统一去重或更新。
 4. 正式对外发布要求所有训练记录统一归属。
 
@@ -225,7 +225,7 @@ Tool Memory
 ## 四、重新排序后的主路线
 
 ```text
-F1  107 表 DDL 最小训练
+F1  115 表 DDL 最小训练
 ↓
 F2  端到端问答 MVP
 ↓
@@ -240,7 +240,7 @@ F6  可维护性、安全治理和历史迁移
 
 ---
 
-## 五、阶段 F1：107 表 DDL 最小训练
+## 五、阶段 F1：115 表 DDL 最小训练
 
 ### 目标
 
@@ -250,7 +250,9 @@ F6  可维护性、安全治理和历史迁移
 agent_data/column_metadata_index.json
 ```
 
-为全部 107 张表生成 DDL Text Memory，并写入从验证备份创建的独立 Chroma 副本。
+为全部 115 张表生成 DDL Text Memory，并写入从验证备份创建的独立 Chroma 副本。
+
+原 107 张目标来自旧清点；当前仓库的 `column_metadata_index.json` 实际覆盖 115 张唯一表，F1 以当前 index 的 115 张为执行基线。
 
 ### 最小实现方案
 
@@ -278,12 +280,12 @@ agent_data/column_metadata_index.json
 必须同时满足：
 
 ```text
-METADATA_TABLE_COUNT = 107
-DDL_GENERATED_COUNT = 107
-MEMORY_WRITE_SUCCESS_COUNT = 107
+METADATA_TABLE_COUNT = 115
+DDL_GENERATED_COUNT = 115
+MEMORY_WRITE_SUCCESS_COUNT = 115
 MEMORY_WRITE_FAILURE_COUNT = 0
 
-EXACT_TABLE_RETRIEVAL_PASS = 107 / 107
+EXACT_TABLE_RETRIEVAL_PASS = 115 / 115
 CHINESE_COMMENT_RETRIEVAL_PASS >= 10 / 12
 
 正式 Chroma 前后摘要不变
@@ -295,7 +297,7 @@ CHINESE_COMMENT_RETRIEVAL_PASS >= 10 / 12
 达到以上条件即认定：
 
 ```text
-107 张表 DDL 训练链路最小可用
+115 张表 DDL 训练链路最小可用
 ```
 
 以下事项不属于 F1 验收：
@@ -357,7 +359,7 @@ DDL 版本比较
 达到以上条件即认定：
 
 ```text
-107 表数据问答主链路 MVP 已实现
+115 表数据问答主链路 MVP 已实现
 ```
 
 ### 旧 SQL 示例 A/B
@@ -630,7 +632,7 @@ M2A-R1 恢复提案（冻结）
 M2B 1.0 bundle 候选（冻结）
 
 当前阶段：
-F1 107 表 DDL 最小训练
+F1 115 表 DDL 最小训练
 
 后续：
 F2 端到端问答 MVP
@@ -648,10 +650,10 @@ F2 端到端问答 MVP
 当前只授权执行：
 
 ```text
-修改 train_step3.py 读取 107 表 metadata index
+修改 train_step3.py 读取 115 表 metadata index
 修正 step4_server.py 中“只有6张表”的过时提示
 新增无副作用训练逻辑测试
-在验证备份创建的独立 Chroma 副本写入107条DDL
+在验证备份创建的独立 Chroma 副本写入115条DDL
 完成检索验证
 ```
 
