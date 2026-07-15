@@ -52,3 +52,13 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 向量检索只用于验证现有问答召回和 compatibility metadata 的兼容性，不用于幂等判断、T6 精确核验、回滚定位或重复检测。本阶段适配层只能运行在 Git 仓库外的隔离 Chroma，拒绝正式 `vanna_data`、`agent_data`、符号链接、junction 和 reparse point，且没有绕过参数。Level 1 Text Memory 能力仍未建立。
 
 合法受控记录的首次创建批次 metadata 不需要与当前计划一致。适配层按 Memory 内容身份、确定性 ID 和存储结构确认记录有效后，使用存储中的首次创建字段生成 `ExistingRecordSnapshot`，再由 0B-3B 写入计划判定 `resume_same_batch` 或 `preexisting_other_batch`。只有 Memory 内容身份、确定性 ID 或存储结构不一致时才属于 content conflict；当前计划的来源、审查原因、样本编号或首次创建批次不同不属于内容冲突。
+
+## 0B-3C-M1：旧 UUID Tool Memory 迁移计划
+
+`legacy_tool_memory_migration_plan.py` 是纯逻辑计划模块，只覆盖 64 条旧 UUID `run_sql` Tool Memory；8 条 Text Memory 不在迁移项、删除集合或回滚集合内。模块不打开 Chroma，不创建、修改或删除记录，也不是迁移执行器。
+
+迁移采用两个独立人工门禁。阶段 A 仅规划创建并验证确定性记录，保留全部旧 UUID；阶段 B 必须另行人工批准后，才允许把精确的旧 UUID 集合作为可执行删除集合。阶段 B 不具备批量事务原子性，未来执行时必须分别记录已删除与未删除集合，并依赖迁移前验证备份和执行账本支持人工恢复决策。
+
+计划使用两层摘要避免自引用：`migration_plan_content_sha256` 覆盖尚未填入 `created_by_batch_content_sha256` 的原始计划材料；新记录的 `created_by_batch_content_sha256` 使用该内容摘要；`migration_plan_sha256` 再覆盖填充治理字段后的最终完整计划。`created_by_*` 表示首次创建受控确定性记录的迁移批次，不代表旧 UUID 记录不可恢复的原始历史批次。
+
+缺失的历史说明字段不会被虚构，而是记录在 `legacy_missing_fields`。正式迁移完成并经过验证前，0B-3D 继续阻断。
