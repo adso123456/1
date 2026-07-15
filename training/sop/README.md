@@ -55,11 +55,15 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 
 ## 0B-3C-M1：旧 UUID Tool Memory 迁移计划
 
-`legacy_tool_memory_migration_plan.py` 是 2.0 纯逻辑状态契约，只覆盖 64 条旧 UUID `run_sql` Tool Memory，不打开 Chroma、不执行创建或删除。不可变迁移源、不可变契约和动态状态评估分别使用 `migration_source_content_sha256`、`migration_contract_sha256` 和 `migration_evaluation_sha256`，运行证据变化不会改变既有契约摘要。
+`legacy_tool_memory_migration_plan.py` 是 2.1 纯逻辑状态契约，只覆盖 64 条旧 UUID `run_sql` Tool Memory，不打开 Chroma、不执行创建或删除。不可变迁移源、不可变契约和动态状态评估分别使用 `migration_source_content_sha256`、`migration_contract_sha256` 和 `migration_evaluation_sha256`，运行证据变化不会改变既有契约摘要。
 
 阶段 A 同时保留旧 UUID 并创建或恢复对应确定性 ID，因此存在 64 个预期过渡重复内容组；每组必须精确由一个旧 UUID 和对应确定性 ID 组成。阶段 A 要求 0 个意外重复组，而不是要求总重复组为 0，legacy ID mismatch 集合也必须精确等于 64 个旧 UUID。
 
 阶段 A 的 create 与 resume 集合互斥且共同覆盖全部 target。回滚候选只等于 create 集合，实际可执行回滚只包含本次执行确实创建成功的 target，绝不包含 resume target。
+
+执行证据非法和合法执行失败是两个不同状态。执行证据非法时，系统不得暴露任何创建、回滚或删除动作；只有合法 Phase A 执行发生部分失败时，回滚集合才等于本次已创建且受契约约束的 target 集合。迁移记录的 `sample_id` 表示当前迁移创建样本，并与 `created_from_sample_id`、`migration_sample_id` 保持一致；旧 UUID 记录的原始 `sample_id` 不丢失，迁移后无损保存在 `legacy_sample_id`。所有 controlled Tool Memory 继续遵循统一的 `sample_id == created_from_sample_id` 不变量，适配器不为迁移记录增加特殊例外。
+
+后续阶段证据只有在前置状态有效完成后才能被接受；前置对象存在但无效不等于门禁通过，任何语义越级证据都以 `ILLEGAL_STATE_EVIDENCE_ORDER` 阻断。
 
 阶段 B 批准同时绑定 `migration_contract_sha256`、`phase_a_verification_sha256` 和建议删除集合摘要。批准后仍必须使用新的匿名存储快照执行删除前重验，并证明逻辑存储状态与阶段 A 验证时完全相同，之后才可能进入 `PHASE_B_READY`。
 

@@ -1,4 +1,4 @@
-"""旧 UUID Tool Memory 2.0 迁移状态契约的纯逻辑合成测试。"""
+"""旧 UUID Tool Memory 2.1 迁移状态契约的纯逻辑合成测试。"""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ def _snapshot(index: int) -> LegacyToolRecordSnapshot:
     }
     identity = build_memory_identity_from_canonical_content(canonical)
     compatibility = {
-        "sample_id": f"SYNTHETIC_{index:03d}",
+        "sample_id": f"LEGACY_ORIGINAL_{index:03d}",
         "training_level": "level2_sql_examples",
         "train_decision": "approved",
         "review_reason": "合成测试",
@@ -312,6 +312,22 @@ def _issue_present(value, code: str) -> bool:
     return any(issue.code == code for issue in value.issues)
 
 
+def _all_action_sets_empty(value) -> bool:
+    return not (
+        value.phase_a_executable_create_ids
+        or value.phase_a_executable_rollback_ids
+        or value.phase_b_executable_delete_ids
+    )
+
+
+def _semantic_order_blocked(value) -> bool:
+    return (
+        value.state == "PLAN_BLOCKED"
+        and _issue_present(value, "ILLEGAL_STATE_EVIDENCE_ORDER")
+        and _all_action_sets_empty(value)
+    )
+
+
 def _old_intent_names() -> list[str]:
     source = subprocess.run(
         ["git", "show", f"{BASE_COMMIT}:tools/test_legacy_tool_memory_migration_plan.py"],
@@ -344,7 +360,7 @@ def main() -> int:
         list(reversed(snapshots)), list(reversed(text_records))
     )
 
-    check("2.0 合法契约可执行", contract.executable and len(contract.items) == 64)
+    check("2.1 合法契约可执行", contract.executable and len(contract.items) == 64)
     check("source content 摘要确定", contract.migration_source_content_sha256 == repeated.migration_source_content_sha256)
     check("contract 摘要确定", contract.migration_contract_sha256 == repeated.migration_contract_sha256)
     check("输入顺序不改变 contract 摘要", contract.migration_contract_sha256 == reversed_contract.migration_contract_sha256)
@@ -352,6 +368,39 @@ def main() -> int:
     ready = evaluate_legacy_tool_memory_migration(contract)
     check("无运行证据进入 PHASE_A_READY", ready.state == "PHASE_A_READY")
     check("evaluation 摘要确定", ready.migration_evaluation_sha256 == evaluate_legacy_tool_memory_migration(contract).migration_evaluation_sha256)
+
+    first_contract_item = contract.items[0]
+    first_legacy_sample_id = snapshots[0].compatibility_metadata["sample_id"]
+    check(
+        "2.1 创建归属使用迁移样本 ID",
+        first_contract_item.target_governance_metadata["created_from_sample_id"]
+        == first_contract_item.migration_sample_id
+        and first_contract_item.target_governance_metadata["migration_sample_id"]
+        == first_contract_item.migration_sample_id,
+    )
+    check(
+        "当前 sample_id 与迁移创建身份一致",
+        first_contract_item.target_compatibility_metadata["sample_id"]
+        == first_contract_item.migration_sample_id
+        and first_contract_item.target_compatibility_metadata["sample_id"]
+        == first_contract_item.target_governance_metadata["created_from_sample_id"],
+    )
+    check(
+        "旧 sample_id 无损转存到 legacy_sample_id",
+        first_contract_item.target_compatibility_metadata["legacy_sample_id"]
+        == first_legacy_sample_id
+        and first_legacy_sample_id == "LEGACY_ORIGINAL_001"
+        and first_legacy_sample_id != first_contract_item.migration_sample_id,
+    )
+    check(
+        "created_by 三字段描述同一迁移创建事件",
+        first_contract_item.target_governance_metadata["created_by_training_batch_id"]
+        == MIGRATION_BATCH_ID
+        and first_contract_item.target_governance_metadata["created_by_batch_content_sha256"]
+        == contract.migration_source_content_sha256
+        and first_contract_item.target_governance_metadata["created_from_sample_id"]
+        == first_contract_item.migration_sample_id,
+    )
 
     changed_batch = _contract(snapshots, text_records, migration_batch_id="SYNTHETIC-V2-OTHER")
     check("批次变化不改变 target 内容身份", [item.target_record_id for item in contract.items] == [item.target_record_id for item in changed_batch.items])
@@ -409,6 +458,33 @@ def main() -> int:
     conflict_item = next(item for item in conflict_contract.items if item.legacy_storage_id == conflict_values[0].legacy_storage_id)
     check("迁移字段冲突阻断且不覆盖", _issue_present(conflict_contract, "MIGRATION_METADATA_FIELD_CONFLICT") and conflict_item.target_compatibility_metadata["legacy_invalid_fields"] == ["preexisting"])
 
+    legacy_sample_conflict_values = snapshots.copy()
+    metadata = dict(legacy_sample_conflict_values[0].compatibility_metadata)
+    metadata["legacy_sample_id"] = "PREEXISTING_VALUE"
+    legacy_sample_conflict_values[0] = replace(
+        legacy_sample_conflict_values[0], compatibility_metadata=metadata
+    )
+    legacy_sample_conflict_contract = _contract(
+        legacy_sample_conflict_values, text_records
+    )
+    legacy_sample_conflict_item = next(
+        item
+        for item in legacy_sample_conflict_contract.items
+        if item.legacy_storage_id
+        == legacy_sample_conflict_values[0].legacy_storage_id
+    )
+    check(
+        "既有 legacy_sample_id 冲突时阻断且不覆盖",
+        not legacy_sample_conflict_contract.executable
+        and _issue_present(
+            legacy_sample_conflict_contract, "MIGRATION_METADATA_FIELD_CONFLICT"
+        )
+        and legacy_sample_conflict_item.target_compatibility_metadata[
+            "legacy_sample_id"
+        ]
+        == "PREEXISTING_VALUE",
+    )
+
     check("Text Memory 基线恰为8条且稳定", len(contract.text_memory_baseline) == 8 and contract.text_memory_baseline_sha256 == reversed_contract.text_memory_baseline_sha256)
     bad_text = text_records.copy()
     bad_text[1] = replace(bad_text[1], storage_id=bad_text[0].storage_id)
@@ -435,12 +511,127 @@ def main() -> int:
     check("阶段 A 全部创建成功进入待验证", pending_verify.state == "PHASE_A_EXECUTED_PENDING_VERIFY")
     alternate_execution = replace(execution, error_codes=("NON_BLOCKING_EVIDENCE_MARKER",))
     alternate_pending = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=alternate_execution)
-    check("执行证据变化改变 evaluation 但不改变 contract", alternate_pending.state == pending_verify.state and alternate_pending.migration_evaluation_sha256 != pending_verify.migration_evaluation_sha256 and contract.migration_contract_sha256 == repeated.migration_contract_sha256)
+    check("执行证据变化改变 evaluation 但不改变 contract", alternate_pending.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID" and alternate_pending.migration_evaluation_sha256 != pending_verify.migration_evaluation_sha256 and contract.migration_contract_sha256 == repeated.migration_contract_sha256)
     failed_id = contract.phase_a_create_target_ids[0]
     failed_execution = _phase_a_execution(contract, (failed_id,))
     rollback = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=failed_execution)
     check("阶段 A 部分失败进入回滚状态", rollback.state == "PHASE_A_ROLLBACK_REQUIRED")
     check("实际回滚仅包含已创建且不含 resume", set(rollback.phase_a_executable_rollback_ids) == set(failed_execution.created_target_ids) and not set(rollback.phase_a_executable_rollback_ids) & set(contract.phase_a_resume_target_ids))
+
+    phase_a_contract_mismatch = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(execution, migration_contract_sha256="0" * 64),
+    )
+    check(
+        "Phase A 契约摘要不匹配不暴露动作",
+        phase_a_contract_mismatch.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_a_contract_mismatch, "PHASE_A_EXECUTION_CONTRACT_MISMATCH")
+        and _all_action_sets_empty(phase_a_contract_mismatch),
+    )
+    phase_a_missing_attempt = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(
+            execution,
+            attempted_create_target_ids=execution.attempted_create_target_ids[:-1],
+        ),
+    )
+    check(
+        "Phase A 尝试创建集合缺少 ID 时阻断",
+        phase_a_missing_attempt.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_a_missing_attempt, "PHASE_A_ATTEMPTED_CREATE_SET_MISMATCH")
+        and _all_action_sets_empty(phase_a_missing_attempt),
+    )
+    external_target_id = "toolmem-v1-" + "f" * 64
+    phase_a_external_created = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(
+            execution,
+            created_target_ids=execution.created_target_ids + (external_target_id,),
+        ),
+    )
+    check(
+        "Phase A 契约外 created ID 不进入任何动作集合",
+        phase_a_external_created.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_a_external_created, "PHASE_A_EXECUTION_PARTITION_INVALID")
+        and external_target_id not in phase_a_external_created.phase_a_executable_rollback_ids
+        and _all_action_sets_empty(phase_a_external_created),
+    )
+    phase_a_duplicate_created = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(
+            execution,
+            created_target_ids=execution.created_target_ids
+            + (execution.created_target_ids[0],),
+        ),
+    )
+    check(
+        "Phase A created ID 重复时阻断",
+        phase_a_duplicate_created.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_a_duplicate_created, "PHASE_A_EXECUTION_PARTITION_INVALID")
+        and _all_action_sets_empty(phase_a_duplicate_created),
+    )
+    phase_a_incomplete_partition = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(
+            execution,
+            created_target_ids=execution.created_target_ids[:-1],
+        ),
+    )
+    check(
+        "Phase A created/failed 非精确分区时阻断",
+        phase_a_incomplete_partition.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_a_incomplete_partition, "PHASE_A_EXECUTION_PARTITION_INVALID")
+        and _all_action_sets_empty(phase_a_incomplete_partition),
+    )
+    check(
+        "Phase A 无失败但有错误码时阻断",
+        alternate_pending.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(alternate_pending, "PHASE_A_ERROR_CODES_INCONSISTENT")
+        and _all_action_sets_empty(alternate_pending),
+    )
+    phase_a_failed_without_error = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(failed_execution, error_codes=()),
+    )
+    check(
+        "Phase A 有失败但无错误码时阻断",
+        phase_a_failed_without_error.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_a_failed_without_error, "PHASE_A_ERROR_CODES_INCONSISTENT")
+        and _all_action_sets_empty(phase_a_failed_without_error),
+    )
+    phase_a_duplicate_error = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(
+            failed_execution,
+            error_codes=("SYNTHETIC_CREATE_FAILURE", "SYNTHETIC_CREATE_FAILURE"),
+        ),
+    )
+    check(
+        "Phase A 重复错误码时阻断",
+        phase_a_duplicate_error.state == "PHASE_A_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_a_duplicate_error, "PHASE_A_ERROR_CODES_INCONSISTENT")
+        and _all_action_sets_empty(phase_a_duplicate_error),
+    )
+    invalid_order_one = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(execution, error_codes=("ERROR_B", "ERROR_A")),
+    )
+    invalid_order_two = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(execution, error_codes=("ERROR_A", "ERROR_B")),
+    )
+    invalid_changed = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(execution, error_codes=("ERROR_C",)),
+    )
+    check(
+        "非法执行证据摘要规范化且保留审计关联",
+        invalid_order_one.migration_evaluation_sha256
+        == invalid_order_two.migration_evaluation_sha256
+        and invalid_order_one.migration_evaluation_sha256
+        != invalid_changed.migration_evaluation_sha256
+        and _issue_present(invalid_order_one, "PHASE_A_ERROR_CODES_INCONSISTENT"),
+    )
 
     phase_a_store = _phase_a_store(contract)
     phase_a_verification = verify_phase_a_store_state(contract, execution, phase_a_store)
@@ -528,6 +719,123 @@ def main() -> int:
     check("阶段 B 部分删除进入 RECOVERY_REQUIRED", recovery.state == "PHASE_B_RECOVERY_REQUIRED")
     check("阶段 B 失败不生成 target 或 legacy 可执行删除集合", recovery.phase_b_executable_delete_ids == ())
 
+    phase_b_binding_fields = (
+        "migration_contract_sha256",
+        "phase_a_verification_sha256",
+        "phase_b_approval_sha256",
+        "predelete_verification_sha256",
+    )
+    phase_b_bad_bindings = [
+        evaluate_legacy_tool_memory_migration(
+            contract,
+            phase_a_execution=execution,
+            phase_a_store_state=phase_a_store,
+            phase_b_approval=approval,
+            predelete_store_state=phase_a_store,
+            phase_b_execution=replace(phase_b_execution, **{field: "0" * 64}),
+        )
+        for field in phase_b_binding_fields
+    ]
+    check(
+        "Phase B 四层绑定任一不匹配均阻断",
+        all(
+            result.state == "PHASE_B_EXECUTION_EVIDENCE_INVALID"
+            and _all_action_sets_empty(result)
+            for result in phase_b_bad_bindings
+        ),
+    )
+    phase_b_attempt_mismatch = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=phase_a_store,
+        phase_b_execution=replace(
+            phase_b_execution,
+            attempted_delete_ids=phase_b_execution.attempted_delete_ids[:-1],
+        ),
+    )
+    check(
+        "Phase B attempted delete 集合不精确时阻断",
+        phase_b_attempt_mismatch.state == "PHASE_B_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_b_attempt_mismatch, "PHASE_B_ATTEMPTED_DELETE_SET_MISMATCH")
+        and _all_action_sets_empty(phase_b_attempt_mismatch),
+    )
+    external_legacy_id = "external-legacy-id"
+    phase_b_external_deleted = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=phase_a_store,
+        phase_b_execution=replace(
+            phase_b_execution,
+            deleted_ids=phase_b_execution.deleted_ids + (external_legacy_id,),
+        ),
+    )
+    check(
+        "Phase B 契约外 deleted ID 不进入任何动作集合",
+        phase_b_external_deleted.state == "PHASE_B_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_b_external_deleted, "PHASE_B_EXECUTION_PARTITION_INVALID")
+        and _all_action_sets_empty(phase_b_external_deleted),
+    )
+    phase_b_bad_partition = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=phase_a_store,
+        phase_b_execution=replace(
+            phase_b_execution,
+            deleted_ids=phase_b_execution.deleted_ids[:-1],
+        ),
+    )
+    check(
+        "Phase B deleted/failed 非精确分区时阻断",
+        phase_b_bad_partition.state == "PHASE_B_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_b_bad_partition, "PHASE_B_EXECUTION_PARTITION_INVALID")
+        and _all_action_sets_empty(phase_b_bad_partition),
+    )
+    phase_b_error_without_failure = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=phase_a_store,
+        phase_b_execution=replace(
+            phase_b_execution,
+            error_codes=("SYNTHETIC_DELETE_FAILURE",),
+        ),
+    )
+    check(
+        "Phase B 无失败但有错误码时阻断",
+        phase_b_error_without_failure.state == "PHASE_B_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_b_error_without_failure, "PHASE_B_ERROR_CODES_INCONSISTENT")
+        and _all_action_sets_empty(phase_b_error_without_failure),
+    )
+    phase_b_failure_without_error = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=phase_a_store,
+        phase_b_execution=replace(partial_b, error_codes=()),
+    )
+    check(
+        "Phase B 有失败但无错误码时阻断",
+        phase_b_failure_without_error.state == "PHASE_B_EXECUTION_EVIDENCE_INVALID"
+        and _issue_present(phase_b_failure_without_error, "PHASE_B_ERROR_CODES_INCONSISTENT")
+        and _all_action_sets_empty(phase_b_failure_without_error),
+    )
+    check(
+        "Phase B 合法部分失败才进入恢复状态",
+        recovery.state == "PHASE_B_RECOVERY_REQUIRED",
+    )
+    check(
+        "Phase B 合法全部成功才进入待验证",
+        pending_final.state == "PHASE_B_EXECUTED_PENDING_VERIFY",
+    )
+
     final_store = _final_store(contract)
     completed = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_store)
     check("64 controlled + 0 legacy + 8 text 最终通过", completed.post_b_verification.valid and completed.post_b_verification.controlled_count == 64 and completed.post_b_verification.legacy_count == 0 and completed.post_b_verification.text_memory_count == 8)
@@ -540,6 +848,91 @@ def main() -> int:
     check("最终出现重复组失败", evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_duplicate).state == "POST_B_VERIFICATION_FAILED")
     final_text_changed = replace(final_store, text_memories=text_doc_bad.text_memories)
     check("最终 Text Memory 变化失败", evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_text_changed).state == "POST_B_VERIFICATION_FAILED")
+
+    invalid_phase_a_with_store = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=replace(execution, migration_contract_sha256="0" * 64),
+        phase_a_store_state=phase_a_store,
+    )
+    check(
+        "非法 Phase A execution 携带 Phase A store 被语义阻断",
+        _semantic_order_blocked(invalid_phase_a_with_store)
+        and _issue_present(invalid_phase_a_with_store, "PHASE_A_EXECUTION_CONTRACT_MISMATCH"),
+    )
+    failed_phase_a_with_store = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=failed_execution,
+        phase_a_store_state=phase_a_store,
+    )
+    check(
+        "合法 Phase A 部分失败携带 store 被语义阻断",
+        _semantic_order_blocked(failed_phase_a_with_store),
+    )
+    failed_phase_a_verify_with_approval = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=target_meta_bad,
+        phase_b_approval=approval,
+    )
+    check(
+        "Phase A 验证失败携带 approval 被语义阻断",
+        _semantic_order_blocked(failed_phase_a_verify_with_approval)
+        and _issue_present(failed_phase_a_verify_with_approval, "PHASE_A_TARGET_EVIDENCE_MISMATCH"),
+    )
+    invalid_approval_with_predelete = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval_false,
+        predelete_store_state=phase_a_store,
+    )
+    check(
+        "无效 approval 携带 predelete 被语义阻断",
+        _semantic_order_blocked(invalid_approval_with_predelete)
+        and _issue_present(invalid_approval_with_predelete, "PHASE_B_NOT_APPROVED"),
+    )
+    failed_predelete_with_execution = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=target_meta_bad,
+        phase_b_execution=phase_b_execution,
+    )
+    check(
+        "删除前重验失败携带 Phase B execution 被语义阻断",
+        _semantic_order_blocked(failed_predelete_with_execution),
+    )
+    invalid_phase_b_with_final = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=phase_a_store,
+        phase_b_execution=replace(
+            phase_b_execution,
+            deleted_ids=phase_b_execution.deleted_ids + (external_legacy_id,),
+        ),
+        final_store_state=final_store,
+    )
+    check(
+        "非法 Phase B execution 携带 final store 被语义阻断",
+        _semantic_order_blocked(invalid_phase_b_with_final)
+        and _issue_present(invalid_phase_b_with_final, "PHASE_B_EXECUTION_PARTITION_INVALID"),
+    )
+    failed_phase_b_with_final = evaluate_legacy_tool_memory_migration(
+        contract,
+        phase_a_execution=execution,
+        phase_a_store_state=phase_a_store,
+        phase_b_approval=approval,
+        predelete_store_state=phase_a_store,
+        phase_b_execution=partial_b,
+        final_store_state=final_store,
+    )
+    check(
+        "合法 Phase B 部分失败携带 final store 被语义阻断",
+        _semantic_order_blocked(failed_phase_b_with_final),
+    )
 
     illegal_cases = [
         {"phase_a_store_state": phase_a_store},

@@ -1,4 +1,4 @@
-"""旧 UUID run_sql Tool Memory 的 2.0 纯逻辑迁移状态契约。"""
+"""旧 UUID run_sql Tool Memory 的 2.1 纯逻辑迁移状态契约。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from training.sop.memory_write_plan import (
 )
 
 
-MIGRATION_SCHEMA_VERSION = "2.0"
+MIGRATION_SCHEMA_VERSION = "2.1"
 APPROVED_FORMAL_SOURCE_SHA256 = (
     "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8"
 )
@@ -43,6 +43,7 @@ CHECKED_COMPATIBILITY_FIELDS = tuple(
     )
 )
 MIGRATION_COMPATIBILITY_FIELDS = (
+    "legacy_sample_id",
     "legacy_storage_id",
     "legacy_document_sha256",
     "legacy_metadata_sha256",
@@ -65,6 +66,7 @@ PhaseAAction = Literal[
 MigrationState = Literal[
     "PLAN_BLOCKED",
     "PHASE_A_READY",
+    "PHASE_A_EXECUTION_EVIDENCE_INVALID",
     "PHASE_A_ROLLBACK_REQUIRED",
     "PHASE_A_EXECUTED_PENDING_VERIFY",
     "PHASE_A_VERIFICATION_FAILED",
@@ -73,6 +75,7 @@ MigrationState = Literal[
     "PHASE_B_REVALIDATION_REQUIRED",
     "PHASE_B_PREDELETE_FAILED",
     "PHASE_B_READY",
+    "PHASE_B_EXECUTION_EVIDENCE_INVALID",
     "PHASE_B_RECOVERY_REQUIRED",
     "PHASE_B_EXECUTED_PENDING_VERIFY",
     "POST_B_VERIFICATION_FAILED",
@@ -532,6 +535,9 @@ def _target_metadata(
     invalid_fields: Sequence[str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     compatibility = dict(snapshot.compatibility_metadata)
+    if "legacy_sample_id" not in compatibility:
+        compatibility["legacy_sample_id"] = compatibility.get("sample_id", "")
+    compatibility["sample_id"] = migration_sample_id
     additions = {
         "legacy_storage_id": snapshot.legacy_storage_id,
         "legacy_document_sha256": legacy_document_sha256,
@@ -550,7 +556,7 @@ def _target_metadata(
             compatibility[field] = value
 
     canonical = snapshot.canonical_content
-    created_from_sample_id = snapshot.compatibility_metadata.get("sample_id", "")
+    created_from_sample_id = migration_sample_id
     top_level = {
         "question": canonical.get("question", ""),
         "tool_name": canonical.get("tool_name", ""),
@@ -1074,6 +1080,14 @@ def _phase_a_execution_issues(
         or created | failed != attempted
     ):
         issues.append(_issue("PHASE_A_EXECUTION_PARTITION_INVALID", "阶段 A 创建结果不是尝试集合的精确分区"))
+    error_codes = execution.error_codes
+    if (
+        len(error_codes)
+        != len({code for code in error_codes if isinstance(code, str)})
+        or any(not _is_nonempty_string(code) for code in error_codes)
+        or (bool(execution.failed_target_ids) != bool(error_codes))
+    ):
+        issues.append(_issue("PHASE_A_ERROR_CODES_INCONSISTENT", "阶段 A 错误码与失败集合不一致"))
     return tuple(issues)
 
 
@@ -1134,10 +1148,20 @@ def _phase_b_execution_issues(
     if (
         len(execution.deleted_ids) != len(deleted)
         or len(execution.failed_delete_ids) != len(failed)
+        or not deleted.issubset(attempted)
+        or not failed.issubset(attempted)
         or deleted & failed
         or deleted | failed != attempted
     ):
         issues.append(_issue("PHASE_B_EXECUTION_PARTITION_INVALID", "阶段 B 删除结果不是尝试集合的精确分区"))
+    error_codes = execution.error_codes
+    if (
+        len(error_codes)
+        != len({code for code in error_codes if isinstance(code, str)})
+        or any(not _is_nonempty_string(code) for code in error_codes)
+        or (bool(execution.failed_delete_ids) != bool(error_codes))
+    ):
+        issues.append(_issue("PHASE_B_ERROR_CODES_INCONSISTENT", "阶段 B 错误码与失败集合不一致"))
     return tuple(issues)
 
 
@@ -1162,8 +1186,6 @@ def _illegal_evidence_order(
     if phase_b_execution is not None and predelete_store_state is None:
         return True
     if final_store_state is not None and phase_b_execution is None:
-        return True
-    if final_store_state is not None and phase_b_execution is not None and phase_b_execution.failed_delete_ids:
         return True
     return False
 
@@ -1239,6 +1261,15 @@ def evaluate_legacy_tool_memory_migration(
             **values,
         )
 
+    def blocked_after_invalid(
+        issues: Sequence[MigrationContractIssue] = (),
+    ) -> MigrationEvaluation:
+        return finish(
+            state="PLAN_BLOCKED",
+            issues=tuple(issues)
+            + (_issue("ILLEGAL_STATE_EVIDENCE_ORDER", "后续证据早于有效前置状态"),),
+        )
+
     if _illegal_evidence_order(contract, phase_a_execution, phase_a_store_state, phase_b_approval, predelete_store_state, phase_b_execution, final_store_state):
         return finish(state="PLAN_BLOCKED", issues=(_issue("ILLEGAL_STATE_EVIDENCE_ORDER", "执行或验证证据顺序非法"),))
     if not contract.executable:
@@ -1246,18 +1277,58 @@ def evaluate_legacy_tool_memory_migration(
     if phase_a_execution is None:
         return finish(state="PHASE_A_READY", create_ids=contract.phase_a_create_target_ids)
     execution_issues = _phase_a_execution_issues(contract, phase_a_execution)
-    if execution_issues or phase_a_execution.failed_target_ids:
-        return finish(state="PHASE_A_ROLLBACK_REQUIRED", issues=execution_issues, rollback_ids=phase_a_execution.created_target_ids)
+    if execution_issues:
+        if any(value is not None for value in (
+            phase_a_store_state,
+            phase_b_approval,
+            predelete_store_state,
+            phase_b_execution,
+            final_store_state,
+        )):
+            return blocked_after_invalid(execution_issues)
+        return finish(
+            state="PHASE_A_EXECUTION_EVIDENCE_INVALID",
+            issues=execution_issues,
+        )
+    if phase_a_execution.failed_target_ids:
+        if any(value is not None for value in (
+            phase_a_store_state,
+            phase_b_approval,
+            predelete_store_state,
+            phase_b_execution,
+            final_store_state,
+        )):
+            return blocked_after_invalid()
+        assert set(phase_a_execution.created_target_ids).issubset(
+            contract.phase_a_rollback_candidate_ids
+        )
+        return finish(
+            state="PHASE_A_ROLLBACK_REQUIRED",
+            rollback_ids=phase_a_execution.created_target_ids,
+        )
     if phase_a_store_state is None:
         return finish(state="PHASE_A_EXECUTED_PENDING_VERIFY")
     phase_a_verification = verify_phase_a_store_state(contract, phase_a_execution, phase_a_store_state)
     if not phase_a_verification.valid:
+        if any(value is not None for value in (
+            phase_b_approval,
+            predelete_store_state,
+            phase_b_execution,
+            final_store_state,
+        )):
+            return blocked_after_invalid(phase_a_verification.issues)
         return finish(state="PHASE_A_VERIFICATION_FAILED", issues=phase_a_verification.issues, phase_a_verification=phase_a_verification)
     if phase_b_approval is None:
         return finish(state="PHASE_A_VERIFIED_AWAITING_APPROVAL", phase_a_verification=phase_a_verification)
     approval_issues = _approval_issues(contract, phase_a_verification, phase_b_approval)
     approval_sha = _approval_sha256(phase_b_approval)
     if approval_issues:
+        if any(value is not None for value in (
+            predelete_store_state,
+            phase_b_execution,
+            final_store_state,
+        )):
+            return blocked_after_invalid(approval_issues)
         return finish(state="PHASE_B_APPROVAL_INVALID", issues=approval_issues, phase_a_verification=phase_a_verification, approval_sha256=approval_sha)
     if predelete_store_state is None:
         return finish(state="PHASE_B_REVALIDATION_REQUIRED", phase_a_verification=phase_a_verification, approval_sha256=approval_sha)
@@ -1266,11 +1337,25 @@ def evaluate_legacy_tool_memory_migration(
         issues = list(predelete.issues)
         if predelete.logical_store_state_sha256 != phase_a_verification.logical_store_state_sha256:
             issues.append(_issue("PHASE_B_PREDELETE_LOGICAL_STATE_CHANGED", "删除前逻辑存储状态已变化"))
+        if phase_b_execution is not None or final_store_state is not None:
+            return blocked_after_invalid(issues)
         return finish(state="PHASE_B_PREDELETE_FAILED", issues=issues, phase_a_verification=phase_a_verification, predelete_verification=predelete, approval_sha256=approval_sha)
     if phase_b_execution is None:
         return finish(state="PHASE_B_READY", delete_ids=contract.proposed_legacy_delete_ids, phase_a_verification=phase_a_verification, predelete_verification=predelete, approval_sha256=approval_sha)
     phase_b_issues = _phase_b_execution_issues(contract, phase_a_verification, approval_sha, predelete, phase_b_execution)
-    if phase_b_issues or phase_b_execution.failed_delete_ids:
+    if phase_b_issues:
+        if final_store_state is not None:
+            return blocked_after_invalid(phase_b_issues)
+        return finish(
+            state="PHASE_B_EXECUTION_EVIDENCE_INVALID",
+            issues=phase_b_issues,
+            phase_a_verification=phase_a_verification,
+            predelete_verification=predelete,
+            approval_sha256=approval_sha,
+        )
+    if phase_b_execution.failed_delete_ids:
+        if final_store_state is not None:
+            return blocked_after_invalid()
         return finish(state="PHASE_B_RECOVERY_REQUIRED", issues=phase_b_issues, phase_a_verification=phase_a_verification, predelete_verification=predelete, approval_sha256=approval_sha)
     if final_store_state is None:
         return finish(state="PHASE_B_EXECUTED_PENDING_VERIFY", phase_a_verification=phase_a_verification, predelete_verification=predelete, approval_sha256=approval_sha)

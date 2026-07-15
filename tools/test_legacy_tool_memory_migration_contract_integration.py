@@ -177,6 +177,8 @@ def main() -> int:
     phase_a_duplicate_count = -1
     phase_a_legacy_mismatch_count = -1
     final_duplicate_count = -1
+    target_controlled_count = -1
+    compatibility_mismatch_count = -1
     try:
         snapshots = [_snapshot(1), _snapshot(2)]
         for snapshot in snapshots:
@@ -215,8 +217,96 @@ def main() -> int:
                 documents=[str(item.target_governance_metadata["question"])],
                 metadatas=[dict(item.target_governance_metadata)],
             )
+        stored_targets = collection.get(
+            ids=[item.target_record_id for item in contract.items],
+            include=["metadatas"],
+        )
+        stored_metadata_by_id = dict(
+            zip(stored_targets["ids"], stored_targets["metadatas"], strict=True)
+        )
+        expected_legacy_sample_by_target = {
+            item.target_record_id: next(
+                snapshot.compatibility_metadata["sample_id"]
+                for snapshot in snapshots
+                if snapshot.legacy_storage_id == item.legacy_storage_id
+            )
+            for item in contract.items
+        }
+        results.append(
+            (
+                "实际 target created_from_sample_id 使用迁移样本 ID",
+                all(
+                    stored_metadata_by_id[item.target_record_id][
+                        "created_from_sample_id"
+                    ]
+                    == item.migration_sample_id
+                    for item in contract.items
+                ),
+            )
+        )
+        results.append(
+            (
+                "实际 target migration_sample_id 使用迁移样本 ID",
+                all(
+                    stored_metadata_by_id[item.target_record_id][
+                        "migration_sample_id"
+                    ]
+                    == item.migration_sample_id
+                    for item in contract.items
+                ),
+            )
+        )
+        results.append(
+            (
+                "实际 compatibility 区分当前和历史 sample ID",
+                all(
+                    (
+                        compatibility := json.loads(
+                            stored_metadata_by_id[item.target_record_id][
+                                "metadata_json"
+                            ]
+                        )
+                    )["sample_id"]
+                    == item.migration_sample_id
+                    and compatibility["sample_id"]
+                    == stored_metadata_by_id[item.target_record_id][
+                        "created_from_sample_id"
+                    ]
+                    and compatibility["legacy_sample_id"]
+                    == expected_legacy_sample_by_target[item.target_record_id]
+                    for item in contract.items
+                ),
+            )
+        )
 
         phase_a_inventory = adapter.inventory_tool_records()
+        target_ids = {item.target_record_id for item in contract.items}
+        target_records = tuple(
+            record
+            for record in phase_a_inventory.records
+            if record.storage_id in target_ids
+        )
+        target_controlled_count = sum(
+            record.classification == "controlled_tool_record"
+            for record in target_records
+        )
+        compatibility_mismatch_count = sum(
+            issue.code == "COMPATIBILITY_METADATA_MISMATCH"
+            for record in target_records
+            for issue in record.issues
+        )
+        results.append(
+            (
+                "适配器自然识别迁移 target 为 controlled",
+                len(target_records) == 2
+                and all(
+                    record.classification == "controlled_tool_record"
+                    and not record.issues
+                    for record in target_records
+                )
+                and compatibility_mismatch_count == 0,
+            )
+        )
         phase_a_duplicate_count = len(
             phase_a_inventory.duplicate_existing_content
         )
@@ -363,6 +453,8 @@ def main() -> int:
     print(f"REAL_ADAPTER_PHASE_A_DUPLICATE_GROUP_COUNT={phase_a_duplicate_count}")
     print(f"REAL_ADAPTER_PHASE_A_LEGACY_MISMATCH_COUNT={phase_a_legacy_mismatch_count}")
     print(f"REAL_ADAPTER_FINAL_DUPLICATE_GROUP_COUNT={final_duplicate_count}")
+    print(f"INTEGRATION_TARGET_CONTROLLED_COUNT={target_controlled_count}")
+    print(f"INTEGRATION_COMPATIBILITY_MISMATCH_COUNT={compatibility_mismatch_count}")
     print(f"隔离集成测试汇总: {passed} pass / {failed} fail")
     return 0 if failed == 0 else 1
 
