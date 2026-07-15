@@ -107,6 +107,9 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-v4-pro"
 AGENT_DATA_DIR = os.getenv("AGENT_DATA_DIR", "E:/3/posgresql/1/agent_data")
+DISABLE_LEGACY_SQL_EXAMPLES = os.getenv(
+    "VANNA_DISABLE_LEGACY_SQL_EXAMPLES", "0"
+) == "1"
 
 if not DEEPSEEK_API_KEY:
     print("[FAIL] DEEPSEEK_API_KEY is required")
@@ -163,12 +166,17 @@ def create_agent():
     )
 
     # 第3层：SQL 示例 context enhancer（L2 approved SQL 示例注入到 system prompt）
-    llm_context_enhancer = SqlExampleContextEnhancer(
-        base_enhancer=deterministic_enhancer,
-        memory=memory,
-        sql_guard=sql_guard,
-        top_k=5,
-    )
+    if DISABLE_LEGACY_SQL_EXAMPLES:
+        print("Legacy SQL examples: DISABLED")
+        llm_context_enhancer = deterministic_enhancer
+    else:
+        print("Legacy SQL examples: ENABLED")
+        llm_context_enhancer = SqlExampleContextEnhancer(
+            base_enhancer=deterministic_enhancer,
+            memory=memory,
+            sql_guard=sql_guard,
+            top_k=5,
+        )
 
     agent = Agent(
         llm_service=llm,
