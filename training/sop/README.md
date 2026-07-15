@@ -78,3 +78,11 @@ R1 要求每条 SQL 分析证据同时绑定 legacy record 的身份、内容摘
 `calibration_ready` 仅表示 48 条校准记录已经完整通过；`SOURCE_BLOCKED` 和 `CALIBRATION_FAILED` 均为 false。所有成功和失败路径都必须关闭并删除 audit-copy，清理失败使用稳定错误码 `AUDIT_COPY_CLEANUP_FAILED`。旧 M2A proposal SHA `b39e0a9a55cb9c25f83aec0a210752040516b4c190b0e8736fbba57b413cee4a` 已废止，只有 R1 重新生成的 proposal SHA 可以进入后续人工审查。
 
 `PROPOSAL_READY_AWAITING_HUMAN_APPROVAL` 不等于已批准，也不等于可以执行迁移。M2A 完成后，0B-3D、正式迁移和 Level 1 仍然阻断。
+
+## 0B-3C-M2B：人工批准与 expected_tables overlay
+
+M2B 固化的是特定 proposal SHA 的人工批准。批准证据不是数字签名，但会确定性绑定 recovery proposal、environment、16 条恢复项及精确授权范围。overlay 只应用于内存中的 legacy snapshot 副本，不修改旧 UUID Memory。
+
+16 条恢复记录的 target compatibility metadata 保存 recovery environment、proposal、approval 和 overlay provenance；另外 48 条记录不增加这些字段。原始 `raw_metadata` 保持不变，因此 legacy metadata SHA 仍对应真实旧记录。
+
+2.1 builder 本身保持冻结；M2B 包装层应用 overlay 后调用原 builder。`BUNDLE_READY_AWAITING_0B_3D_REVIEW` 仅表示只读迁移输入和契约已经准备完成，不表示已经授权执行 Phase A、Phase B 或正式迁移。
