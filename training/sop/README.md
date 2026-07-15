@@ -68,3 +68,9 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 阶段 B 批准同时绑定 `migration_contract_sha256`、`phase_a_verification_sha256` 和建议删除集合摘要。批准后仍必须使用新的匿名存储快照执行删除前重验，并证明逻辑存储状态与阶段 A 验证时完全相同，之后才可能进入 `PHASE_B_READY`。
 
 8 条 Text Memory 不进入迁移项、创建、删除或回滚集合，但阶段 A、删除前重验和最终验证都必须逐条核对 storage ID、document 摘要和 metadata 摘要，不能只比较数量。公开证据继续逐项区分 `legacy_missing_fields` 与 `legacy_invalid_fields`，且不保存问题、SQL、`args_json` 或 `metadata_json` 正文。正式迁移完成并验证前，0B-3D 继续阻断。
+
+## 0B-3C-M2A：legacy expected_tables 只读恢复提案
+
+M2A 只生成 `expected_tables` 恢复提案，不修改 Memory。恢复依据严格等于 `SQLGuard.used_tables`，并复用 batch validator 的 SQL 与表名规范化规则；必须先使用 48 条已有有效 `expected_tables` 的记录完成 48/48 校准，才能为 16 条缺失记录生成可供人工审查的提案。
+
+`PROPOSAL_READY_AWAITING_HUMAN_APPROVAL` 不等于已批准，也不等于可以执行迁移。M2A 完成后，0B-3D、正式迁移和 Level 1 仍然阻断。
