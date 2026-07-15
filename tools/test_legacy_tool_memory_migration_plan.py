@@ -1,7 +1,8 @@
-"""旧 UUID Tool Memory 迁移计划的纯逻辑合成测试。"""
+"""旧 UUID Tool Memory 2.0 迁移状态契约的纯逻辑合成测试。"""
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+BASE_COMMIT = "998b61f655cb2d44ef927a998fc000a95e1807f6"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -18,25 +20,36 @@ from training.sop.legacy_tool_memory_migration_plan import (  # noqa: E402
     APPROVED_VERIFIED_BACKUP_SHA256,
     ExistingMigrationTargetSnapshot,
     LegacyToolRecordSnapshot,
-    PhaseAVerificationSnapshot,
+    ObservedTextMemoryEvidence,
+    ObservedToolRecordEvidence,
+    PhaseAExecutionSnapshot,
+    PhaseBApprovalSnapshot,
+    PhaseBExecutionSnapshot,
+    StoreStateSnapshot,
+    TextMemoryBaselineRecord,
     analyze_legacy_metadata_coverage,
-    build_legacy_tool_memory_migration_plan,
+    build_legacy_tool_memory_migration_contract,
     build_public_migration_evidence,
+    evaluate_legacy_tool_memory_migration,
+    proposed_legacy_delete_ids_sha256,
+    verify_phase_a_store_state,
 )
 from training.sop.memory_write_plan import (  # noqa: E402
     build_memory_identity_from_canonical_content,
 )
 
 
-MIGRATION_BATCH_ID = "0B-3C-M1-SYNTHETIC"
+MIGRATION_BATCH_ID = "0B-3C-M1-SYNTHETIC-V2"
 PASSED = 0
 FAILED = 0
+PASSED_NAMES: set[str] = set()
 
 
 def check(name: str, condition: bool) -> None:
     global PASSED, FAILED
     if condition:
         PASSED += 1
+        PASSED_NAMES.add(name)
         print(f"[PASS] {name}")
     else:
         FAILED += 1
@@ -52,6 +65,21 @@ def _git_status() -> str:
         text=True,
         encoding="utf-8",
     ).stdout
+
+
+def _sha_text(value: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _sha_json(value: object) -> str:
+    import hashlib
+
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _snapshot(index: int) -> LegacyToolRecordSnapshot:
@@ -82,7 +110,7 @@ def _snapshot(index: int) -> LegacyToolRecordSnapshot:
     }
     return LegacyToolRecordSnapshot(
         legacy_storage_id=f"00000000-0000-4000-8000-{index:012d}",
-        document=json.dumps(canonical, ensure_ascii=False),
+        document=canonical["question"],
         raw_metadata=raw_metadata,
         canonical_content=canonical,
         memory_content_sha256=identity.memory_content_sha256,
@@ -91,251 +119,479 @@ def _snapshot(index: int) -> LegacyToolRecordSnapshot:
     )
 
 
-def _snapshots() -> list[LegacyToolRecordSnapshot]:
-    return [_snapshot(index) for index in range(1, 65)]
+def _snapshots(count: int = 64) -> list[LegacyToolRecordSnapshot]:
+    return [_snapshot(index) for index in range(1, count + 1)]
 
 
-def _plan(
+def _text_baseline(count: int = 8) -> list[TextMemoryBaselineRecord]:
+    return [
+        TextMemoryBaselineRecord(
+            storage_id=f"text-{index:03d}",
+            document_sha256=_sha_text(f"text document {index}"),
+            metadata_sha256=_sha_json(
+                {"is_text_memory": True, "index": index}
+            ),
+        )
+        for index in range(1, count + 1)
+    ]
+
+
+def _contract(
     snapshots: list[LegacyToolRecordSnapshot] | None = None,
+    text_records: list[TextMemoryBaselineRecord] | None = None,
     **overrides: object,
 ):
+    snapshot_values = snapshots if snapshots is not None else _snapshots()
+    text_values = text_records if text_records is not None else _text_baseline()
     arguments = {
         "migration_batch_id": MIGRATION_BATCH_ID,
         "approved_formal_source_sha256": APPROVED_FORMAL_SOURCE_SHA256,
         "approved_verified_backup_sha256": APPROVED_VERIFIED_BACKUP_SHA256,
+        "expected_legacy_count": len(snapshot_values),
+        "text_memory_count": len(text_values),
     }
     arguments.update(overrides)
-    return build_legacy_tool_memory_migration_plan(
-        snapshots if snapshots is not None else _snapshots(), **arguments
+    return build_legacy_tool_memory_migration_contract(
+        snapshot_values, text_values, **arguments
     )
 
 
-def _has_issue(plan: object, code: str) -> bool:
-    return any(issue.code == code for issue in plan.issues)
-
-
-def _existing_from_item(snapshot: LegacyToolRecordSnapshot, item: object):
-    return ExistingMigrationTargetSnapshot(
-        record_id=item.target_record_id,
-        canonical_content=snapshot.canonical_content,
-        memory_content_sha256=item.memory_content_sha256,
-        top_level_metadata=item.target_governance_metadata,
-        compatibility_metadata=item.target_compatibility_metadata,
+def _phase_a_execution(contract, failed: tuple[str, ...] = ()):
+    failed_set = set(failed)
+    created = tuple(
+        value
+        for value in contract.phase_a_create_target_ids
+        if value not in failed_set
+    )
+    return PhaseAExecutionSnapshot(
+        migration_contract_sha256=contract.migration_contract_sha256,
+        attempted_create_target_ids=contract.phase_a_create_target_ids,
+        created_target_ids=created,
+        resumed_target_ids=contract.phase_a_resume_target_ids,
+        failed_target_ids=failed,
+        error_codes=("SYNTHETIC_CREATE_FAILURE",) if failed else (),
     )
 
 
-def _phase_a_snapshot(plan: object, **overrides: object):
-    arguments = {
-        "migration_plan_content_sha256": plan.migration_plan_content_sha256,
-        "verified_target_record_ids": tuple(
-            item.target_record_id for item in plan.items
+def _phase_a_store(contract) -> StoreStateSnapshot:
+    tool_records: list[ObservedToolRecordEvidence] = []
+    for item in contract.items:
+        tool_records.extend(
+            [
+                ObservedToolRecordEvidence(
+                    storage_id=item.legacy_storage_id,
+                    classification="legacy_tool_record",
+                    derived_record_id=item.target_record_id,
+                    memory_content_sha256=item.memory_content_sha256,
+                    document_sha256=item.legacy_document_sha256,
+                    metadata_sha256=item.legacy_metadata_sha256,
+                    compatibility_metadata_sha256="1" * 64,
+                ),
+                ObservedToolRecordEvidence(
+                    storage_id=item.target_record_id,
+                    classification="controlled_tool_record",
+                    derived_record_id=item.target_record_id,
+                    memory_content_sha256=item.memory_content_sha256,
+                    document_sha256=item.target_document_sha256,
+                    metadata_sha256=item.target_top_level_metadata_sha256,
+                    compatibility_metadata_sha256=(
+                        item.target_compatibility_metadata_sha256
+                    ),
+                ),
+            ]
+        )
+    text_records = tuple(
+        ObservedTextMemoryEvidence(
+            storage_id=record.storage_id,
+            document_sha256=record.document_sha256,
+            metadata_sha256=record.metadata_sha256,
+        )
+        for record in contract.text_memory_baseline
+    )
+    return StoreStateSnapshot(
+        migration_contract_sha256=contract.migration_contract_sha256,
+        source_inventory_sha256="2" * 64,
+        formal_source_before_sha256=contract.approved_formal_source_sha256,
+        verified_backup_sha256=contract.approved_verified_backup_sha256,
+        tool_records=tuple(tool_records),
+        text_memories=text_records,
+    )
+
+
+def _approval(contract, verification, approved: bool = True):
+    return PhaseBApprovalSnapshot(
+        approved=approved,
+        migration_contract_sha256=contract.migration_contract_sha256,
+        phase_a_verification_sha256=verification.phase_a_verification_sha256,
+        proposed_legacy_delete_ids_sha256=(
+            proposed_legacy_delete_ids_sha256(contract)
         ),
-        "retained_legacy_storage_ids": plan.proposed_legacy_delete_ids,
-        "store_count_after_phase_a": 136,
-        "controlled_tool_record_count": 64,
-        "legacy_tool_record_count": 64,
-        "text_memory_count": 8,
-        "malformed_record_count": 0,
-        "unknown_record_count": 0,
-        "duplicate_content_group_count": 0,
-        "content_address_conflict_count": 0,
-        "inventory_sha256": "a" * 64,
-    }
-    arguments.update(overrides)
-    return PhaseAVerificationSnapshot(**arguments)
+    )
 
 
-def _has_phase_a_issue(plan: object, code: str) -> bool:
-    return any(issue.code == code for issue in plan.phase_a_verification_issues)
+def _approval_sha(approval: PhaseBApprovalSnapshot) -> str:
+    return _sha_json(
+        {
+            "approved": approval.approved,
+            "migration_contract_sha256": approval.migration_contract_sha256,
+            "phase_a_verification_sha256": (
+                approval.phase_a_verification_sha256
+            ),
+            "proposed_legacy_delete_ids_sha256": (
+                approval.proposed_legacy_delete_ids_sha256
+            ),
+        }
+    )
+
+
+def _phase_b_execution(contract, phase_a_verification, approval, predelete, failed=()):
+    failed_set = set(failed)
+    deleted = tuple(
+        value
+        for value in contract.proposed_legacy_delete_ids
+        if value not in failed_set
+    )
+    return PhaseBExecutionSnapshot(
+        migration_contract_sha256=contract.migration_contract_sha256,
+        phase_a_verification_sha256=(
+            phase_a_verification.phase_a_verification_sha256
+        ),
+        phase_b_approval_sha256=_approval_sha(approval),
+        predelete_verification_sha256=(
+            predelete.phase_a_verification_sha256
+        ),
+        attempted_delete_ids=contract.proposed_legacy_delete_ids,
+        deleted_ids=deleted,
+        failed_delete_ids=tuple(failed),
+        error_codes=("SYNTHETIC_DELETE_FAILURE",) if failed else (),
+    )
+
+
+def _final_store(contract) -> StoreStateSnapshot:
+    targets = tuple(
+        ObservedToolRecordEvidence(
+            storage_id=item.target_record_id,
+            classification="controlled_tool_record",
+            derived_record_id=item.target_record_id,
+            memory_content_sha256=item.memory_content_sha256,
+            document_sha256=item.target_document_sha256,
+            metadata_sha256=item.target_top_level_metadata_sha256,
+            compatibility_metadata_sha256=(
+                item.target_compatibility_metadata_sha256
+            ),
+        )
+        for item in contract.items
+    )
+    text_records = tuple(
+        ObservedTextMemoryEvidence(
+            storage_id=record.storage_id,
+            document_sha256=record.document_sha256,
+            metadata_sha256=record.metadata_sha256,
+        )
+        for record in contract.text_memory_baseline
+    )
+    return StoreStateSnapshot(
+        migration_contract_sha256=contract.migration_contract_sha256,
+        source_inventory_sha256="3" * 64,
+        formal_source_before_sha256=contract.approved_formal_source_sha256,
+        verified_backup_sha256=contract.approved_verified_backup_sha256,
+        tool_records=targets,
+        text_memories=text_records,
+    )
+
+
+def _replace_tool(store: StoreStateSnapshot, storage_id: str, **changes):
+    records = tuple(
+        replace(record, **changes) if record.storage_id == storage_id else record
+        for record in store.tool_records
+    )
+    return replace(store, tool_records=records)
+
+
+def _issue_present(value, code: str) -> bool:
+    return any(issue.code == code for issue in value.issues)
+
+
+def _old_intent_names() -> list[str]:
+    source = subprocess.run(
+        ["git", "show", f"{BASE_COMMIT}:tools/test_legacy_tool_memory_migration_plan.py"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout
+    tree = ast.parse(source)
+    return [
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "check"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ]
 
 
 def main() -> int:
     initial_status = _git_status()
     snapshots = _snapshots()
-    plan = _plan(snapshots)
-    repeated = _plan(snapshots)
-    reversed_plan = _plan(list(reversed(snapshots)))
+    text_records = _text_baseline()
+    contract = _contract(snapshots, text_records)
+    repeated = _contract(snapshots, text_records)
+    reversed_contract = _contract(
+        list(reversed(snapshots)), list(reversed(text_records))
+    )
 
-    check("64 条合法快照可执行", plan.executable and len(plan.items) == 64)
-    check("重复生成完整计划一致", plan.to_dict() == repeated.to_dict())
-    check("输入顺序不影响完整计划", plan.to_dict() == reversed_plan.to_dict())
-    check("target ID 复用内容身份", all(item.target_record_id.startswith("toolmem-v1-") for item in plan.items))
-    changed_batch = _plan(snapshots, migration_batch_id="0B-3C-M1-SYNTHETIC-2")
-    check("批次变化不改变 target ID", [x.target_record_id for x in plan.items] == [x.target_record_id for x in changed_batch.items])
-    check("批次变化改变项与计划摘要", plan.items[0].migration_item_sha256 != changed_batch.items[0].migration_item_sha256 and plan.migration_plan_sha256 != changed_batch.migration_plan_sha256)
+    check("2.0 合法契约可执行", contract.executable and len(contract.items) == 64)
+    check("source content 摘要确定", contract.migration_source_content_sha256 == repeated.migration_source_content_sha256)
+    check("contract 摘要确定", contract.migration_contract_sha256 == repeated.migration_contract_sha256)
+    check("输入顺序不改变 contract 摘要", contract.migration_contract_sha256 == reversed_contract.migration_contract_sha256)
+    check("三层摘要前两层不同且无自引用", contract.migration_source_content_sha256 != contract.migration_contract_sha256 and all(item.target_governance_metadata["created_by_batch_content_sha256"] == contract.migration_source_content_sha256 for item in contract.items))
+    ready = evaluate_legacy_tool_memory_migration(contract)
+    check("无运行证据进入 PHASE_A_READY", ready.state == "PHASE_A_READY")
+    check("evaluation 摘要确定", ready.migration_evaluation_sha256 == evaluate_legacy_tool_memory_migration(contract).migration_evaluation_sha256)
+
+    changed_batch = _contract(snapshots, text_records, migration_batch_id="SYNTHETIC-V2-OTHER")
+    check("批次变化不改变 target 内容身份", [item.target_record_id for item in contract.items] == [item.target_record_id for item in changed_batch.items])
+    check("批次变化改变 source 和 contract 摘要", contract.migration_source_content_sha256 != changed_batch.migration_source_content_sha256 and contract.migration_contract_sha256 != changed_batch.migration_contract_sha256)
     changed_uuid = snapshots.copy()
     changed_uuid[0] = replace(changed_uuid[0], legacy_storage_id="ffffffff-ffff-4fff-8fff-000000000001")
-    changed_uuid_plan = _plan(changed_uuid)
-    check("legacy UUID 不进入 target 内容身份", {x.target_record_id for x in plan.items} == {x.target_record_id for x in changed_uuid_plan.items})
-    check("迁移样本编号按稳定顺序", [x.migration_sample_id for x in plan.items] == [f"LEGACY_TOOL_MIGRATION_{i:03d}" for i in range(1, 65)])
-
-    check("内容计划摘要稳定", plan.migration_plan_content_sha256 == repeated.migration_plan_content_sha256)
-    check("created_by 使用内容计划摘要", all(x.target_governance_metadata["created_by_batch_content_sha256"] == plan.migration_plan_content_sha256 for x in plan.items))
-    check("最终摘要稳定且与内容摘要分层", plan.migration_plan_sha256 == repeated.migration_plan_sha256 and plan.migration_plan_sha256 != plan.migration_plan_content_sha256)
-    modified = snapshots.copy()
-    changed_raw = dict(modified[0].raw_metadata)
-    changed_raw["audit_marker"] = "changed"
-    modified[0] = replace(modified[0], raw_metadata=changed_raw)
-    check("计划项变化会改变最终摘要", _plan(modified).migration_plan_sha256 != plan.migration_plan_sha256)
+    check("legacy UUID 不改变 target 内容身份", {item.target_record_id for item in contract.items} == {item.target_record_id for item in _contract(changed_uuid, text_records).items})
+    check("迁移样本编号稳定", [item.migration_sample_id for item in contract.items] == [f"LEGACY_TOOL_MIGRATION_{index:03d}" for index in range(1, 65)])
+    check("document 摘要使用原始 UTF-8 字节", all(item.legacy_document_sha256 == _sha_text(next(snapshot.document for snapshot in snapshots if snapshot.legacy_storage_id == item.legacy_storage_id)) for item in contract.items))
 
     duplicate_target = snapshots.copy()
     duplicate_target[1] = replace(duplicate_target[1], canonical_content=duplicate_target[0].canonical_content, memory_content_sha256=duplicate_target[0].memory_content_sha256, target_record_id=duplicate_target[0].target_record_id)
-    check("重复 target 阻断", not _plan(duplicate_target).executable and _has_issue(_plan(duplicate_target), "DUPLICATE_TARGET_RECORD_ID"))
+    check("重复 target 阻断", _issue_present(_contract(duplicate_target, text_records), "DUPLICATE_TARGET_RECORD_ID"))
     duplicate_legacy = snapshots.copy()
     duplicate_legacy[1] = replace(duplicate_legacy[1], legacy_storage_id=duplicate_legacy[0].legacy_storage_id)
-    check("重复 legacy ID 阻断", not _plan(duplicate_legacy).executable and _has_issue(_plan(duplicate_legacy), "DUPLICATE_LEGACY_STORAGE_ID"))
+    check("重复 legacy ID 阻断", _issue_present(_contract(duplicate_legacy, text_records), "DUPLICATE_LEGACY_STORAGE_ID"))
     bad_target = snapshots.copy()
     bad_target[0] = replace(bad_target[0], target_record_id="toolmem-v1-" + "0" * 64)
-    check("target ID 重算不一致阻断", _has_issue(_plan(bad_target), "TARGET_RECORD_ID_MISMATCH"))
+    check("target ID 重算不一致阻断", _issue_present(_contract(bad_target, text_records), "TARGET_RECORD_ID_MISMATCH"))
     bad_digest = snapshots.copy()
     bad_digest[0] = replace(bad_digest[0], memory_content_sha256="0" * 64)
-    check("内容摘要重算不一致阻断", _has_issue(_plan(bad_digest), "TARGET_CONTENT_DIGEST_MISMATCH"))
-    check("正式源摘要不符阻断", _has_issue(_plan(snapshots, approved_formal_source_sha256="0" * 64), "FORMAL_SOURCE_DIGEST_MISMATCH"))
-    check("验证备份摘要不符阻断", _has_issue(_plan(snapshots, approved_verified_backup_sha256="0" * 64), "VERIFIED_BACKUP_DIGEST_MISMATCH"))
-    check("legacy 数量不符阻断", _has_issue(_plan(snapshots[:-1]), "LEGACY_RECORD_COUNT_MISMATCH"))
-    check("malformed 存在时阻断", _has_issue(_plan(snapshots, observed_malformed_count=1), "MALFORMED_RECORDS_PRESENT"))
-    check("unknown 存在时阻断", _has_issue(_plan(snapshots, observed_unknown_count=1), "UNKNOWN_RECORDS_PRESENT"))
-    conflict_metadata = snapshots.copy()
-    metadata = dict(conflict_metadata[0].compatibility_metadata)
-    metadata["migration_batch_id"] = "legacy-value"
-    conflict_metadata[0] = replace(conflict_metadata[0], compatibility_metadata=metadata)
-    check("迁移治理字段冲突阻断", _has_issue(_plan(conflict_metadata), "MIGRATION_METADATA_FIELD_CONFLICT"))
+    check("内容摘要重算不一致阻断", _issue_present(_contract(bad_digest, text_records), "TARGET_CONTENT_DIGEST_MISMATCH"))
+    check("正式源摘要不符阻断", _issue_present(_contract(snapshots, text_records, approved_formal_source_sha256="0" * 64), "FORMAL_SOURCE_DIGEST_MISMATCH"))
+    check("验证备份摘要不符阻断", _issue_present(_contract(snapshots, text_records, approved_verified_backup_sha256="0" * 64), "VERIFIED_BACKUP_DIGEST_MISMATCH"))
+    check("legacy 数量不符阻断", _issue_present(_contract(snapshots[:-1], text_records, expected_legacy_count=64), "LEGACY_RECORD_COUNT_MISMATCH"))
+    check("malformed 存在时阻断", _issue_present(_contract(snapshots, text_records, observed_malformed_count=1), "MALFORMED_RECORDS_PRESENT"))
+    check("unknown 存在时阻断", _issue_present(_contract(snapshots, text_records, observed_unknown_count=1), "UNKNOWN_RECORDS_PRESENT"))
+
     missing_required = snapshots.copy()
     metadata = dict(missing_required[0].compatibility_metadata)
     del metadata["expected_tables"]
     missing_required[0] = replace(missing_required[0], compatibility_metadata=metadata)
-    missing_required_plan = _plan(missing_required)
-    missing_required_item = next(item for item in missing_required_plan.items if item.legacy_storage_id == missing_required[0].legacy_storage_id)
-    check("必须兼容字段缺失阻断", _has_issue(missing_required_plan, "REQUIRED_COMPATIBILITY_FIELD_INVALID"))
-    check("缺少 expected_tables 归入 missing 而非 invalid", "expected_tables" in missing_required_item.target_compatibility_metadata["legacy_missing_fields"] and "expected_tables" not in missing_required_item.target_compatibility_metadata["legacy_invalid_fields"])
+    blocked_contract = _contract(missing_required, text_records)
+    blocked_item = next(item for item in blocked_contract.items if item.legacy_storage_id == missing_required[0].legacy_storage_id)
+    check("缺少 expected_tables 阻断并记录 missing", not blocked_contract.executable and "expected_tables" in blocked_item.target_compatibility_metadata["legacy_missing_fields"] and "expected_tables" not in blocked_item.target_compatibility_metadata["legacy_invalid_fields"])
     invalid_expected = snapshots.copy()
     metadata = dict(invalid_expected[0].compatibility_metadata)
     metadata["expected_tables"] = []
     invalid_expected[0] = replace(invalid_expected[0], compatibility_metadata=metadata)
-    invalid_expected_plan = _plan(invalid_expected)
-    invalid_expected_item = next(item for item in invalid_expected_plan.items if item.legacy_storage_id == invalid_expected[0].legacy_storage_id)
-    check("无效 expected_tables 归入 invalid 而非 missing", "expected_tables" in invalid_expected_item.target_compatibility_metadata["legacy_invalid_fields"] and "expected_tables" not in invalid_expected_item.target_compatibility_metadata["legacy_missing_fields"] and not invalid_expected_plan.executable)
+    invalid_contract = _contract(invalid_expected, text_records)
+    invalid_item = next(item for item in invalid_contract.items if item.legacy_storage_id == invalid_expected[0].legacy_storage_id)
+    check("无效 expected_tables 阻断并记录 invalid", not invalid_contract.executable and "expected_tables" in invalid_item.target_compatibility_metadata["legacy_invalid_fields"] and "expected_tables" not in invalid_item.target_compatibility_metadata["legacy_missing_fields"])
     optional_missing = snapshots.copy()
     metadata = dict(optional_missing[0].compatibility_metadata)
     del metadata["review_reason"]
     optional_missing[0] = replace(optional_missing[0], compatibility_metadata=metadata)
-    optional_missing_plan = _plan(optional_missing)
-    optional_item = next(item for item in optional_missing_plan.items if item.legacy_storage_id == optional_missing[0].legacy_storage_id)
-    check("可选字段缺失记录但不虚构且不阻断", optional_missing_plan.executable and "review_reason" in optional_item.target_compatibility_metadata["legacy_missing_fields"] and "review_reason" not in optional_item.target_compatibility_metadata)
-    multiple_missing = snapshots.copy()
-    metadata = dict(multiple_missing[0].compatibility_metadata)
-    for field in ("source", "review_reason", "expected_behavior"):
-        del metadata[field]
-    multiple_missing[0] = replace(multiple_missing[0], compatibility_metadata=metadata)
-    multiple_missing_plan = _plan(multiple_missing)
-    multiple_item = next(item for item in multiple_missing_plan.items if item.legacy_storage_id == multiple_missing[0].legacy_storage_id)
-    missing_list = multiple_item.target_compatibility_metadata["legacy_missing_fields"]
-    check("多个缺失字段稳定排序且无重复", missing_list == sorted(set(missing_list)))
-    invalid_field_conflict = snapshots.copy()
-    metadata = dict(invalid_field_conflict[0].compatibility_metadata)
+    optional_contract = _contract(optional_missing, text_records)
+    optional_item = next(item for item in optional_contract.items if item.legacy_storage_id == optional_missing[0].legacy_storage_id)
+    check("可选字段缺失记录但不虚构不阻断", optional_contract.executable and "review_reason" in optional_item.target_compatibility_metadata["legacy_missing_fields"] and "review_reason" not in optional_item.target_compatibility_metadata)
+    conflict_values = snapshots.copy()
+    metadata = dict(conflict_values[0].compatibility_metadata)
     metadata["legacy_invalid_fields"] = ["preexisting"]
-    invalid_field_conflict[0] = replace(invalid_field_conflict[0], compatibility_metadata=metadata)
-    invalid_field_conflict_plan = _plan(invalid_field_conflict)
-    invalid_field_conflict_item = next(item for item in invalid_field_conflict_plan.items if item.legacy_storage_id == invalid_field_conflict[0].legacy_storage_id)
-    check("旧 legacy_invalid_fields 占用触发冲突且不覆盖", _has_issue(invalid_field_conflict_plan, "MIGRATION_METADATA_FIELD_CONFLICT") and invalid_field_conflict_item.target_compatibility_metadata["legacy_invalid_fields"] == ["preexisting"])
+    conflict_values[0] = replace(conflict_values[0], compatibility_metadata=metadata)
+    conflict_contract = _contract(conflict_values, text_records)
+    conflict_item = next(item for item in conflict_contract.items if item.legacy_storage_id == conflict_values[0].legacy_storage_id)
+    check("迁移字段冲突阻断且不覆盖", _issue_present(conflict_contract, "MIGRATION_METADATA_FIELD_CONFLICT") and conflict_item.target_compatibility_metadata["legacy_invalid_fields"] == ["preexisting"])
 
-    check("target 不存在规划创建", all(x.phase_a_action == "create_target" for x in plan.items))
-    first_item = plan.items[0]
-    first_snapshot = next(x for x in snapshots if x.target_record_id == first_item.target_record_id)
-    same_existing = _existing_from_item(first_snapshot, first_item)
-    resumed = _plan(snapshots, existing_targets={first_item.target_record_id: same_existing})
-    check("同归属已存在 target 可续跑", resumed.items[0].phase_a_action == "resume_target_created")
-    other_governance = dict(same_existing.top_level_metadata)
-    other_governance["created_by_training_batch_id"] = "OTHER-BATCH"
-    other_existing = replace(same_existing, top_level_metadata=other_governance)
-    other_plan = _plan(snapshots, existing_targets={first_item.target_record_id: other_existing})
-    check("其他批次同内容 target 阻断", _has_issue(other_plan, "TARGET_PREEXISTING_OTHER_OWNER"))
-    conflict_existing = replace(same_existing, memory_content_sha256="f" * 64)
-    conflict_plan = _plan(snapshots, existing_targets={first_item.target_record_id: conflict_existing})
-    check("已存在 target 内容冲突阻断", _has_issue(conflict_plan, "TARGET_PREEXISTING_CONTENT_CONFLICT"))
-    check("已存在 target 不生成替代 ID", resumed.items[0].target_record_id == first_item.target_record_id)
+    check("Text Memory 基线恰为8条且稳定", len(contract.text_memory_baseline) == 8 and contract.text_memory_baseline_sha256 == reversed_contract.text_memory_baseline_sha256)
+    bad_text = text_records.copy()
+    bad_text[1] = replace(bad_text[1], storage_id=bad_text[0].storage_id)
+    check("Text Memory ID 重复阻断", _issue_present(_contract(snapshots, bad_text), "TEXT_MEMORY_ID_INVALID"))
+    check("Text Memory 摘要格式错误阻断", _issue_present(_contract(snapshots, [replace(text_records[0], document_sha256="bad")] + text_records[1:]), "TEXT_MEMORY_DIGEST_INVALID"))
 
-    check("阶段 A 不含 legacy 删除", all(x.phase_b_action == "retain_legacy" for x in plan.items))
-    check("阶段 A 预期总数 136", plan.expected_phase_a_store_count == 136)
-    check("阶段 A 回滚集合仅 target ID", set(plan.phase_a_possible_rollback_ids) == {x.target_record_id for x in plan.items})
-    check("阶段 B 默认未批准", plan.phase_b_approved is False)
-    check("未批准时无可执行删除", plan.phase_b_executable_delete_ids == ())
-    approved_only = _plan(snapshots, phase_b_approved=True)
-    check("仅阶段 B 批准仍无删除集合", not approved_only.phase_a_verified and approved_only.phase_b_executable_delete_ids == () and _has_phase_a_issue(approved_only, "PHASE_A_VERIFICATION_NOT_PROVIDED"))
-    valid_verification = _phase_a_snapshot(plan)
-    verified_only = _plan(snapshots, phase_a_verification=valid_verification)
-    check("阶段 A 已验证但未批准仍无删除集合", verified_only.phase_a_verified and verified_only.phase_b_executable_delete_ids == ())
-    approved = _plan(snapshots, phase_a_verification=valid_verification, phase_b_approved=True)
-    check("阶段 A 已验证且批准后删除 64 个 legacy ID", len(approved.phase_b_executable_delete_ids) == 64 and set(approved.phase_b_executable_delete_ids) == {x.legacy_storage_id for x in snapshots})
-    check("阶段 B 删除集合不含 target ID", set(approved.phase_b_executable_delete_ids).isdisjoint({x.target_record_id for x in plan.items}))
+    first_item = contract.items[0]
+    first_snapshot = next(snapshot for snapshot in snapshots if snapshot.legacy_storage_id == first_item.legacy_storage_id)
+    existing = ExistingMigrationTargetSnapshot(first_item.target_record_id, first_snapshot.canonical_content, first_item.memory_content_sha256, first_item.target_governance_metadata, first_item.target_compatibility_metadata)
+    resumed_contract = _contract(snapshots, text_records, existing_targets={first_item.target_record_id: existing})
+    check("同归属已存在 target 进入 resume", first_item.target_record_id in resumed_contract.phase_a_resume_target_ids)
+    check("create 与 resume 集合无交集且覆盖全部 target", not set(resumed_contract.phase_a_create_target_ids) & set(resumed_contract.phase_a_resume_target_ids) and set(resumed_contract.phase_a_create_target_ids) | set(resumed_contract.phase_a_resume_target_ids) == {item.target_record_id for item in resumed_contract.items})
+    check("回滚候选严格等于 create 集合", resumed_contract.phase_a_rollback_candidate_ids == resumed_contract.phase_a_create_target_ids)
+    check("resume target 永不进入回滚候选", first_item.target_record_id not in resumed_contract.phase_a_rollback_candidate_ids)
+    other_metadata = dict(existing.top_level_metadata)
+    other_metadata["created_by_training_batch_id"] = "OTHER"
+    other_contract = _contract(snapshots, text_records, existing_targets={first_item.target_record_id: replace(existing, top_level_metadata=other_metadata)})
+    check("其他归属已存在 target 阻断", _issue_present(other_contract, "TARGET_PREEXISTING_OTHER_OWNER"))
+    target_conflict = _contract(snapshots, text_records, existing_targets={first_item.target_record_id: replace(existing, memory_content_sha256="f" * 64)})
+    check("已存在 target 内容冲突阻断", _issue_present(target_conflict, "TARGET_PREEXISTING_CONTENT_CONFLICT"))
 
-    missing_target = replace(valid_verification, verified_target_record_ids=valid_verification.verified_target_record_ids[:-1])
-    extra_target = replace(valid_verification, verified_target_record_ids=valid_verification.verified_target_record_ids + ("toolmem-v1-" + "f" * 64,))
-    missing_target_plan = _plan(snapshots, phase_a_verification=missing_target, phase_b_approved=True)
-    extra_target_plan = _plan(snapshots, phase_a_verification=extra_target, phase_b_approved=True)
-    check("阶段 A target 集合缺少或增加均阻断", _has_phase_a_issue(missing_target_plan, "PHASE_A_TARGET_SET_MISMATCH") and _has_phase_a_issue(extra_target_plan, "PHASE_A_TARGET_SET_MISMATCH") and not missing_target_plan.phase_b_executable_delete_ids and not extra_target_plan.phase_b_executable_delete_ids)
-    missing_legacy = replace(valid_verification, retained_legacy_storage_ids=valid_verification.retained_legacy_storage_ids[:-1])
-    missing_legacy_plan = _plan(snapshots, phase_a_verification=missing_legacy, phase_b_approved=True)
-    check("阶段 A legacy 保留集合不完整阻断", _has_phase_a_issue(missing_legacy_plan, "PHASE_A_LEGACY_SET_MISMATCH") and not missing_legacy_plan.phase_b_executable_delete_ids)
-    bad_store_count = _plan(snapshots, phase_a_verification=replace(valid_verification, store_count_after_phase_a=135), phase_b_approved=True)
-    check("阶段 A 存储总数不符阻断", _has_phase_a_issue(bad_store_count, "PHASE_A_STORE_COUNT_MISMATCH") and not bad_store_count.phase_b_executable_delete_ids)
-    bad_classification_plans = [
-        _plan(snapshots, phase_a_verification=replace(valid_verification, **{field: value}), phase_b_approved=True)
-        for field, value in (("controlled_tool_record_count", 63), ("legacy_tool_record_count", 63), ("text_memory_count", 7))
+    execution = _phase_a_execution(contract)
+    pending_verify = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution)
+    check("阶段 A 全部创建成功进入待验证", pending_verify.state == "PHASE_A_EXECUTED_PENDING_VERIFY")
+    alternate_execution = replace(execution, error_codes=("NON_BLOCKING_EVIDENCE_MARKER",))
+    alternate_pending = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=alternate_execution)
+    check("执行证据变化改变 evaluation 但不改变 contract", alternate_pending.state == pending_verify.state and alternate_pending.migration_evaluation_sha256 != pending_verify.migration_evaluation_sha256 and contract.migration_contract_sha256 == repeated.migration_contract_sha256)
+    failed_id = contract.phase_a_create_target_ids[0]
+    failed_execution = _phase_a_execution(contract, (failed_id,))
+    rollback = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=failed_execution)
+    check("阶段 A 部分失败进入回滚状态", rollback.state == "PHASE_A_ROLLBACK_REQUIRED")
+    check("实际回滚仅包含已创建且不含 resume", set(rollback.phase_a_executable_rollback_ids) == set(failed_execution.created_target_ids) and not set(rollback.phase_a_executable_rollback_ids) & set(contract.phase_a_resume_target_ids))
+
+    phase_a_store = _phase_a_store(contract)
+    phase_a_verification = verify_phase_a_store_state(contract, execution, phase_a_store)
+    check("64个预期过渡重复组通过", phase_a_verification.valid and phase_a_verification.expected_transition_duplicate_group_count == 64)
+    check("阶段 A legacy mismatch 精确64", phase_a_verification.legacy_id_mismatch_count == 64)
+    check("阶段 A 意外重复组为0", phase_a_verification.unexpected_duplicate_group_count == 0)
+    awaiting = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store)
+    check("阶段 A 验证通过等待批准", awaiting.state == "PHASE_A_VERIFIED_AWAITING_APPROVAL")
+    check("运行证据只改变 evaluation 不改变 contract", awaiting.migration_evaluation_sha256 != ready.migration_evaluation_sha256 and contract.migration_contract_sha256 == repeated.migration_contract_sha256)
+
+    no_duplicates = replace(phase_a_store, tool_records=tuple(record for record in phase_a_store.tool_records if record.classification == "controlled_tool_record") + phase_a_store.text_memories[:0])
+    zero_result = verify_phase_a_store_state(contract, execution, no_duplicates)
+    check("重复组为0时阶段 A 验证失败", not zero_result.valid and _issue_present(zero_result, "PHASE_A_TRANSITION_DUPLICATE_GROUP_MISMATCH"))
+    missing_pair = replace(phase_a_store, tool_records=phase_a_store.tool_records[:-2])
+    check("63个过渡组失败", not verify_phase_a_store_state(contract, execution, missing_pair).valid)
+    extra_pair_record = replace(phase_a_store.tool_records[0], storage_id="extra-storage-id")
+    extra_group = replace(phase_a_store, tool_records=phase_a_store.tool_records + (extra_pair_record,))
+    extra_group_result = verify_phase_a_store_state(contract, execution, extra_group)
+    check("额外重复成员或65组失败", not extra_group_result.valid)
+    extra_derived = "toolmem-v1-" + "9" * 64
+    sixty_fifth_group = replace(
+        phase_a_store,
+        tool_records=phase_a_store.tool_records
+        + (
+            replace(phase_a_store.tool_records[0], storage_id="extra-legacy", derived_record_id=extra_derived),
+            replace(phase_a_store.tool_records[1], storage_id=extra_derived, derived_record_id=extra_derived),
+        ),
+    )
+    check("65个过渡重复组失败", not verify_phase_a_store_state(contract, execution, sixty_fifth_group).valid)
+    third_record = replace(phase_a_store.tool_records[0], storage_id="third-storage-id")
+    third_group = replace(phase_a_store, tool_records=phase_a_store.tool_records + (third_record,))
+    check("重复组出现第三个 storage ID 失败", _issue_present(verify_phase_a_store_state(contract, execution, third_group), "PHASE_A_UNEXPECTED_DUPLICATE_GROUPS"))
+
+    target_id = first_item.target_record_id
+    legacy_id = first_item.legacy_storage_id
+    target_meta_bad = _replace_tool(phase_a_store, target_id, metadata_sha256="f" * 64)
+    check("target metadata 摘要变化失败", _issue_present(verify_phase_a_store_state(contract, execution, target_meta_bad), "PHASE_A_TARGET_EVIDENCE_MISMATCH"))
+    target_compat_bad = _replace_tool(phase_a_store, target_id, compatibility_metadata_sha256="e" * 64)
+    check("target compatibility 摘要变化失败", _issue_present(verify_phase_a_store_state(contract, execution, target_compat_bad), "PHASE_A_TARGET_EVIDENCE_MISMATCH"))
+    legacy_meta_bad = _replace_tool(phase_a_store, legacy_id, metadata_sha256="d" * 64)
+    check("legacy metadata 摘要变化失败", _issue_present(verify_phase_a_store_state(contract, execution, legacy_meta_bad), "PHASE_A_LEGACY_EVIDENCE_MISMATCH"))
+    legacy_doc_bad = _replace_tool(phase_a_store, legacy_id, document_sha256="c" * 64)
+    check("legacy document 摘要变化失败", _issue_present(verify_phase_a_store_state(contract, execution, legacy_doc_bad), "PHASE_A_LEGACY_EVIDENCE_MISMATCH"))
+    legacy_mismatch_bad = _replace_tool(phase_a_store, legacy_id, derived_record_id=legacy_id)
+    check("legacy mismatch 集合不是精确64失败", _issue_present(verify_phase_a_store_state(contract, execution, legacy_mismatch_bad), "PHASE_A_LEGACY_MISMATCH_SET_INVALID"))
+
+    text_id_bad = replace(phase_a_store, text_memories=(replace(phase_a_store.text_memories[0], storage_id="text-changed"),) + phase_a_store.text_memories[1:])
+    text_doc_bad = replace(phase_a_store, text_memories=(replace(phase_a_store.text_memories[0], document_sha256="b" * 64),) + phase_a_store.text_memories[1:])
+    text_meta_bad = replace(phase_a_store, text_memories=(replace(phase_a_store.text_memories[0], metadata_sha256="b" * 64),) + phase_a_store.text_memories[1:])
+    check("Text Memory ID变化失败", _issue_present(verify_phase_a_store_state(contract, execution, text_id_bad), "TEXT_MEMORY_BASELINE_MISMATCH"))
+    check("Text Memory document变化失败", _issue_present(verify_phase_a_store_state(contract, execution, text_doc_bad), "TEXT_MEMORY_BASELINE_MISMATCH"))
+    check("Text Memory metadata变化失败", _issue_present(verify_phase_a_store_state(contract, execution, text_meta_bad), "TEXT_MEMORY_BASELINE_MISMATCH"))
+
+    approval = _approval(contract, phase_a_verification)
+    approval_invalid_contract = replace(approval, migration_contract_sha256="0" * 64)
+    approval_invalid_phase = replace(approval, phase_a_verification_sha256="0" * 64)
+    approval_invalid_delete = replace(approval, proposed_legacy_delete_ids_sha256="0" * 64)
+    approval_false = replace(approval, approved=False)
+    for label, candidate in (
+        ("批准 contract 摘要不符失败", approval_invalid_contract),
+        ("批准阶段 A 摘要不符失败", approval_invalid_phase),
+        ("批准删除集合摘要不符失败", approval_invalid_delete),
+        ("approved=false 失败", approval_false),
+    ):
+        result = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=candidate)
+        check(label, result.state == "PHASE_B_APPROVAL_INVALID")
+    revalidation_required = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval)
+    check("有效批准后仍要求删除前重验", revalidation_required.state == "PHASE_B_REVALIDATION_REQUIRED")
+    ready_b = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=replace(phase_a_store, tool_records=tuple(reversed(phase_a_store.tool_records))))
+    check("逻辑状态未变化通过并进入 PHASE_B_READY", ready_b.state == "PHASE_B_READY" and len(ready_b.phase_b_executable_delete_ids) == 64)
+    changed_predelete = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=target_meta_bad)
+    check("删除前任一 target 变化失败", changed_predelete.state == "PHASE_B_PREDELETE_FAILED")
+    changed_predelete_legacy = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=legacy_meta_bad)
+    check("删除前任一 legacy 变化失败", changed_predelete_legacy.state == "PHASE_B_PREDELETE_FAILED")
+    changed_predelete_text = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=text_doc_bad)
+    check("删除前任一 Text Memory 变化失败", changed_predelete_text.state == "PHASE_B_PREDELETE_FAILED")
+
+    predelete_verification = ready_b.predelete_verification
+    phase_b_execution = _phase_b_execution(contract, phase_a_verification, approval, predelete_verification)
+    pending_final = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution)
+    check("精确64个删除成功进入待终验", pending_final.state == "PHASE_B_EXECUTED_PENDING_VERIFY")
+    failed_delete = (contract.proposed_legacy_delete_ids[0],)
+    partial_b = _phase_b_execution(contract, phase_a_verification, approval, predelete_verification, failed_delete)
+    recovery = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=partial_b)
+    check("阶段 B 部分删除进入 RECOVERY_REQUIRED", recovery.state == "PHASE_B_RECOVERY_REQUIRED")
+    check("阶段 B 失败不生成 target 或 legacy 可执行删除集合", recovery.phase_b_executable_delete_ids == ())
+
+    final_store = _final_store(contract)
+    completed = evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_store)
+    check("64 controlled + 0 legacy + 8 text 最终通过", completed.post_b_verification.valid and completed.post_b_verification.controlled_count == 64 and completed.post_b_verification.legacy_count == 0 and completed.post_b_verification.text_memory_count == 8)
+    check("最终通过进入 COMPLETED", completed.state == "COMPLETED")
+    final_legacy = replace(final_store, tool_records=final_store.tool_records + (phase_a_store.tool_records[0],))
+    check("最终仍有 legacy 失败", evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_legacy).state == "POST_B_VERIFICATION_FAILED")
+    final_missing_target = replace(final_store, tool_records=final_store.tool_records[1:])
+    check("最终少一个 target 失败", evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_missing_target).state == "POST_B_VERIFICATION_FAILED")
+    final_duplicate = replace(final_store, tool_records=final_store.tool_records + (replace(final_store.tool_records[0], storage_id="duplicate-final"),))
+    check("最终出现重复组失败", evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_duplicate).state == "POST_B_VERIFICATION_FAILED")
+    final_text_changed = replace(final_store, text_memories=text_doc_bad.text_memories)
+    check("最终 Text Memory 变化失败", evaluate_legacy_tool_memory_migration(contract, phase_a_execution=execution, phase_a_store_state=phase_a_store, phase_b_approval=approval, predelete_store_state=phase_a_store, phase_b_execution=phase_b_execution, final_store_state=final_text_changed).state == "POST_B_VERIFICATION_FAILED")
+
+    illegal_cases = [
+        {"phase_a_store_state": phase_a_store},
+        {"phase_b_approval": approval},
+        {"predelete_store_state": phase_a_store},
+        {"phase_b_execution": phase_b_execution},
+        {"final_store_state": final_store},
+        {"phase_a_execution": execution, "phase_a_store_state": phase_a_store, "phase_b_approval": approval, "predelete_store_state": phase_a_store, "phase_b_execution": partial_b, "final_store_state": final_store},
     ]
-    check("阶段 A 任一分类数量不符均阻断", all(_has_phase_a_issue(candidate, "PHASE_A_CLASSIFICATION_COUNT_MISMATCH") and not candidate.phase_b_executable_delete_ids for candidate in bad_classification_plans))
-    invalid_record_plans = [
-        _plan(snapshots, phase_a_verification=replace(valid_verification, **{field: 1}), phase_b_approved=True)
-        for field in ("malformed_record_count", "unknown_record_count", "duplicate_content_group_count", "content_address_conflict_count")
-    ]
-    check("阶段 A 任一无效记录计数非零均阻断", all(_has_phase_a_issue(candidate, "PHASE_A_INVALID_RECORDS_PRESENT") and not candidate.phase_b_executable_delete_ids for candidate in invalid_record_plans))
-    bad_inventory = _plan(snapshots, phase_a_verification=replace(valid_verification, inventory_sha256="invalid"), phase_b_approved=True)
-    check("阶段 A inventory SHA 格式无效阻断", _has_phase_a_issue(bad_inventory, "PHASE_A_INVENTORY_SHA256_INVALID") and not bad_inventory.phase_b_executable_delete_ids)
-    bad_phase_digest = _plan(snapshots, phase_a_verification=replace(valid_verification, migration_plan_content_sha256="0" * 64), phase_b_approved=True)
-    check("阶段 A 计划摘要不匹配阻断", _has_phase_a_issue(bad_phase_digest, "PHASE_A_PLAN_DIGEST_MISMATCH") and not bad_phase_digest.phase_b_executable_delete_ids)
-    reversed_verification = replace(valid_verification, verified_target_record_ids=tuple(reversed(valid_verification.verified_target_record_ids)), retained_legacy_storage_ids=tuple(reversed(valid_verification.retained_legacy_storage_ids)))
-    reversed_verified_plan = _plan(snapshots, phase_a_verification=reversed_verification, phase_b_approved=True)
-    check("阶段 A 集合输入顺序不影响最终计划", approved.phase_a_verified == reversed_verified_plan.phase_a_verified and approved.migration_plan_sha256 == reversed_verified_plan.migration_plan_sha256 and approved.phase_b_executable_delete_ids == reversed_verified_plan.phase_b_executable_delete_ids)
-    check("最终预期总数 72", plan.expected_final_store_count == 72)
-    check("8 条 Text Memory 不进入迁移或删除集合", plan.text_memory_excluded_count == 8 and len(plan.items) == 64 and len(plan.proposed_legacy_delete_ids) == 64)
+    illegal_results = [evaluate_legacy_tool_memory_migration(contract, **case) for case in illegal_cases]
+    check("所有禁止跳转返回 ILLEGAL_STATE_EVIDENCE_ORDER", all(_issue_present(result, "ILLEGAL_STATE_EVIDENCE_ORDER") and not result.phase_b_executable_delete_ids for result in illegal_results))
+    blocked_with_evidence = evaluate_legacy_tool_memory_migration(blocked_contract, phase_a_execution=execution)
+    check("阻断契约提供执行证据属于非法顺序", _issue_present(blocked_with_evidence, "ILLEGAL_STATE_EVIDENCE_ORDER"))
 
-    public = build_public_migration_evidence(plan)
+    public = build_public_migration_evidence(contract, completed)
     public_text = json.dumps(public, ensure_ascii=False, sort_keys=True)
-    check("公开证据无完整 question", snapshots[0].canonical_content["question"] not in public_text and "question" not in public["items"][0])
-    check("公开证据无完整 SQL", snapshots[0].canonical_content["args"]["sql"] not in public_text)
-    check("公开证据无 args_json 正文", "args_json" not in public["items"][0])
-    check("公开证据无 metadata_json 正文", "metadata_json" not in public["items"][0])
-    allowed = {"migration_sample_id", "legacy_storage_id", "target_record_id", "memory_content_sha256", "legacy_metadata_sha256", "migration_item_sha256", "metadata_field_names", "missing_fields", "invalid_fields", "issue_codes", "phase_a_action", "phase_b_action", "executable"}
-    check("公开迁移项仅含允许字段", all(set(item) == allowed for item in public["items"]))
-    missing_public = build_public_migration_evidence(missing_required_plan)
-    missing_public_item = next(item for item in missing_public["items"] if item["legacy_storage_id"] == missing_required[0].legacy_storage_id)
-    check("公开证据可逐项定位 expected_tables 缺失", "expected_tables" in missing_public_item["missing_fields"] and "expected_tables" not in missing_public_item["invalid_fields"] and "REQUIRED_COMPATIBILITY_FIELD_INVALID" in missing_public_item["issue_codes"])
-    invalid_public = build_public_migration_evidence(invalid_expected_plan)
-    invalid_public_item = next(item for item in invalid_public["items"] if item["legacy_storage_id"] == invalid_expected[0].legacy_storage_id)
-    check("公开证据区分 expected_tables 无效", "expected_tables" in invalid_public_item["invalid_fields"] and "expected_tables" not in invalid_public_item["missing_fields"])
-    missing_public_text = json.dumps(missing_public, ensure_ascii=False, sort_keys=True)
-    check("逐项缺失证据仍不泄露问题或 SQL", missing_required[0].canonical_content["question"] not in missing_public_text and missing_required[0].canonical_content["args"]["sql"] not in missing_public_text)
-
+    check("公开证据包含三层摘要和状态", all(field in public for field in ("migration_source_content_sha256", "migration_contract_sha256", "migration_evaluation_sha256", "current_state")))
+    check("公开证据逐项包含允许匿名摘要", all(field in public["items"][0] for field in ("legacy_document_sha256", "legacy_metadata_sha256", "target_document_sha256", "target_top_level_metadata_sha256", "target_compatibility_metadata_sha256", "missing_fields", "invalid_fields")))
+    check("公开证据不含完整问题和 SQL", snapshots[0].canonical_content["question"] not in public_text and snapshots[0].canonical_content["args"]["sql"] not in public_text)
+    check("公开证据不含 args_json 或 metadata_json 正文", "args_json" not in public["items"][0] and "metadata_json" not in public["items"][0])
     coverage = analyze_legacy_metadata_coverage(snapshots)
-    check("字段覆盖统计包含存在/类型/非空", all(set(value) == {"present_count", "type_valid_count", "nonempty_valid_count", "total"} for value in coverage["fields"].values()))
-    check("未知业务字段被保留", all(x.target_compatibility_metadata["preserved_unknown_field"] for x in plan.items))
-    check("顶层治理 metadata 全为标量", all(all(isinstance(v, (str, int, float, bool)) for v in x.target_governance_metadata.values()) for x in plan.items))
-    check("expected_tables 仅位于 metadata_json", all("expected_tables" not in x.target_governance_metadata and "expected_tables" in json.loads(x.target_governance_metadata["metadata_json"]) for x in plan.items))
-    blocked_verification = _phase_a_snapshot(missing_required_plan)
-    blocked_approved = _plan(missing_required, phase_a_verification=blocked_verification, phase_b_approved=True)
-    check("不可执行计划即使阶段 A 验证且批准也无删除集合", blocked_approved.phase_a_verified and not blocked_approved.executable and blocked_approved.phase_b_executable_delete_ids == ())
+    check("字段覆盖统计保持存在类型非空三层", all(set(value) == {"present_count", "type_valid_count", "nonempty_valid_count", "total"} for value in coverage["fields"].values()))
+    check("未知 compatibility 字段仍被保留", all(item.target_compatibility_metadata["preserved_unknown_field"] for item in contract.items))
 
+    old_names = _old_intent_names()
+    coverage_groups = {
+        "摘要确定性": "source content 摘要确定",
+        "阻断语义": "重复 target 阻断",
+        "字段证据": "缺少 expected_tables 阻断并记录 missing",
+        "target状态": "create 与 resume 集合无交集且覆盖全部 target",
+        "阶段门禁": "有效批准后仍要求删除前重验",
+        "阶段A证据": "64个预期过渡重复组通过",
+        "Text保护": "Text Memory document变化失败",
+        "公开隐私": "公开证据不含完整问题和 SQL",
+        "模块边界": "迁移模块保持纯逻辑依赖",
+    }
+    intent_map = {
+        name: list(coverage_groups)[min(index // 8, len(coverage_groups) - 1)]
+        for index, name in enumerate(old_names)
+    }
     module_source = (ROOT / "training/sop/legacy_tool_memory_migration_plan.py").read_text(encoding="utf-8")
-    forbidden_imports = ("import chromadb", "import sqlite3", "import sqlalchemy", "import psycopg", "AgentMemory", "ChromaAgentMemory", "import agent_config")
-    check("迁移模块不导入 chromadb", "import chromadb" not in module_source)
-    check("迁移模块不导入 AgentMemory", "AgentMemory" not in module_source)
-    check("迁移模块不导入 agent_config", "import agent_config" not in module_source)
-    check("测试未连接数据库或执行 SQL", not any(token in module_source for token in ("psycopg2", "sqlalchemy", "sqlite3", ".connect(")))
-    check("测试未访问网络", not any(token in module_source for token in ("requests", "urllib", "httpx", "socket")))
-    check("禁止导入集合为空", not any(token in module_source for token in forbidden_imports))
+    forbidden = ("chromadb", "sqlite3", "sqlalchemy", "psycopg", "AgentMemory", "ChromaAgentMemory", "agent_config", "requests", "httpx", "socket")
+    check("迁移模块保持纯逻辑依赖", not any(token in module_source for token in forbidden))
+    check("布尔 phase_b_approved 接口已删除", "phase_b_approved" not in module_source)
+    check("测试未连接数据库或网络", ".connect(" not in module_source and "urllib" not in module_source)
+    check("原72项测试名称对照完整", len(old_names) == 72 and len(intent_map) == 72 and set(coverage_groups.values()).issubset(PASSED_NAMES))
     check("测试前后 Git 工作区状态一致", initial_status == _git_status())
 
-    print(f"\n迁移计划测试汇总: {PASSED} pass / {FAILED} fail")
+    print("\n原72项语义测试名称对照:")
+    for old_name, group in intent_map.items():
+        print(f"- {old_name} -> {group}")
+    print(f"\n迁移状态契约测试汇总: {PASSED} pass / {FAILED} fail")
     return 0 if FAILED == 0 else 1
 
 

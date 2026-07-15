@@ -55,14 +55,12 @@ python tools/snapshot_training_store.py restore-rehearsal <source> <backup> <new
 
 ## 0B-3C-M1：旧 UUID Tool Memory 迁移计划
 
-`legacy_tool_memory_migration_plan.py` 是纯逻辑计划模块，只覆盖 64 条旧 UUID `run_sql` Tool Memory；8 条 Text Memory 不在迁移项、删除集合或回滚集合内。模块不打开 Chroma，不创建、修改或删除记录，也不是迁移执行器。
+`legacy_tool_memory_migration_plan.py` 是 2.0 纯逻辑状态契约，只覆盖 64 条旧 UUID `run_sql` Tool Memory，不打开 Chroma、不执行创建或删除。不可变迁移源、不可变契约和动态状态评估分别使用 `migration_source_content_sha256`、`migration_contract_sha256` 和 `migration_evaluation_sha256`，运行证据变化不会改变既有契约摘要。
 
-迁移采用两个独立人工门禁。阶段 A 仅规划创建并验证确定性记录，保留全部旧 UUID；阶段 B 必须另行人工批准后，才允许把精确的旧 UUID 集合作为可执行删除集合。阶段 B 不具备批量事务原子性，未来执行时必须分别记录已删除与未删除集合，并依赖迁移前验证备份和执行账本支持人工恢复决策。
+阶段 A 同时保留旧 UUID 并创建或恢复对应确定性 ID，因此存在 64 个预期过渡重复内容组；每组必须精确由一个旧 UUID 和对应确定性 ID 组成。阶段 A 要求 0 个意外重复组，而不是要求总重复组为 0，legacy ID mismatch 集合也必须精确等于 64 个旧 UUID。
 
-计划使用两层摘要避免自引用：`migration_plan_content_sha256` 覆盖尚未填入 `created_by_batch_content_sha256` 的原始计划材料；新记录的 `created_by_batch_content_sha256` 使用该内容摘要；`migration_plan_sha256` 再覆盖填充治理字段后的最终完整计划。`created_by_*` 表示首次创建受控确定性记录的迁移批次，不代表旧 UUID 记录不可恢复的原始历史批次。
+阶段 A 的 create 与 resume 集合互斥且共同覆盖全部 target。回滚候选只等于 create 集合，实际可执行回滚只包含本次执行确实创建成功的 target，绝不包含 resume target。
 
-缺失的历史说明字段不会被虚构，而是记录在 `legacy_missing_fields`。正式迁移完成并经过验证前，0B-3D 继续阻断。
+阶段 B 批准同时绑定 `migration_contract_sha256`、`phase_a_verification_sha256` 和建议删除集合摘要。批准后仍必须使用新的匿名存储快照执行删除前重验，并证明逻辑存储状态与阶段 A 验证时完全相同，之后才可能进入 `PHASE_B_READY`。
 
-阶段 B 需要两个独立门禁：阶段 A 的匿名验证快照必须完整通过，并且阶段 B 必须另行获得人工批准。仅设置 `phase_b_approved=true` 不足以生成旧 UUID 的可执行删除集合；迁移计划本身存在阻断时同样不会生成删除集合。
-
-公开迁移证据逐项区分 `legacy_missing_fields` 和 `legacy_invalid_fields`。缺少 `expected_tables` 的匿名记录可通过 legacy storage ID 和 target ID 精确定位，但证据不会保存问题、SQL、`args_json` 或 `metadata_json` 正文。
+8 条 Text Memory 不进入迁移项、创建、删除或回滚集合，但阶段 A、删除前重验和最终验证都必须逐条核对 storage ID、document 摘要和 metadata 摘要，不能只比较数量。公开证据继续逐项区分 `legacy_missing_fields` 与 `legacy_invalid_fields`，且不保存问题、SQL、`args_json` 或 `metadata_json` 正文。正式迁移完成并验证前，0B-3D 继续阻断。
