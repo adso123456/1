@@ -115,7 +115,7 @@ Text Memory：8 条
 ### 3. 尚未完成
 
 ```text
-0B-4     ⏳ Tool Memory 全链演练
+0B-4 ✅ Tool Memory全链隔离演练完成
 Level 1  ✅ 115表DDL/元数据正式覆盖
 Level 2  ⚠️ 仅有 6 表旧式基础 SQL 训练
 Level 3  ⚠️ 仅有 6 表旧式业务 SQL 训练
@@ -638,10 +638,9 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5准备
+当前阶段：F5首批Tool Memory扩展准备
 
 后续：
-→ 0B-4 Tool Memory 全链演练
 → F5 Level 2 / Level 3 扩展
 → F6 可维护性、安全治理和历史迁移
 ```
