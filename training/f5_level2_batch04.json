@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch04-20260716-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 04-D1候选发现真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B04_SQL_001",
+      "question": "查询水环境管控单元的编码、名称和面积，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT control_unit_code,\n       control_unit_name,\n       area\nFROM gis_control_unit\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 04-D1已通过当前67条Tool Memory覆盖与重复检查、SQLGuard、PostgreSQL只读执行和核心字段数据质量验证",
+      "source": "F5 Batch 04-D1 D4_L2_GIS_CONTROL_UNIT_001",
+      "expected_behavior": "返回最多50条水环境管控单元编码、名称和面积；面积字段单位为平方千米",
+      "expected_tables": [
+        "gis_control_unit"
+      ]
+    }
+  ]
+}
