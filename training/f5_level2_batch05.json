@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch05-20260716-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 05-S1候选比较真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B05_SQL_001",
+      "question": "查询流域年度信息的流域名称、所属区域编码、统计年份和流域面积，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT name,\n       region_code,\n       statistic_year,\n       total_watershed_area\nFROM se_watershed\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 05-S1已通过当前68条Tool Memory重复检查、Metadata、SQLGuard、PostgreSQL只读执行和检索混淆评估",
+      "source": "F5 Batch 05-S1 D4_L2_SE_WATERSHED_002",
+      "expected_behavior": "返回最多50条流域名称、所属区域编码、统计年份和流域面积；流域面积字段单位为平方千米",
+      "expected_tables": [
+        "se_watershed"
+      ]
+    }
+  ]
+}
