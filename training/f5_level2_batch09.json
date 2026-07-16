@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch09-20260716-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 09-D2标准候选发现真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B09_SQL_001",
+      "question": "查询磷石膏库的名称、矿山名称、所属企业、所在市、所在县和地址，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT name,\n       mine_name,\n       enterprise,\n       city,\n       county,\n       address\nFROM rs_enterprise_info_lsg\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 09-D2已通过当前72条Tool Memory重复检查、Metadata、SQLGuard、PostgreSQL只读执行、数据完整性、表映射和检索碰撞评估",
+      "source": "F5 Batch 09-D2 D9_L2_RS_ENTERPRISE_INFO_LSG_001",
+      "expected_behavior": "返回最多50条磷石膏库名称、矿山名称、所属企业、所在市、所在县和可选地址",
+      "expected_tables": [
+        "rs_enterprise_info_lsg"
+      ]
+    }
+  ]
+}

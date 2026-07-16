@@ -96,12 +96,13 @@
 ### 2. 已存在训练资产
 
 ```text
-正式运行 Chroma 总记录数：195
+正式运行 Chroma 总记录数：196
 
 原有 Text Memory：8
 Level 1 DDL Text Memory：115
 LEGACY_READ_ONLY Tool Memory：64
-确定性受控 Tool Memory：8
+确定性受控 Tool Memory：9
+Tool Memory 总数：73
 ```
 
 64 条旧 Tool Memory 来源于已经执行过的 Level 2 / Level 3 训练，主要覆盖 6 张试点表。
@@ -576,10 +577,19 @@ wst_relation_type_dict 基础查询，1 条标准 Level 2 受控 Tool Memory
 
 wst_relation_type_dict 水安全溯源资产关系大类字典已与 ad_dict 通用数据字典和 wst_asset_type_dict 资产类型字典通过三问题检索隔离验证。
 
+### F5 Batch 09
+
+```text
+F5 Batch 09 ✅
+rs_enterprise_info_lsg 基础查询，1 条标准 Level 2 受控 Tool Memory
+```
+
+rs_enterprise_info_lsg 用于磷石膏库基础档案查询；name 作为完整且唯一的自然名称识别字段；address 为可选展示字段；已验证与 rs_enterprise_info_wade 不存在名称集合映射。
+
 当前阶段：
 
 ```text
-F5 Batch 09 范围选择
+F5 Batch 10 范围选择
 ```
 
 ---
@@ -712,7 +722,7 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5 Batch 09 范围选择
+当前阶段：F5 Batch 10 范围选择
 
 后续：
 → F5 Level 2 / Level 3 扩展
@@ -726,10 +736,10 @@ F4 ✅ 正式 Level 1 已切换
 当前只授权执行：
 
 ```text
-F5 Batch 09 范围选择
+F5 Batch 10 范围选择
 ```
 
-范围确认前不创建 Batch 09，不写入新的正式 Memory，不迁移旧 UUID。
+范围确认前不创建 Batch 10，不写入新的正式 Memory，不迁移旧 UUID。
 
 ---
 
