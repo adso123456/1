@@ -96,6 +96,8 @@
 ### 2. 已存在训练资产
 
 ```text
+最后已验收代码基线：a0609b04b2d7d16b25752ebf526644ea27d0ea53
+
 正式运行 Chroma 总记录数：196
 
 原有 Text Memory：8
@@ -586,10 +588,35 @@ rs_enterprise_info_lsg 基础查询，1 条标准 Level 2 受控 Tool Memory
 
 rs_enterprise_info_lsg 用于磷石膏库基础档案查询；name 作为完整且唯一的自然名称识别字段；address 为可选展示字段；已验证与 rs_enterprise_info_wade 不存在名称集合映射。
 
+### F5 Batch 10-S1
+
+```text
+F5 Batch 10-S1 ✅
+只读范围发现完成
+STANDARD候选：0
+合格CONTROLLED_EXCEPTION：0
+推荐：NONE
+Level 2候选饱和信号：CANDIDATE_SCARCE
+```
+
+wm_water_source_zone_v2 的有效编码子集仍存在完全重复业务元组；gis_watershed_partition 的核心编码全表为空，过滤后无有效记录。本阶段未创建Batch 10，未写入或删除正式Memory。
+
+剩余表类型分布：
+
+```text
+GIS图层或映射表：29
+时序、日志、预测或告警表：11
+任务、同步或内部配置表：10
+关系、追踪或中间表：6
+数据质量或基础Level 2暂缓表：11
+已知空表：3
+仍需业务语义或数据质量核对的其他表：12
+```
+
 当前阶段：
 
 ```text
-F5 Batch 10 范围选择
+F5 Level 2收口审计
 ```
 
 ---
@@ -722,7 +749,7 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5 Batch 10 范围选择
+当前阶段：F5 Level 2收口审计
 
 后续：
 → F5 Level 2 / Level 3 扩展
@@ -736,10 +763,10 @@ F4 ✅ 正式 Level 1 已切换
 当前只授权执行：
 
 ```text
-F5 Batch 10 范围选择
+F5 Level 2收口审计
 ```
 
-范围确认前不创建 Batch 10，不写入新的正式 Memory，不迁移旧 UUID。
+收口审计前不进入Level 3，不创建新的正式Memory，不迁移旧UUID。
 
 ---
 
