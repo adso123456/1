@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch07-20260716-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 07-D3候选发现真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B07_SQL_001",
+      "question": "查询水安全溯源资产类型的类型编码、类型名称、资产分组编码、资产分组名称和上级类型编码，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT asset_type,\n       asset_type_name,\n       asset_group,\n       asset_group_name,\n       parent_type\nFROM wst_asset_type_dict\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 07-D3已通过当前70条Tool Memory重复检查、Metadata、SQLGuard、PostgreSQL只读执行、数据质量和检索碰撞评估",
+      "source": "F5 Batch 07-D3 D7_L2_WST_ASSET_TYPE_DICT_005",
+      "expected_behavior": "返回最多50条水安全溯源资产类型编码、类型名称、资产分组编码、资产分组名称和可选的上级类型编码",
+      "expected_tables": [
+        "wst_asset_type_dict"
+      ]
+    }
+  ]
+}
