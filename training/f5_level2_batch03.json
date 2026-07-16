@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch03-20260716-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 03-S1候选范围确认真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B03_SQL_001",
+      "question": "查询气象站的站点编码、站点名称、简称、行政区编码和所属城市，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT station_code,\n       station_name,\n       short_name,\n       region_code,\n       belong_to_city\nFROM wm_meteorological_info\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 03-S1已通过当前66条Tool Memory重复检查、SQLGuard、PostgreSQL只读执行和核心数据质量验证",
+      "source": "F5 Batch 03-S1 D1_L2_WM_METEOROLOGICAL_INFO_002",
+      "expected_behavior": "返回最多50条气象站编码、名称、简称、行政区编码和所属城市",
+      "expected_tables": [
+        "wm_meteorological_info"
+      ]
+    }
+  ]
+}
