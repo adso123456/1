@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch06-20260716-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 06-S1定向范围确认真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B06_SQL_001",
+      "question": "查询水安全溯源分区的分区编码、分区名称和划分依据，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT zone_code,\n       zone_name,\n       divide_basis\nFROM wst_control_zone\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 06-S1已通过当前69条Tool Memory重复检查、Metadata、SQLGuard、PostgreSQL只读执行、业务对象差异和检索混淆评估",
+      "source": "F5 Batch 06-S1 D4_L2_WST_CONTROL_ZONE_003",
+      "expected_behavior": "返回最多50条水安全溯源分区编码、名称和划分依据",
+      "expected_tables": [
+        "wst_control_zone"
+      ]
+    }
+  ]
+}

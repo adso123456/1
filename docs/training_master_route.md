@@ -96,12 +96,12 @@
 ### 2. 已存在训练资产
 
 ```text
-正式运行 Chroma 总记录数：192
+正式运行 Chroma 总记录数：193
 
 原有 Text Memory：8
 Level 1 DDL Text Memory：115
 LEGACY_READ_ONLY Tool Memory：64
-确定性受控 Tool Memory：5
+确定性受控 Tool Memory：6
 ```
 
 64 条旧 Tool Memory 来源于已经执行过的 Level 2 / Level 3 训练，主要覆盖 6 张试点表。
@@ -549,10 +549,19 @@ se_watershed 基础查询，1 条标准 Level 2 受控 Tool Memory
 
 se_watershed 流域年度主数据与 se_watershed_river 河流明细已通过双向检索隔离验证。
 
+### F5 Batch 06
+
+```text
+F5 Batch 06 ✅
+wst_control_zone 基础查询，1 条标准 Level 2 受控 Tool Memory
+```
+
+wst_control_zone 水安全溯源分区与 gis_control_unit 水环境管控单元已通过双向检索隔离验证。
+
 当前阶段：
 
 ```text
-F5 Batch 06 范围选择
+F5 Batch 07 范围选择
 ```
 
 ---
@@ -685,7 +694,7 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5 Batch 06 范围选择
+当前阶段：F5 Batch 07 范围选择
 
 后续：
 → F5 Level 2 / Level 3 扩展
@@ -699,10 +708,10 @@ F4 ✅ 正式 Level 1 已切换
 当前只授权执行：
 
 ```text
-F5 Batch 06 范围选择
+F5 Batch 07 范围选择
 ```
 
-范围确认前不创建 Batch 06，不写入新的正式 Memory，不迁移旧 UUID。
+范围确认前不创建 Batch 07，不写入新的正式 Memory，不迁移旧 UUID。
 
 ---
 
