@@ -68,15 +68,18 @@ Tool Memory 总数：74
 当前阶段：
 
 ```text
-F5 Level 3能力盘点
+F5 Level 3 Batch 01正式交付
 ```
 
 当前禁止越界进入：
 
 ```text
-Level 3 补充训练
+HOUR变体
+L3_GAP_02
+其余4个Level 3缺口的批量交付
 F5 总验收
 F6 治理
+Legacy迁移
 Vanna 源码解耦
 MySQL 接入
 多数据源改造
@@ -233,11 +236,32 @@ F5-G1 ✅ 回归基线版本化与唯一事实源收敛完成
 
 F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确备份完成目录级恢复；Runner父进程Memory链已切断并通过全新副本隔离复验。
 
-当前阶段：
+### Level 3能力盘点完成
 
-```text
-F5 Level 3能力盘点
-```
+- Legacy Tool Memory：64条全部分类；
+- 独立能力簇：53；
+- Level 2能力簇：22；
+- Level 3能力簇：31；
+- 语义重复：5条；
+- STALE_SCHEMA：0；
+- SQLGUARD_FAIL：0；
+- 已识别并真实验证5个高价值Level 3缺口。
+
+### 首个候选范围冻结完成
+
+- training_batch_id：`level3-f5-batch01-20260717-01`
+- sample_id：`F5_L3_B01_SQL_001`
+- selected_grain：`DAY`
+- deferred_variant：`HOUR / SAME_CLUSTER_DEFERRED_VARIANT`
+- training_mode：`STANDARD`
+- capability_level：`L3_TIME_SERIES_JOIN`
+- semantic_risk：`LOW`
+- tables：`wm_station_info_v2`、`wm_waterquality_day_records`
+- representative_station：`香溪河泗湘溪站`
+- duplicate_found：`NO`
+- sql_guard：`PASS`
+
+本次仅完成路线授权，不属于正式训练交付；最后已验收正式训练提交仍为 `adfd751e771e57c7b6dc0515c09db374ae0aff13`，正式Chroma仍为197条，确定性受控Tool Memory仍为10条，Tool Memory总数仍为74条。
 
 ---
 
@@ -296,19 +320,13 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 4. 正式交付1条rs_sewage_info_v2标准Level 2 Tool Memory ✅
 5. 版本化PostgreSQL F5回归基线并收敛唯一事实源 ✅
 6. 整理数据缺失、暂缓和受控特例登记
-7. 盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力
-8. 识别真正缺失的高价值 Level 3 场景
-9. 只补少量核心 Level 3
-10. 执行 F5 PostgreSQL 总验收
-11. 正式关闭 PostgreSQL 训练板块
-```
-
-当前唯一动作：
-
-```text
-盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力，
-区分Level 2、Level 3、重复能力和失效能力，
-识别真正缺失的高价值Level 3场景。
+7. 盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力 ✅
+8. 识别并真实验证5个高价值 Level 3 缺口 ✅
+9. 冻结首个Level 3候选范围 ✅
+10. 正式交付已冻结的F5_L3_B01_SQL_001
+11. 只补少量核心 Level 3
+12. 执行 F5 PostgreSQL 总验收
+13. 正式关闭 PostgreSQL 训练板块
 ```
 
 ---
@@ -1224,7 +1242,7 @@ M vanna_data/chroma.sqlite3
 |---|---|---|
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
-| PostgreSQL Level 3 | 能力盘点 | 盘点64条LEGACY_READ_ONLY Tool Memory并识别高价值缺口 |
+| PostgreSQL Level 3 | Batch 01正式交付 | 只交付已冻结的F5_L3_B01_SQL_001日水质趋势样本 |
 | PostgreSQL F5 总验收 | 未开始 | Level 2 / Level 3 收口后 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
@@ -1239,9 +1257,9 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力，
-区分Level 2、Level 3、重复能力和失效能力，
-识别真正缺失的高价值Level 3场景。
+只交付已冻结的F5_L3_B01_SQL_001日水质趋势样本；
+先在隔离副本完成+1、去重、双向检索和完整15题回归，
+全部通过后才能整体切换正式Chroma。
 ```
 
-本阶段不得开始其他大板块。
+本阶段不交付HOUR变体，不交付L3_GAP_02，不批量交付其余4个缺口，不执行F5总验收，不进入F6，不处理Legacy迁移，不执行MySQL或多数据源任务。
