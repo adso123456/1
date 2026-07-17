@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level2-f5-batch10-20260717-01",
+  "training_level": "level2_sql_examples",
+  "status": "frozen",
+  "source": "F5 Batch 10-T0范围冻结真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L2_B10_SQL_001",
+      "question": "查询污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT admin_division,\n       project_name,\n       treatment_process,\n       design_scale,\n       actual_assess_scale,\n       operation_unit\nFROM rs_sewage_info_v2\nLIMIT 50"
+      },
+      "training_level": "level2_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "Batch 10-T0已通过Metadata、字段单位、SQLGuard、PostgreSQL只读执行、低数据量训练价值、表映射、当前73条Tool Memory重复检查和检索碰撞评估",
+      "source": "F5 Batch 10-T0 D10_L2_RS_SEWAGE_INFO_V2_001",
+      "expected_behavior": "返回最多50条污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位；设计规模和实际考核规模字段单位为t/d（吨/日）",
+      "expected_tables": [
+        "rs_sewage_info_v2"
+      ]
+    }
+  ]
+}

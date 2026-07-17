@@ -52,19 +52,19 @@ a0609b04b2d7d16b25752ebf526644ea27d0ea53
 当前正式训练资产：
 
 ```text
-正式运行 Chroma 总记录数：196
+正式运行 Chroma 总记录数：197
 
 原有 Text Memory：8
 Level 1 DDL Text Memory：115
 LEGACY_READ_ONLY Tool Memory：64
-确定性受控 Tool Memory：9
-Tool Memory 总数：73
+确定性受控 Tool Memory：10
+Tool Memory 总数：74
 ```
 
 当前阶段：
 
 ```text
-F5 Batch 10正式交付
+F5 Level 2最终收口审计
 ```
 
 当前禁止越界进入：
@@ -111,6 +111,7 @@ F5       ⏳ Level 2 / Level 3 受控训练进行中
 | Batch 07 | `wst_asset_type_dict` | 水安全溯源资产类型 |
 | Batch 08 | `wst_relation_type_dict` | 水安全溯源关系大类 |
 | Batch 09 | `rs_enterprise_info_lsg` | 磷石膏库基础档案 |
+| Batch 10 | `rs_sewage_info_v2` | 污水处理厂项目基础档案 |
 
 F5 Batch 09 ✅ 已完成正式交付与验收。
 
@@ -191,6 +192,24 @@ LIMIT 50
 
 当前表只有1行，分类为 LOW_VOLUME_SINGLE_ROW；训练价值为 STABLE_SCHEMA_QUERY_PATTERN。该Memory用于固定稳定业务问题与SQL映射，不代表当前表具有充分数据覆盖。
 
+F5 Batch 10 正式交付状态：
+
+```text
+F5 Batch 10 ✅
+rs_sewage_info_v2正式交付完成
+正式Chroma = 197
+Tool Memory = 74
+受控Tool Memory = 10
+覆盖表 = 34
+未覆盖表 = 81
+```
+
+当前阶段：
+
+```text
+F5 Level 2最终收口审计
+```
+
 ---
 
 ## 4. 大板块执行顺序
@@ -245,7 +264,7 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 1. 完成 F5 Batch 10 候选发现 ✅
 2. 完成 F5 Level 2 收口审计 ✅
 3. 完成4张指定表最后定向只读发现与Batch 10范围冻结 ✅
-4. 正式交付1条rs_sewage_info_v2标准Level 2 Tool Memory
+4. 正式交付1条rs_sewage_info_v2标准Level 2 Tool Memory ✅
 5. 整理数据缺失、暂缓和受控特例登记
 6. 盘点现有 64 条 legacy Level 2 / Level 3 能力
 7. 识别真正缺失的高价值 Level 3 场景
@@ -257,7 +276,7 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 当前唯一动作：
 
 ```text
-交付1条rs_sewage_info_v2标准Level 2 Tool Memory。
+复核Batch 10交付后的Level 2最终饱和状态。
 ```
 
 判断分支：
@@ -1183,7 +1202,7 @@ M vanna_data/chroma.sqlite3
 | 板块 | 状态 | 当前节点 |
 |---|---|---|
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
-| PostgreSQL Level 2 | 进行中 | Batch 09已完成；Batch 10范围已冻结，等待正式交付 |
+| PostgreSQL Level 2 | 进行中 | Batch 10已完成；等待Level 2最终收口审计 |
 | PostgreSQL Level 3 | 待盘点 | Level 2 饱和后 |
 | PostgreSQL F5 总验收 | 未开始 | Level 2 / Level 3 收口后 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
@@ -1199,7 +1218,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-交付1条rs_sewage_info_v2标准Level 2 Tool Memory。
+复核Batch 10交付后的Level 2最终饱和状态。
 ```
 
 本阶段不得开始其他大板块。

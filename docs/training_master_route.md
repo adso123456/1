@@ -98,13 +98,13 @@
 ```text
 最后已验收代码基线：a0609b04b2d7d16b25752ebf526644ea27d0ea53
 
-正式运行 Chroma 总记录数：196
+正式运行 Chroma 总记录数：197
 
 原有 Text Memory：8
 Level 1 DDL Text Memory：115
 LEGACY_READ_ONLY Tool Memory：64
-确定性受控 Tool Memory：9
-Tool Memory 总数：73
+确定性受控 Tool Memory：10
+Tool Memory 总数：74
 ```
 
 64 条旧 Tool Memory 来源于已经执行过的 Level 2 / Level 3 训练，主要覆盖 6 张试点表。
@@ -719,10 +719,39 @@ LIMIT 50
 
 当前表只有1行，分类为 LOW_VOLUME_SINGLE_ROW；该Memory的训练价值是 STABLE_SCHEMA_QUERY_PATTERN，用于固定稳定业务问题与SQL映射，不代表当前表具有充分数据覆盖。
 
+### F5 Batch 10
+
+```text
+F5 Batch 10 ✅
+rs_sewage_info_v2 污水处理厂项目基础档案查询
+1条标准Level 2受控Tool Memory
+
+training_batch_id：level2-f5-batch10-20260717-01
+sample_id：F5_L2_B10_SQL_001
+record_id：toolmem-v1-1ede1c839114367719624c0d51c2cc3a1df54ac38c23baf4a8dbfd97c038ed4b
+```
+
+设计规模和实际考核规模字段单位均为 t/d（吨/日）。
+
+该表当前只有1行，属于 LOW_VOLUME_SINGLE_ROW；
+该Memory用于固定 STABLE_SCHEMA_QUERY_PATTERN，
+不代表当前表具有充分的数据覆盖。
+
+已通过与 L3_P2_SQL_011 排污口联合明细能力的双向检索隔离验证。
+
+```text
+正式Chroma总记录数：197
+Legacy Tool Memory：64
+受控Tool Memory：10
+Tool Memory总数：74
+当前覆盖表数：34
+当前未覆盖表数：81
+```
+
 当前阶段：
 
 ```text
-F5 Batch 10正式交付
+F5 Level 2最终收口审计
 ```
 
 ---
@@ -855,7 +884,7 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5 Batch 10正式交付
+当前阶段：F5 Level 2最终收口审计
 
 后续：
 → F5 Level 2 / Level 3 扩展
@@ -869,15 +898,10 @@ F4 ✅ 正式 Level 1 已切换
 当前只授权执行：
 
 ```text
-只允许交付以下1条正式Tool Memory：
-
-table = rs_sewage_info_v2
-training_batch_id = level2-f5-batch10-20260717-01
-sample_id = F5_L2_B10_SQL_001
-expected_new_memory_count = 1
+F5 Level 2最终收口审计
 ```
 
-不得新增第二条Batch 10 Memory，不得修改冻结问题、SQL、expected_behavior或字段，不得训练其他表，不得迁移旧UUID，不得进入Level 3。
+不得直接进入Level 3；先复核Batch 10交付后的最终Level 2饱和状态。不得新增正式Memory，不得迁移旧UUID。
 
 ---
 
