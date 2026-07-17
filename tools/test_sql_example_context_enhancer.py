@@ -27,7 +27,10 @@ ALLOWED_PREEXISTING_STATUS_PATHS = {
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
+from tools.sql_example_context_enhancer import (
+    ALLOWED_TRAINING_LEVELS,
+    SqlExampleContextEnhancer,
+)
 
 
 @dataclass
@@ -227,6 +230,101 @@ async def test_level3_p0_example() -> TestResult:
     return TestResult("level3_p0_sql_examples approved 示例进入 prompt 并保留 sample_id/SQL", passed, "sample_id、SQL 和年度表均已注入" if passed else "第 3 级示例未完整注入")
 
 
+async def test_level3_sql_examples_approved() -> TestResult:
+    sample = memory_item(
+        sample_id="L3_SQL_APPROVED",
+        question="查询年度pH年均值最高的站点列表",
+        sql=(
+            "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph "
+            "FROM wm_waterquality_year_records WHERE monitor_year = 2025 "
+            "GROUP BY station_id, monitor_year ORDER BY AVG(m2_value) DESC LIMIT 20"
+        ),
+        training_level="level3_sql_examples",
+        expected_tables=["wm_waterquality_year_records"],
+    )
+    prompt, enhancer, _, _ = await build_prompt(sample.memory.question, [sample])
+    sql = sample.memory.args["sql"]
+    passed = (
+        enhancer.last_stats.injected_count == 1
+        and "## Retrieved Approved SQL Examples" in prompt
+        and sql in prompt
+    )
+    return TestResult(
+        "level3_sql_examples approved run_sql 示例进入最终 examples section",
+        passed,
+        f"injected_count={enhancer.last_stats.injected_count}, sql_in_prompt={sql in prompt}",
+    )
+
+
+async def test_level3_sql_examples_non_approved_filtered() -> TestResult:
+    sample = memory_item(
+        sample_id="L3_SQL_NOT_APPROVED",
+        question="查询年度pH年均值最高的站点列表",
+        sql=(
+            "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph "
+            "FROM wm_waterquality_year_records GROUP BY station_id, monitor_year "
+            "ORDER BY AVG(m2_value) DESC LIMIT 20"
+        ),
+        training_level="level3_sql_examples",
+        train_decision="requires_manual_review",
+        expected_tables=["wm_waterquality_year_records"],
+    )
+    prompt, enhancer, _, _ = await build_prompt(sample.memory.question, [sample])
+    passed = "L3_SQL_NOT_APPROVED" not in prompt and enhancer.last_stats.injected_count == 0
+    return TestResult(
+        "level3_sql_examples 非 approved 示例仍被拒绝",
+        passed,
+        f"filtered={enhancer.last_stats.filtered}",
+    )
+
+
+async def test_existing_allowed_levels_compatible() -> TestResult:
+    existing_levels = {
+        "level2_sql_examples",
+        "level3_p0_sql_examples",
+        "level3_p1_sql_examples",
+        "level3_p2_sql_examples",
+    }
+    accepted_levels: list[str] = []
+    for training_level in sorted(existing_levels):
+        sample = memory_item(
+            sample_id=f"COMPAT_{training_level}",
+            question="查询年度pH年均值最高的站点列表",
+            sql=(
+                "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph "
+                "FROM wm_waterquality_year_records GROUP BY station_id, monitor_year "
+                "ORDER BY AVG(m2_value) DESC LIMIT 20"
+            ),
+            training_level=training_level,
+            expected_tables=["wm_waterquality_year_records"],
+        )
+        _, enhancer, _, _ = await build_prompt(sample.memory.question, [sample])
+        if enhancer.last_stats.injected_count == 1:
+            accepted_levels.append(training_level)
+    passed = set(accepted_levels) == existing_levels
+    return TestResult(
+        "现有四种允许等级行为不回退",
+        passed,
+        f"accepted_levels={accepted_levels}",
+    )
+
+
+async def test_allowed_levels_remain_explicit() -> TestResult:
+    expected = {
+        "level2_sql_examples",
+        "level3_sql_examples",
+        "level3_p0_sql_examples",
+        "level3_p1_sql_examples",
+        "level3_p2_sql_examples",
+    }
+    passed = ALLOWED_TRAINING_LEVELS == expected
+    return TestResult(
+        "training_level 白名单保持为五个精确值",
+        passed,
+        f"allowed_levels={sorted(ALLOWED_TRAINING_LEVELS)}",
+    )
+
+
 async def test_manual_review_filtered() -> TestResult:
     manual = [
         memory_item(sample_id="L2_SQL_011", question="排污口溯源责任主体统计", sql="SELECT primary_entity_name FROM rs_outlet_trace_v2 LIMIT 50", train_decision="requires_manual_review"),
@@ -363,6 +461,10 @@ async def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
         test_q1_day_example,
         test_q6_station_example,
         test_level3_p0_example,
+        test_level3_sql_examples_approved,
+        test_level3_sql_examples_non_approved_filtered,
+        test_existing_allowed_levels_compatible,
+        test_allowed_levels_remain_explicit,
         test_manual_review_filtered,
         test_excluded_filtered,
         test_unknown_training_level_filtered,
