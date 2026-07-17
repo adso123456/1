@@ -64,7 +64,7 @@ Tool Memory 总数：74
 当前阶段：
 
 ```text
-F5 Level 2最终收口审计
+F5-G1 回归基线版本化与唯一事实源收敛
 ```
 
 当前禁止越界进入：
@@ -204,10 +204,20 @@ Tool Memory = 74
 未覆盖表 = 81
 ```
 
+F5 PostgreSQL Level 2 ✅ 已收口
+
+- 正式Chroma：197
+- Tool Memory：74
+- 受控Tool Memory：10
+- 已覆盖表：34
+- 剩余81张表均已完成明确分类
+- Batch 10交付后完成两轮独立无候选确认
+- Level 2候选饱和状态：REACHED
+
 当前阶段：
 
 ```text
-F5 Level 2最终收口审计
+F5-G1 回归基线版本化与唯一事实源收敛
 ```
 
 ---
@@ -276,7 +286,7 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 当前唯一动作：
 
 ```text
-复核Batch 10交付后的Level 2最终饱和状态。
+版本化PostgreSQL F5回归测试集，并将training_master_route.md降为训练规范与历史文档。
 ```
 
 判断分支：
@@ -489,6 +499,8 @@ F6-3 Embedding Profile 与向量兼容治理
 F6-4 旧 UUID Tool Memory 最终治理
 F6-5 自动化回归与持续学习
 ```
+
+交付脚本共享骨架抽取属于F6技术债，不在F5-G1中重构。
 
 ---
 
@@ -1202,7 +1214,7 @@ M vanna_data/chroma.sqlite3
 | 板块 | 状态 | 当前节点 |
 |---|---|---|
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
-| PostgreSQL Level 2 | 进行中 | Batch 10已完成；等待Level 2最终收口审计 |
+| PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 待盘点 | Level 2 饱和后 |
 | PostgreSQL F5 总验收 | 未开始 | Level 2 / Level 3 收口后 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
@@ -1218,7 +1230,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-复核Batch 10交付后的Level 2最终饱和状态。
+版本化PostgreSQL F5回归测试集，并将training_master_route.md降为训练规范与历史文档。
 ```
 
 本阶段不得开始其他大板块。
