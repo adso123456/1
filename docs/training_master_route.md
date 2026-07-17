@@ -646,10 +646,83 @@ rs_sewage_info_v2
 
 Batch 09交付后当前只有一轮独立无候选证据，即 Batch 10-S1；必须完成上述四表的最后定向发现，才能判断是否形成第二轮无候选证据。
 
+### F5 Level 2 最后定向发现
+
+```text
+F5 Level 2最后定向发现 ✅
+
+目标表：4
+STANDARD候选：1
+CONTROLLED_EXCEPTION：0
+最终推荐：D10_L2_RS_SEWAGE_INFO_V2_001
+推荐表：rs_sewage_info_v2
+
+Level 2候选饱和信号：NOT_REACHED
+Level 2已收口：NO
+```
+
+逐表结论：
+
+```text
+rs_enterprise_info_wade：
+L2_EXCLUDED_MAPPING_OR_COPY
+
+rs_livestock_info_yc：
+L2_DEFERRED_DATA_QUALITY
+
+rs_pollutant_enterprise：
+L2_EXCLUDED_MAPPING_OR_COPY
+
+rs_sewage_info_v2：
+ELIGIBLE_STANDARD
+```
+
+本轮发现了新的标准候选，因此没有形成第二轮独立无候选证据。
+
+### F5 Batch 10-T0
+
+```text
+F5 Batch 10-T0 ✅
+范围冻结完成
+
+表：rs_sewage_info_v2
+模式：STANDARD
+问题：查询污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位，最多返回50条
+训练批次：level2-f5-batch10-20260717-01
+样本：F5_L2_B10_SQL_001
+预计新增Memory：1
+```
+
+冻结 SQL：
+
+```sql
+SELECT
+    admin_division,
+    project_name,
+    treatment_process,
+    design_scale,
+    actual_assess_scale,
+    operation_unit
+FROM rs_sewage_info_v2
+LIMIT 50
+```
+
+冻结 expected_behavior：
+
+```text
+返回最多50条污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位；设计规模和实际考核规模字段单位为t/d（吨/日）
+```
+
+识别策略：`NATURAL_NAME_IDENTIFIER`。
+
+设计规模和实际考核规模的单位均为 t/d（吨/日）。
+
+当前表只有1行，分类为 LOW_VOLUME_SINGLE_ROW；该Memory的训练价值是 STABLE_SCHEMA_QUERY_PATTERN，用于固定稳定业务问题与SQL映射，不代表当前表具有充分数据覆盖。
+
 当前阶段：
 
 ```text
-F5 Level 2最后定向发现
+F5 Batch 10正式交付
 ```
 
 ---
@@ -782,7 +855,7 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5 Level 2最后定向发现
+当前阶段：F5 Batch 10正式交付
 
 后续：
 → F5 Level 2 / Level 3 扩展
@@ -796,19 +869,15 @@ F4 ✅ 正式 Level 1 已切换
 当前只授权执行：
 
 ```text
-F5 Level 2最后定向发现
+只允许交付以下1条正式Tool Memory：
+
+table = rs_sewage_info_v2
+training_batch_id = level2-f5-batch10-20260717-01
+sample_id = F5_L2_B10_SQL_001
+expected_new_memory_count = 1
 ```
 
-只允许审查以下4张表：
-
-```text
-rs_enterprise_info_wade
-rs_livestock_info_yc
-rs_pollutant_enterprise
-rs_sewage_info_v2
-```
-
-不得重新扫描其他未覆盖表，不得创建Batch 10，不得写入或删除正式Memory，不得进入Level 3。
+不得新增第二条Batch 10 Memory，不得修改冻结问题、SQL、expected_behavior或字段，不得训练其他表，不得迁移旧UUID，不得进入Level 3。
 
 ---
 

@@ -64,7 +64,7 @@ Tool Memory 总数：73
 当前阶段：
 
 ```text
-F5 Level 2最后定向发现
+F5 Batch 10正式交付
 ```
 
 当前禁止越界进入：
@@ -144,6 +144,53 @@ rs_pollutant_enterprise
 rs_sewage_info_v2
 ```
 
+F5 Level 2 最后定向发现状态：
+
+```text
+F5 Level 2最后定向发现 ✅
+发现1条STANDARD候选
+最终推荐：D10_L2_RS_SEWAGE_INFO_V2_001
+推荐表：rs_sewage_info_v2
+Level 2候选饱和信号：NOT_REACHED
+Level 2已收口：NO
+```
+
+F5 Batch 10-T0 状态：
+
+```text
+F5 Batch 10-T0 ✅
+rs_sewage_info_v2范围已冻结
+training_batch_id：level2-f5-batch10-20260717-01
+sample_id：F5_L2_B10_SQL_001
+预计新增Memory：1
+```
+
+冻结候选：
+
+```text
+table：rs_sewage_info_v2
+question：查询污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位，最多返回50条
+expected_behavior：返回最多50条污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位；设计规模和实际考核规模字段单位为t/d（吨/日）
+training_batch_id：level2-f5-batch10-20260717-01
+sample_id：F5_L2_B10_SQL_001
+identifier_strategy：NATURAL_NAME_IDENTIFIER
+expected_new_memory_count：1
+```
+
+```sql
+SELECT
+    admin_division,
+    project_name,
+    treatment_process,
+    design_scale,
+    actual_assess_scale,
+    operation_unit
+FROM rs_sewage_info_v2
+LIMIT 50
+```
+
+当前表只有1行，分类为 LOW_VOLUME_SINGLE_ROW；训练价值为 STABLE_SCHEMA_QUERY_PATTERN。该Memory用于固定稳定业务问题与SQL映射，不代表当前表具有充分数据覆盖。
+
 ---
 
 ## 4. 大板块执行顺序
@@ -197,19 +244,20 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 ```text
 1. 完成 F5 Batch 10 候选发现 ✅
 2. 完成 F5 Level 2 收口审计 ✅
-3. 只对4张指定表执行最后一次定向只读发现
-4. 整理数据缺失、暂缓和受控特例登记
-5. 盘点现有 64 条 legacy Level 2 / Level 3 能力
-6. 识别真正缺失的高价值 Level 3 场景
-7. 只补少量核心 Level 3
-8. 执行 F5 PostgreSQL 总验收
-9. 正式关闭 PostgreSQL 训练板块
+3. 完成4张指定表最后定向只读发现与Batch 10范围冻结 ✅
+4. 正式交付1条rs_sewage_info_v2标准Level 2 Tool Memory
+5. 整理数据缺失、暂缓和受控特例登记
+6. 盘点现有 64 条 legacy Level 2 / Level 3 能力
+7. 识别真正缺失的高价值 Level 3 场景
+8. 只补少量核心 Level 3
+9. 执行 F5 PostgreSQL 总验收
+10. 正式关闭 PostgreSQL 训练板块
 ```
 
 当前唯一动作：
 
 ```text
-只对4张指定表执行最后一次定向只读发现。
+交付1条rs_sewage_info_v2标准Level 2 Tool Memory。
 ```
 
 判断分支：
@@ -1135,7 +1183,7 @@ M vanna_data/chroma.sqlite3
 | 板块 | 状态 | 当前节点 |
 |---|---|---|
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
-| PostgreSQL Level 2 | 进行中 | 收口审计完成，待4张指定表最后定向只读发现 |
+| PostgreSQL Level 2 | 进行中 | Batch 09已完成；Batch 10范围已冻结，等待正式交付 |
 | PostgreSQL Level 3 | 待盘点 | Level 2 饱和后 |
 | PostgreSQL F5 总验收 | 未开始 | Level 2 / Level 3 收口后 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
@@ -1151,7 +1199,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-只对4张指定表执行最后一次定向只读发现。
+交付1条rs_sewage_info_v2标准Level 2 Tool Memory。
 ```
 
 本阶段不得开始其他大板块。
