@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "suite_id": "postgresql-f5-regression-v1",
+  "description": "PostgreSQL F5正式验收基线：F2固定6题与Batch 02—10目标9题。",
+  "case_count": 15,
+  "formal_training_commit": "adfd751e771e57c7b6dc0515c09db374ae0aff13",
+  "formal_record_count": 197,
+  "formal_chroma_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+  "cases": [
+    {
+      "case_id": "f2_dictionary_list_items",
+      "category": "f2_fixed",
+      "question": "查询数据字典中的列表类型、列表描述、列表项代码和列表项名称，最多返回50条",
+      "expected_tables": ["ad_dict"],
+      "limit_max": 50,
+      "expected_columns": ["list_type", "list_type_desc", "item_code", "item_name"],
+      "sql_constraints": {"require_join": false, "forbid_join": false, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": [], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "f2_outlet_codes",
+      "category": "f2_fixed",
+      "question": "查询排污口名称、排污口编码和省级编码，最多返回50条",
+      "expected_tables": ["rs_outlet"],
+      "limit_max": 50,
+      "expected_columns": ["outlet_name", "outlet_code", "outlet_code_province"],
+      "sql_constraints": {"require_join": false, "forbid_join": false, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": [], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "f2_hourly_water_quality_latest",
+      "category": "f2_fixed",
+      "question": "查询站点1408最近的水质小时变化趋势，返回监测时间、pH、溶解氧和水质等级，最多100条",
+      "expected_tables": ["wm_waterquality_hour_records"],
+      "limit_max": 100,
+      "expected_columns": ["monitor_time", "ph", "dissolved_oxygen", "water_quality_level"],
+      "sql_constraints": {"require_join": false, "forbid_join": false, "require_left_join": false, "require_group_by": false, "require_order_desc": true, "forbidden_tables": ["wm_waterquality_threshold"], "forbidden_columns": [], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "f2_outlet_remediation_detail",
+      "category": "f2_fixed",
+      "question": "查询排污口国家编码、名称及对应整治状态和整治类型记录明细，最多50条",
+      "expected_tables": ["rs_outlet_info_v2", "rs_outlet_remediation_v2"],
+      "limit_max": 50,
+      "expected_columns": ["outlet_code_national", "outlet_name", "is_remediated", "remediation_type"],
+      "sql_constraints": {"require_join": true, "forbid_join": false, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": [], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "f2_section_waterbody_detail",
+      "category": "f2_fixed",
+      "question": "查询断面编码、断面名称以及所属水体的编码、名称和类型，最多100条",
+      "expected_tables": ["wm_section_info", "wm_waterbody_info"],
+      "limit_max": 100,
+      "expected_columns": ["section_code", "section_name", "water_body_code", "water_body_name", "water_body_type"],
+      "sql_constraints": {"require_join": true, "forbid_join": false, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": [], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "f2_outlet_region_remediation_counts",
+      "category": "f2_fixed",
+      "question": "按省市区县统计排污口总数和有整治记录的排污口数量，包含没有整治记录的排污口，并用横向柱状图展示，最多100个地区",
+      "expected_tables": ["rs_outlet_info_v2", "rs_outlet_remediation_v2"],
+      "limit_max": 100,
+      "expected_columns": ["province_city_district", "outlet_count", "remediation_record_outlet_count"],
+      "sql_constraints": {"require_join": true, "forbid_join": false, "require_left_join": true, "require_group_by": true, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": [], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": ["horizontal_bar", "bar"], "require_chart_title": true, "require_chart_fields": true},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch02_watershed_river",
+      "category": "batch_target",
+      "question": "查询流域河流的河流名称、别名、河流长度、流域面积和源头省份，最多返回50条",
+      "expected_tables": ["se_watershed_river"],
+      "limit_max": 50,
+      "expected_columns": ["river_name", "river_alias", "river_length", "watershed_area", "source_province"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 50, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch03_meteorological_station",
+      "category": "batch_target",
+      "question": "查询气象站的站点编码、站点名称、简称、行政区编码和所属城市，最多返回50条",
+      "expected_tables": ["wm_meteorological_info"],
+      "limit_max": 50,
+      "expected_columns": ["station_code", "station_name", "short_name", "region_code", "belong_to_city"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 7, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch04_control_unit",
+      "category": "batch_target",
+      "question": "查询水环境管控单元的编码、名称和面积，最多返回50条",
+      "expected_tables": ["gis_control_unit"],
+      "limit_max": 50,
+      "expected_columns": ["control_unit_code", "control_unit_name", "area"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 15, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch05_watershed_year",
+      "category": "batch_target",
+      "question": "查询流域年度信息的流域名称、所属区域编码、统计年份和流域面积，最多返回50条",
+      "expected_tables": ["se_watershed"],
+      "limit_max": 50,
+      "expected_columns": ["name", "region_code", "statistic_year", "total_watershed_area"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 12, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch06_trace_control_zone",
+      "category": "batch_target",
+      "question": "查询水安全溯源分区的分区编码、分区名称和划分依据，最多返回50条",
+      "expected_tables": ["wst_control_zone"],
+      "limit_max": 50,
+      "expected_columns": ["zone_code", "zone_name", "divide_basis"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 50, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch07_trace_asset_type",
+      "category": "batch_target",
+      "question": "查询水安全溯源资产类型的类型编码、类型名称、资产分组编码、资产分组名称和上级类型编码，最多返回50条",
+      "expected_tables": ["wst_asset_type_dict"],
+      "limit_max": 50,
+      "expected_columns": ["asset_type", "asset_type_name", "asset_group", "asset_group_name", "parent_type"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 33, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch08_trace_relation_type",
+      "category": "batch_target",
+      "question": "查询水安全溯源资产关系大类的关系编码、关系名称和关系说明，最多返回50条",
+      "expected_tables": ["wst_relation_type_dict"],
+      "limit_max": 50,
+      "expected_columns": ["type_code", "type_name", "description"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 6, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch09_phosphogypsum_repository",
+      "category": "batch_target",
+      "question": "查询磷石膏库的名称、矿山名称、所属企业、所在市、所在县和地址，最多返回50条",
+      "expected_tables": ["rs_enterprise_info_lsg"],
+      "limit_max": 50,
+      "expected_columns": ["name", "mine_name", "enterprise", "city", "county", "address"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": true, "forbid_where": false, "forbid_null_filter": true, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 17, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "batch10_sewage_treatment_project",
+      "category": "batch_target",
+      "question": "查询污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位，最多返回50条",
+      "expected_tables": ["rs_sewage_info_v2"],
+      "limit_max": 50,
+      "expected_columns": ["admin_division", "project_name", "treatment_process", "design_scale", "actual_assess_scale", "operation_unit"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": true, "forbid_where": true, "forbid_null_filter": true, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": 1, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    }
+  ]
+}

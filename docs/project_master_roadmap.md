@@ -2,6 +2,8 @@
 
 > 建议文件路径：`docs/project_master_roadmap.md`
 > 用途：作为本项目跨阶段、跨对话的唯一总路线依据。
+>
+> **状态职责声明：本文件是唯一当前状态源；`docs/training_master_route.md` 仅记录训练规范与历史验收记录。**
 > 后续任何新任务、阶段切换、技术债延期或验收结论，都应同步更新本文件，避免遗漏历史任务。
 
 ---
@@ -43,7 +45,7 @@ E:\3\_runtime\vanna-level1\vanna_data
 
 ## 2. 当前正式基线
 
-最后已验收提交：
+最后已验收正式训练提交：
 
 ```text
 adfd751e771e57c7b6dc0515c09db374ae0aff13
@@ -61,10 +63,12 @@ LEGACY_READ_ONLY Tool Memory：64
 Tool Memory 总数：74
 ```
 
+当前仓库 HEAD 以 Git 为准，不在路线文档中维护自引用提交 SHA。
+
 当前阶段：
 
 ```text
-F5-G1 回归基线版本化与唯一事实源收敛
+F5 Level 3能力盘点
 ```
 
 当前禁止越界进入：
@@ -214,10 +218,25 @@ F5 PostgreSQL Level 2 ✅ 已收口
 - Batch 10交付后完成两轮独立无候选确认
 - Level 2候选饱和状态：REACHED
 
+F5-G1 ✅ 回归基线版本化与唯一事实源收敛完成
+
+- suite_id：`postgresql-f5-regression-v1`
+- case_count：15
+- suite_content_sha256：`f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34`
+- F2固定回归：6题
+- Batch 02—10目标回归：9题
+- 隔离复验：15/15
+- 正式目录监控：18/18
+- 正式Chroma：197条，`222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26`
+- `docs/project_master_roadmap.md`：唯一当前状态源
+- `docs/training_master_route.md`：训练规范与历史记录
+
+F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确备份完成目录级恢复；Runner父进程Memory链已切断并通过全新副本隔离复验。
+
 当前阶段：
 
 ```text
-F5-G1 回归基线版本化与唯一事实源收敛
+F5 Level 3能力盘点
 ```
 
 ---
@@ -275,31 +294,21 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 2. 完成 F5 Level 2 收口审计 ✅
 3. 完成4张指定表最后定向只读发现与Batch 10范围冻结 ✅
 4. 正式交付1条rs_sewage_info_v2标准Level 2 Tool Memory ✅
-5. 整理数据缺失、暂缓和受控特例登记
-6. 盘点现有 64 条 legacy Level 2 / Level 3 能力
-7. 识别真正缺失的高价值 Level 3 场景
-8. 只补少量核心 Level 3
-9. 执行 F5 PostgreSQL 总验收
-10. 正式关闭 PostgreSQL 训练板块
+5. 版本化PostgreSQL F5回归基线并收敛唯一事实源 ✅
+6. 整理数据缺失、暂缓和受控特例登记
+7. 盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力
+8. 识别真正缺失的高价值 Level 3 场景
+9. 只补少量核心 Level 3
+10. 执行 F5 PostgreSQL 总验收
+11. 正式关闭 PostgreSQL 训练板块
 ```
 
 当前唯一动作：
 
 ```text
-版本化PostgreSQL F5回归测试集，并将training_master_route.md降为训练规范与历史文档。
-```
-
-判断分支：
-
-```text
-若发现合格候选：
-→ 冻结并交付一条Batch 10
-→ Level 2继续保持未收口
-
-若4张表全部无候选：
-→ 形成Batch 09交付后的第二轮独立无候选证据
-→ Level 2候选饱和状态可判定为REACHED
-→ 单独执行Level 2收口落盘
+盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力，
+区分Level 2、Level 3、重复能力和失效能力，
+识别真正缺失的高价值Level 3场景。
 ```
 
 ---
@@ -1215,7 +1224,7 @@ M vanna_data/chroma.sqlite3
 |---|---|---|
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
-| PostgreSQL Level 3 | 待盘点 | Level 2 饱和后 |
+| PostgreSQL Level 3 | 能力盘点 | 盘点64条LEGACY_READ_ONLY Tool Memory并识别高价值缺口 |
 | PostgreSQL F5 总验收 | 未开始 | Level 2 / Level 3 收口后 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
@@ -1230,7 +1239,9 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-版本化PostgreSQL F5回归测试集，并将training_master_route.md降为训练规范与历史文档。
+盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力，
+区分Level 2、Level 3、重复能力和失效能力，
+识别真正缺失的高价值Level 3场景。
 ```
 
 本阶段不得开始其他大板块。
