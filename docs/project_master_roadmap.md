@@ -46,7 +46,7 @@ E:\3\_runtime\vanna-level1\vanna_data
 最后已验收提交：
 
 ```text
-a0609b04b2d7d16b25752ebf526644ea27d0ea53
+adfd751e771e57c7b6dc0515c09db374ae0aff13
 ```
 
 当前正式训练资产：
