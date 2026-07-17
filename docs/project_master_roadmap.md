@@ -64,7 +64,7 @@ Tool Memory 总数：73
 当前阶段：
 
 ```text
-F5 Level 2收口审计
+F5 Level 2最后定向发现
 ```
 
 当前禁止越界进入：
@@ -125,6 +125,25 @@ Level 2候选饱和信号：CANDIDATE_SCARCE
 未新增正式Memory
 ```
 
+F5 Level 2 收口审计状态：
+
+```text
+F5 Level 2收口审计 ✅
+82张未覆盖表已完成唯一分类
+收口决策：FINAL_FOCUSED_DISCOVERY_REQUIRED
+Level 2已收口：NO
+需要最后定向验证的表：4
+```
+
+最后定向验证表：
+
+```text
+rs_enterprise_info_wade
+rs_livestock_info_yc
+rs_pollutant_enterprise
+rs_sewage_info_v2
+```
+
 ---
 
 ## 4. 大板块执行顺序
@@ -177,8 +196,8 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 
 ```text
 1. 完成 F5 Batch 10 候选发现 ✅
-2. 执行 F5 Level 2 收口审计
-3. 根据收口审计结论判断是否需要业务输入或再执行一轮候选发现
+2. 完成 F5 Level 2 收口审计 ✅
+3. 只对4张指定表执行最后一次定向只读发现
 4. 整理数据缺失、暂缓和受控特例登记
 5. 盘点现有 64 条 legacy Level 2 / Level 3 能力
 6. 识别真正缺失的高价值 Level 3 场景
@@ -190,9 +209,20 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 当前唯一动作：
 
 ```text
-执行F5 Level 2收口审计，
-汇总历史发现结果并判定：
-REACHED、CANDIDATE_SCARCE或NEEDS_BUSINESS_INPUT。
+只对4张指定表执行最后一次定向只读发现。
+```
+
+判断分支：
+
+```text
+若发现合格候选：
+→ 冻结并交付一条Batch 10
+→ Level 2继续保持未收口
+
+若4张表全部无候选：
+→ 形成Batch 09交付后的第二轮独立无候选证据
+→ Level 2候选饱和状态可判定为REACHED
+→ 单独执行Level 2收口落盘
 ```
 
 ---
@@ -1105,7 +1135,7 @@ M vanna_data/chroma.sqlite3
 | 板块 | 状态 | 当前节点 |
 |---|---|---|
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
-| PostgreSQL Level 2 | 进行中 | Batch 10-S1 推荐 NONE，候选信号 CANDIDATE_SCARCE，待收口审计 |
+| PostgreSQL Level 2 | 进行中 | 收口审计完成，待4张指定表最后定向只读发现 |
 | PostgreSQL Level 3 | 待盘点 | Level 2 饱和后 |
 | PostgreSQL F5 总验收 | 未开始 | Level 2 / Level 3 收口后 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
@@ -1121,9 +1151,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-执行F5 Level 2收口审计，
-汇总历史发现结果并判定：
-REACHED、CANDIDATE_SCARCE或NEEDS_BUSINESS_INPUT。
+只对4张指定表执行最后一次定向只读发现。
 ```
 
 本阶段不得开始其他大板块。

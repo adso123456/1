@@ -613,10 +613,43 @@ GIS图层或映射表：29
 仍需业务语义或数据质量核对的其他表：12
 ```
 
+### F5 Level 2 收口审计
+
+```text
+F5 Level 2收口审计 ✅
+
+未覆盖表总数：82
+全部完成唯一分类：YES
+
+L2_EXCLUDED_MAPPING_OR_COPY：36
+L2_DEFERRED_DATA_QUALITY：2
+L2_JOIN_OR_LEVEL3_ONLY：5
+L2_SYSTEM_INTERNAL：12
+L2_TIME_SERIES_OR_LOG：10
+L2_RELATION_OR_INTERMEDIATE：10
+L2_KNOWN_EMPTY：3
+L2_NEEDS_BUSINESS_INPUT：0
+L2_FINAL_FOCUSED_DISCOVERY：4
+
+收口结论：FINAL_FOCUSED_DISCOVERY_REQUIRED
+Level 2已收口：NO
+```
+
+需要执行最后定向验证的表：
+
+```text
+rs_enterprise_info_wade
+rs_livestock_info_yc
+rs_pollutant_enterprise
+rs_sewage_info_v2
+```
+
+Batch 09交付后当前只有一轮独立无候选证据，即 Batch 10-S1；必须完成上述四表的最后定向发现，才能判断是否形成第二轮无候选证据。
+
 当前阶段：
 
 ```text
-F5 Level 2收口审计
+F5 Level 2最后定向发现
 ```
 
 ---
@@ -749,7 +782,7 @@ F2 ✅ 已完成
 F3 ➖ 无功能阻断，跳过
 F4 ✅ 正式 Level 1 已切换
 
-当前阶段：F5 Level 2收口审计
+当前阶段：F5 Level 2最后定向发现
 
 后续：
 → F5 Level 2 / Level 3 扩展
@@ -763,10 +796,19 @@ F4 ✅ 正式 Level 1 已切换
 当前只授权执行：
 
 ```text
-F5 Level 2收口审计
+F5 Level 2最后定向发现
 ```
 
-收口审计前不进入Level 3，不创建新的正式Memory，不迁移旧UUID。
+只允许审查以下4张表：
+
+```text
+rs_enterprise_info_wade
+rs_livestock_info_yc
+rs_pollutant_enterprise
+rs_sewage_info_v2
+```
+
+不得重新扫描其他未覆盖表，不得创建Batch 10，不得写入或删除正式Memory，不得进入Level 3。
 
 ---
 
