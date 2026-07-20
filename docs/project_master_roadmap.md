@@ -68,7 +68,7 @@ Tool Memory 总数：75
 当前阶段：
 
 ```text
-F5 PostgreSQL总验收
+PostgreSQL训练板块已关闭，等待下一板块授权
 ```
 
 当前禁止越界进入：
@@ -287,6 +287,23 @@ F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确
 - `L3_GAP_05`。
 
 上述延期能力未标记为失败或废弃。
+
+### F5 PostgreSQL最终总验收完成
+
+- PostgreSQL F1—F5全部完成并通过最终验收；
+- 正式Chroma：198条，SHA256为 `d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992`；
+- Text Memory：123条，其中原有Text 8条、Level 1 DDL Text 115条；
+- Legacy Tool Memory：64条；
+- 确定性受控Tool Memory：11条，完整性验收11/11；
+- Tool Memory总数：75条；
+- 受控SQL的SQLGuard验收：11/11；
+- 受控SQL的数据库只读执行：11/11；
+- Level 3目标题单次E2E通过；
+- 双向检索与HOUR隔离通过；
+- 固定回归最终15/15通过；
+- 正式目录在目标题、两轮完整回归及结束双检中全程未变化；
+- 延期Level 3能力不属于第一板块阻断；
+- PostgreSQL训练板块正式关闭。
 
 ---
 
@@ -1268,7 +1285,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
-| PostgreSQL F5 总验收 | 已授权执行 | 对198条正式训练状态执行总验收 |
+| PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
@@ -1282,10 +1299,9 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-对198条正式训练状态执行F5 PostgreSQL总验收；
-验证正式资产、固定15题回归、关键Level 1/2/3能力、
-正式目录稳定性和文档一致性；
-全部通过后关闭PostgreSQL训练板块。
+在新的ChatGPT窗口中复核总路线并选择下一板块；
+不得自动进入F6、Legacy迁移、Vanna解耦、
+MySQL或多数据源改造。
 ```
 
-继续禁止新增Memory、HOUR及其他Level 3训练；本阶段不进入F6，不处理Legacy迁移，不执行Vanna解耦、MySQL或多数据源任务。
+PostgreSQL训练板块关闭后不得继续新增Memory或自动开展延期Level 3训练；下一板块必须经新的明确授权。

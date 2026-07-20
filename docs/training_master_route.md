@@ -777,6 +777,29 @@ Tool Memory总数：75
 
 HOUR仍为 `HOUR / SAME_CLUSTER_DEFERRED_VARIANT`，本批次未交付。固定回归suite内容及SHA均未改变。
 
+### F5 PostgreSQL最终总验收历史快照
+
+```text
+PostgreSQL F1—F5：全部验收通过
+正式Chroma：198
+正式Chroma SHA256：d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
+Text Memory：123（原有Text 8，Level 1 DDL Text 115）
+Legacy Tool Memory：64
+受控Tool Memory：11
+Tool Memory总数：75
+受控Memory完整性：11/11
+SQLGuard：11/11
+数据库只读执行：11/11
+Level 3目标题：通过
+双向检索：通过
+HOUR隔离：通过
+固定回归：首次14/15随机无SQL，按规则使用全新副本完整重跑后15/15
+正式目录稳定性：全程通过
+PostgreSQL训练板块：已关闭
+```
+
+延期Level 3能力不属于第一板块阻断。本节仅追加历史验收快照，不承担当前状态职责。
+
 ---
 
 ## 十、阶段 F6：可维护性和安全治理
