@@ -76,7 +76,7 @@ F6-1 DDL Text Memory幂等治理
 ```text
 新增正式Memory
 治理正式198条Chroma
-F6-1D～I
+F6-1E～I
 Legacy迁移
 Vanna 源码解耦
 MySQL 接入
@@ -624,7 +624,7 @@ Metadata 可检索
 F6-1A 复现 F1 阶段 25→50 重复写入 ✅ 已完成
 F6-1B 生成 DDL Text Memory 确定性身份 ✅ 已完成
 F6-1C 实现 ddl_memory_plan.py ✅ 已完成
-F6-1D 实现 ddl_memory_adapter.py
+F6-1D 实现 ddl_memory_adapter.py ✅ 已完成
 F6-1E 支持 create / unchanged / changed / removed
 F6-1F 隔离验证重复运行记录数不增长
 F6-1G 审计正式 115 条 DDL Memory 是否存在历史重复
@@ -722,7 +722,29 @@ Evidence：
 E:\3\_training_backups\f6-1c-20260720-135537\evidence
 ```
 
-本阶段未创建 Chroma Client，未执行写入、更新、删除或 Apply。F6-1D～I 均未开始，下一步等待 F6-1D 明确授权。
+F6-1C 阶段未创建 Chroma Client，未执行写入、更新、删除或 Apply；当时未提前开展 F6-1D～I，当前状态见 12.8。
+
+### 12.8 F6-1D 隔离 Chroma 适配层（2026-07-20）
+
+F6-1D 已完成：新增 `training/sop/ddl_memory_adapter.py`，提供稳定快照、显式确定性 ID create、带旧指纹前置条件的 replace，以及写后 Plan unchanged 精确验证。路径在 Client 创建前强制隔离；适配层不调用 `save_text_memory()`，不生成随机 ID，不提供删除或完整 Apply。
+
+真实隔离集成核心计数：
+
+```text
+初始 0
+加入 unmanaged 1
+create managed 2
+replace managed 2
+stale replace 后 2
+```
+
+Evidence：
+
+```text
+E:\3\_training_backups\f6-1d-20260720-141542\evidence
+```
+
+unmanaged 记录保持不变，关闭重开后记录仍存在；本脚本以正式路径创建 Chroma Client 的尝试次数为 0。F6-1E～I 均未开始，下一步等待 F6-1E 明确授权。
 
 ---
 
@@ -1337,7 +1359,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | F6-1A～C已完成；F6-1D～I未开始 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A～D已完成；F6-1E～I未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1350,7 +1372,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-等待 F6-1D 明确授权。
+等待 F6-1E 明确授权。
 ```
 
-当前不得治理正式198条Chroma，不得新增正式Memory，不得执行Apply或自动进入F6-1D；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。
+当前不得治理正式198条Chroma，不得新增正式Memory，不得执行完整Apply、unchanged或removed，不得自动进入F6-1E；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。

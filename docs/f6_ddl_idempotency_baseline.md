@@ -224,12 +224,55 @@ actions 按 `record_id` 升序排列。`plan_sha256` 是不含自身字段的稳
 
 F6-1C Evidence：`E:\3\_training_backups\f6-1c-20260720-135537\evidence`。本阶段没有 Apply，没有创建 Chroma Client，也没有打开正式 Chroma。
 
-## 8. 风险与下一阶段
+## 8. F6-1D 隔离 Chroma 适配层（已实现）
+
+实现位置：`training/sop/ddl_memory_adapter.py`，collection 固定为 `tool_memories`。适配层只提供：
+
+```text
+snapshot_records()
+create_from_action(action=create)
+replace_from_action(action=changed)
+open_isolated_adapter(persist_directory)
+```
+
+没有 delete、remove、apply_plan 或完整 Apply 接口，不接受 unchanged/removed Action，也不调用 `save_text_memory()` 或生成随机 Memory ID。
+
+### 8.1 隔离打开与快照
+
+`open_isolated_adapter()` 在创建任何 Client 前验证调用方显式路径：必须位于 `E:\3\_training_backups` 下、仓库外、正式 Chroma 及其子目录之外、仓库 `vanna_data` 及其子目录之外，并且首次打开时全新或为空。通过后才延迟导入 `ChineseChromaAgentMemory` 与共享 `EMBEDDING_FUNCTION`，显式传入隔离路径和 `tool_memories`，保持 `BAAI/bge-small-zh-v1.5` 配置一致，不使用 `VANNA_DATA_DIR` 默认值。
+
+`snapshot_records()` 读取全部 ID、document、Metadata，检查数组长度一致，保留 managed/unmanaged 及额外运行时 Metadata，转换为 `ExistingDdlMemoryRecord` 后按 `record_id` 排序；不修改任何记录。
+
+### 8.2 Action 完整性
+
+每次写入前根据 Action 的四个身份字段与 `normalized_ddl` 重新构造 `DdlMemoryIdentity`，逐项验证 `logical_id`、`record_id`、DDL、目标指纹和目标 Metadata。任何伪造或篡改在 collection 写入前失败。
+
+### 8.3 create 原语
+
+- 只接受 `create`，旧指纹必须为 `None`。
+- 相同 `record_id` 必须不存在；存在即冲突，不覆盖。
+- 使用 collection `add` 显式写入确定性 `record_id`、规范化 DDL 和固定存储 Metadata。
+- 不写 timestamp、随机 UUID、请求 ID或路径。
+- 写后精确读取，记录总数必须增加 1，并由 Plan 判为 `unchanged`。
+
+### 8.4 replace 原语与 stale 门禁
+
+- 只接受 `changed`，必须同时携带旧、新指纹。
+- 当前记录必须存在且是合法 managed v1；替换前重新读取并要求当前指纹等于旧指纹。
+- 使用相同确定性 `record_id` 调用 collection `update`，不得新增记录。
+- 写后精确读取，记录总数必须不变，并由 Plan 判为 `unchanged`。
+- stale Action 明确失败，不覆盖新状态，不改变 collection 数量。
+
+本阶段没有数据库级事务；并发安全底线是写入前的乐观旧指纹条件与写后精确验证。删除及 removed 治理仍留给后续完整候选副本流程。
+
+真实隔离集成使用 `E:\3\_training_backups\f6-1d-20260720-141542\isolated_chroma`：核心计数为 `0 → 1 → 2 → 2 → 2`，create/replace 后均为 unchanged，stale 冲突生效，unmanaged 记录未变化，关闭重开后两条记录仍存在。Evidence：`E:\3\_training_backups\f6-1d-20260720-141542\evidence`。本脚本以正式路径创建 Chroma Client 的尝试次数为 0；该字段不代表系统级监控。
+
+## 9. 风险与下一阶段
 
 ### BLOCKING_RISK
 
-1. `agent_config.py` 在未设置 `VANNA_DATA_DIR` 时默认指向仓库内 `vanna_data`。任何直接导入并调用 `create_memory()` 的训练脚本都可能打开错误资产。F6-1D 的 apply 必须先做路径门禁，再导入或创建 Memory；本阶段审计工具已这样规避。最小后续修复位置：`agent_config.py` 与 DDL apply 入口，训练/治理模式要求显式路径。
-2. 当前 `save_text_memory` 的 `timestamp` 使精确 Metadata 比较永远变化，且没有 DDL 类型、来源和对象字段。F6-1B 已冻结有效 Metadata；后续适配层仍需实现该存储契约。
+1. `agent_config.py` 在未设置 `VANNA_DATA_DIR` 时默认指向仓库内 `vanna_data`。隔离适配层已在延迟导入前强制路径门禁；后续完整 Apply 必须只经该显式隔离工厂打开候选库，不得回退到默认 `create_memory()`。
+2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 F6-1D 明确授权。本阶段不治理正式 198 条记录，不实现 `ddl_memory_adapter.py`，不执行 Apply。
+下一阶段建议：等待 F6-1E 明确授权。本阶段不治理正式 198 条记录，不执行完整 Apply、unchanged 或 removed。
