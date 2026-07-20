@@ -76,7 +76,7 @@ F6-1 DDL Text Memory幂等治理
 ```text
 新增正式Memory
 治理正式198条Chroma
-F6-1E～I
+F6-1F～I
 Legacy迁移
 Vanna 源码解耦
 MySQL 接入
@@ -625,7 +625,7 @@ F6-1A 复现 F1 阶段 25→50 重复写入 ✅ 已完成
 F6-1B 生成 DDL Text Memory 确定性身份 ✅ 已完成
 F6-1C 实现 ddl_memory_plan.py ✅ 已完成
 F6-1D 实现 ddl_memory_adapter.py ✅ 已完成
-F6-1E 支持 create / unchanged / changed / removed
+F6-1E 支持 create / unchanged / changed / removed ✅ 已完成
 F6-1F 隔离验证重复运行记录数不增长
 F6-1G 审计正式 115 条 DDL Memory 是否存在历史重复
 F6-1H 评估重复记录对 Top-K 检索的影响
@@ -744,7 +744,32 @@ Evidence：
 E:\3\_training_backups\f6-1d-20260720-141542\evidence
 ```
 
-unmanaged 记录保持不变，关闭重开后记录仍存在；本脚本以正式路径创建 Chroma Client 的尝试次数为 0。F6-1E～I 均未开始，下一步等待 F6-1E 明确授权。
+unmanaged 记录保持不变，关闭重开后记录仍存在；本脚本以正式路径创建 Chroma Client 的尝试次数为 0。当时 F6-1E～I 均未开始，后续状态见 12.9。
+
+### 12.9 F6-1E 受控 Apply 编排器（2026-07-20）
+
+F6-1E 已完成：新增 `training/sop/ddl_memory_apply.py`，将已经审阅的确定性 Plan 与 F6-1D 隔离适配层组合为 `ddl-memory-apply-v1`。写前重新读取快照、重建 Plan 并完整比对版本、内容与 SHA；过期或篡改计划在 `writes_started=false` 时失败。Action 按稳定顺序执行：create=`created`、unchanged=`verified_noop`、changed=`replaced`、removed=`retained/removal_deferred`。
+
+写后强制验证 Plan 收敛、仅 create 引起总数增长、unmanaged 与 retained removed 逐条不变。执行中或写后验收失败会报告已完成 Action 和失败 ID，并将候选库标记为不可验收；不自动重试、回滚或删除。
+
+真实隔离最小集成结果：
+
+```text
+初始记录数：4
+初始 Plan：create=1, unchanged=1, changed=1, removed=1
+首次 Apply 后记录数：5
+最终 Plan：create=0, unchanged=3, changed=0, removed=1
+旧计划复用：零写入 stale 失败
+新计划第二次 Apply：verified_noop=3, retained=1, 记录增量=0
+```
+
+正式 115 条完整隔离验证保留给 F6-1F。本阶段不打开或治理正式 198 条 Chroma，不新增正式 Memory。F6-1F～I 均未开始，下一步仅等待 F6-1F 明确授权。
+
+Evidence：
+
+```text
+E:\3\_training_backups\f6-1e-20260720-144046\evidence
+```
 
 ---
 
@@ -1359,7 +1384,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | F6-1A～D已完成；F6-1E～I未开始 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A～E已完成；F6-1F～I未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1372,7 +1397,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-等待 F6-1E 明确授权。
+等待 F6-1F 明确授权。
 ```
 
-当前不得治理正式198条Chroma，不得新增正式Memory，不得执行完整Apply、unchanged或removed，不得自动进入F6-1E；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。
+当前不得治理正式198条Chroma，不得新增正式Memory，不得自动进入F6-1F；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。

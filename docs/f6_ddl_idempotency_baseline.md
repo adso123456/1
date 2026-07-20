@@ -1,8 +1,8 @@
-# F6-1A/F6-1B DDL Text Memory 审计与确定性身份基线
+# F6-1A～F6-1E DDL Text Memory 审计、身份与受控 Apply 基线
 
 ## 1. 审计边界与结论
 
-- F6-1A 初始基线提交：`559a990f60dca2071f106ced145609f991ac4b3b`；R1 修复基线提交：`5be951504d5026190fff5808ead7db819b74758b`；F6-1B 基线提交：`f923d57ca747dff25f551bb8f1c9a28ecbbe96ad`。
+- F6-1A 初始基线提交：`559a990f60dca2071f106ced145609f991ac4b3b`；R1 修复基线提交：`5be951504d5026190fff5808ead7db819b74758b`；F6-1B 基线提交：`f923d57ca747dff25f551bb8f1c9a28ecbbe96ad`；F6-1E 基线提交：`b7d2b576e945d0574c1a6750a0d434454deddcfd`。
 - 正式 Chroma：`E:\3\_runtime\vanna-level1\vanna_data`。本脚本以正式路径创建 Chroma Client 的尝试次数为 **0**；该字段不代表操作系统级全局监控结果。
 - 仓库内 `vanna_data` 仅作为受保护脏状态记录，未打开、未修改。
 - R1 隔离 Evidence：`E:\3\_training_backups\f6-1a-r1-20260720-124151\evidence`。
@@ -267,7 +267,46 @@ open_isolated_adapter(persist_directory)
 
 真实隔离集成使用 `E:\3\_training_backups\f6-1d-20260720-141542\isolated_chroma`：核心计数为 `0 → 1 → 2 → 2 → 2`，create/replace 后均为 unchanged，stale 冲突生效，unmanaged 记录未变化，关闭重开后两条记录仍存在。Evidence：`E:\3\_training_backups\f6-1d-20260720-141542\evidence`。本脚本以正式路径创建 Chroma Client 的尝试次数为 0；该字段不代表系统级监控。
 
-## 9. 风险与下一阶段
+## 9. F6-1E 受控 Apply 编排器（已实现）
+
+实现位置：`training/sop/ddl_memory_apply.py`，版本固定为 `ddl-memory-apply-v1`。公开接口为：
+
+```text
+apply_ddl_memory_plan(adapter, desired_memories, expected_plan)
+```
+
+三个输入均由调用方显式提供：F6-1D `DdlMemoryChromaAdapter`、期望 `DdlMemoryIdentity` 集合、已经审阅的 `DdlMemoryPlan`。模块不读取路径、环境变量、数据库或正式资产；真实集成只能经 F6-1D 隔离工厂打开仓库外候选库。
+
+### 9.1 写前重验
+
+任何写入前必须依次验证 `plan_version=ddl-memory-plan-v1`、`plan_sha256` 格式，重新读取当前完整快照，并使用当前快照与期望集合重建 Plan。重建结果必须与传入计划的全部字段、Action 顺序和 SHA 完全一致；同时逐项确认 create ID 当前不存在、其余 Action ID 当前存在。任一条件不满足均抛出 `DdlMemoryApplyPreconditionError`，其 `writes_started=false`、已完成 Action 为空，不执行任何写入。
+
+### 9.2 四种 Action
+
+```text
+create    → adapter.create_from_action → created
+unchanged → 不写入                       → verified_noop
+changed   → adapter.replace_from_action → replaced
+removed   → 不删除、原样保留             → retained / removal_deferred
+```
+
+Action 严格按 Plan 的稳定顺序执行。每项执行后立即核对记录数：create 必须 `+1`，changed、unchanged、removed 必须为 `0`。编排器不提供 delete/remove，不调用 `collection.delete`，也不调用旧 `save_text_memory`。
+
+### 9.3 写后验收与结果
+
+Apply 后重新读取完整快照并重建 Plan，强制要求 `create=0`、`changed=0`、`unchanged=desired_count`，且 `removed` 数量与输入计划一致。unmanaged 记录和 retained removed 记录的 ID、document、Metadata 必须逐条完全不变；collection 总量只能增加输入计划的 create 数。
+
+不可变 `DdlMemoryApplyResult` 包含输入/最终 Plan SHA、前后计数、四种 outcome 计数、前后 unmanaged 计数、按 Plan 顺序排列的逐项 outcome，以及排除时间、路径和随机值后生成的稳定 `apply_result_sha256`。
+
+### 9.4 失败语义与范围
+
+写入中或写后验收失败时抛出 `DdlMemoryApplyExecutionError`，报告 `writes_started`、已完成 outcomes、失败 `record_id`，并标记候选库不可验收；不自动重试、不回滚、不删除。该语义不等同数据库事务，候选库失败后必须废弃并从全新隔离目录重建。
+
+F6-1E 只验证 1 条 unmanaged、1 条 unchanged、1 条 changed-old、1 条 removed 与 3 条期望记录组成的最小隔离场景：初始 Plan 四种 Action 各 1，记录数 `4 → 5`；最终 Plan 为 `create=0, unchanged=3, changed=0, removed=1`。旧计划再次使用在零写入门禁失败；使用新计划再次 Apply 只有 3 个 verified_noop 和 1 个 retained，记录数不变。正式 115 条验证留给 F6-1F，正式 198 条 Chroma 未打开、未治理。
+
+F6-1E Evidence：`E:\3\_training_backups\f6-1e-20260720-144046\evidence`。
+
+## 10. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -275,4 +314,4 @@ open_isolated_adapter(persist_directory)
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 F6-1E 明确授权。本阶段不治理正式 198 条记录，不执行完整 Apply、unchanged 或 removed。
+下一阶段建议：等待 F6-1F 明确授权，在全新仓库外候选库执行完整 115 条隔离幂等验收。本阶段不治理正式 198 条记录，不新增正式 Memory，不自动进入 F6-1F。
