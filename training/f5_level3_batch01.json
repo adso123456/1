@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "level3-f5-batch01-20260717-01",
+  "training_level": "level3_sql_examples",
+  "status": "frozen",
+  "source": "F5 Level 3 Batch 01范围冻结真实验证结果",
+  "expected_new_memory_count": 1,
+  "samples": [
+    {
+      "sample_id": "F5_L3_B01_SQL_001",
+      "question": "查询香溪河泗湘溪站最近的水质日变化趋势，包括监测时间、pH和溶解氧，最多返回50条",
+      "tool_name": "run_sql",
+      "args": {
+        "sql": "SELECT s.station_code,\n       s.station_name,\n       d.monitor_time,\n       d.m2_value AS ph_value,\n       d.m3_value AS dissolved_oxygen_value\nFROM wm_station_info_v2 AS s\nINNER JOIN wm_waterquality_day_records AS d ON s.id = d.station_id\nWHERE s.station_name = '香溪河泗湘溪站'\nORDER BY d.monitor_time DESC\nLIMIT 50"
+      },
+      "expected_behavior": "返回香溪河泗湘溪站最近最多50条日水质趋势记录，包含站点编码、站点名称、监测时间、pH和溶解氧；按监测时间降序排列。",
+      "expected_tables": [
+        "wm_station_info_v2",
+        "wm_waterquality_day_records"
+      ],
+      "expected_columns": [
+        "station_code",
+        "station_name",
+        "monitor_time",
+        "ph_value",
+        "dissolved_oxygen_value"
+      ],
+      "training_level": "level3_sql_examples",
+      "train_decision": "approved",
+      "review_reason": "F5-L3-B01-S1已完成唯一站名、稳定station_id关联、DAY粒度、SQLGuard、PostgreSQL只读执行、现有74条Tool Memory重复边界和检索增量价值验证；training_mode=STANDARD; capability_level=L3_TIME_SERIES_JOIN; training_value_classification=STABLE_JOIN_TIME_SERIES_PATTERN; semantic_risk=LOW; identifier_strategy=NATURAL_NAME_IDENTIFIER; selected_grain=DAY; deferred_variant=HOUR / SAME_CLUSTER_DEFERRED_VARIANT",
+      "source": "F5 Level 3 Batch 01范围冻结真实验证结果",
+      "training_mode": "STANDARD",
+      "capability_level": "L3_TIME_SERIES_JOIN",
+      "training_value_classification": "STABLE_JOIN_TIME_SERIES_PATTERN",
+      "semantic_risk": "LOW",
+      "identifier_strategy": "NATURAL_NAME_IDENTIFIER",
+      "selected_grain": "DAY",
+      "deferred_variant": "HOUR / SAME_CLUSTER_DEFERRED_VARIANT"
+    }
+  ]
+}
