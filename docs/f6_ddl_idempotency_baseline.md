@@ -1,4 +1,4 @@
-# F6-1A～F6-1E DDL Text Memory 审计、身份与受控 Apply 基线
+# F6-1A～F6-1F DDL Text Memory 审计、身份与隔离幂等基线
 
 ## 1. 审计边界与结论
 
@@ -306,7 +306,40 @@ F6-1E 只验证 1 条 unmanaged、1 条 unchanged、1 条 changed-old、1 条 re
 
 F6-1E Evidence：`E:\3\_training_backups\f6-1e-20260720-144046\evidence`。
 
-## 10. 风险与下一阶段
+## 10. F6-1F 115 条全量隔离幂等验收（已完成）
+
+实现位置：`training/sop/ddl_memory_idempotency_acceptance.py`。轻量 Runbook：`docs/sop/ddl_memory_idempotency_acceptance.md`。
+
+真实输入只调用 `train_step3.load_metadata_index()`、`group_tables()` 和 `build_all_table_ddls()`：读取 2572 条 Metadata，稳定生成 115 张表、115 条 DDL。固定身份为 `source_id=postgres_water`、`schema_name=public`、`object_type=table`、`object_name=table`。表名、logical ID、record ID 均为 115 个唯一值；这些门禁在创建隔离 Chroma Client 前完成。
+
+全新隔离库两轮结果：
+
+```text
+第一轮 Plan：desired=115, managed=0, unmanaged=0,
+              create=115, unchanged=0, changed=0, removed=0
+第一轮 Apply：created=115, verified_noop=0, replaced=0,
+               retained_removed=0, count=0→115
+
+关闭重开后的第二轮 Plan：desired=115, managed=115, unmanaged=0,
+                           create=0, unchanged=115, changed=0, removed=0
+第二轮 Apply：created=0, verified_noop=115, replaced=0,
+               retained_removed=0, count=115→115
+
+再次关闭重开：total=115, managed=115, unmanaged=0,
+               create=0, unchanged=115, changed=0, removed=0
+```
+
+语义快照按 `record_id` 排序，每条只纳入 record ID、document SHA-256 和稳定 managed Metadata，不纳入 embedding、时间、绝对路径或完整 DDL。三次快照 SHA 均为：
+
+```text
+0de14c2abac3f83e83e8652799545b73ae90bcfa9f5fa5b388cb4084570c180d
+```
+
+最终 `duplicate_record_id_groups=0`、`duplicate_logical_id_groups=0`、`duplicate_identity_key_groups=0`。本脚本以正式路径创建 Chroma Client 的尝试次数为 0；未打开或治理正式 Chroma。
+
+Evidence：`E:\3\_training_backups\f6-1f-20260720-150243\evidence`。
+
+## 11. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -314,4 +347,4 @@ F6-1E Evidence：`E:\3\_training_backups\f6-1e-20260720-144046\evidence`。
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 F6-1F 明确授权，在全新仓库外候选库执行完整 115 条隔离幂等验收。本阶段不治理正式 198 条记录，不新增正式 Memory，不自动进入 F6-1F。
+下一阶段建议：等待 F6-1G 明确授权。本阶段不治理正式 198 条记录，不新增正式 Memory，不测试 Top-K，不自动进入 F6-1G。

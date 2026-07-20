@@ -76,7 +76,7 @@ F6-1 DDL Text Memory幂等治理
 ```text
 新增正式Memory
 治理正式198条Chroma
-F6-1F～I
+F6-1G～I
 Legacy迁移
 Vanna 源码解耦
 MySQL 接入
@@ -626,7 +626,7 @@ F6-1B 生成 DDL Text Memory 确定性身份 ✅ 已完成
 F6-1C 实现 ddl_memory_plan.py ✅ 已完成
 F6-1D 实现 ddl_memory_adapter.py ✅ 已完成
 F6-1E 支持 create / unchanged / changed / removed ✅ 已完成
-F6-1F 隔离验证重复运行记录数不增长
+F6-1F 隔离验证重复运行记录数不增长 ✅ 已完成
 F6-1G 审计正式 115 条 DDL Memory 是否存在历史重复
 F6-1H 评估重复记录对 Top-K 检索的影响
 F6-1I 制定正式库治理与恢复方案
@@ -769,6 +769,34 @@ Evidence：
 
 ```text
 E:\3\_training_backups\f6-1e-20260720-144046\evidence
+```
+
+### 12.10 F6-1F 115 条全量隔离幂等验收（2026-07-20）
+
+F6-1F 已完成：新增 `training/sop/ddl_memory_idempotency_acceptance.py` 和轻量 Runbook `docs/sop/ddl_memory_idempotency_acceptance.md`。真实输入只复用 `train_step3` 的 Metadata 读取、分组和 DDL 生成纯函数；2572 条 Metadata 稳定生成 115 条期望 DDL，表名、logical ID、record ID 均唯一。
+
+全新隔离库验收结果：
+
+```text
+第一轮 Plan：create=115, unchanged=0, changed=0, removed=0
+第一轮 Apply：created=115, count=0→115
+关闭重开后的第二轮 Plan：create=0, unchanged=115, changed=0, removed=0
+第二轮 Apply：verified_noop=115, count=115→115
+再次关闭重开：total=115, managed=115, unmanaged=0
+```
+
+第一轮写后、第二轮写后和最终重开的语义快照 SHA 均为：
+
+```text
+0de14c2abac3f83e83e8652799545b73ae90bcfa9f5fa5b388cb4084570c180d
+```
+
+record ID、logical ID、identity key 重复组均为 0。正式 Chroma Client 打开尝试为 0；未调用旧写入 API、删除、数据库或 Top-K 检索。F6-1G～I 未开始，下一步只等待 F6-1G 明确授权。
+
+Evidence：
+
+```text
+E:\3\_training_backups\f6-1f-20260720-150243\evidence
 ```
 
 ---
@@ -1384,7 +1412,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | F6-1A～E已完成；F6-1F～I未开始 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A～F已完成；F6-1G～I未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1397,7 +1425,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-等待 F6-1F 明确授权。
+等待 F6-1G 明确授权。
 ```
 
-当前不得治理正式198条Chroma，不得新增正式Memory，不得自动进入F6-1F；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。
+当前不得治理正式198条Chroma，不得新增正式Memory，不得测试Top-K，不得自动进入F6-1G；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。
