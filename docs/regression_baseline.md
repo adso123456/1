@@ -17,6 +17,25 @@
 正式 Chroma SHA256：d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
 ```
 
+## Runner版本资产基线
+
+Runner当前适用正式基线：
+
+```text
+EXPECTED_FORMAL_RECORD_COUNT = 198
+EXPECTED_FORMAL_SHA256 = d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
+Runner Git仓库规范字节SHA256 = 69369e6f879d02041f9b4d5675a5645345295a094c521bfacd1a666b75309f7e
+```
+
+Runner跨平台SHA门禁以 `git show HEAD:tools/run_postgresql_f5_regression.py` 返回的原始二进制stdout为唯一计算对象，并使用Python `subprocess` 直接计算SHA256；不得通过PowerShell文本管道计算，也不得使用Windows工作文件原始字节SHA作为跨平台门禁。
+
+总验收开始前必须同时满足：
+
+- `git diff --quiet -- tools/run_postgresql_f5_regression.py` 通过；
+- Git仓库规范Runner SHA256与本节登记值一致；
+- 本地工作文件在Git逻辑内容上无差异；
+- CRLF/LF差异不得单独判定为代码漂移。
+
 ## 执行命令
 
 先从正式 Chroma 创建并验证仓库外完整副本，再执行：

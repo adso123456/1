@@ -19,8 +19,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 DEFAULT_SUITE = PROJECT_ROOT / "training" / "regression" / "postgresql_f5_regression_v1.json"
 FORMAL_RUNTIME = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
-EXPECTED_FORMAL_RECORD_COUNT = 197
-EXPECTED_FORMAL_SHA256 = "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26"
+EXPECTED_FORMAL_RECORD_COUNT = 198
+EXPECTED_FORMAL_SHA256 = "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
 EXPECTED_SUITE_SHA256 = "f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34"
 EARLY_MEMORY_MODULES = ("agent_config", "step4_server")
 REQUIRED_CASE_FIELDS = {
@@ -395,6 +395,11 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
     except RuntimeError as error:
         early_import_rejected = str(error).startswith("EARLY_MEMORY_MODULE_IMPORT")
     suite_valid = len(suite["cases"]) == suite["case_count"] == 15 and suite_sha == EXPECTED_SUITE_SHA256
+    formal_baseline_constants_valid = (
+        EXPECTED_FORMAL_RECORD_COUNT == 198
+        and EXPECTED_FORMAL_SHA256
+        == "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
+    )
     runner_self_test_pass = all(
         (
             accepted,
@@ -404,6 +409,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             not forbidden_calls,
             same_path_rejected,
             early_import_rejected,
+            formal_baseline_constants_valid,
         )
     )
     payload = {
@@ -421,6 +427,9 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         "formal_path_as_validation_rejected": same_path_rejected,
         "early_memory_module_import_rejected": early_import_rejected,
         "parent_memory_creation_disabled": not forbidden_calls,
+        "formal_baseline_constants_valid": formal_baseline_constants_valid,
+        "expected_formal_record_count": EXPECTED_FORMAL_RECORD_COUNT,
+        "expected_formal_sha256": EXPECTED_FORMAL_SHA256,
         "runner_self_test_pass": runner_self_test_pass,
     }
     if evidence_dir:
@@ -432,6 +441,9 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
                 "forbidden_calls": forbidden_calls,
                 "formal_path_as_validation_rejected": same_path_rejected,
                 "early_memory_module_import_rejected": early_import_rejected,
+                "formal_baseline_constants_valid": formal_baseline_constants_valid,
+                "expected_formal_record_count": EXPECTED_FORMAL_RECORD_COUNT,
+                "expected_formal_sha256": EXPECTED_FORMAL_SHA256,
                 "static_guard_pass": runner_self_test_pass,
             },
         )
