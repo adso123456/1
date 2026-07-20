@@ -12,9 +12,9 @@
 ## 适用正式训练状态
 
 ```text
-正式训练提交：adfd751e771e57c7b6dc0515c09db374ae0aff13
-正式 Chroma 记录数：197
-正式 Chroma SHA256：222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26
+正式训练提交：a1d322848012f5be1ba0ef2e4247139d4f92ea33
+正式 Chroma 记录数：198
+正式 Chroma SHA256：d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
 ```
 
 ## 执行命令
@@ -50,6 +50,8 @@ lock_timeout=5000
 - 正式目录记录数或 SHA 发生任何变化，必须立即停止服务并判定失败。
 
 F5-G1 初次执行时，旧 Runner 因父进程调用 `context_diagnostics` 而误开正式 Chroma。正式目录已从精确备份恢复；父进程 Memory 链现已切断，并在全新副本完成 15/15 回归和 18/18 正式目录检查点验证。
+
+F5 Level 3 Batch 01交付后，固定suite未修改，Suite内容SHA256仍为 `f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34`；在198条正式状态对应的隔离副本上再次完成15/15，正式目录监控全程通过。
 
 ## 随机失败重试规则
 

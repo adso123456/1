@@ -756,6 +756,27 @@ Batch 10交付后历史阶段记录：
 F5 Level 2最终收口审计
 ```
 
+### F5 Level 3 Batch 01
+
+```text
+F5 Level 3 Batch 01 ✅
+香溪河泗湘溪站DAY水质趋势联表查询
+1条标准Level 3受控Tool Memory
+
+training_batch_id：level3-f5-batch01-20260717-01
+sample_id：F5_L3_B01_SQL_001
+record_id：toolmem-v1-d7bd8ebc76a246817b20f5619ca3a0324f8401ed8c19d24691ce45d4681c38b6
+
+正式Chroma总记录数：198
+正式Chroma SHA256：d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
+Legacy Tool Memory：64
+受控Tool Memory：11
+Tool Memory总数：75
+固定回归：15/15
+```
+
+HOUR仍为 `HOUR / SAME_CLUSTER_DEFERRED_VARIANT`，本批次未交付。固定回归suite内容及SHA均未改变。
+
 ---
 
 ## 十、阶段 F6：可维护性和安全治理
