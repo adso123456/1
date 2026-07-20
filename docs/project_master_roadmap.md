@@ -68,15 +68,14 @@ Tool Memory 总数：75
 当前阶段：
 
 ```text
-F5 Level 3收口复核
+F5 PostgreSQL总验收
 ```
 
 当前禁止越界进入：
 
 ```text
-HOUR变体
-L3_GAP_02
-其余4个Level 3缺口的批量交付
+新增Memory
+HOUR及其他Level 3训练
 F6 治理
 Legacy迁移
 Vanna 源码解耦
@@ -266,6 +265,28 @@ F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确
 - HOUR：仍为 `SAME_CLUSTER_DEFERRED_VARIANT`，未交付
 - 固定回归：在198条正式状态对应副本上15/15通过
 - 回归suite：内容及SHA `f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34` 均未改变
+
+### Level 3正式收口结论
+
+- Level 3 Batch 01已正式交付并验收；
+- `F5_L3_B01_SQL_001` 填补了“可读站点名称 → 内部ID → 日水质趋势”的核心联表能力；
+- 目标题验证通过；
+- 双向检索通过；
+- 固定回归15/15；
+- 正式Chroma为198条；
+- 确定性受控Tool Memory为11条；
+- Tool Memory总数为75条；
+- PostgreSQL Level 3补充训练正式停止。
+
+以下候选统一登记为延期能力，不再继续交付，且不属于第一板块阻断：
+
+- HOUR变体；
+- `L3_GAP_02`；
+- `L3_GAP_03`；
+- `L3_GAP_04`；
+- `L3_GAP_05`。
+
+上述延期能力未标记为失败或废弃。
 
 ---
 
@@ -1246,8 +1267,8 @@ M vanna_data/chroma.sqlite3
 |---|---|---|
 | PostgreSQL Level 1 | 已完成 | 115 表 DDL / Metadata |
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
-| PostgreSQL Level 3 | Batch 01已完成 | 停止继续补充Level 3，进入收口复核 |
-| PostgreSQL F5 总验收 | 待授权执行 | Level 2 / Level 3 已收口 |
+| PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
+| PostgreSQL F5 总验收 | 已授权执行 | 对198条正式训练状态执行总验收 |
 | F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
@@ -1261,7 +1282,10 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-停止继续补充Level 3，进入F5 PostgreSQL总验收授权与执行。
+对198条正式训练状态执行F5 PostgreSQL总验收；
+验证正式资产、固定15题回归、关键Level 1/2/3能力、
+正式目录稳定性和文档一致性；
+全部通过后关闭PostgreSQL训练板块。
 ```
 
-不再交付HOUR变体、L3_GAP_02或其余Level 3缺口；F5总验收必须另行授权后执行。本阶段不进入F6，不处理Legacy迁移，不执行MySQL或多数据源任务。
+继续禁止新增Memory、HOUR及其他Level 3训练；本阶段不进入F6，不处理Legacy迁移，不执行Vanna解耦、MySQL或多数据源任务。
