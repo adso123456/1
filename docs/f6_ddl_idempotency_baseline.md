@@ -170,11 +170,61 @@ record_id
 - `apply` 默认拒绝正式 Chroma 路径。
 - 正式治理优先生成完整候选副本，验收后再切换，不在正式库原地批量删除。
 
-实际代码仍存在接口冲突：`ChromaAgentMemory.save_text_memory` 不接受调用方 ID，也不接受 DDL 专属 Metadata。后续适配层需要写入 `record_id`，并持久化上述有效 Metadata 和 `content_fingerprint`。本阶段未实现 Plan、Apply、Chroma 适配器或任何正式写入。
+实际代码仍存在接口冲突：`ChromaAgentMemory.save_text_memory` 不接受调用方 ID，也不接受 DDL 专属 Metadata。后续适配层需要写入 `record_id`，并持久化上述有效 Metadata 和 `content_fingerprint`。F6-1B 阶段未实现 Plan、Apply、Chroma 适配器或任何正式写入。
 
 F6-1A 审计工具已复用该模块的 `normalize_ddl` 和身份构造接口。兼容回归 Evidence 为 `E:\3\_training_backups\f6-1b-20260720-125411\evidence`，结果仍为 `0 → 25 → 50`、25 个重复组、50 个唯一 ID，未产生新的技术结论。
 
-## 7. 风险与下一阶段
+## 7. F6-1C 确定性 Plan 规范（已实现）
+
+实现位置：`training/sop/ddl_memory_plan.py`。模块只依赖标准库和 `ddl_memory_identity.py`，不导入或创建 Chroma/Vanna Client，不读取环境、数据库或文件系统，不执行 Memory 写入、更新或删除。
+
+### 7.1 输入与 managed 边界
+
+- 期望输入复用不可变 `DdlMemoryIdentity`。
+- 现有输入使用只读快照 `ExistingDdlMemoryRecord(record_id, document, metadata)`，不依赖 Chroma 返回对象或 Vanna 类型。
+- 只有 `memory_type=ddl_text`、`identity_version=ddlmem-v1` 且 `record_id` 符合 `ddlmem-v1-<64位小写SHA256>` 的完整有效记录才是 managed。
+- 旧 UUID Text Memory、Tool/Legacy Memory、其他 identity version 和无关记录均为 unmanaged；只计数保留，不参与 create/changed/removed，也不进入删除计划。
+- 声称 `identity_version=ddlmem-v1` 但 ID、身份字段、必需 Metadata 或指纹非法的记录属于结构冲突，直接失败，不能降级为 unmanaged 或 changed。
+
+现有 managed 存储 Metadata 必须包含 F6-1B 的八个有效身份字段及 `content_fingerprint`。timestamp、request_id 等额外运行时 Metadata 被忽略，不影响 Plan。
+
+### 7.2 四种 Action
+
+```text
+create    期望 record_id 不存在于 managed 现有集合
+unchanged record_id、document、content_fingerprint 和身份 Metadata 均一致
+changed   相同 record_id 的 DDL 或 content_fingerprint 变化
+removed   managed 现有 record_id 不在期望集合，仅生成计划
+```
+
+`create` 只有目标指纹，`unchanged` 包含相同的新旧指纹，`changed` 同时包含旧、新指纹，`removed` 只有旧指纹且不携带目标 DDL 或目标 Metadata。`create/changed` 携带后续 Apply 所需的规范化 DDL 和固定目标 Metadata，但本阶段不执行 Apply。
+
+### 7.3 冲突失败规则
+
+以下情况直接抛出明确异常：期望集合重复 `record_id` 或重复逻辑对象；现有 managed 集合重复 `record_id`；顶层 ID、Metadata `record_id`、`logical_id` 或身份字段不匹配；缺少必需 Metadata；`content_fingerprint` 非小写 64 位十六进制，或与记录自身 document/身份 Metadata 的重算结果不一致；记录声称 v1 但无法通过身份模块校验。结构损坏不得归类为 changed。
+
+### 7.4 Plan 输出与 SHA
+
+不可变 `DdlMemoryPlan` 固定包含：
+
+```text
+plan_version = ddl-memory-plan-v1
+desired_count
+managed_existing_count
+unmanaged_existing_count
+create_count
+unchanged_count
+changed_count
+removed_count
+actions
+plan_sha256
+```
+
+actions 按 `record_id` 升序排列。`plan_sha256` 是不含自身字段的稳定 Plan payload 经 key 排序、紧凑分隔符 canonical JSON UTF-8 编码后的 SHA-256；payload 不含时间、路径、随机值或运行环境信息。输入列表顺序和额外运行时 Metadata 不改变 Plan 或 SHA。
+
+F6-1C Evidence：`E:\3\_training_backups\f6-1c-20260720-135537\evidence`。本阶段没有 Apply，没有创建 Chroma Client，也没有打开正式 Chroma。
+
+## 8. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -182,4 +232,4 @@ F6-1A 审计工具已复用该模块的 `normalize_ddl` 和身份构造接口。
 2. 当前 `save_text_memory` 的 `timestamp` 使精确 Metadata 比较永远变化，且没有 DDL 类型、来源和对象字段。F6-1B 已冻结有效 Metadata；后续适配层仍需实现该存储契约。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 F6-1C 明确授权。本阶段不治理正式 198 条记录，不实现 `ddl_memory_plan.py`、`ddl_memory_adapter.py`、Plan 或 Apply。
+下一阶段建议：等待 F6-1D 明确授权。本阶段不治理正式 198 条记录，不实现 `ddl_memory_adapter.py`，不执行 Apply。
