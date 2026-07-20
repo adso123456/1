@@ -339,7 +339,32 @@ F6-1E Evidence：`E:\3\_training_backups\f6-1e-20260720-144046\evidence`。
 
 Evidence：`E:\3\_training_backups\f6-1f-20260720-150243\evidence`。
 
-## 11. 风险与下一阶段
+## 11. F6-1G-A 正式只读审计准备（已完成，待审查）
+
+新增工具 `training/sop/ddl_memory_formal_readonly_audit.py` 和 SOP `docs/sop/ddl_memory_formal_readonly_audit.md`。本阶段只运行内存合成记录、仓库内真实 115 条期望集合生成和系统临时目录复制自检；没有执行 `--formal-audit`，没有对正式 Chroma 做存在性判断、目录读取、哈希、复制、计数或 Client 打开。
+
+未来 F6-1G-B 执行模型已经冻结：正式来源必须精确等于 `E:\3\_runtime\vanna-level1\vanna_data`，运行目录必须为全新的 `E:\3\_training_backups\f6-1g-<时间戳>`。先计算正式来源相对文件清单和 Tree SHA，再完整复制到 `formal_snapshot`，随后强制验证：
+
+```text
+formal_source_tree_sha256_before
+= snapshot_tree_sha256
+= formal_source_tree_sha256_after
+```
+
+只有清单与三个 SHA 完全一致，才允许通过不暴露写方法的只读包装器打开快照中的既有 `tool_memories`。禁止自动创建 collection、读取 embedding，以及 add/update/upsert/delete、旧 Memory API 或 Apply。
+
+正式记录未来按精确规则分为 `expected_exact_match`、`expected_table_content_variant`、`unexpected_ddl`、`non_ddl_memory`，并单独登记 `missing_expected_table`。精确重复按规范化 document SHA 分组；表身份重复按解析出的当前期望表名分组。随机 UUID、timestamp、request_id、conversation_id 不参与重复判断，内容变体不得自动视为可删除重复。
+
+合成自检覆盖期望集合唯一性、精确重复、内容变体、缺失、非预期 DDL、非 DDL、timestamp 无关性、输入顺序稳定、分类对账、复制 Tree SHA、来源变化失败、只允许快照路径、只读能力扫描以及导入零 Client。结果：
+
+```text
+FORMAL_CHROMA_FILESYSTEM_ACCESS_DURING_STAGE=0
+FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0
+```
+
+开发 Evidence：`E:\3\_training_backups\f6-1g-a-20260720-152700\evidence`。F6-1G 正式审计尚未执行，F6-1G-B 尚未开始。
+
+## 12. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -347,4 +372,4 @@ Evidence：`E:\3\_training_backups\f6-1f-20260720-150243\evidence`。
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 F6-1G 明确授权。本阶段不治理正式 198 条记录，不新增正式 Memory，不测试 Top-K，不自动进入 F6-1G。
+下一阶段建议：等待 ChatGPT 审查只读 SOP，并另行明确授权 F6-1G-B。本阶段不访问或治理正式 198 条记录，不新增正式 Memory，不测试 Top-K，不自动执行正式审计。
