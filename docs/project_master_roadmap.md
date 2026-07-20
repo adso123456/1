@@ -76,7 +76,7 @@ F6-1 DDL Text Memory幂等治理
 ```text
 新增正式Memory
 治理正式198条Chroma
-F6-1B～I
+F6-1C～I
 Legacy迁移
 Vanna 源码解耦
 MySQL 接入
@@ -622,7 +622,7 @@ Metadata 可检索
 
 ```text
 F6-1A 复现 F1 阶段 25→50 重复写入 ✅ 已完成
-F6-1B 生成 DDL Text Memory 确定性身份
+F6-1B 生成 DDL Text Memory 确定性身份 ✅ 已完成
 F6-1C 实现 ddl_memory_plan.py
 F6-1D 实现 ddl_memory_adapter.py
 F6-1E 支持 create / unchanged / changed / removed
@@ -698,9 +698,19 @@ Evidence：
 E:\3\_training_backups\f6-1a-r1-20260720-124151\evidence
 ```
 
-F6-1A 已完成。身份与治理基线已冻结在 `docs/f6_ddl_idempotency_baseline.md`：采用稳定 `logical_id` 与 `content_fingerprint`，后续拆分 plan/apply，`removed` 不自动删除，正式治理采用完整候选副本验收后切换。F6-1B～I 均未开始，不得提前标记完成。
+F6-1A 已完成。身份与治理原则记录在 `docs/f6_ddl_idempotency_baseline.md`：后续拆分 plan/apply，`removed` 不自动删除，正式治理采用完整候选副本验收后切换。当时未提前开展后续子任务；当前状态见 12.6。
 
-下一阶段建议：完成 F6-1A 验收后等待 F6-1B 单独授权；F6-1B 只冻结身份字段规范和测试，不修改正式 Chroma。
+### 12.6 F6-1B 确定性身份规范（2026-07-20）
+
+F6-1B 已完成：新增纯函数模块 `training/sop/ddl_memory_identity.py`，冻结四个身份字段、大小写与字符校验、最小 DDL 规范化、`logical_id`、`record_id`、固定有效 Metadata 和 `content_fingerprint`。F6-1A 工具已复用该模块，兼容回归仍为 `0 → 25 → 50`、25 个重复组、50 个唯一 ID。
+
+兼容回归 Evidence：
+
+```text
+E:\3\_training_backups\f6-1b-20260720-125411\evidence
+```
+
+本阶段未实现 Plan、Apply 或 Chroma 写入。F6-1C～I 均未开始，下一步等待 F6-1C 明确授权。
 
 ---
 
@@ -1315,7 +1325,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | F6-1A已完成；F6-1B～I未开始，等待明确授权 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A、F6-1B已完成；F6-1C～I未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1328,7 +1338,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-等待F6-1B明确授权。
+等待 F6-1C 明确授权。
 ```
 
-当前不得治理正式198条Chroma，不得新增正式Memory，不得自动进入F6-1B；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。
+当前不得治理正式198条Chroma，不得新增正式Memory，不得自动进入F6-1C；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。

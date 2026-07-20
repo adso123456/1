@@ -16,6 +16,15 @@ from typing import Any, Mapping, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from training.sop.ddl_memory_identity import (  # noqa: E402
+    DdlMemoryIdentityInput,
+    build_ddl_memory_identity,
+    normalize_ddl,
+)
+
+
 REPOSITORY_CHROMA = (PROJECT_ROOT / "vanna_data").resolve()
 FORMAL_CHROMA = Path(r"E:\3\_runtime\vanna-level1\vanna_data").resolve()
 EVIDENCE_ROOT = Path(r"E:\3\_training_backups").resolve()
@@ -23,31 +32,8 @@ COLLECTION_NAME = "tool_memories"
 SAMPLE_SIZE = 25
 
 
-def normalize_ddl(value: str) -> str:
-    """仅统一换行、文件首尾空白和行尾空白。"""
-    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
-    normalized = "\n".join(line.rstrip(" \t") for line in normalized.split("\n"))
-    return normalized.strip()
-
-
-def canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def logical_id(
-    source_id: str, schema_name: str, object_type: str, object_name: str
-) -> str:
-    raw = f"ddlmem-v1|{source_id}|{schema_name}|{object_type}|{object_name}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def content_fingerprint(normalized_content: str, effective_metadata: Mapping[str, Any]) -> str:
-    raw = canonical_json([normalized_content, dict(effective_metadata)])
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def effective_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
-    """排除运行时字段；content 已由规范化文档参与分组。"""
+def _historical_effective_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    """旧记录分组时排除运行时字段；不冒充 v1 有效 Metadata。"""
     return {
         key: value
         for key, value in metadata.items()
@@ -81,10 +67,10 @@ def validate_evidence_path(path: Path) -> Path:
     if not _is_within(target, EVIDENCE_ROOT):
         raise ValueError(f"Evidence 必须位于 {EVIDENCE_ROOT} 下")
     if target.name != "evidence" or not re.fullmatch(
-        r"f6-1a(?:-r1)?-\d{8}-\d{6}", target.parent.name
+        r"f6-1(?:a(?:-r1)?|b)-\d{8}-\d{6}", target.parent.name
     ):
         raise ValueError(
-            "Evidence 路径必须为 f6-1a[-r1]-<YYYYMMDD-HHMMSS>\\evidence"
+            "Evidence 路径必须为 f6-1a[-r1]- 或 f6-1b-<YYYYMMDD-HHMMSS>\\evidence"
         )
     if target.exists() and any(target.iterdir()):
         raise ValueError(f"Evidence 目录必须全新或为空：{target}")
@@ -137,8 +123,18 @@ def _group_records(
     exact_groups: dict[str, int] = defaultdict(int)
     for document, metadata in zip(documents, metadatas):
         normalized = normalize_ddl(document)
-        effective_key = canonical_json([normalized, effective_metadata(metadata)])
-        exact_key = canonical_json([normalized, dict(metadata)])
+        effective_key = json.dumps(
+            [normalized, _historical_effective_metadata(metadata)],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        exact_key = json.dumps(
+            [normalized, dict(metadata)],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         effective_groups[effective_key] += 1
         exact_groups[exact_key] += 1
 
@@ -179,7 +175,6 @@ async def reproduce(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any]
     isolated_chroma.mkdir(parents=True, exist_ok=False)
     evidence_dir.mkdir(parents=True, exist_ok=False)
 
-    sys.path.insert(0, str(PROJECT_ROOT))
     import train_step3
 
     records = train_step3.load_metadata_index()
@@ -299,12 +294,16 @@ async def reproduce(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any]
 
 def self_test() -> int:
     assert normalize_ddl("  A  \r\nB\t\r\n") == "A\nB"
-    first = logical_id("postgres_water", "public", "table", "demo")
-    assert first == logical_id("postgres_water", "public", "table", "demo")
-    assert first != logical_id("postgres_water", "public", "table", "demo2")
-    assert content_fingerprint("DDL", {"b": 2, "a": 1}) == content_fingerprint(
-        "DDL", {"a": 1, "b": 2}
+    identity_input = DdlMemoryIdentityInput(
+        source_id="postgres_water",
+        schema_name="public",
+        object_type="table",
+        object_name="demo",
     )
+    first = build_ddl_memory_identity(identity_input, "DDL")
+    repeated = build_ddl_memory_identity(identity_input, "DDL")
+    assert first == repeated
+    assert first.record_id == f"ddlmem-v1-{first.logical_id}"
     grouped = _group_records(
         ["DDL\r\n", "DDL\n"],
         [
