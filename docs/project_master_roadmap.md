@@ -76,7 +76,8 @@ F6-1 DDL Text Memory幂等治理
 ```text
 新增正式Memory
 治理正式198条Chroma
-F6-1I
+F6-1I-B
+F6-1I-C
 Legacy迁移
 Vanna 源码解耦
 MySQL 接入
@@ -631,7 +632,9 @@ F6-1G-A 正式只读审计工具与 SOP 准备 ✅ 已完成
 F6-1G-B 执行正式快照只读审计 ✅ 已完成
 F6-1H-R1 修复不可变归档与查询副本模型 ✅ 已完成
 F6-1H-R2 执行双副本 Top-K 影响评估 ✅ 已完成
-F6-1I 制定正式库治理与恢复方案
+F6-1I-A 治理工具和前向/回滚 SOP 准备 ✅ 已准备，等待审查
+F6-1I-B 完整隔离候选构建、切换与回滚演练（未开始）
+F6-1I-C 正式候选构建与路径切换（未开始）
 ```
 
 ### 12.3 幂等验收标准
@@ -877,7 +880,7 @@ Evidence：
 E:\3\_training_backups\f6-1h-r1-20260720-155539\evidence
 ```
 
-F6-1A～H 已完成；F6-1I 未开始。当前只等待 F6-1I 明确授权。
+R1 收口时 F6-1A～G 已完成，F6-1H-R2 与 F6-1I 尚未开始；该历史状态已由 12.14、12.15 继续推进。
 
 ### 12.14 F6-1H-R2 双副本 Top-K 重复影响评估（2026-07-20）
 
@@ -897,7 +900,25 @@ ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
 E:\3\_training_backups\f6-1h-20260720-161131\evidence
 ```
 
-F6-1A～H 已完成；F6-1I 未开始。当前唯一动作是等待 F6-1I 明确授权。
+H-R2 收口时 F6-1A～H 已完成、F6-1I 尚未开始；该历史状态已由 12.15 继续推进。
+
+### 12.15 F6-1I-A 正式治理决策、工具与恢复 SOP（2026-07-20）
+
+F6-1I 已固定拆分为 I-A 工具/SOP 准备、I-B 完整隔离候选与切换回滚演练、I-C 正式候选重建与路径切换。本阶段只完成 I-A，不访问、复制、打开或修改正式 Chroma。
+
+新增 `training/sop/ddl_memory_formal_governance.py`，冻结三种决策：`ALREADY_MANAGED_NO_SWITCH`、`IDENTITY_MIGRATION_REQUIRED`、`BLOCKED_FORMAL_STATE`。迁移目标不是删除重复内容，而是在正式记录仍为 115 条精确 DDL、83 条非 DDL 且无异常时，将 legacy DDL 身份迁移为确定性 `ddlmem-v1`。
+
+候选必须保持 `115 managed v1 DDL + 83 原样非 DDL = 198`，最终 Plan 为 `0 create / 115 unchanged / 0 changed / 0 removed`。删除只接受冻结的精确 legacy ID allowlist；83 条非 DDL 按 ID、document SHA、canonical Metadata SHA 逐记录保真。Top-K 使用忽略 DDL record ID 变化的稳定语义键比较，任何结果顺序、重复槽位或 Top-1/5/10 命中变化都阻断切换。
+
+新增 `docs/sop/ddl_memory_formal_governance.md`，冻结 immutable archive、candidate、已提交 15 题完整回归入口、服务停止与占用门禁、sandbox 演练、同盘同级前向重命名和自动失败回滚。成功切换后不主动回滚，备份和 Evidence 必须保留。
+
+I-A 自检仅使用合成 115+83 记录与临时 sandbox；正式 Chroma 文件系统访问 0、正式 Client 创建尝试 0、正式切换未执行。Evidence：
+
+```text
+E:\3\_training_backups\f6-1i-a-20260720-163104\evidence
+```
+
+F6-1A～H 已完成；F6-1I-A 已准备等待审查；F6-1I-B、F6-1I-C 未开始。当前唯一动作是等待 ChatGPT 审查并授权 F6-1I-B。
 
 ---
 
@@ -1512,7 +1533,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | F6-1A～H已完成；F6-1I未开始 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A～H已完成；F6-1I-A已准备待审查；I-B、I-C未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1525,7 +1546,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-等待 F6-1I 明确授权。
+等待 ChatGPT 审查并授权 F6-1I-B。
 ```
 
-当前不得治理正式198条Chroma，不得新增正式Memory，不得自动进入F6-1I或开展Legacy、Vanna解耦、MySQL及其他板块。后续阶段必须经新的明确授权。
+当前不得访问或治理正式198条Chroma，不得新增正式Memory，不得执行真实候选构建、隔离切换演练或正式切换；不得自动进入F6-1I-B/I-C或开展Legacy、Vanna解耦、MySQL及其他板块。后续阶段必须经新的明确授权。
