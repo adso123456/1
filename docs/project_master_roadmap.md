@@ -76,7 +76,6 @@ F6-1 DDL Text Memory幂等治理
 ```text
 新增正式Memory
 治理正式198条Chroma
-F6-1H-R2
 F6-1I
 Legacy迁移
 Vanna 源码解耦
@@ -630,8 +629,8 @@ F6-1E 支持 create / unchanged / changed / removed ✅ 已完成
 F6-1F 隔离验证重复运行记录数不增长 ✅ 已完成
 F6-1G-A 正式只读审计工具与 SOP 准备 ✅ 已完成
 F6-1G-B 执行正式快照只读审计 ✅ 已完成
-F6-1H-R1 修复不可变归档与查询副本模型 ✅ 已完成，等待审查
-F6-1H-R2 执行双副本 Top-K 影响评估（未开始）
+F6-1H-R1 修复不可变归档与查询副本模型 ✅ 已完成
+F6-1H-R2 执行双副本 Top-K 影响评估 ✅ 已完成
 F6-1I 制定正式库治理与恢复方案
 ```
 
@@ -878,7 +877,27 @@ Evidence：
 E:\3\_training_backups\f6-1h-r1-20260720-155539\evidence
 ```
 
-F6-1A～G 已完成；F6-1H-R1 模型修复已完成待审查；F6-1H-R2、F6-1I 未开始。当前只等待 ChatGPT 审查并明确授权 F6-1H-R2。
+F6-1A～H 已完成；F6-1I 未开始。当前只等待 F6-1I 明确授权。
+
+### 12.14 F6-1H-R2 双副本 Top-K 重复影响评估（2026-07-20）
+
+严格按批准 SOP 唯一执行一次正式来源只读复制与双副本 Top-K 评估，状态为 `PASS`。正式来源复制前、不可变 archive、正式来源复制后三个 Tree SHA 均为：
+
+```text
+ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+```
+
+两个查询副本 pre-open SHA 均等于 archive；打开后分别变为 `719d771ed5c7dde193ce95ba65cf9edfbb5ab15b2b15b50f65750ec7bef5f0e5` 与 `838612c21a3347f6bd33e7b86afd5931dfce71aac1b50d38b793e1166aea4e98`，各有 3 个文件变化。查询结束后 archive SHA 仍为原值，证明 Chroma 打开副作用被限制在一次性查询副本。
+
+固定 12 个查询、Top-K=10 的结果中，精确重复槽位、表身份重复槽位及两种投影变化查询数均为 0；两轮结果 SHA 均为 `6b0709607ed127b5c67499920f7edf20800a5dc280021d844beb397c3cdcd7d6`。本次评估结论为 `duplicate_topk_impact=NONE`。期望表 Top-1 / Top-5 / Top-10 命中数为 `3 / 9 / 10`，作为非阻断检索质量旁路指标保留。
+
+正式路径 Chroma Client 创建尝试为 0，查询副本 Client 打开数为 2。未治理、补写、替换或删除任何正式 Memory。Evidence：
+
+```text
+E:\3\_training_backups\f6-1h-20260720-161131\evidence
+```
+
+F6-1A～H 已完成；F6-1I 未开始。当前唯一动作是等待 F6-1I 明确授权。
 
 ---
 
@@ -1493,7 +1512,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | F6-1A～G已完成；F6-1H-R1已完成待审查；F6-1H-R2、I未开始 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A～H已完成；F6-1I未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1506,7 +1525,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-等待 ChatGPT 审查并授权 F6-1H-R2。
+等待 F6-1I 明确授权。
 ```
 
-当前不得访问或治理正式198条Chroma，不得新增正式Memory，不得创建正式archive或查询副本，不得自动执行F6-1H-R2 Top-K；不得进入F6-1I或开展Legacy、Vanna解耦、MySQL及其他板块。后续阶段必须经新的明确授权。
+当前不得治理正式198条Chroma，不得新增正式Memory，不得自动进入F6-1I或开展Legacy、Vanna解耦、MySQL及其他板块。后续阶段必须经新的明确授权。

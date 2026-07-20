@@ -395,7 +395,7 @@ classification_sha256          f4f2e5aaf59d93317ee3dae1316f21979ed9cf13f69f1794f
 
 分类总数 `115 + 83 = 198`，能够与 collection 总数对账。Evidence：`E:\3\_training_backups\f6-1g-20260720-153450\evidence`。Evidence 与仓库文档均未保存完整 DDL、embedding 或完整 Metadata 敏感值。
 
-## 13. F6-1H-R1 不可变归档与双查询副本模型（已完成，待审查）
+## 13. F6-1H-R1 不可变归档与双查询副本模型（已完成）
 
 F6-1H 首次执行在任何 Chroma 导入、Client 打开或 Top-K 查询前停止。固定旧快照当前 Tree SHA 为 `70a3fd3a72a00fe131aedbe289e1fbe9cfff66d80126de3277c0aa3a1abc25b7`，不同于 F6-1G 复制时的 `ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f`；变化涉及 `chroma.sqlite3`、`data_level0.bin`、`length.bin`。失败状态登记为 `SNAPSHOT_INTEGRITY_GATE_FAILED`，Evidence 保留于 `E:\3\_training_backups\f6-1h-20260720-154428\evidence`，该目录不得复用。
 
@@ -422,9 +422,43 @@ FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0
 TOPK_EXECUTED=NO
 ```
 
-R1 Evidence：`E:\3\_training_backups\f6-1h-r1-20260720-155539\evidence`。F6-1H 尚未完成，正式执行等待 ChatGPT 审查和新的 F6-1H-R2 明确授权。
+R1 Evidence：`E:\3\_training_backups\f6-1h-r1-20260720-155539\evidence`。
 
-## 14. 风险与下一阶段
+## 14. F6-1H-R2 双副本 Top-K 重复影响评估（已完成）
+
+2026-07-20 严格按批准 SOP 对正式来源执行一次“只读哈希与复制”，全部 Chroma 查询仅发生在两个独立仓库外副本。评估状态为 `PASS`，未调用 Memory 写入、替换或删除接口，也未直接以正式路径创建 Chroma Client。
+
+```text
+formal_source_tree_sha_before       ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+archive_tree_sha                    ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+formal_source_tree_sha_after        ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+query_run1_preopen_tree_sha         ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+query_run2_preopen_tree_sha         ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+query_run1_postopen_tree_sha        719d771ed5c7dde193ce95ba65cf9edfbb5ab15b2b15b50f65750ec7bef5f0e5
+query_run2_postopen_tree_sha        838612c21a3347f6bd33e7b86afd5931dfce71aac1b50d38b793e1166aea4e98
+formal_archive_tree_sha_after       ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+query_run1_changed_file_count       3
+query_run2_changed_file_count       3
+query_count / top_k                 12 / 10
+total_exact_duplicate_slots         0
+total_table_duplicate_slots         0
+exact_projection_changed_queries    0
+table_projection_changed_queries    0
+expected_table_top1/top5/top10      3 / 9 / 10
+first_run_result_sha256             6b0709607ed127b5c67499920f7edf20800a5dc280021d844beb397c3cdcd7d6
+second_run_result_sha256            6b0709607ed127b5c67499920f7edf20800a5dc280021d844beb397c3cdcd7d6
+duplicate_topk_impact               NONE
+formal_chroma_client_open_attempts  0
+snapshot_chroma_client_open_count   2
+```
+
+两个查询副本打开后各有 `chroma.sqlite3`、`data_level0.bin`、`length.bin` 三个文件的 SHA 改变；该副作用只发生在一次性查询副本中。不可变归档查询后 SHA 未变，两轮稳定结果 SHA 相同，重复记录槽位及两种去重投影变化查询数均为 0，因此本次固定查询集上未观察到 DDL 重复记录对 Top-K 的实际影响。
+
+检索质量旁路指标为 Top-1 `3/12`、Top-5 `9/12`、Top-10 `10/12`。它不改变重复影响结论，但应作为后续独立检索质量优化输入，不在本阶段扩展处理。
+
+Evidence：`E:\3\_training_backups\f6-1h-20260720-161131\evidence`。F6-1H 已完成；下一步仅等待 F6-1I 明确授权。
+
+## 15. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -432,4 +466,4 @@ R1 Evidence：`E:\3\_training_backups\f6-1h-r1-20260720-155539\evidence`。F6-1H
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 ChatGPT 审查不可变归档与双查询副本 SOP，并另行明确授权 F6-1H-R2。本阶段不访问正式来源，不创建 Client，不执行 Top-K，不进入 F6-1I。
+下一阶段建议：等待 F6-1I 明确授权后制定正式库治理与恢复方案。当前不治理正式 198 条 Chroma、不新增正式 Memory，不自动进入 F6-1I。
