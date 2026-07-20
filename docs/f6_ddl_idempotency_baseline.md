@@ -364,7 +364,38 @@ FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0
 
 开发 Evidence：`E:\3\_training_backups\f6-1g-a-20260720-152700\evidence`。F6-1G 正式审计尚未执行，F6-1G-B 尚未开始。
 
-## 12. 风险与下一阶段
+## 12. F6-1G-B 正式快照只读审计（已完成）
+
+严格按 `docs/sop/ddl_memory_formal_readonly_audit.md` 执行一次正式只读审计。正式来源只进行了遍历、读取、文件大小/SHA 计算和完整复制；Chroma Client 只打开仓库外 `formal_snapshot`，没有直接指向正式路径，没有执行 Memory 写入、替换、删除、Apply、embedding 读取或 Top-K 测试。
+
+来源与快照 Tree SHA：
+
+```text
+formal_source_tree_sha256_before = ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+snapshot_tree_sha256             = ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+formal_source_tree_sha256_after  = ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+```
+
+三份文件清单与 Tree SHA 完全一致。正式路径 Client 打开尝试为 0，快照 Client 打开次数为 1。
+
+正式 `tool_memories` collection 实际总数为 198，与已知基线一致，审计状态为 `PASS`。只读分类结果：
+
+```text
+DDL 候选记录                  115
+期望精确匹配记录              115
+期望精确匹配表                115
+缺失期望表                      0
+期望表内容变体                  0
+非预期 DDL                      0
+非 DDL Memory                  83
+精确重复组 / 记录 / 净冗余       0 / 0 / 0
+表身份重复组 / 记录               0 / 0
+classification_sha256          f4f2e5aaf59d93317ee3dae1316f21979ed9cf13f69f1794fff43161be67d76d
+```
+
+分类总数 `115 + 83 = 198`，能够与 collection 总数对账。Evidence：`E:\3\_training_backups\f6-1g-20260720-153450\evidence`。Evidence 与仓库文档均未保存完整 DDL、embedding 或完整 Metadata 敏感值。
+
+## 13. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -372,4 +403,4 @@ FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 ChatGPT 审查只读 SOP，并另行明确授权 F6-1G-B。本阶段不访问或治理正式 198 条记录，不新增正式 Memory，不测试 Top-K，不自动执行正式审计。
+下一阶段建议：等待 F6-1H 明确授权。本阶段只完成正式快照只读审计，没有治理正式 198 条记录，没有新增正式 Memory，也没有执行 Top-K 测试。
