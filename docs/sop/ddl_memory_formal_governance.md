@@ -178,7 +178,7 @@ E:\3\posgresql\1\vanna_venv\Scripts\python.exe tools\run_postgresql_f5_regressio
 6. 同级旧正式目录和 immutable archive 两份恢复来源均可用；
 7. 目录名称、磁盘、时间戳、Evidence 和操作人已复核。
 
-任何占用无法排除时停止，不得强制终止未知进程或继续重命名。
+服务停止和无 Client 占用是 I-C 执行时事实，不能由 I-B 提前声明。I-C 必须分别显式传入 `--service-stopped-confirmed` 和 `--no-client-occupancy-confirmed`；正式切换授权另由 `--formal-switch-authorized` 提供。缺少任一参数时，工具必须在正式路径存在性判断、哈希、复制、Client 创建、候选构建和运行目录创建之前停止。任何占用无法排除时停止，不得强制终止未知进程或继续重命名。
 
 ## 11. I-B sandbox 前向与回滚演练
 
@@ -201,7 +201,15 @@ sandbox\failed_candidate
 6. 成功切换后保留 pre_switch，不主动回滚；
 7. 演练全程不影响正式来源。
 
-I-B 未全部通过前，禁止生成可批准的 I-B summary，禁止进入 I-C。
+I-B 未全部通过前，禁止生成 PASS summary，禁止进入 I-C。I-B 生成的 summary 是原始演练 Evidence，三个运行时字段必须保持：
+
+```text
+formal_switch_authorized = false
+service_stopped_confirmed = false
+no_client_occupancy_confirmed = false
+```
+
+不得手工编辑、覆盖或复制生成所谓“批准版” summary。ChatGPT 对 I-B 的验收和 I-C 授权通过新的 I-C 提示词及本次命令行 `--formal-switch-authorized` 体现，不通过篡改 I-B Evidence 体现。
 
 ## 12. 正式前向切换
 
@@ -261,22 +269,25 @@ python -m training.sop.ddl_memory_formal_governance `
   --run-root E:\3\_training_backups\f6-1i-b-<时间戳>
 ```
 
-I-C 取得新授权且存在获批 I-B summary 后使用的冻结接口：
+I-C 取得新授权且持有原始 I-B PASS summary 后使用的冻结接口：
 
 ```powershell
 python -m training.sop.ddl_memory_formal_governance `
   --formal-switch `
   --formal-source E:\3\_runtime\vanna-level1\vanna_data `
-  --approved-drill-summary <I-B批准的summary.json> `
+  --approved-drill-summary <I-B原始summary.json> `
+  --formal-switch-authorized `
+  --service-stopped-confirmed `
+  --no-client-occupancy-confirmed `
   --run-root E:\3\_training_backups\f6-1i-c-<时间戳>
 ```
 
-工具已实现后两种未来接口，但 I-A 禁止调用。`--formal-switch` 还必须校验获批 I-B summary 中的 PASS、正式切换授权、服务停止确认、无 Client 占用确认和正式来源基线。I-B/I-C 授权必须在执行前复核并形成新的范围明确提示；不得因接口已经存在而自动运行。
+工具已实现后两种未来接口，但 I-A 禁止调用。`--formal-switch` 的固定顺序是：先只读验证原始 I-B summary 的 PASS、候选、非 DDL、sandbox、来源/archive SHA 和 Plan 事实；再验证三个本次运行显式确认；再验证 CLI 路径格式；最后才允许访问正式来源。I-B 模式禁止携带三个正式切换确认参数。I-B/I-C 授权必须在执行前复核并形成新的范围明确提示；不得因接口已经存在而自动运行。
 
 ## 15. Evidence 与失败处理
 
 每次运行目录必须全新且不存在，失败目录不得复用或删除。Evidence 不得保存 embedding、完整 DDL、完整 Metadata、密码、API Key、数据库完整数据或敏感查询结果。
 
-I-B/I-C 至少保留：来源/archive/candidate 清单及 Tree SHA、治理决策、冻结 allowlist 的脱敏摘要、非 DDL 三元签名对账、候选 Plan/分类/重复摘要、Top-K 稳定语义 SHA、完整回归摘要、sandbox/正式切换步骤、回滚结果和最终状态。
+I-B/I-C 至少保留：来源/archive/candidate 清单及 Tree SHA、治理决策、冻结 allowlist 的脱敏摘要、非 DDL 三元签名对账、候选 Plan/分类/重复摘要、Top-K 稳定语义 SHA、完整回归摘要、sandbox/正式切换步骤、回滚结果和最终状态。I-B 原始 summary 不得修改或覆盖。
 
 出现 `BLOCKED_FORMAL_STATE`、来源变化、archive 变化、候选验收失败、语义回归变化、完整回归失败或目录占用时立即停止；不得自动重跑、不得复用失败目录、不得修改正式资产。

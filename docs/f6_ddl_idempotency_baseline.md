@@ -474,7 +474,7 @@ I-A 新增纯治理模块 `training/sop/ddl_memory_formal_governance.py` 和 SOP
 
 Top-K 回归改用稳定语义键，DDL 为 `table_name + normalized_document_sha256 + classification`，非 DDL 为 `record_id + normalized_document_sha256 + classification`，不因 DDL record ID 迁移误判变化。已提交完整回归入口冻结为 `tools/run_postgresql_f5_regression.py` 与 `training/regression/postgresql_f5_regression_v1.json`（15 题、suite SHA `f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34`）。
 
-正式切换禁止原地治理，必须使用同盘同级目录前向重命名；第二步失败或新正式验收失败时整库恢复旧正式目录。成功切换后不主动回滚，并保留 pre-switch、immutable archive、candidate 与 Evidence。I-B/I-C 接口已实现并冻结，但本阶段禁止调用；正式切换还受获批 I-B summary、服务停止与目录占用确认门禁约束。
+正式切换禁止原地治理，必须使用同盘同级目录前向重命名；第二步失败或新正式验收失败时整库恢复旧正式目录。成功切换后不主动回滚，并保留 pre-switch、immutable archive、candidate 与 Evidence。I-B/I-C 接口已实现并冻结，但本阶段禁止调用。
 
 I-A 自检只使用合成 115+83 记录和系统临时 sandbox，不导入 Chroma，不创建 Client，不访问正式路径，不构建真实候选，不执行正式切换：
 
@@ -486,7 +486,31 @@ FORMAL_SWITCH_EXECUTED=NO
 
 Evidence：`E:\3\_training_backups\f6-1i-a-20260720-163104\evidence`。F6-1A～H 已完成；F6-1I-A 已准备等待审查；F6-1I-B、F6-1I-C 未开始。
 
-## 16. 风险与下一阶段
+## 16. F6-1I-A-R1 正式切换批准接口修复（已完成，等待审查）
+
+I-A 初版存在接口冲突：`isolated_drill()` 正确将 I-B 原始 summary 的 `formal_switch_authorized`、`service_stopped_confirmed`、`no_client_occupancy_confirmed` 写为 `false`，但 I-C 门禁错误要求同一原始 Evidence 中三项为 `true`。R1 已将演练事实与本次运行确认彻底分离。
+
+I-C 现在只读验证原始 I-B summary 的阶段、PASS、candidate、非 DDL、三种 sandbox 状态、来源/archive SHA 和 `0/115/0/0` Plan；原始 summary 的三个运行时字段必须继续为 `false`，不得手工编辑或生成批准版。正式授权、服务停止和无 Client 占用改由 I-C 命令显式传入：
+
+```text
+--formal-switch-authorized
+--service-stopped-confirmed
+--no-client-occupancy-confirmed
+```
+
+调用顺序冻结为“读取并验证原始 I-B summary → 验证三项显式确认 → 验证 CLI/run_root → 访问正式来源”。缺少任一确认时，路径校验、正式路径存在性判断、哈希、复制、Client 创建、候选构建、运行目录创建和重命名均不会发生。I-B 模式携带任何正式确认参数会被拒绝。
+
+R1 自检只使用临时原始 summary 和 mock 门禁，不导入 Chroma、不访问正式路径、不执行 I-B/I-C：
+
+```text
+FORMAL_CHROMA_FILESYSTEM_ACCESS_DURING_STAGE=0
+FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0
+FORMAL_SWITCH_EXECUTED=NO
+```
+
+Evidence：`E:\3\_training_backups\f6-1i-a-r1-20260720-165753\evidence`。F6-1I-A-R1 已完成等待审查；F6-1I-B、F6-1I-C 未开始。
+
+## 17. 风险与下一阶段
 
 ### BLOCKING_RISK
 

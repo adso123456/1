@@ -591,21 +591,69 @@ def execute_sandbox_switch(
     }
 
 
-def require_approved_drill_summary(path: Path | str | None) -> Mapping[str, Any]:
-    if path is None:
-        raise ValueError("正式切换必须提供获批 I-B summary.json")
-    summary_path = Path(path)
-    payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    required = {
+def validate_ib_drill_summary(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("I-B summary 必须是 JSON object")
+    required_values = {
         "stage": "F6-1I-B",
         "assessment_status": "PASS",
-        "formal_switch_authorized": True,
-        "service_stopped_confirmed": True,
-        "no_client_occupancy_confirmed": True,
+        "candidate_acceptance": "PASS",
+        "non_ddl_preservation": "PASS",
+        "formal_switch_authorized": False,
+        "service_stopped_confirmed": False,
+        "no_client_occupancy_confirmed": False,
     }
-    if any(payload.get(key) != value for key, value in required.items()):
-        raise ValueError("I-B summary 未通过固定批准字段校验")
+    failures = [
+        key for key, expected in required_values.items() if payload.get(key) != expected
+    ]
+    expected_sandbox_statuses = [
+        "SWITCHED",
+        "ROLLED_BACK_AFTER_SECOND_STEP_FAILURE",
+        "ROLLED_BACK_AFTER_LIVE_ACCEPTANCE_FAILURE",
+    ]
+    if payload.get("sandbox_statuses") != expected_sandbox_statuses:
+        failures.append("sandbox_statuses")
+    source_sha = payload.get("formal_source_tree_sha_before")
+    archive_sha = payload.get("archive_tree_sha")
+    if not isinstance(source_sha, str) or re.fullmatch(r"[0-9a-f]{64}", source_sha) is None:
+        failures.append("formal_source_tree_sha_before")
+    if archive_sha != source_sha:
+        failures.append("archive_tree_sha")
+    candidate_plan = payload.get("candidate_plan")
+    if candidate_plan != {
+        "create": 0,
+        "unchanged": EXPECTED_DDL_COUNT,
+        "changed": 0,
+        "removed": 0,
+    }:
+        failures.append("candidate_plan")
+    if failures:
+        raise ValueError(f"I-B summary 演练事实校验失败：{sorted(set(failures))}")
     return payload
+
+
+def require_approved_drill_summary(path: Path | str | None) -> Mapping[str, Any]:
+    if path is None:
+        raise ValueError("正式切换必须提供原始 I-B summary.json")
+    summary_path = Path(path)
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    return validate_ib_drill_summary(payload)
+
+
+def validate_formal_switch_authorization(
+    formal_switch_authorized: bool,
+    service_stopped_confirmed: bool,
+    no_client_occupancy_confirmed: bool,
+) -> None:
+    missing = []
+    if formal_switch_authorized is not True:
+        missing.append("--formal-switch-authorized")
+    if service_stopped_confirmed is not True:
+        missing.append("--service-stopped-confirmed")
+    if no_client_occupancy_confirmed is not True:
+        missing.append("--no-client-occupancy-confirmed")
+    if missing:
+        raise ValueError(f"正式切换缺少显式运行时确认：{', '.join(missing)}")
 
 
 def _build_expected_desired_memories() -> tuple[DdlMemoryIdentity, ...]:
@@ -1067,9 +1115,19 @@ def _run_candidate_full_regression(root: Path, candidate: Path) -> None:
 def formal_switch(
     formal_source: Path | str,
     run_root: Path | str,
-    approved_drill_summary: Path | str,
+    approved_drill_summary: Path | str | None,
+    *,
+    formal_switch_authorized: bool,
+    service_stopped_confirmed: bool,
+    no_client_occupancy_confirmed: bool,
 ) -> Mapping[str, Any]:
+    # 顺序是安全契约：原始 I-B Evidence → 本次运行确认 → 路径参数 → 正式访问。
     approved = require_approved_drill_summary(approved_drill_summary)
+    validate_formal_switch_authorization(
+        formal_switch_authorized,
+        service_stopped_confirmed,
+        no_client_occupancy_confirmed,
+    )
     source, root = validate_run_paths(formal_source, run_root, mode="formal")
     runtime = _prepare_runtime_candidate(source, root)
     if runtime["public"]["formal_source_tree_sha_before"] != approved.get(
@@ -1171,6 +1229,32 @@ def _synthetic_source(
     return tuple(records)
 
 
+def _synthetic_ib_summary() -> dict[str, Any]:
+    source_sha = "a" * 64
+    return {
+        "stage": "F6-1I-B",
+        "assessment_status": "PASS",
+        "formal_source_tree_sha_before": source_sha,
+        "archive_tree_sha": source_sha,
+        "candidate_acceptance": "PASS",
+        "non_ddl_preservation": "PASS",
+        "candidate_plan": {
+            "create": 0,
+            "unchanged": EXPECTED_DDL_COUNT,
+            "changed": 0,
+            "removed": 0,
+        },
+        "sandbox_statuses": [
+            "SWITCHED",
+            "ROLLED_BACK_AFTER_SECOND_STEP_FAILURE",
+            "ROLLED_BACK_AFTER_LIVE_ACCEPTANCE_FAILURE",
+        ],
+        "formal_switch_authorized": False,
+        "service_stopped_confirmed": False,
+        "no_client_occupancy_confirmed": False,
+    }
+
+
 def _expect_error(callable_object: Callable[[], Any], expected_text: str) -> None:
     try:
         callable_object()
@@ -1179,6 +1263,16 @@ def _expect_error(callable_object: Callable[[], Any], expected_text: str) -> Non
             raise AssertionError(f"异常信息未包含 {expected_text!r}：{exc}") from exc
     else:
         raise AssertionError(f"预期失败：{expected_text}")
+
+
+def _expect_system_exit(callable_object: Callable[[], Any], expected_text: str) -> None:
+    try:
+        callable_object()
+    except SystemExit as exc:
+        if expected_text not in str(exc):
+            raise AssertionError(f"SystemExit 未包含 {expected_text!r}：{exc}") from exc
+    else:
+        raise AssertionError(f"预期 SystemExit：{expected_text}")
 
 
 def self_test() -> int:
@@ -1366,7 +1460,103 @@ def self_test() -> int:
         assert live_failure["status"] == "ROLLED_BACK_AFTER_LIVE_ACCEPTANCE_FAILURE"
         assert live_failure["original_tree_sha"] == live_failure["restored_tree_sha"]
 
-    _expect_error(lambda: require_approved_drill_summary(None), "获批 I-B")
+        ib_summary = _synthetic_ib_summary()
+        original_payload = json.dumps(ib_summary, sort_keys=True)
+        assert validate_ib_drill_summary(ib_summary) is ib_summary
+        assert json.dumps(ib_summary, sort_keys=True) == original_payload
+        assert (
+            ib_summary["formal_switch_authorized"],
+            ib_summary["service_stopped_confirmed"],
+            ib_summary["no_client_occupancy_confirmed"],
+        ) == (False, False, False)
+        summary_path = temp / "original-ib-summary.json"
+        summary_path.write_text(
+            json.dumps(ib_summary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        summary_bytes_before = summary_path.read_bytes()
+        assert require_approved_drill_summary(summary_path) == ib_summary
+        assert summary_path.read_bytes() == summary_bytes_before
+
+        invalid_cases = (
+            ({**ib_summary, "assessment_status": "FAIL"}, "assessment_status"),
+            ({**ib_summary, "sandbox_statuses": ["SWITCHED"]}, "sandbox_statuses"),
+            ({**ib_summary, "archive_tree_sha": "b" * 64}, "archive_tree_sha"),
+            (
+                {
+                    **ib_summary,
+                    "candidate_plan": {
+                        "create": 1,
+                        "unchanged": 114,
+                        "changed": 0,
+                        "removed": 0,
+                    },
+                },
+                "candidate_plan",
+            ),
+        )
+        for invalid_summary, expected_text in invalid_cases:
+            _expect_error(
+                lambda item=invalid_summary: validate_ib_drill_summary(item),
+                expected_text,
+            )
+
+        _expect_error(
+            lambda: validate_formal_switch_authorization(False, True, True),
+            "--formal-switch-authorized",
+        )
+        _expect_error(
+            lambda: validate_formal_switch_authorization(True, False, True),
+            "--service-stopped-confirmed",
+        )
+        _expect_error(
+            lambda: validate_formal_switch_authorization(True, True, False),
+            "--no-client-occupancy-confirmed",
+        )
+        assert validate_formal_switch_authorization(True, True, True) is None
+
+        from unittest.mock import patch
+
+        incomplete_confirmations = (
+            (False, True, True, "--formal-switch-authorized"),
+            (True, False, True, "--service-stopped-confirmed"),
+            (True, True, False, "--no-client-occupancy-confirmed"),
+        )
+        for authorized, stopped, unoccupied, expected_text in incomplete_confirmations:
+            with patch(
+                f"{__name__}.validate_run_paths",
+                side_effect=AssertionError("PATH_VALIDATION_MUST_NOT_RUN"),
+            ), patch(
+                f"{__name__}._prepare_runtime_candidate",
+                side_effect=AssertionError("FORMAL_FILESYSTEM_MUST_NOT_RUN"),
+            ):
+                _expect_error(
+                    lambda: formal_switch(
+                        FORMAL_SOURCE,
+                        temp / "unused-run-root",
+                        summary_path,
+                        formal_switch_authorized=authorized,
+                        service_stopped_confirmed=stopped,
+                        no_client_occupancy_confirmed=unoccupied,
+                    ),
+                    expected_text,
+                )
+
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "ddl_memory_formal_governance",
+                "--isolated-drill",
+                "--formal-source",
+                str(FORMAL_SOURCE),
+                "--run-root",
+                str(temp / "unused-ib-root"),
+                "--formal-switch-authorized",
+            ],
+        ):
+            _expect_system_exit(main, "--isolated-drill 禁止携带")
+
+    _expect_error(lambda: require_approved_drill_summary(None), "原始 I-B")
     forbidden_modules = ("chromadb", "vanna", "agent_config")
     assert not any(
         module == forbidden or module.startswith(forbidden + ".")
@@ -1383,6 +1573,14 @@ def self_test() -> int:
     print("ARCHIVE_CLIENT_OPEN_GATE_TEST=PASS")
     print("SANDBOX_FORWARD_SWITCH_TEST=PASS")
     print("SANDBOX_ROLLBACK_TEST=PASS")
+    print("IB_SUMMARY_VALIDATION_TEST=PASS")
+    print("IB_SUMMARY_IMMUTABILITY_TEST=PASS")
+    print("MISSING_AUTHORIZATION_TEST=PASS")
+    print("MISSING_SERVICE_STOP_TEST=PASS")
+    print("MISSING_OCCUPANCY_TEST=PASS")
+    print("ALL_CONFIRMATIONS_TEST=PASS")
+    print("IB_FLAG_REJECTION_TEST=PASS")
+    print("PRE_FILESYSTEM_FAILURE_TEST=PASS")
     print("FORMAL_SWITCH_APPROVAL_GATE_TEST=PASS")
     print("FORMAL_CHROMA_FILESYSTEM_ACCESS_DURING_STAGE=0")
     print("FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0")
@@ -1400,22 +1598,43 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--formal-source", type=Path)
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--approved-drill-summary", type=Path)
+    parser.add_argument("--formal-switch-authorized", action="store_true")
+    parser.add_argument("--service-stopped-confirmed", action="store_true")
+    parser.add_argument("--no-client-occupancy-confirmed", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    runtime_confirmations = (
+        args.formal_switch_authorized,
+        args.service_stopped_confirmed,
+        args.no_client_occupancy_confirmed,
+    )
     if args.self_test:
-        if args.formal_source or args.run_root or args.approved_drill_summary:
+        if (
+            args.formal_source
+            or args.run_root
+            or args.approved_drill_summary
+            or any(runtime_confirmations)
+        ):
             raise SystemExit("--self-test 不接受正式路径参数")
         return self_test()
+    if args.isolated_drill:
+        if args.approved_drill_summary or any(runtime_confirmations):
+            raise SystemExit("--isolated-drill 禁止携带正式切换批准或运行时确认参数")
     if not args.formal_source or not args.run_root:
         raise SystemExit("治理模式必须提供 --formal-source 和 --run-root")
     if args.isolated_drill:
         summary = isolated_drill(args.formal_source, args.run_root)
     else:
         summary = formal_switch(
-            args.formal_source, args.run_root, args.approved_drill_summary
+            args.formal_source,
+            args.run_root,
+            args.approved_drill_summary,
+            formal_switch_authorized=args.formal_switch_authorized,
+            service_stopped_confirmed=args.service_stopped_confirmed,
+            no_client_occupancy_confirmed=args.no_client_occupancy_confirmed,
         )
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     return 0
