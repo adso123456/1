@@ -510,7 +510,32 @@ FORMAL_SWITCH_EXECUTED=NO
 
 Evidence：`E:\3\_training_backups\f6-1i-a-r1-20260720-165753\evidence`。F6-1I-A-R1 已完成等待审查；F6-1I-B、F6-1I-C 未开始。
 
-## 17. 风险与下一阶段
+## 17. F6-1I-B-R1 统一正式 DDL 分类契约（已完成，等待审查）
+
+F6-1I-B 首次唯一执行在 `E:\3\_training_backups\f6-1i-b-20260720-171235` 安全停止，状态为 `BLOCKED_FORMAL_STATE`。来源复制前、immutable archive、来源复制后 Tree SHA 均为 `ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f`；正式路径 Client 打开 0，未迁移、未执行 Top-K/sandbox、未修改正式资产。失败 summary SHA256 为 `175ad1fd17318b76be8f8bba6ae4c9a739f3fa6086c9f807809aacfbabebf045`，失败目录和 summary 不得修改或复用。
+
+直接原因是 Governance 曾以“能够解析 `CREATE TABLE`”作为宽松 DDL 候选条件，将 6 条仅含 SQL 示例、缺少完整 DDL Memory 标记的非 DDL 记录判为内容变体，得到 `total=198 / candidate=121 / exact=115 / variant=6 / non-DDL=77`；这与 F6-1G 已冻结的分类契约漂移。
+
+R1 已将 F6-1G 的纯规则公开为 `is_ddl_candidate_document()` 和 `parse_ddl_table_name()`，并由 Governance 唯一复用。分类固定为精确 SHA 优先；非精确记录必须同时包含 `[DDL_MEMORY]`、`CREATE TABLE`、`表名：` 才是候选。仅含 `CREATE TABLE` 的 SQL 示例归入非 DDL，非 DDL 三元签名也使用同一规则。
+
+合成 198 条回归由 115 条 legacy 精确 DDL 和 83 条非 DDL 组成，其中 6 条非 DDL 包含当前表 `CREATE TABLE` 示例。审计与治理均稳定得到：
+
+```text
+total_count                  198
+ddl_candidate_count          115
+exact_match_record_count     115
+exact_match_table_count      115
+content_variant_count          0
+unexpected_ddl_count           0
+non_ddl_count                 83
+managed_v1_ddl_count           0
+legacy_expected_ddl_count    115
+decision_state               IDENTITY_MIGRATION_REQUIRED
+```
+
+6 条 SQL 示例全部进入非 DDL 三元签名；输入倒序不改变审计分类或治理事实。本阶段正式 Chroma 文件系统访问 0、Client 创建 0，未重新执行 I-B。Evidence：`E:\3\_training_backups\f6-1i-b-r1-20260720-172243\evidence`。
+
+## 18. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -518,4 +543,4 @@ Evidence：`E:\3\_training_backups\f6-1i-a-r1-20260720-165753\evidence`。F6-1I-
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 ChatGPT 审查并明确授权 F6-1I-B。当前不访问或治理正式 198 条 Chroma、不新增正式 Memory，不自动执行隔离演练或正式切换。
+下一阶段建议：等待 ChatGPT 审查统一分类契约并重新明确授权 F6-1I-B。下一次必须使用全新运行目录，不得复用首次失败目录；当前不访问或治理正式 198 条 Chroma、不新增正式 Memory、不自动执行隔离演练或正式切换。

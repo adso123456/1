@@ -49,6 +49,21 @@ duplicate_topk_impact                   NONE
 - 相同确定性 ID 对应不同内容；
 - managed/legacy 数量或分类无法完整对账。
 
+### 3.4 统一 DDL 分类契约
+
+正式审计与正式治理以 `training.sop.ddl_memory_formal_readonly_audit` 的公共纯函数为唯一分类来源：
+
+```text
+is_ddl_candidate_document(document)
+parse_ddl_table_name(document)
+```
+
+分类顺序固定为：先计算规范化 document SHA；与当前 115 条期望 DDL 精确匹配时直接判为 `expected_exact_match`。非精确记录只有同时包含 `[DDL_MEMORY]`、`CREATE TABLE`、`表名：` 三个完整标记才是 DDL 候选，之后才允许解析表名并判定内容变体或非预期 DDL。
+
+不能仅凭正文出现 `CREATE TABLE` 判断为 DDL。SQL 示例、代码片段和工具说明 Memory 可以包含当前表或未知表的 `CREATE TABLE` 文本；缺少完整三标记且不与期望 DDL 精确匹配时仍属于 `non_ddl_memory`。非 DDL 三元签名必须使用同一分类契约，不能通过“能否解析 CREATE TABLE”排除记录。
+
+F6-1I-B 首次执行在全量来源复制和只读工作副本分类后安全停止：宽松治理规则将 6 条仅含 `CREATE TABLE` 的非 DDL Memory 误判为内容变体，得到 `DDL candidate=121 / non-DDL=77 / variant=6`。失败目录 `E:\3\_training_backups\f6-1i-b-20260720-171235` 和原始 summary 必须永久保留且不得修改、打开工作副本或复用。下一次 I-B 必须取得新授权并使用全新运行目录。
+
 ## 4. 不可变来源与候选模型
 
 未来 I-B/I-C 固定使用：
@@ -97,6 +112,8 @@ canonical_metadata_sha256
 ```
 
 三项必须全部相同。不得修改 document、Metadata、分类或 ID，不得读取、导出或保存 embedding。
+
+非 DDL 集合由 3.4 的统一分类契约产生。仅含 SQL DDL 示例但缺少完整 DDL Memory 标记的记录必须纳入本节三元签名保真。
 
 ## 7. candidate 验收
 

@@ -24,6 +24,12 @@ from training.sop.ddl_memory_identity import (
     build_ddl_memory_identity,
     normalize_ddl,
 )
+from training.sop.ddl_memory_formal_readonly_audit import (
+    ExpectedDdl,
+    classify_records,
+    is_ddl_candidate_document,
+    parse_ddl_table_name,
+)
 from training.sop.ddl_memory_plan import (
     ExistingDdlMemoryRecord,
     build_ddl_memory_plan,
@@ -145,24 +151,6 @@ def _metadata_sha(metadata: Mapping[str, Any]) -> str:
     return _sha256_text(payload)
 
 
-def _parse_table_name(document: str) -> str | None:
-    explicit = re.search(r"--\s*表名\s*:\s*([^\r\n]+)", document)
-    if explicit:
-        return explicit.group(1).strip()
-    match = re.search(
-        r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\w+\.)?(?:\"([^\"]+)\"|([A-Za-z_][\w$]*))",
-        document,
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return None
-    return match.group(1) or match.group(2)
-
-
-def _looks_like_ddl(document: str) -> bool:
-    return _parse_table_name(document) is not None
-
-
 def _managed_storage_record(desired: DdlMemoryIdentity) -> ExistingDdlMemoryRecord:
     metadata = dict(desired.effective_metadata)
     metadata["content_fingerprint"] = desired.content_fingerprint
@@ -216,11 +204,14 @@ def analyze_formal_records(
     for record in records:
         document_sha = _document_sha(record.document)
         exact = desired_by_sha.get(document_sha)
-        parsed_table = _parse_table_name(record.document)
         if exact is None:
-            if parsed_table in desired_by_table:
+            ddl_candidate = is_ddl_candidate_document(record.document)
+            parsed_table = (
+                parse_ddl_table_name(record.document) if ddl_candidate else None
+            )
+            if ddl_candidate and parsed_table in desired_by_table:
                 content_variants += 1
-            elif _looks_like_ddl(record.document):
+            elif ddl_candidate:
                 unexpected += 1
             else:
                 non_ddl += 1
@@ -404,7 +395,7 @@ def _non_ddl_signature(
         record.record_id: (_document_sha(record.document), _metadata_sha(record.metadata))
         for record in records
         if _document_sha(record.document) not in desired_shas
-        and not _looks_like_ddl(record.document)
+        and not is_ddl_candidate_document(record.document)
     }
 
 
@@ -1229,6 +1220,21 @@ def _synthetic_source(
     return tuple(records)
 
 
+def _audit_expected_from_desired(
+    desired: Sequence[DdlMemoryIdentity],
+) -> tuple[ExpectedDdl, ...]:
+    return tuple(
+        ExpectedDdl(
+            table_name=str(item.effective_metadata["object_name"]),
+            logical_id=item.logical_id,
+            record_id=item.record_id,
+            identity_key=item.identity_key,
+            normalized_document_sha256=_document_sha(item.normalized_ddl),
+        )
+        for item in desired
+    )
+
+
 def _synthetic_ib_summary() -> dict[str, Any]:
     source_sha = "a" * 64
     return {
@@ -1308,6 +1314,113 @@ def self_test() -> int:
         acceptance.removed_count,
     ) == (0, EXPECTED_DDL_COUNT, 0, 0)
 
+    marked_variant = (
+        "[DDL_MEMORY]\n"
+        "表名：table_000\n\n"
+        'CREATE TABLE "table_000" (\n  id bigint\n);'
+    )
+    marked_unknown = (
+        "[DDL_MEMORY]\n"
+        "表名：unknown_table\n\n"
+        'CREATE TABLE "unknown_table" (\n  id integer\n);'
+    )
+    current_table_example = '工具说明示例：CREATE TABLE "table_000" (id bigint);'
+    contract_facts = analyze_formal_records(
+        [desired[0]],
+        (
+            ExistingDdlMemoryRecord("legacy-exact", desired[0].normalized_ddl, {}),
+            ExistingDdlMemoryRecord("marked-variant", marked_variant, {}),
+            ExistingDdlMemoryRecord("marked-unknown", marked_unknown, {}),
+            ExistingDdlMemoryRecord("current-example", current_table_example, {}),
+        ),
+    )
+    assert (
+        contract_facts.exact_match_record_count,
+        contract_facts.content_variant_record_count,
+        contract_facts.unexpected_ddl_record_count,
+        contract_facts.non_ddl_count,
+    ) == (1, 1, 1, 1)
+    assert is_ddl_candidate_document(marked_variant)
+    assert parse_ddl_table_name(marked_variant) == "table_000"
+    assert not is_ddl_candidate_document(current_table_example)
+
+    six_false_positive_source = list(
+        _synthetic_source(desired, managed_count=0)
+    )
+    false_positive_ids = set()
+    for index in range(6):
+        source_index = EXPECTED_DDL_COUNT + index
+        old_record = six_false_positive_source[source_index]
+        false_positive_ids.add(old_record.record_id)
+        six_false_positive_source[source_index] = ExistingDdlMemoryRecord(
+            old_record.record_id,
+            (
+                "工具 Memory 中的 SQL 示例："
+                f'CREATE TABLE "table_{index:03d}" (id bigint);'
+            ),
+            old_record.metadata,
+        )
+    six_false_positive_records = tuple(six_false_positive_source)
+    false_positive_facts = analyze_formal_records(
+        desired, six_false_positive_records
+    )
+    assert (
+        false_positive_facts.total_count,
+        false_positive_facts.ddl_candidate_count,
+        false_positive_facts.exact_match_record_count,
+        false_positive_facts.exact_match_table_count,
+        false_positive_facts.content_variant_record_count,
+        false_positive_facts.unexpected_ddl_record_count,
+        false_positive_facts.non_ddl_count,
+        false_positive_facts.managed_v1_ddl_count,
+        false_positive_facts.legacy_expected_ddl_count,
+    ) == (198, 115, 115, 115, 0, 0, 83, 0, 115)
+    assert (
+        decide_formal_governance(false_positive_facts).state
+        == "IDENTITY_MIGRATION_REQUIRED"
+    )
+    non_ddl_signatures = _non_ddl_signature(
+        six_false_positive_records, desired
+    )
+    assert len(non_ddl_signatures) == EXPECTED_NON_DDL_COUNT
+    assert false_positive_ids.issubset(non_ddl_signatures)
+
+    audit_classification = classify_records(
+        six_false_positive_records, _audit_expected_from_desired(desired)
+    )
+    parity = (
+        audit_classification.formal_collection_count,
+        audit_classification.ddl_candidate_record_count,
+        audit_classification.expected_exact_match_record_count,
+        audit_classification.expected_exact_match_table_count,
+        audit_classification.missing_expected_table_count,
+        audit_classification.content_variant_record_count,
+        audit_classification.unexpected_ddl_record_count,
+        audit_classification.non_ddl_memory_count,
+        audit_classification.exact_duplicate_group_count,
+        audit_classification.table_identity_duplicate_group_count,
+    )
+    governance_parity = (
+        false_positive_facts.total_count,
+        false_positive_facts.ddl_candidate_count,
+        false_positive_facts.exact_match_record_count,
+        false_positive_facts.exact_match_table_count,
+        false_positive_facts.missing_expected_table_count,
+        false_positive_facts.content_variant_record_count,
+        false_positive_facts.unexpected_ddl_record_count,
+        false_positive_facts.non_ddl_count,
+        false_positive_facts.exact_duplicate_group_count,
+        false_positive_facts.table_identity_duplicate_group_count,
+    )
+    assert parity == governance_parity
+    assert analyze_formal_records(
+        desired, tuple(reversed(six_false_positive_records))
+    ) == false_positive_facts
+    assert classify_records(
+        tuple(reversed(six_false_positive_records)),
+        tuple(reversed(_audit_expected_from_desired(desired))),
+    ) == audit_classification
+
     damaged = list(managed_source)
     damaged_metadata = dict(damaged[0].metadata)
     damaged_metadata["content_fingerprint"] = "0" * 64
@@ -1336,7 +1449,11 @@ def self_test() -> int:
     unexpected = list(mixed_source)
     unexpected[-1] = ExistingDdlMemoryRecord(
         unexpected[-1].record_id,
-        'CREATE TABLE "unexpected_table" (\n  id integer\n);',
+        (
+            "[DDL_MEMORY]\n"
+            "表名：unexpected_table\n\n"
+            'CREATE TABLE "unexpected_table" (\n  id integer\n);'
+        ),
         unexpected[-1].metadata,
     )
     assert (
@@ -1582,6 +1699,11 @@ def self_test() -> int:
     print("IB_FLAG_REJECTION_TEST=PASS")
     print("PRE_FILESYSTEM_FAILURE_TEST=PASS")
     print("FORMAL_SWITCH_APPROVAL_GATE_TEST=PASS")
+    print("SHARED_DDL_CLASSIFICATION_CONTRACT_TEST=PASS")
+    print("SIX_FALSE_POSITIVE_REGRESSION_TEST=PASS:198/115/115/0/83")
+    print("NON_DDL_PRESERVATION_CLASSIFICATION_TEST=PASS:83")
+    print("CLASSIFICATION_PARITY_TEST=PASS")
+    print("EXPECTED_SYNTHETIC_DECISION_STATE=IDENTITY_MIGRATION_REQUIRED")
     print("FORMAL_CHROMA_FILESYSTEM_ACCESS_DURING_STAGE=0")
     print("FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0")
     print("FORMAL_SWITCH_EXECUTED=NO")

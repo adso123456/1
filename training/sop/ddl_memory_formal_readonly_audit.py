@@ -272,7 +272,8 @@ def _normalized_document_sha(document: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def _is_ddl_candidate(document: str) -> bool:
+def is_ddl_candidate_document(document: str) -> bool:
+    """只有完整包含三个冻结标记的非精确记录才是 DDL 候选。"""
     upper_document = document.upper()
     return (
         DDL_MARKERS[0] in document
@@ -281,7 +282,8 @@ def _is_ddl_candidate(document: str) -> bool:
     )
 
 
-def _parse_table_name(document: str) -> str | None:
+def parse_ddl_table_name(document: str) -> str | None:
+    """解析已经通过精确匹配或完整标记门禁的 DDL 表名。"""
     explicit = TABLE_NAME_PATTERN.search(document)
     if explicit is not None:
         return explicit.group(1).strip()
@@ -290,6 +292,11 @@ def _parse_table_name(document: str) -> str | None:
         return None
     quoted, unquoted = create_match.groups()
     return quoted.replace('""', '"') if quoted is not None else unquoted
+
+
+# 保留旧私有名，避免现有内部测试或调用方失效；唯一实现是上面的公共接口。
+_is_ddl_candidate = is_ddl_candidate_document
+_parse_table_name = parse_ddl_table_name
 
 
 def classify_records(
@@ -316,11 +323,13 @@ def classify_records(
         seen_record_ids.add(record.record_id)
         document_sha = _normalized_document_sha(record.document)
         exact_expected = expected_by_sha.get(document_sha)
-        ddl_candidate = exact_expected is not None or _is_ddl_candidate(record.document)
+        ddl_candidate = exact_expected is not None or is_ddl_candidate_document(
+            record.document
+        )
         parsed_table = (
             exact_expected.table_name
             if exact_expected is not None
-            else _parse_table_name(record.document) if ddl_candidate else None
+            else parse_ddl_table_name(record.document) if ddl_candidate else None
         )
         if exact_expected is not None:
             category = "expected_exact_match"
@@ -609,6 +618,43 @@ def self_test() -> int:
     assert unique_result.expected_exact_match_record_count == 1
     assert unique_result.exact_duplicate_group_count == 0
 
+    exact_without_markers = 'CREATE TABLE "alpha" (\n  id integer\n);'
+    exact_without_markers_expected = _synthetic_expected(
+        "alpha", exact_without_markers
+    )
+    exact_priority = classify_records(
+        [ExistingDdlMemoryRecord("exact-no-markers", exact_without_markers, {})],
+        [exact_without_markers_expected],
+    )
+    assert exact_priority.records[0]["classification"] == "expected_exact_match"
+    assert not is_ddl_candidate_document(exact_without_markers)
+
+    marked_variant = _synthetic_ddl("alpha", "bigint")
+    marked_unknown = _synthetic_ddl("unknown", "integer")
+    current_table_example = '示例：CREATE TABLE "alpha" (id bigint);'
+    unknown_table_example = '示例：CREATE TABLE "unknown" (id integer);'
+    contract_result = classify_records(
+        (
+            ExistingDdlMemoryRecord("marked-variant", marked_variant, {}),
+            ExistingDdlMemoryRecord("marked-unknown", marked_unknown, {}),
+            ExistingDdlMemoryRecord("current-example", current_table_example, {}),
+            ExistingDdlMemoryRecord("unknown-example", unknown_table_example, {}),
+        ),
+        (expected[0],),
+    )
+    categories = {
+        item["record_id"]: item["classification"] for item in contract_result.records
+    }
+    assert categories == {
+        "current-example": "non_ddl_memory",
+        "marked-unknown": "unexpected_ddl",
+        "marked-variant": "expected_table_content_variant",
+        "unknown-example": "non_ddl_memory",
+    }
+    assert is_ddl_candidate_document(marked_variant)
+    assert parse_ddl_table_name(marked_variant) == "alpha"
+    assert not is_ddl_candidate_document(current_table_example)
+
     records = (
         ExistingDdlMemoryRecord("uuid-alpha-1", alpha_ddl, {"timestamp": "one"}),
         ExistingDdlMemoryRecord("uuid-alpha-2", alpha_ddl, {"timestamp": "two"}),
@@ -690,6 +736,8 @@ def self_test() -> int:
     print("SYNTHETIC_CLASSIFICATION_TEST=PASS")
     print("DUPLICATE_RULE_TEST=PASS")
     print("CLASSIFICATION_RECONCILIATION_TEST=PASS")
+    print("SHARED_DDL_CLASSIFICATION_CONTRACT_TEST=PASS")
+    print("CREATE_TABLE_EXAMPLE_CLASSIFICATION=non_ddl_memory")
     print("TREE_SHA_COPY_TEST=PASS")
     print("SOURCE_CHANGE_GATE_TEST=PASS")
     print("SNAPSHOT_ONLY_OPEN_GATE_TEST=PASS")
