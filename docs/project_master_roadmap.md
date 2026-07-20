@@ -68,15 +68,15 @@ Tool Memory 总数：75
 当前阶段：
 
 ```text
-PostgreSQL训练板块已关闭，等待下一板块授权
+F6-1 DDL Text Memory幂等治理
 ```
 
 当前禁止越界进入：
 
 ```text
-新增Memory
-HOUR及其他Level 3训练
-F6 治理
+新增正式Memory
+治理正式198条Chroma
+F6-1B～I
 Legacy迁移
 Vanna 源码解耦
 MySQL 接入
@@ -100,7 +100,7 @@ F1       ✅ Level 1 DDL 最小实现
 F2       ✅ 端到端 MVP 与回归
 F3       ➖ 无主线功能阻断，跳过
 F4       ✅ 正式 Level 1 切换
-F5       ⏳ Level 2 / Level 3 受控训练进行中
+F5       ✅ Level 2 / Level 3 受控训练与最终总验收完成
 ```
 
 已完成的受控 Level 2 批次：
@@ -137,7 +137,7 @@ F5 Level 2 收口审计状态：
 F5 Level 2收口审计 ✅
 82张未覆盖表已完成唯一分类
 收口决策：FINAL_FOCUSED_DISCOVERY_REQUIRED
-Level 2已收口：NO
+后续最终状态：Level 2已收口：YES
 需要最后定向验证的表：4
 ```
 
@@ -157,8 +157,8 @@ F5 Level 2最后定向发现 ✅
 发现1条STANDARD候选
 最终推荐：D10_L2_RS_SEWAGE_INFO_V2_001
 推荐表：rs_sewage_info_v2
-Level 2候选饱和信号：NOT_REACHED
-Level 2已收口：NO
+后续最终候选饱和信号：REACHED
+后续最终状态：Level 2已收口：YES
 ```
 
 F5 Batch 10-T0 状态：
@@ -312,13 +312,14 @@ F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确
 后续大板块必须按以下顺序推进：
 
 ```text
-A. PostgreSQL 当前训练板块收口
-→ B. Vanna 依赖解耦并移除项目内源码副本
-→ C. 建立多数据源底座
-→ D. 接入并训练 MySQL
-→ E. 开发“一句话生成报表”
-→ F. 集成为外部网站机器人模块
-→ G. 生产化、安全与运维治理
+PostgreSQL训练关闭
+→ F6关键治理
+→ Vanna依赖解耦
+→ 多数据源底座
+→ MySQL
+→ 报表
+→ 网站集成
+→ 生产化
 ```
 
 排序原则：
@@ -334,7 +335,7 @@ A. PostgreSQL 当前训练板块收口
 
 # 第一大板块：PostgreSQL 训练收口
 
-## 5. F5 当前目标
+## 5. F5 已完成目标
 
 F5 不以“115 张表全部训练”为目标。
 
@@ -353,7 +354,7 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 
 ---
 
-## 6. 当前 F5 内部顺序
+## 6. F5 已完成内部顺序
 
 ```text
 1. 完成 F5 Batch 10 候选发现 ✅
@@ -361,14 +362,14 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 3. 完成4张指定表最后定向只读发现与Batch 10范围冻结 ✅
 4. 正式交付1条rs_sewage_info_v2标准Level 2 Tool Memory ✅
 5. 版本化PostgreSQL F5回归基线并收敛唯一事实源 ✅
-6. 整理数据缺失、暂缓和受控特例登记
+6. 整理数据缺失、暂缓和受控特例登记 ✅
 7. 盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力 ✅
 8. 识别并真实验证5个高价值 Level 3 缺口 ✅
 9. 冻结首个Level 3候选范围 ✅
-10. 正式交付已冻结的F5_L3_B01_SQL_001
-11. 只补少量核心 Level 3
-12. 执行 F5 PostgreSQL 总验收
-13. 正式关闭 PostgreSQL 训练板块
+10. 正式交付已冻结的F5_L3_B01_SQL_001 ✅
+11. 只补少量核心 Level 3 ✅
+12. 执行 F5 PostgreSQL 总验收 ✅
+13. 正式关闭 PostgreSQL 训练板块 ✅
 ```
 
 ---
@@ -672,6 +673,34 @@ removed = 1
 必须先在完整隔离副本中验证
 正式失败必须完整恢复
 ```
+
+### 12.5 F6-1A 写入链审计与隔离复现（2026-07-20）
+
+真实写入链：
+
+```text
+agent_data/column_metadata_index.json
+→ train_step3.load_metadata_index / group_tables
+→ train_step3.build_table_ddl / build_all_table_ddls
+→ train_step3._run_training
+→ agent_config.create_memory
+→ ChromaAgentMemory.save_text_memory
+→ tool_memories collection.upsert
+```
+
+直接根因：`save_text_memory` 每次由 Vanna 生成新的 UUID4，并以该新 ID 执行 `upsert`；调用前不存在逻辑对象身份、内容指纹或重复判断。因此相同 DDL 第二次执行仍新增记录。
+
+隔离复现按当前 115 条真实 Level 1 生成结果的表名升序稳定选取前 25 条，结果为 `0 → 25 → 50`；按规范化 DDL 和有效 Metadata 分组得到 25 个重复组、共 50 条记录。正式 Chroma 打开次数为 0。
+
+Evidence：
+
+```text
+E:\3\_training_backups\f6-1a-20260720-113114\evidence
+```
+
+身份与治理基线已冻结在 `docs/f6_ddl_idempotency_baseline.md`：采用稳定 `logical_id` 与 `content_fingerprint`，后续拆分 plan/apply，`removed` 不自动删除，正式治理采用完整候选副本验收后切换。F6-1B～I 均未完成，不得提前标记完成。
+
+下一阶段建议：完成 F6-1A 验收后等待 F6-1B 单独授权；F6-1B 只冻结身份字段规范和测试，不修改正式 Chroma。
 
 ---
 
@@ -1286,7 +1315,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 已登记 | 包含 F1 25→50 遗留 |
+| F6 DDL 幂等治理 | 进行中 | 当前仅执行 F6-1A；F6-1B～I 未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1299,9 +1328,9 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-在新的ChatGPT窗口中复核总路线并选择下一板块；
-不得自动进入F6、Legacy迁移、Vanna解耦、
-MySQL或多数据源改造。
+执行F6-1A写入链审计与隔离复现；
+不得修改正式Chroma；
+完成后等待F6-1B授权。
 ```
 
-PostgreSQL训练板块关闭后不得继续新增Memory或自动开展延期Level 3训练；下一板块必须经新的明确授权。
+F6-1A不得治理正式198条Chroma，不得实现正式幂等写入，不得进入F6-1B；后续阶段必须经新的明确授权。
