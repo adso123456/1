@@ -395,7 +395,36 @@ classification_sha256          f4f2e5aaf59d93317ee3dae1316f21979ed9cf13f69f1794f
 
 分类总数 `115 + 83 = 198`，能够与 collection 总数对账。Evidence：`E:\3\_training_backups\f6-1g-20260720-153450\evidence`。Evidence 与仓库文档均未保存完整 DDL、embedding 或完整 Metadata 敏感值。
 
-## 13. 风险与下一阶段
+## 13. F6-1H-R1 不可变归档与双查询副本模型（已完成，待审查）
+
+F6-1H 首次执行在任何 Chroma 导入、Client 打开或 Top-K 查询前停止。固定旧快照当前 Tree SHA 为 `70a3fd3a72a00fe131aedbe289e1fbe9cfff66d80126de3277c0aa3a1abc25b7`，不同于 F6-1G 复制时的 `ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f`；变化涉及 `chroma.sqlite3`、`data_level0.bin`、`length.bin`。失败状态登记为 `SNAPSHOT_INTEGRITY_GATE_FAILED`，Evidence 保留于 `E:\3\_training_backups\f6-1h-20260720-154428\evidence`，该目录不得复用。
+
+首次停止时正式来源文件系统访问次数为 0，正式 Client 与快照 Client 打开次数均为 0；未创建 Top-K 工具、未执行查询、未修改文档、未提交。F6-1G 旧 `formal_snapshot` 保留为已经被 Client 打开过的审计工作副本，不删除、不修改，但不再作为不可变归档或 F6-1H 查询输入。
+
+R1 新增 `training/sop/ddl_memory_topk_impact.py`，并在现有 `docs/sop/ddl_memory_formal_readonly_audit.md` 中冻结未来 R2 模型：
+
+```text
+正式来源
+→ formal_archive（不可变，永不由 Client 打开）
+   ├→ query_snapshot_run1（独立一次性查询副本）
+   └→ query_snapshot_run2（独立一次性查询副本）
+```
+
+正式来源复制前、archive、正式来源复制后的文件清单和 Tree SHA 必须一致。两个查询副本必须分别直接从 archive 复制，pre-open SHA/清单均等于 archive；禁止 run2 从 run1 复制。工作副本打开后的文件变化只记录相对路径、前后大小和 SHA，不误判为 archive 变化。两轮结束后 archive 必须与查询前完全一致，否则为 `ARCHIVE_INTEGRITY_FAILED`。
+
+Top-K 仍固定 12 个中文表注释查询、`Top-K=10`、`BAAI/bge-small-zh-v1.5` 和 `tool_memories`。两轮稳定 SHA 排除距离，只纳入 query ID、rank、record ID、解析表名、document SHA 和分类。精确内容与表身份投影仍仅在内存计算，不创建去重库。
+
+R1 只使用系统临时目录和 Fake Query Collection 自检；没有访问正式来源、旧快照，没有创建 Client、archive 或查询副本，也没有执行 Top-K：
+
+```text
+FORMAL_CHROMA_FILESYSTEM_ACCESS_DURING_STAGE=0
+FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0
+TOPK_EXECUTED=NO
+```
+
+R1 Evidence：`E:\3\_training_backups\f6-1h-r1-20260720-155539\evidence`。F6-1H 尚未完成，正式执行等待 ChatGPT 审查和新的 F6-1H-R2 明确授权。
+
+## 14. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -403,4 +432,4 @@ classification_sha256          f4f2e5aaf59d93317ee3dae1316f21979ed9cf13f69f1794f
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 F6-1H 明确授权。本阶段只完成正式快照只读审计，没有治理正式 198 条记录，没有新增正式 Memory，也没有执行 Top-K 测试。
+下一阶段建议：等待 ChatGPT 审查不可变归档与双查询副本 SOP，并另行明确授权 F6-1H-R2。本阶段不访问正式来源，不创建 Client，不执行 Top-K，不进入 F6-1I。

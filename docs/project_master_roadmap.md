@@ -76,7 +76,8 @@ F6-1 DDL Text Memory幂等治理
 ```text
 新增正式Memory
 治理正式198条Chroma
-F6-1H～I
+F6-1H-R2
+F6-1I
 Legacy迁移
 Vanna 源码解耦
 MySQL 接入
@@ -629,7 +630,8 @@ F6-1E 支持 create / unchanged / changed / removed ✅ 已完成
 F6-1F 隔离验证重复运行记录数不增长 ✅ 已完成
 F6-1G-A 正式只读审计工具与 SOP 准备 ✅ 已完成
 F6-1G-B 执行正式快照只读审计 ✅ 已完成
-F6-1H 评估重复记录对 Top-K 检索的影响
+F6-1H-R1 修复不可变归档与查询副本模型 ✅ 已完成，等待审查
+F6-1H-R2 执行双副本 Top-K 影响评估（未开始）
 F6-1I 制定正式库治理与恢复方案
 ```
 
@@ -851,6 +853,32 @@ Evidence：
 ```text
 E:\3\_training_backups\f6-1g-20260720-153450\evidence
 ```
+
+### 12.13 F6-1H-R1 不可变归档与查询副本模型（2026-07-20）
+
+F6-1H 首次尝试在打开 Client 前因旧快照 Tree SHA 变化停止，状态为 `SNAPSHOT_INTEGRITY_GATE_FAILED`。正式来源访问 0，正式/快照 Client 打开 0，Top-K 未执行，仓库未修改或提交。失败 Evidence 保留于：
+
+```text
+E:\3\_training_backups\f6-1h-20260720-154428\evidence
+```
+
+F6-1G 旧快照已明确为“被 Client 打开过的审计工作副本”，保留但不再作为不可变归档或 H 查询输入。R1 新增 `training/sop/ddl_memory_topk_impact.py` 并修订现有正式只读 SOP，冻结：
+
+```text
+正式来源 → formal_archive（永不打开）
+formal_archive → query_snapshot_run1（一次性）
+formal_archive → query_snapshot_run2（一次性）
+```
+
+两个副本必须独立直接来自 archive；工作副本打开后的变化允许且必须记录，archive 查询前后必须完全一致。R1 仅用临时目录和 Fake Query Collection 完成模型、归档完整性、两种投影、两轮稳定 SHA 和只读能力自检，没有访问正式来源、旧快照，没有创建正式 archive/查询副本或执行 Top-K。
+
+Evidence：
+
+```text
+E:\3\_training_backups\f6-1h-r1-20260720-155539\evidence
+```
+
+F6-1A～G 已完成；F6-1H-R1 模型修复已完成待审查；F6-1H-R2、F6-1I 未开始。当前只等待 ChatGPT 审查并明确授权 F6-1H-R2。
 
 ---
 
@@ -1465,7 +1493,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | F6-1A～G已完成；F6-1H～I未开始 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A～G已完成；F6-1H-R1已完成待审查；F6-1H-R2、I未开始 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1478,7 +1506,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-等待 F6-1H 明确授权。
+等待 ChatGPT 审查并授权 F6-1H-R2。
 ```
 
-当前不得治理正式198条Chroma，不得新增正式Memory，不得自动执行F6-1H Top-K 测试；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。
+当前不得访问或治理正式198条Chroma，不得新增正式Memory，不得创建正式archive或查询副本，不得自动执行F6-1H-R2 Top-K；不得进入F6-1I或开展Legacy、Vanna解耦、MySQL及其他板块。后续阶段必须经新的明确授权。
