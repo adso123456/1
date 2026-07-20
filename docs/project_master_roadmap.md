@@ -621,7 +621,7 @@ Metadata 可检索
 ### 12.2 F6-1 子任务
 
 ```text
-F6-1A 复现 F1 阶段 25→50 重复写入
+F6-1A 复现 F1 阶段 25→50 重复写入 ✅ 已完成
 F6-1B 生成 DDL Text Memory 确定性身份
 F6-1C 实现 ddl_memory_plan.py
 F6-1D 实现 ddl_memory_adapter.py
@@ -690,15 +690,15 @@ agent_data/column_metadata_index.json
 
 直接根因：`save_text_memory` 每次由 Vanna 生成新的 UUID4，并以该新 ID 执行 `upsert`；调用前不存在逻辑对象身份、内容指纹或重复判断。因此相同 DDL 第二次执行仍新增记录。
 
-隔离复现按当前 115 条真实 Level 1 生成结果的表名升序稳定选取前 25 条，结果为 `0 → 25 → 50`；按规范化 DDL 和有效 Metadata 分组得到 25 个重复组、共 50 条记录。正式 Chroma 打开次数为 0。
+隔离复现按当前 115 条真实 Level 1 生成结果的表名升序稳定选取前 25 条，结果为 `0 → 25 → 50`；按规范化 DDL 和有效 Metadata 分组得到 25 个重复组、共 50 条记录，唯一 Memory ID 为 50。R1 强制结果门禁验收通过。脚本以正式路径创建 Chroma Client 的尝试次数为 0；该字段不代表操作系统级全局监控结果。
 
 Evidence：
 
 ```text
-E:\3\_training_backups\f6-1a-20260720-113114\evidence
+E:\3\_training_backups\f6-1a-r1-20260720-124151\evidence
 ```
 
-身份与治理基线已冻结在 `docs/f6_ddl_idempotency_baseline.md`：采用稳定 `logical_id` 与 `content_fingerprint`，后续拆分 plan/apply，`removed` 不自动删除，正式治理采用完整候选副本验收后切换。F6-1B～I 均未完成，不得提前标记完成。
+F6-1A 已完成。身份与治理基线已冻结在 `docs/f6_ddl_idempotency_baseline.md`：采用稳定 `logical_id` 与 `content_fingerprint`，后续拆分 plan/apply，`removed` 不自动删除，正式治理采用完整候选副本验收后切换。F6-1B～I 均未开始，不得提前标记完成。
 
 下一阶段建议：完成 F6-1A 验收后等待 F6-1B 单独授权；F6-1B 只冻结身份字段规范和测试，不修改正式 Chroma。
 
@@ -1315,7 +1315,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 2 | 已完成 | Batch 01—10完成，候选饱和REACHED |
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
-| F6 DDL 幂等治理 | 进行中 | 当前仅执行 F6-1A；F6-1B～I 未开始 |
+| F6 DDL 幂等治理 | 进行中 | F6-1A已完成；F6-1B～I未开始，等待明确授权 |
 | Vanna 源码移除 | 已排期 | F5 / F6 关键基线后、MySQL 前 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1328,9 +1328,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-执行F6-1A写入链审计与隔离复现；
-不得修改正式Chroma；
-完成后等待F6-1B授权。
+等待F6-1B明确授权。
 ```
 
-F6-1A不得治理正式198条Chroma，不得实现正式幂等写入，不得进入F6-1B；后续阶段必须经新的明确授权。
+当前不得治理正式198条Chroma，不得新增正式Memory，不得自动进入F6-1B；不得开展Legacy、Vanna解耦、MySQL或其他板块。后续阶段必须经新的明确授权。

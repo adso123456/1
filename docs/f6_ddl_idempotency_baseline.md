@@ -2,10 +2,10 @@
 
 ## 1. 审计边界与结论
 
-- 基线提交：`559a990f60dca2071f106ced145609f991ac4b3b`。
-- 正式 Chroma：`E:\3\_runtime\vanna-level1\vanna_data`，本阶段打开次数为 **0**。
+- F6-1A 初始基线提交：`559a990f60dca2071f106ced145609f991ac4b3b`；R1 修复基线提交：`5be951504d5026190fff5808ead7db819b74758b`。
+- 正式 Chroma：`E:\3\_runtime\vanna-level1\vanna_data`。本脚本以正式路径创建 Chroma Client 的尝试次数为 **0**；该字段不代表操作系统级全局监控结果。
 - 仓库内 `vanna_data` 仅作为受保护脏状态记录，未打开、未修改。
-- 隔离 Evidence：`E:\3\_training_backups\f6-1a-20260720-113114\evidence`。
+- R1 隔离 Evidence：`E:\3\_training_backups\f6-1a-r1-20260720-124151\evidence`。
 - 结论：当前写入链没有逻辑对象身份或内容查重。Vanna 每次生成新 UUID4，再以该新 ID 调用 Chroma `upsert`，所以相同 DDL 第二次执行仍新增记录。
 
 ## 2. 真实生成与写入链
@@ -73,7 +73,7 @@ agent_data/column_metadata_index.json
 隔离目录：
 
 ```text
-E:\3\_training_backups\f6-1a-20260720-113114\isolated_chroma
+E:\3\_training_backups\f6-1a-r1-20260720-124151\isolated_chroma
 ```
 
 结果：
@@ -87,7 +87,9 @@ after_second_count=50
 duplicate_group_count=25
 duplicate_record_count=50
 duplicate_excess_record_count=25
+unique_memory_id_count=50
 record_id_strategy=Vanna 每次生成 UUID4，两轮 50 个 ID 全部唯一
+reproduction_validation=PASS
 ```
 
 分组规则只执行约定的 DDL 规范化：CRLF/CR 转 LF、去除文件首尾空白、去除行尾空白。有效 Metadata 排除每次写入生成的 `timestamp`，并排除已经由 document 表达的 `content`，保留 `is_text_memory=true`。
@@ -95,6 +97,10 @@ record_id_strategy=Vanna 每次生成 UUID4，两轮 50 个 ID 全部唯一
 - 按“规范化内容 + 有效 Metadata”分组：25 个重复组，共 50 条，重复净增 25 条。
 - 按包含 `timestamp` 的精确存储 Metadata 分组：0 个重复组。该差异仅来自运行时时间戳，不代表 DDL 或业务语义变化。
 - Evidence 不保存完整 DDL、数据库数据、查询结果、密码或 API Key，只保存表名、内容哈希、计数和结构证据。
+
+R1 增加了强制结果门禁：`validate_reproduction_result()` 必须同时确认空库起点、两轮增长、最终数量、重复分组、唯一 ID 数和 collection 名称。任一条件不满足时，脚本先在 Evidence 中记录 `FAIL` 和明确原因，再以非零退出；只有全部条件满足才输出 `reproduction_validation=PASS`。
+
+隔离路径门禁拒绝正式 Chroma 及任意子目录、仓库内 `vanna_data` 及任意子目录，以及项目仓库内任意路径。路径在创建 Client 前完成解析和校验，隔离目录还必须全新或为空。
 
 ## 6. F6-1B～I 身份与 Plan/Apply 设计基线
 

@@ -65,8 +65,10 @@ def _is_within(path: Path, parent: Path) -> bool:
 
 def validate_isolated_path(path: Path) -> Path:
     target = path.expanduser().resolve()
-    if target in {FORMAL_CHROMA, REPOSITORY_CHROMA}:
-        raise ValueError(f"隔离目录禁止指向受保护 Chroma：{target}")
+    if _is_within(target, FORMAL_CHROMA):
+        raise ValueError(f"隔离目录禁止位于正式 Chroma 内：{target}")
+    if _is_within(target, REPOSITORY_CHROMA):
+        raise ValueError(f"隔离目录禁止位于仓库 Chroma 内：{target}")
     if _is_within(target, PROJECT_ROOT):
         raise ValueError(f"隔离目录必须位于仓库外：{target}")
     if target.exists() and any(target.iterdir()):
@@ -79,9 +81,11 @@ def validate_evidence_path(path: Path) -> Path:
     if not _is_within(target, EVIDENCE_ROOT):
         raise ValueError(f"Evidence 必须位于 {EVIDENCE_ROOT} 下")
     if target.name != "evidence" or not re.fullmatch(
-        r"f6-1a-\d{8}-\d{6}", target.parent.name
+        r"f6-1a(?:-r1)?-\d{8}-\d{6}", target.parent.name
     ):
-        raise ValueError("Evidence 路径必须为 f6-1a-<YYYYMMDD-HHMMSS>\\evidence")
+        raise ValueError(
+            "Evidence 路径必须为 f6-1a[-r1]-<YYYYMMDD-HHMMSS>\\evidence"
+        )
     if target.exists() and any(target.iterdir()):
         raise ValueError(f"Evidence 目录必须全新或为空：{target}")
     return target
@@ -122,7 +126,7 @@ def static_audit() -> dict[str, Any]:
             "后续由 F6-1C/F6-1D 的 plan/apply 受控入口独占 DDL 写入；"
             "train_step3 仅保留输入生成或改为调用该受控入口。"
         ),
-        "formal_chroma_open_count": 0,
+        "formal_chroma_client_open_attempt_count_by_script": 0,
     }
 
 
@@ -146,6 +150,29 @@ def _group_records(
         len(exact_duplicate_sizes),
         sum(exact_duplicate_sizes),
     )
+
+
+def validate_reproduction_result(result: Mapping[str, Any]) -> None:
+    """强制校验 F6-1A 隔离复现的完整预期结果。"""
+    expected = {
+        "before_count": 0,
+        "first_run_created": SAMPLE_SIZE,
+        "after_first_count": SAMPLE_SIZE,
+        "second_run_created": SAMPLE_SIZE,
+        "after_second_count": SAMPLE_SIZE * 2,
+        "duplicate_group_count": SAMPLE_SIZE,
+        "duplicate_record_count": SAMPLE_SIZE * 2,
+        "duplicate_excess_record_count": SAMPLE_SIZE,
+        "unique_memory_id_count": SAMPLE_SIZE * 2,
+        "collection_name": COLLECTION_NAME,
+    }
+    failures = [
+        f"{key}: expected={expected_value!r}, actual={result.get(key)!r}"
+        for key, expected_value in expected.items()
+        if result.get(key) != expected_value
+    ]
+    if failures:
+        raise ValueError("复现结果验收失败：" + "; ".join(failures))
 
 
 async def reproduce(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any]:
@@ -221,6 +248,7 @@ async def reproduce(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any]
         "duplicate_group_count": duplicate_groups,
         "duplicate_record_count": duplicate_records,
         "duplicate_excess_record_count": duplicate_records - duplicate_groups,
+        "unique_memory_id_count": len(set(first_ids + second_ids)),
         "exact_storage_metadata_duplicate_group_count": exact_groups,
         "exact_storage_metadata_duplicate_record_count": exact_records,
         "grouping_rule": (
@@ -233,7 +261,7 @@ async def reproduce(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any]
         ),
         "metadata_fields": sorted({key for item in metadatas for key in item}),
         "collection_name": collection.name,
-        "formal_chroma_open_count": 0,
+        "formal_chroma_client_open_attempt_count_by_script": 0,
         "formal_chroma_path": str(FORMAL_CHROMA),
         "repository_chroma_path": str(REPOSITORY_CHROMA),
         "isolated_chroma_path": str(isolated_chroma),
@@ -242,12 +270,28 @@ async def reproduce(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any]
     evidence = {
         "static_audit": static_audit(),
         "reproduction": result,
+        "reproduction_validation": {"status": "PENDING", "failure_reason": None},
         "sensitive_data_policy": (
             "未保存密码、API Key、完整数据库数据、完整 DDL 或查询结果；"
             "仅保存表名、内容哈希、计数和非敏感结构证据。"
         ),
     }
-    (evidence_dir / "f6-1a-audit-evidence.json").write_text(
+    evidence_path = evidence_dir / "f6-1a-audit-evidence.json"
+    try:
+        validate_reproduction_result(result)
+    except ValueError as exc:
+        evidence["reproduction_validation"] = {
+            "status": "FAIL",
+            "failure_reason": str(exc),
+        }
+        evidence_path.write_text(
+            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        raise
+
+    evidence["reproduction_validation"] = {"status": "PASS", "failure_reason": None}
+    evidence_path.write_text(
         json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return result
@@ -269,16 +313,48 @@ def self_test() -> int:
         ],
     )
     assert grouped == (1, 2, 0, 0)
-    for protected in (FORMAL_CHROMA, REPOSITORY_CHROMA):
+    protected_paths = (
+        FORMAL_CHROMA,
+        FORMAL_CHROMA / "child",
+        REPOSITORY_CHROMA,
+        REPOSITORY_CHROMA / "child",
+        PROJECT_ROOT / "docs" / "isolated_chroma",
+    )
+    for protected in protected_paths:
         try:
             validate_isolated_path(protected)
         except ValueError:
             pass
         else:
             raise AssertionError(f"未拒绝受保护路径：{protected}")
-    assert static_audit()["formal_chroma_open_count"] == 0
+
+    valid_result = {
+        "before_count": 0,
+        "first_run_created": 25,
+        "after_first_count": 25,
+        "second_run_created": 25,
+        "after_second_count": 50,
+        "duplicate_group_count": 25,
+        "duplicate_record_count": 50,
+        "duplicate_excess_record_count": 25,
+        "unique_memory_id_count": 50,
+        "collection_name": COLLECTION_NAME,
+    }
+    validate_reproduction_result(valid_result)
+    invalid_result = dict(valid_result)
+    invalid_result["second_run_created"] = 0
+    try:
+        validate_reproduction_result(invalid_result)
+    except ValueError as exc:
+        assert "second_run_created" in str(exc)
+    else:
+        raise AssertionError("未拒绝第二轮零增长的不合格复现结果")
+
+    assert static_audit()["formal_chroma_client_open_attempt_count_by_script"] == 0
     print("SELF_TEST=PASS")
-    print("FORMAL_CHROMA_OPEN_COUNT=0")
+    print("PATH_GUARD_TEST=PASS")
+    print("REPRODUCTION_GATE_TEST=PASS")
+    print("FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0")
     return 0
 
 
@@ -319,10 +395,13 @@ def main() -> int:
         "after_second_count",
         "duplicate_group_count",
         "duplicate_record_count",
+        "duplicate_excess_record_count",
+        "unique_memory_id_count",
         "record_id_strategy",
-        "formal_chroma_open_count",
+        "formal_chroma_client_open_attempt_count_by_script",
     ):
         print(f"{key}={result[key]}")
+    print("reproduction_validation=PASS")
     print(f"evidence_dir={evidence}")
     return 0
 
