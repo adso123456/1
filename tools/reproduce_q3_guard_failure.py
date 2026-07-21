@@ -34,7 +34,7 @@ from tools.f5_level2_batch01_delivery import (
     open_memory,
     sqlite_record_count,
 )
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 from tools.zero_b4_tool_memory_rehearsal import get_user_environment
 from training.sop.batch_validator import validate_training_batch
 from training.sop.memory_write_plan import build_memory_write_plan

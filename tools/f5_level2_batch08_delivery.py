@@ -20,7 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import tools.f5_level2_batch07_delivery as previous
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 from tools.zero_b4_tool_memory_rehearsal import close_memory, get_user_environment, manifest, sqlite_record_count, write_json
 from training.sop.batch_validator import validate_training_batch
 from training.sop.memory_write_plan import build_memory_write_plan
@@ -222,7 +222,7 @@ def database_validation(sql: str) -> dict[str, Any]:
 
 
 def _query_retrieval(memory: Any, question: str, target_sample_id: str) -> dict[str, Any]:
-    from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
+    from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from vanna.core.tool import ToolContext
     from vanna.core.user import User
 

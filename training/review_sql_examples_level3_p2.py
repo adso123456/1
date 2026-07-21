@@ -12,7 +12,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 DRAFT_PATH = Path(__file__).with_name("sql_examples_level3_p2_draft.json")
 AUDIT_PATH = Path(__file__).with_name("level3_p2_join_feasibility_result.md")

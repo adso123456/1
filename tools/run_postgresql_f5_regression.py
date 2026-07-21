@@ -211,7 +211,7 @@ def _regex(pattern: str, sql: str) -> bool:
 
 
 def validate_case(case: dict[str, Any], case_result: dict[str, Any]) -> dict[str, Any]:
-    from tools.sql_guard import SQLGuard
+    from backend.sql_guard import SQLGuard
 
     result = case_result.get("result") or {}
     sql = str(result.get("sql") or "")

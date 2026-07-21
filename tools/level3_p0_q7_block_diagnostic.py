@@ -34,7 +34,7 @@ EXPLICIT_CANDIDATES = [
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.metadata_retriever import DeterministicMetadataRetriever
+from backend.metadata_retriever import DeterministicMetadataRetriever
 from tools.sql_example_context_integration_probe import (
     PYTHON_EXE,
     SERVER_URL,
@@ -46,7 +46,7 @@ from tools.sql_example_context_integration_probe import (
     url_get,
     vanna_fingerprint,
 )
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 
 def _json_safe(value: Any) -> Any:
@@ -73,8 +73,8 @@ def _context_run_id(context: Any) -> str:
 
 def install_runtime_instrumentation() -> None:
     """仅在隔离子进程内观测上下文注入、Guard、工具和 SQL runner。"""
-    from tools.guarded_run_sql_tool import GuardedRunSqlTool
-    from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
+    from backend.guarded_run_sql_tool import GuardedRunSqlTool
+    from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from vanna.tools import RunSqlTool
 
     original_enhance = SqlExampleContextEnhancer.enhance_system_prompt

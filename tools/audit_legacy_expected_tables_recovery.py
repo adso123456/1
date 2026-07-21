@@ -35,7 +35,7 @@ from training.sop.storage_snapshot import (  # noqa: E402
     build_directory_manifest,
     create_verified_copy,
 )
-from tools.sql_guard import SQLGuard  # noqa: E402
+from backend.sql_guard import SQLGuard  # noqa: E402
 from vanna.integrations.chromadb import ChromaAgentMemory  # noqa: E402
 
 

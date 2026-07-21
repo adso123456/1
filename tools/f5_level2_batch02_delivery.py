@@ -24,7 +24,7 @@ from tools.f5_level2_batch01_delivery import (
     regression_summary,
     restore_runtime,
 )
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 from tools.zero_b4_tool_memory_rehearsal import (
     close_memory,
     exact_record_checks,
@@ -191,7 +191,7 @@ def semantic_duplicate_records(inventory: Any) -> list[dict[str, Any]]:
 
 
 def retrieval_and_injection(memory: Any, record_id: str) -> dict[str, Any]:
-    from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
+    from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from vanna.core.tool import ToolContext
     from vanna.core.user import User
 

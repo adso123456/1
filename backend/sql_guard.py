@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from tools.metadata_retriever import DeterministicMetadataRetriever
+from backend.metadata_retriever import DeterministicMetadataRetriever
 
 
 DEFAULT_INDEX_PATH = (

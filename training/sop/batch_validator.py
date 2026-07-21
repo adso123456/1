@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 from training.sop.batch_schema import TrainingBatch
 
 

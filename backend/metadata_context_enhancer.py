@@ -4,7 +4,7 @@ from typing import Any
 
 from vanna.core.enhancer import LlmContextEnhancer
 
-from tools.metadata_retriever import DeterministicMetadataRetriever
+from backend.metadata_retriever import DeterministicMetadataRetriever
 
 
 class DeterministicMetadataContextEnhancer(LlmContextEnhancer):

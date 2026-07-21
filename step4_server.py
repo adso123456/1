@@ -12,15 +12,15 @@ from vanna.core.user import UserResolver, User, RequestContext
 from vanna.core.enhancer.default import DefaultLlmContextEnhancer
 from vanna.tools import RunSqlTool, LocalFileSystem
 from agent_config import DB_KWARGS, create_memory, validate_db_config
-from tools.guarded_run_sql_tool import GuardedRunSqlTool
-from tools.metadata_context_enhancer import DeterministicMetadataContextEnhancer
-from tools.metadata_retriever import DeterministicMetadataRetriever
-from tools.query_context import (
+from backend.guarded_run_sql_tool import GuardedRunSqlTool
+from backend.metadata_context_enhancer import DeterministicMetadataContextEnhancer
+from backend.metadata_retriever import DeterministicMetadataRetriever
+from backend.query_context import (
     OriginalQuestionContextEnricher,
     OriginalQuestionLifecycleHook,
 )
-from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
-from tools.sql_guard import SQLGuard
+from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
+from backend.sql_guard import SQLGuard
 from vanna import Agent, AgentConfig
 from vanna.core.system_prompt.default import DefaultSystemPromptBuilder
 from vanna.servers.fastapi.app import VannaFastAPIServer

@@ -35,7 +35,7 @@ from tools.sql_example_context_integration_probe import (
     stop_server,
     vanna_fingerprint,
 )
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 APPROVED_IDS = {
     "L3_P2_SQL_001", "L3_P2_SQL_002", "L3_P2_SQL_003",
@@ -367,7 +367,7 @@ def evaluate(
 
 async def audit_child(output_path: Path) -> int:
     from agent_config import create_memory
-    from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
+    from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from vanna.core.tool import ToolContext
     from vanna.core.user import User
 

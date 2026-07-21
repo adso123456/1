@@ -9,7 +9,7 @@ PROJECT_ROOT = CURRENT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 
 REPORT_PATH = CURRENT_DIR / "sql_guard_test_result.md"

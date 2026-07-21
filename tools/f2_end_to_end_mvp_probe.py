@@ -339,9 +339,9 @@ def memory_content(item: Any) -> str:
 
 async def context_diagnostics(query: str, targets: list[str], enabled: bool) -> dict[str, Any]:
     from agent_config import create_memory
-    from tools.metadata_retriever import DeterministicMetadataRetriever
-    from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
-    from tools.sql_guard import SQLGuard
+    from backend.metadata_retriever import DeterministicMetadataRetriever
+    from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
+    from backend.sql_guard import SQLGuard
 
     candidates = DeterministicMetadataRetriever().retrieve(query, top_n=5)
     memory = create_memory()
@@ -379,7 +379,7 @@ async def context_diagnostics(query: str, targets: list[str], enabled: bool) -> 
 
 
 def evaluate(case: dict[str, Any], result: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
-    from tools.sql_guard import SQLGuard
+    from backend.sql_guard import SQLGuard
 
     sql = result["sql"]
     tables = extract_tables(sql)

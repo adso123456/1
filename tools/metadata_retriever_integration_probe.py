@@ -9,7 +9,7 @@ PROJECT_ROOT = CURRENT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.metadata_retriever import DeterministicMetadataRetriever
+from backend.metadata_retriever import DeterministicMetadataRetriever
 
 
 RESULT_PATH = CURRENT_DIR / "metadata_retriever_integration_probe_result.md"

@@ -198,8 +198,8 @@ async def diagnose() -> tuple[dict[str, Any], list[dict[str, Any]]]:
         sys.path.insert(0, str(PROJECT_ROOT))
 
     from agent_config import create_memory
-    from tools.metadata_context_enhancer import DeterministicMetadataContextEnhancer
-    from tools.metadata_retriever import DeterministicMetadataRetriever
+    from backend.metadata_context_enhancer import DeterministicMetadataContextEnhancer
+    from backend.metadata_retriever import DeterministicMetadataRetriever
     from vanna.core.enhancer.default import DefaultLlmContextEnhancer
     from vanna.core.user import User
 

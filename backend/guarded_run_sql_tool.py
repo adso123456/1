@@ -11,7 +11,7 @@ from vanna.capabilities.sql_runner import RunSqlToolArgs
 from vanna.components import ComponentType, NotificationComponent, SimpleTextComponent, UiComponent
 from vanna.core.tool import Tool, ToolContext, ToolResult
 
-from tools.sql_guard import SQLGuard, SQLGuardResult
+from backend.sql_guard import SQLGuard, SQLGuardResult
 
 
 class GuardedRunSqlTool(Tool[RunSqlToolArgs]):

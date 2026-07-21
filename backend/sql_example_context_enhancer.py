@@ -7,7 +7,7 @@ from typing import Any
 
 from vanna.core.enhancer import LlmContextEnhancer
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 ALLOWED_TRAINING_LEVELS = {
     "level2_sql_examples",

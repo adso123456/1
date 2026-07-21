@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 from training.sop.batch_validator import validate_training_batch
 from training.sop.chroma_tool_memory_adapter import ChromaToolMemoryAdapter
 from training.sop.memory_write_plan import (

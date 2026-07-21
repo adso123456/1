@@ -18,7 +18,7 @@ BASE_COMMIT = "392be6ff8c9fd11a597b7b185e80a47afa497bdf"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.metadata_retriever import DeterministicMetadataRetriever
+from backend.metadata_retriever import DeterministicMetadataRetriever
 from tools.test_metadata_retriever import run_tests as run_existing_tests
 
 

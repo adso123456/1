@@ -17,7 +17,7 @@ REPORT_PATH = CURRENT_DIR / "sql_example_context_p2_test_result.md"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_example_context_enhancer import (
+from backend.sql_example_context_enhancer import (
     ALLOWED_TRAINING_LEVELS,
     SqlExampleContextEnhancer,
 )

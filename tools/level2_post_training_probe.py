@@ -38,8 +38,8 @@ ALLOWED_PROBE_STATUS_PATHS = {
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.metadata_retriever import DeterministicMetadataRetriever
-from tools.sql_guard import SQLGuard
+from backend.metadata_retriever import DeterministicMetadataRetriever
+from backend.sql_guard import SQLGuard
 
 
 TEST_CASES: list[dict[str, Any]] = [

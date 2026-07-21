@@ -60,7 +60,7 @@ def test_import_sql_example_enhancer() -> TestResult:
     """验证 step4_server.py 导入了 SqlExampleContextEnhancer（源码文本检查）"""
     source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
 
-    if "from tools.sql_example_context_enhancer import SqlExampleContextEnhancer" not in source:
+    if "from backend.sql_example_context_enhancer import SqlExampleContextEnhancer" not in source:
         return TestResult(
             "step4_server.py 已导入 SqlExampleContextEnhancer",
             False,
@@ -70,7 +70,7 @@ def test_import_sql_example_enhancer() -> TestResult:
     # 确认没有被注释掉
     for line in source.splitlines():
         stripped = line.strip()
-        if "from tools.sql_example_context_enhancer import SqlExampleContextEnhancer" in stripped:
+        if "from backend.sql_example_context_enhancer import SqlExampleContextEnhancer" in stripped:
             if stripped.startswith("#"):
                 return TestResult(
                     "step4_server.py 已导入 SqlExampleContextEnhancer",
@@ -89,7 +89,7 @@ def test_import_sql_example_enhancer() -> TestResult:
 def test_create_agent_uses_sql_example_enhancer() -> TestResult:
     """验证 create_agent() 中 llm_context_enhancer 是 SqlExampleContextEnhancer"""
     try:
-        from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
+        from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
 
         # 通过直接导入 module 做静态检查
         source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")

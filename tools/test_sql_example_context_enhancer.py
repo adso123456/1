@@ -27,7 +27,7 @@ ALLOWED_PREEXISTING_STATUS_PATHS = {
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_example_context_enhancer import (
+from backend.sql_example_context_enhancer import (
     ALLOWED_TRAINING_LEVELS,
     SqlExampleContextEnhancer,
 )

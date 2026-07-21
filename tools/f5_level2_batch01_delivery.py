@@ -22,7 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 from tools.zero_b4_tool_memory_rehearsal import (
     close_memory,
     exact_record_checks,
@@ -201,7 +201,7 @@ def open_memory(path: Path, isolated_root: Path) -> tuple[Any, ChromaToolMemoryA
 def retrieval_and_injection(
     memory: Any, question: str, record_id: str, expected_sql: str
 ) -> dict[str, Any]:
-    from tools.sql_example_context_enhancer import SqlExampleContextEnhancer
+    from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from vanna.core.user import User
     from vanna.core.tool import ToolContext
 

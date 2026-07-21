@@ -18,7 +18,7 @@ INDEX_PATH = PROJECT_ROOT / "agent_data" / "column_metadata_index.json"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 
 REQUIRED_FIELDS = {

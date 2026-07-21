@@ -11,7 +11,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 TRAINING_DIR = Path(__file__).resolve().parent
 DRAFT_PATH = TRAINING_DIR / "sql_examples_level3_p1_draft.json"

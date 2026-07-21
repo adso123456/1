@@ -18,8 +18,8 @@ if str(PROJECT_ROOT) not in os.sys.path:
 from vanna.capabilities.sql_runner import RunSqlToolArgs
 from vanna.core.tool import Tool, ToolResult
 
-from tools.guarded_run_sql_tool import GuardedRunSqlTool
-from tools.sql_guard import SQLGuardResult
+from backend.guarded_run_sql_tool import GuardedRunSqlTool
+from backend.sql_guard import SQLGuardResult
 
 
 SECRET = "sk-trace-test-secret-should-never-appear"

@@ -25,7 +25,7 @@ from tools.sql_example_context_integration_probe import (
     stop_server,
     vanna_fingerprint,
 )
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 
 CASES: list[dict[str, Any]] = [

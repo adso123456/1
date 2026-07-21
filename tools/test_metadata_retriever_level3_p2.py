@@ -14,7 +14,7 @@ REPORT_PATH = CURRENT_DIR / "metadata_retriever_level3_p2_test_result.md"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.metadata_retriever import DeterministicMetadataRetriever
+from backend.metadata_retriever import DeterministicMetadataRetriever
 from tools.test_metadata_retriever_level3_p1 import run_tests as run_p1_tests
 
 FROZEN_TARGET_TABLES = {

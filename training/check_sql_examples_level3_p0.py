@@ -13,7 +13,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 DRAFT_PATH = Path(__file__).resolve().parent / "sql_examples_level3_p0_draft.json"
 METADATA_PATH = PROJECT_ROOT / "agent_data" / "column_metadata_index.json"

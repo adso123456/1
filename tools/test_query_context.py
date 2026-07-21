@@ -16,12 +16,12 @@ from vanna.core.tool import Tool, ToolContext, ToolResult
 from vanna.core.user import User
 from vanna.integrations.local.agent_memory import DemoAgentMemory
 
-from tools.guarded_run_sql_tool import GuardedRunSqlTool
-from tools.query_context import (
+from backend.guarded_run_sql_tool import GuardedRunSqlTool
+from backend.query_context import (
     OriginalQuestionContextEnricher,
     OriginalQuestionLifecycleHook,
 )
-from tools.sql_guard import SQLGuard
+from backend.sql_guard import SQLGuard
 
 
 class FakeRunSqlTool(Tool[RunSqlToolArgs]):
