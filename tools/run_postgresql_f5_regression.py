@@ -549,7 +549,7 @@ def run_suite(
     assert_no_early_memory_modules()
     validation_dir, formal_dir = validate_isolation_paths(data_dir)
     configure_parent_environment(validation_dir, agent_dir)
-    from tools.f2_end_to_end_mvp_probe import (
+    from tools.regression_service_harness import (
         extract_chart_specs,
         post_sse,
         query_result_files,
