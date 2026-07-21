@@ -7,7 +7,7 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-STEP4_SERVER = PROJECT_ROOT / "step4_server.py"
+AGENT_FACTORY = PROJECT_ROOT / "backend" / "agent_factory.py"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 REPORT_PATH = PROJECT_ROOT / "tools" / "deepseek_config_check_result.md"
 
@@ -34,11 +34,11 @@ def _git_status_short() -> list[str]:
 
 
 def run_checks() -> dict[str, Any]:
-    step4_text = _read(STEP4_SERVER)
+    agent_factory_text = _read(AGENT_FACTORY)
     env_example_text = _read(ENV_EXAMPLE)
     status_lines = _git_status_short()
 
-    hardcoded_keys = re.findall(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}", step4_text)
+    hardcoded_keys = re.findall(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}", agent_factory_text)
     env_tracked_or_staged = any(
         line.strip().endswith(".env") or line.strip().endswith(".env.local")
         for line in status_lines
@@ -46,14 +46,14 @@ def run_checks() -> dict[str, Any]:
 
     checks = {
         "current_base_url": EXPECTED_BASE_URL
-        if EXPECTED_BASE_URL in step4_text
+        if EXPECTED_BASE_URL in agent_factory_text
         else "not_found",
-        "current_model": EXPECTED_MODEL if EXPECTED_MODEL in step4_text else "not_found",
+        "current_model": EXPECTED_MODEL if EXPECTED_MODEL in agent_factory_text else "not_found",
         "api_key_source": API_KEY_ENV
-        if f'os.getenv("{API_KEY_ENV}")' in step4_text
+        if f'os.getenv("{API_KEY_ENV}")' in agent_factory_text
         else "not_found",
         "hardcoded_key_found": bool(hardcoded_keys),
-        "old_base_url_in_step4_server": OLD_BASE_URL in step4_text,
+        "old_base_url_in_agent_factory": OLD_BASE_URL in agent_factory_text,
         "env_example_has_placeholder": (
             f"{API_KEY_ENV}=your_deepseek_api_key_here" in env_example_text
         ),
@@ -73,7 +73,7 @@ def run_checks() -> dict[str, Any]:
         and checks["current_model"] == EXPECTED_MODEL
         and checks["api_key_source"] == API_KEY_ENV
         and not checks["hardcoded_key_found"]
-        and not checks["old_base_url_in_step4_server"]
+        and not checks["old_base_url_in_agent_factory"]
         and checks["env_example_has_placeholder"]
         and not checks["env_file_tracked_or_staged"]
     )
@@ -90,7 +90,7 @@ def write_report(checks: dict[str, Any]) -> None:
         f"- 当前 model：{checks['current_model']}",
         f"- API key 来源：{checks['api_key_source']}",
         f"- 是否发现硬编码密钥：{'是' if checks['hardcoded_key_found'] else '否'}",
-        f"- step4_server.py 是否仍存在旧 base_url：{'是' if checks['old_base_url_in_step4_server'] else '否'}",
+        f"- backend/agent_factory.py 是否仍存在旧 base_url：{'是' if checks['old_base_url_in_agent_factory'] else '否'}",
         f"- .env.example 是否包含占位符：{'是' if checks['env_example_has_placeholder'] else '否'}",
         f"- .env 是否被纳入 git：{'是' if checks['env_file_tracked_or_staged'] else '否'}",
         f"- 是否修改 SQL Guard：{'是' if checks['modified_sql_guard'] else '否'}",
@@ -106,7 +106,7 @@ def write_report(checks: dict[str, Any]) -> None:
         "",
         "## 范围说明",
         "",
-        "本检查仅验证正式主服务入口 step4_server.py 的当前 LLM 配置；未调用 DeepSeek API，未连接数据库，未执行 SQL。",
+        "本检查仅验证 backend/agent_factory.py 的当前 LLM 配置；未调用 DeepSeek API，未连接数据库，未执行 SQL。",
     ]
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
 
@@ -119,8 +119,8 @@ def main() -> int:
     print(f"API key 来源: {checks['api_key_source']}")
     print(f"是否发现硬编码密钥: {'是' if checks['hardcoded_key_found'] else '否'}")
     print(
-        "step4_server.py 是否仍存在旧 base_url: "
-        f"{'是' if checks['old_base_url_in_step4_server'] else '否'}"
+        "backend/agent_factory.py 是否仍存在旧 base_url: "
+        f"{'是' if checks['old_base_url_in_agent_factory'] else '否'}"
     )
     print(f"报告: {REPORT_PATH}")
     return 0 if checks["passed"] else 1

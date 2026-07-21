@@ -15,6 +15,13 @@ CHROMA_DIR = str(
     else (PROJECT_ROOT / "vanna_data").resolve()
 )
 
+configured_agent_data = os.getenv("AGENT_DATA_DIR", "").strip()
+AGENT_DATA_DIR = str(
+    Path(configured_agent_data).expanduser().resolve()
+    if configured_agent_data
+    else (PROJECT_ROOT / "agent_data").resolve()
+)
+
 # PostgreSQL 客户端连接安全默认值（数据库角色权限仍需由 PostgreSQL 管理）。
 _DEFAULT_CONNECT_TIMEOUT = 10
 _DEFAULT_STATEMENT_TIMEOUT_MS = 30_000

@@ -11,6 +11,7 @@ PROJECT_ROOT = CURRENT_DIR.parent
 REPORT_PATH = CURRENT_DIR / "sql_example_context_integration_test_result.md"
 BASE_COMMIT = "6259466b2478b8c25f9e687bc0da8beed2a8658a"
 ALLOWED_STATUS_PATHS = {
+    "backend/agent_factory.py",
     "step4_server.py",
     "tools/test_sql_example_context_integration.py",
     "tools/sql_example_context_integration_test_result.md",
@@ -57,14 +58,14 @@ def effective_status(status_short: str) -> tuple[str, list[str]]:
 
 
 def test_import_sql_example_enhancer() -> TestResult:
-    """验证 step4_server.py 导入了 SqlExampleContextEnhancer（源码文本检查）"""
-    source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
+    """验证 backend/agent_factory.py 导入了 SqlExampleContextEnhancer（源码文本检查）"""
+    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
 
     if "from backend.sql_example_context_enhancer import SqlExampleContextEnhancer" not in source:
         return TestResult(
-            "step4_server.py 已导入 SqlExampleContextEnhancer",
+            "backend/agent_factory.py 已导入 SqlExampleContextEnhancer",
             False,
-            "step4_server.py 中未找到 SqlExampleContextEnhancer 的导入语句",
+            "backend/agent_factory.py 中未找到 SqlExampleContextEnhancer 的导入语句",
         )
 
     # 确认没有被注释掉
@@ -73,14 +74,14 @@ def test_import_sql_example_enhancer() -> TestResult:
         if "from backend.sql_example_context_enhancer import SqlExampleContextEnhancer" in stripped:
             if stripped.startswith("#"):
                 return TestResult(
-                    "step4_server.py 已导入 SqlExampleContextEnhancer",
+                    "backend/agent_factory.py 已导入 SqlExampleContextEnhancer",
                     False,
                     "SqlExampleContextEnhancer 导入语句被注释",
                 )
             break
 
     return TestResult(
-        "step4_server.py 已导入 SqlExampleContextEnhancer",
+        "backend/agent_factory.py 已导入 SqlExampleContextEnhancer",
         True,
         "源码中正确导入了 SqlExampleContextEnhancer",
     )
@@ -92,14 +93,14 @@ def test_create_agent_uses_sql_example_enhancer() -> TestResult:
         from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
 
         # 通过直接导入 module 做静态检查
-        source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
+        source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
 
         # 检查 create_agent 函数中 llm_context_enhancer 的赋值
         if "SqlExampleContextEnhancer(" not in source:
             return TestResult(
                 "create_agent() 中最终 llm_context_enhancer 是 SqlExampleContextEnhancer",
                 False,
-                "step4_server.py 中未找到 SqlExampleContextEnhancer( 实例化代码",
+                "backend/agent_factory.py 中未找到 SqlExampleContextEnhancer( 实例化代码",
             )
 
         # 检查传给 Agent 的是 llm_context_enhancer 变量
@@ -125,7 +126,7 @@ def test_create_agent_uses_sql_example_enhancer() -> TestResult:
 
 def test_enhancer_chain_order() -> TestResult:
     """验证 enhancer 链顺序: SqlExample → Deterministic → Default"""
-    source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
+    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
 
     default_pos = source.find("DefaultLlmContextEnhancer(memory)")
     deterministic_pos = source.find(
@@ -170,7 +171,7 @@ def test_enhancer_chain_order() -> TestResult:
 
 def test_guarded_run_sql_still_registered() -> TestResult:
     """验证 GuardedRunSqlTool 仍然注册"""
-    source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
+    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
 
     if "GuardedRunSqlTool(" not in source:
         return TestResult(
@@ -200,7 +201,7 @@ def test_guarded_run_sql_still_registered() -> TestResult:
 
 def test_no_raw_run_sql_bypass() -> TestResult:
     """验证裸 RunSqlTool 没有绕过 GuardedRunSqlTool"""
-    source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
+    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
 
     # raw_run_sql_tool 应该只出现在 GuardedRunSqlTool 的参数中
     raw_positions = []
@@ -242,7 +243,7 @@ def test_no_raw_run_sql_bypass() -> TestResult:
 
 def test_shared_sql_guard() -> TestResult:
     """验证 GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用 SQLGuard 实例"""
-    source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
+    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
 
     sql_guard_assignment = "sql_guard = SQLGuard()"
     if sql_guard_assignment not in source:

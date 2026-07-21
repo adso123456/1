@@ -174,7 +174,7 @@ class FullSchemaTrainingTests(unittest.TestCase):
         self.assertNotIn("backend.memory", sys.modules)
 
     def test_server_prompt_no_longer_claims_six_tables(self) -> None:
-        source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")
+        source = (PROJECT_ROOT / "backend" / "prompts.py").read_text(encoding="utf-8")
         self.assertNotIn("all 6 available tables", source)
         self.assertIn("metadata index and retrieved Text Memory context", source)
 

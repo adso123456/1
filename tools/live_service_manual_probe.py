@@ -651,9 +651,9 @@ async def main() -> int:
         "called_deepseek": bool(case_results),
         "deepseek_success": deepseek_success,
         "uses_context_enhancer": "DeterministicMetadataContextEnhancer"
-        in (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8", errors="replace"),
+        in (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8", errors="replace"),
         "uses_guarded_tool": "GuardedRunSqlTool"
-        in (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8", errors="replace"),
+        in (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8", errors="replace"),
         "guard_intercept_observed": bool(illegal_guard["blocked"]),
         "guard_block_message_observed": guard_block_message,
         "total": len(TEST_CASES) + 1,
@@ -666,8 +666,8 @@ async def main() -> int:
         "next_step": next_step,
         "log_llm_init": "初始化 LLM 服务 (deepseek-v4-pro via DeepSeek official API)" in log_text,
         "log_register_tool": "注册工具 (run_sql)" in log_text,
-        "guarded_log_note": "日志未直接显示，但 step4_server.py 静态验证已确认注册 GuardedRunSqlTool",
-        "enhancer_log_note": "日志未直接显示，但 step4_server.py 静态验证已确认注入 DeterministicMetadataContextEnhancer",
+        "guarded_log_note": "日志未直接显示，但 backend/agent_factory.py 静态验证已确认注册 GuardedRunSqlTool",
+        "enhancer_log_note": "日志未直接显示，但 backend/agent_factory.py 静态验证已确认注入 DeterministicMetadataContextEnhancer",
         "guard_block_log_note": "独立 GuardedRunSqlTool 验证观察到 SQL Guard blocked execution"
         if guard_block_message
         else "未观察到",
