@@ -1,11 +1,74 @@
 {
   "schema_version": "1.0",
   "suite_id": "postgresql-f5-regression-v1",
-  "description": "PostgreSQL F5正式验收基线：F2固定6题与Batch 02—10目标9题。",
-  "case_count": 15,
+  "description": "PostgreSQL正式验收基线：F2固定6题、F5 Batch 02—10目标9题及Level 2/3代表性长期回归5题。",
+  "case_count": 20,
   "formal_training_commit": "adfd751e771e57c7b6dc0515c09db374ae0aff13",
   "formal_record_count": 197,
   "formal_chroma_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+  "memory_case_count": 6,
+  "memory_cases": [
+    {
+      "case_id": "memory_l2_sql_018",
+      "question": "查询取水口名称和水源类型",
+      "expected_sample_id": "L2_SQL_018",
+      "expected_training_level": "level2_sql_examples",
+      "expectation": "present_and_injected",
+      "search_top_k": 10,
+      "enhancer_top_k": 10,
+      "max_rank": 10
+    },
+    {
+      "case_id": "memory_l3_p0_sql_004",
+      "question": "查询年度pH年均值最高的站点列表",
+      "expected_sample_id": "L3_P0_SQL_004",
+      "expected_training_level": "level3_p0_sql_examples",
+      "expectation": "present_and_injected",
+      "search_top_k": 10,
+      "enhancer_top_k": 10,
+      "max_rank": 10
+    },
+    {
+      "case_id": "memory_l3_p1_sql_024",
+      "question": "按年实际取水量从高到低查看水源地及其服务人口",
+      "expected_sample_id": "L3_P1_SQL_024",
+      "expected_training_level": "level3_p1_sql_examples",
+      "expectation": "present_and_injected",
+      "search_top_k": 10,
+      "enhancer_top_k": 10,
+      "max_rank": 10
+    },
+    {
+      "case_id": "memory_l3_p2_sql_011",
+      "question": "查询排污口国家编码、名称、整治状态、规范化状态及实况在线监测状态联合记录明细",
+      "expected_sample_id": "L3_P2_SQL_011",
+      "expected_training_level": "level3_p2_sql_examples",
+      "expectation": "present_and_injected",
+      "search_top_k": 10,
+      "enhancer_top_k": 10,
+      "max_rank": 10
+    },
+    {
+      "case_id": "memory_l3_p1_sql_004_absent",
+      "question": "筛选存在异常状况的排污口",
+      "expected_sample_id": "L3_P1_SQL_004",
+      "expected_training_level": "level3_p1_sql_examples",
+      "expectation": "absent",
+      "search_top_k": 10,
+      "enhancer_top_k": 10,
+      "max_rank": 10
+    },
+    {
+      "case_id": "memory_l3_p2_sql_009_absent",
+      "question": "查询水文站编码、名称及所属区县编码、名称和城市",
+      "expected_sample_id": "L3_P2_SQL_009",
+      "expected_training_level": "level3_p2_sql_examples",
+      "expectation": "absent",
+      "search_top_k": 10,
+      "enhancer_top_k": 10,
+      "max_rank": 10
+    }
+  ],
   "cases": [
     {
       "case_id": "f2_dictionary_list_items",
@@ -156,6 +219,56 @@
       "expected_columns": ["admin_division", "project_name", "treatment_process", "design_scale", "actual_assess_scale", "operation_unit"],
       "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": true, "forbid_where": true, "forbid_null_filter": true, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
       "result_policy": {"exact_rows": 1, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "level2_monthly_water_quality",
+      "category": "batch_target",
+      "question": "某站点水质月变化趋势",
+      "expected_tables": ["wm_waterquality_month_records"],
+      "limit_max": 60,
+      "expected_columns": ["station_id", "monitor_year", "monitor_month", "m2_value", "m3_value", "water_quality_level"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "level2_water_intake_route",
+      "category": "batch_target",
+      "question": "查询取水口名称和水源类型",
+      "expected_tables": ["wm_water_intake"],
+      "limit_max": 50,
+      "expected_columns": ["name", "region_name", "city", "county", "water_type", "code"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "level3_p0_annual_ph_ranking",
+      "category": "batch_target",
+      "question": "查询年度pH年均值最高的站点列表",
+      "expected_tables": ["wm_waterquality_year_records"],
+      "limit_max": 20,
+      "expected_columns": ["station_id", "monitor_year", "avg_ph", "water_quality_level"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": true, "require_order_desc": true, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "level3_p1_annual_water_supply",
+      "category": "batch_target",
+      "question": "按年实际取水量从高到低查看水源地及其服务人口",
+      "expected_tables": ["wm_water_source"],
+      "limit_max": 20,
+      "expected_columns": ["name", "service_people_count", "supply_water_year", "supply_water_daily"],
+      "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": false, "require_order_desc": true, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+    },
+    {
+      "case_id": "level3_p2_three_table_outlet_detail",
+      "category": "batch_target",
+      "question": "查询排污口国家编码、名称、整治状态、规范化状态及实况在线监测状态联合记录明细",
+      "expected_tables": ["rs_outlet_info_v2", "rs_outlet_remediation_v2", "rs_outlet_live_v2"],
+      "limit_max": 50,
+      "expected_columns": ["outlet_code_national", "outlet_name", "is_remediated", "is_standardized", "drainage_feature", "has_online_monitor"],
+      "sql_constraints": {"require_join": true, "forbid_join": false, "require_left_join": false, "require_group_by": false, "require_order_desc": false, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
+      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
     }
   ]
 }

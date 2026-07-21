@@ -22,7 +22,7 @@ DEFAULT_SUITE = PROJECT_ROOT / "training" / "regression" / "postgresql_f5_regres
 FORMAL_RUNTIME = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
 EXPECTED_FORMAL_RECORD_COUNT = 198
 EXPECTED_FORMAL_SHA256 = "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
-EXPECTED_SUITE_SHA256 = "f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34"
+EXPECTED_SUITE_SHA256 = "5629f5c93ae0b1921e8978c5793f99f3f5fdc1fd4677093b03bbf7cccdea727d"
 EARLY_MEMORY_MODULES = ("backend.memory", "step4_server")
 REQUIRED_CASE_FIELDS = {
     "case_id",
@@ -51,6 +51,16 @@ REQUIRED_CONSTRAINT_FIELDS = {
     "require_chart_fields",
 }
 REQUIRED_POLICY_FIELDS = {"exact_rows", "minimum_rows", "columns_mode", "require_answer"}
+REQUIRED_MEMORY_CASE_FIELDS = {
+    "case_id",
+    "question",
+    "expected_sample_id",
+    "expected_training_level",
+    "expectation",
+    "search_top_k",
+    "enhancer_top_k",
+    "max_rank",
+}
 
 
 class FormalRuntimeChanged(RuntimeError):
@@ -168,6 +178,7 @@ def canonical_sha256(value: Any) -> str:
 def load_and_validate_suite(path: Path) -> tuple[dict[str, Any], str]:
     suite = json.loads(path.read_text(encoding="utf-8"))
     cases = suite.get("cases")
+    memory_cases = suite.get("memory_cases")
     errors: list[str] = []
     if suite.get("schema_version") != "1.0":
         errors.append("schema_version 必须为 1.0")
@@ -201,6 +212,36 @@ def load_and_validate_suite(path: Path) -> tuple[dict[str, Any], str]:
             errors.append(f"{case['case_id']} columns_mode 非法")
     if len(ids) != len(set(ids)):
         errors.append("case_id 不唯一")
+    if not isinstance(memory_cases, list):
+        errors.append("memory_cases 必须为数组")
+        memory_cases = []
+    if suite.get("memory_case_count") != len(memory_cases):
+        errors.append("memory_case_count 与 memory_cases 长度不一致")
+    memory_ids: list[str] = []
+    for index, case in enumerate(memory_cases):
+        missing = REQUIRED_MEMORY_CASE_FIELDS - set(case)
+        if missing:
+            errors.append(f"memory_cases[{index}] 缺少字段: {sorted(missing)}")
+            continue
+        memory_ids.append(str(case["case_id"]))
+        if not str(case["expected_sample_id"]).strip():
+            errors.append(f"memory_cases[{index}] expected_sample_id 为空")
+        if not str(case["question"]).strip():
+            errors.append(f"memory_cases[{index}] question 为空")
+        if case["expectation"] not in {"present_and_injected", "absent"}:
+            errors.append(f"memory_cases[{index}] expectation 非法")
+        for field in ("search_top_k", "enhancer_top_k", "max_rank"):
+            value = case[field]
+            if type(value) is not int or value <= 0:
+                errors.append(f"memory_cases[{index}] {field} 必须为正整数")
+        if (
+            type(case["max_rank"]) is int
+            and type(case["search_top_k"]) is int
+            and case["max_rank"] > case["search_top_k"]
+        ):
+            errors.append(f"memory_cases[{index}] max_rank 不得大于 search_top_k")
+    if len(memory_ids) != len(set(memory_ids)):
+        errors.append("memory case_id 不唯一")
     if errors:
         raise ValueError("; ".join(errors))
     return suite, canonical_sha256(suite)
@@ -421,7 +462,26 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         assert_no_early_memory_modules({"backend.memory": object()})
     except RuntimeError as error:
         early_import_rejected = str(error).startswith("EARLY_MEMORY_MODULE_IMPORT")
-    suite_valid = len(suite["cases"]) == suite["case_count"] == 15 and suite_sha == EXPECTED_SUITE_SHA256
+    memory_schema_valid = (
+        len(suite["memory_cases"]) == suite["memory_case_count"] == 6
+    )
+    invalid_memory_expectation_rejected = False
+    with tempfile.TemporaryDirectory(prefix="f5-invalid-memory-suite-") as temp_name:
+        invalid_suite = json.loads(json.dumps(suite))
+        invalid_suite["memory_cases"][0]["expectation"] = "invalid"
+        invalid_path = Path(temp_name) / "invalid-suite.json"
+        invalid_path.write_text(
+            json.dumps(invalid_suite, ensure_ascii=False), encoding="utf-8"
+        )
+        try:
+            load_and_validate_suite(invalid_path)
+        except ValueError:
+            invalid_memory_expectation_rejected = True
+    suite_valid = (
+        len(suite["cases"]) == suite["case_count"] == 20
+        and memory_schema_valid
+        and suite_sha == EXPECTED_SUITE_SHA256
+    )
     formal_baseline_constants_valid = (
         EXPECTED_FORMAL_RECORD_COUNT == 198
         and EXPECTED_FORMAL_SHA256
@@ -481,6 +541,8 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             accepted,
             rejected,
             suite_valid,
+            memory_schema_valid,
+            invalid_memory_expectation_rejected,
             not forbidden_imports,
             not forbidden_calls,
             same_path_rejected,
@@ -497,6 +559,9 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         "suite_id": suite["suite_id"],
         "suite_content_sha256": suite_sha,
         "suite_case_count": len(suite["cases"]),
+        "memory_case_count": len(suite["memory_cases"]),
+        "memory_schema_valid": memory_schema_valid,
+        "invalid_memory_expectation_rejected": invalid_memory_expectation_rejected,
         "structure_valid": suite_valid,
         "declarative_acceptance_test": accepted,
         "declarative_rejection_test": rejected,
@@ -555,6 +620,7 @@ def run_suite(
         query_result_files,
         read_csv,
         redact,
+        run_memory_regression,
         start_server,
         stop_server,
     )
@@ -587,8 +653,33 @@ def run_suite(
     key = ""
     cases: list[dict[str, Any]] = []
     checkpoints: list[dict[str, Any]] = []
+    memory_result: dict[str, Any] = {
+        "memory_case_count": len(suite["memory_cases"]),
+        "memory_pass_count": 0,
+        "accepted": False,
+        "cases": [],
+    }
     failure: str | None = None
     try:
+        formal_checkpoint(
+            "before_memory_regression",
+            checkpoints,
+            evidence_dir,
+            expected_record_count=expected_formal_record_count,
+            expected_sha256=expected_formal_sha256,
+        )
+        memory_result = run_memory_regression(
+            validation_dir, suite["memory_cases"], evidence_dir
+        )
+        if not memory_result["accepted"]:
+            raise RuntimeError("MEMORY_REGRESSION_FAILED")
+        formal_checkpoint(
+            "after_memory_regression",
+            checkpoints,
+            evidence_dir,
+            expected_record_count=expected_formal_record_count,
+            expected_sha256=expected_formal_sha256,
+        )
         formal_checkpoint(
             "before_service_start",
             checkpoints,
@@ -656,9 +747,14 @@ def run_suite(
         "suite_content_sha256": suite_sha,
         "question_count": len(cases),
         "question_pass_count": pass_count,
+        "memory_case_count": memory_result["memory_case_count"],
+        "memory_pass_count": memory_result["memory_pass_count"],
+        "memory_accepted": memory_result["accepted"],
+        "memory_cases": memory_result["cases"],
         "accepted": (
             failure is None
             and not fail_fast_triggered
+            and memory_result["accepted"]
             and pass_count == len(cases) == suite["case_count"]
         ),
         "parent_memory_diagnostics_executed": False,
@@ -681,6 +777,9 @@ def run_suite(
                     "suite_content_sha256",
                     "question_count",
                     "question_pass_count",
+                    "memory_case_count",
+                    "memory_pass_count",
+                    "memory_accepted",
                     "accepted",
                     "formal_runtime_fail_fast_triggered",
                     "failure",

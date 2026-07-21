@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,7 @@ from backend.sql_example_context_enhancer import (
     ALLOWED_TRAINING_LEVELS,
     SqlExampleContextEnhancer,
 )
+from backend.sql_guard import SQLGuard
 
 
 @dataclass
@@ -67,6 +69,72 @@ class FixedGuard:
 
     def validate(self, **_: Any) -> SimpleNamespace:
         return self.result
+
+
+def validate_join_contract(
+    sample: dict[str, Any], *, sql: str | None = None,
+    join_keys: list[dict[str, Any]] | None = None,
+) -> tuple[bool, list[str]]:
+    sql = sample["sql"] if sql is None else sql
+    expected_tables = list(sample["expected_tables"])
+    join_keys = list(sample["join_keys"] if join_keys is None else join_keys)
+    failures: list[str] = []
+    if not 2 <= len(expected_tables) <= 3:
+        failures.append("expected_tables_count")
+    if re.search(r"\b(?:CROSS|NATURAL)\s+JOIN\b", sql, re.I):
+        failures.append("forbidden_join_type")
+    if re.search(r"\bJOIN\b[\s\S]*?\bUSING\s*\(", sql, re.I):
+        failures.append("join_using")
+
+    join_count = len(re.findall(r"\bJOIN\b", sql, re.I))
+    on_clauses = re.findall(
+        r"\bON\b\s*(.*?)(?=\b(?:INNER|LEFT(?:\s+OUTER)?|CROSS|NATURAL)?\s*JOIN\b|\bWHERE\b|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|$)",
+        sql,
+        re.I | re.S,
+    )
+    expected_edges = len(expected_tables) - 1
+    if join_count != expected_edges or len(on_clauses) != expected_edges:
+        failures.append("explicit_join_on_count")
+    if len(join_keys) != expected_edges:
+        failures.append("join_keys_count")
+
+    aliases: dict[str, str] = {}
+    for table, alias in re.findall(
+        r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)(?:\s+AS\s+([a-z_][a-z0-9_]*))?",
+        sql,
+        re.I,
+    ):
+        aliases[(alias or table).lower()] = table.lower()
+
+    def normalize(reference: str) -> str:
+        owner, column = reference.lower().split(".", 1)
+        return f"{aliases.get(owner, owner)}.{column}"
+
+    observed_edges: set[frozenset[str]] = set()
+    for clause in on_clauses:
+        for left, right in re.findall(
+            r"([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)\s*=\s*"
+            r"([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)",
+            clause,
+            re.I,
+        ):
+            observed_edges.add(frozenset((normalize(left), normalize(right))))
+    for key in join_keys:
+        expected = frozenset((str(key["left"]).lower(), str(key["right"]).lower()))
+        if expected not in observed_edges:
+            failures.append("join_key_missing_from_on")
+            break
+
+    guard = SQLGuard().validate(
+        sql=sql,
+        query=sample["question"],
+        deterministic_candidate_tables=expected_tables,
+    )
+    if not guard.passed:
+        failures.append("sql_guard_failed")
+    if set(guard.used_tables) != set(expected_tables):
+        failures.append("used_tables_mismatch")
+    return not failures, failures
 
 
 async def run() -> list[Result]:
@@ -139,14 +207,48 @@ async def run() -> list[Result]:
     _, reason = convert(candidate(two_table, level="level3_unknown_sql_examples"))
     check("未知 training level 拒绝", "not allowed" in reason, reason)
     expected_levels = {
-        "level2_sql_examples", "level3_p0_sql_examples",
+        "level2_sql_examples", "level3_sql_examples", "level3_p0_sql_examples",
         "level3_p1_sql_examples", "level3_p2_sql_examples",
     }
     check(
-        "白名单精确包含 L2/P0/P1/P2",
+        "白名单精确包含五个正式等级",
         ALLOWED_TRAINING_LEVELS == expected_levels,
         str(sorted(ALLOWED_TRAINING_LEVELS)),
     )
+
+    for name, sample in (
+        ("P2 二表 JOIN 合同通过", two_table),
+        ("P2 三表 JOIN 合同通过", three_table),
+    ):
+        passed, failures = validate_join_contract(sample)
+        check(name, passed, str(failures))
+
+    missing_on_sql = three_table["sql"].replace(
+        " ON o.id = l.outlet_id", "", 1
+    )
+    passed, failures = validate_join_contract(three_table, sql=missing_on_sql)
+    check("P2 缺少 ON 等式被拒绝", not passed, str(failures))
+
+    passed, failures = validate_join_contract(
+        three_table, join_keys=three_table["join_keys"][:-1]
+    )
+    check("P2 join_keys 缺边被拒绝", not passed, str(failures))
+
+    using_sql = re.sub(
+        r"\bINNER\s+JOIN\s+([^\n]+?)\s+ON\s+[^\n]+",
+        r"INNER JOIN \1 USING (outlet_id)",
+        two_table["sql"],
+        count=1,
+        flags=re.I,
+    )
+    passed, failures = validate_join_contract(two_table, sql=using_sql)
+    check("P2 JOIN USING 被拒绝", not passed, str(failures))
+
+    cross_sql = re.sub(
+        r"\bINNER\s+JOIN\b", "CROSS JOIN", two_table["sql"], count=1, flags=re.I
+    )
+    passed, failures = validate_join_contract(two_table, sql=cross_sql)
+    check("P2 CROSS JOIN 被拒绝", not passed, str(failures))
     return results
 
 
@@ -178,7 +280,7 @@ def main() -> int:
         "total": len(results), "passed": passed, "failed": len(results) - passed,
         "failed_cases": [item.name for item in results if not item.passed],
     }, ensure_ascii=False))
-    return 0 if passed == len(results) == 16 else 1
+    return 0 if passed == len(results) == 22 else 1
 
 
 if __name__ == "__main__":

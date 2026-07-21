@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import asyncio
 import csv
 import json
 import os
@@ -7,10 +9,12 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -237,3 +241,196 @@ def read_csv(path: Path) -> tuple[list[str], list[list[str]]]:
     if not rows:
         return [], []
     return rows[0], [row for row in rows[1:] if any(value.strip() for value in row)]
+
+
+def run_memory_regression(
+    data_dir: Path,
+    memory_cases: list[dict[str, Any]],
+    evidence_dir: Path,
+) -> dict[str, Any]:
+    data_dir = data_dir.resolve()
+    if not data_dir.is_dir():
+        raise RuntimeError(f"隔离 Memory 目录不存在: {data_dir}")
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="memory-regression-", dir=evidence_dir
+    ) as temp_name:
+        temp_dir = Path(temp_name)
+        cases_file = temp_dir / "cases.json"
+        output_file = temp_dir / "result.json"
+        cases_file.write_text(
+            json.dumps(memory_cases, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        env = os.environ.copy()
+        env["VANNA_DATA_DIR"] = str(data_dir)
+        env["HF_HUB_OFFLINE"] = "1"
+        completed = subprocess.run(
+            [
+                str(PYTHON_EXE),
+                str(Path(__file__).resolve()),
+                "--memory-worker",
+                "--data-dir",
+                str(data_dir),
+                "--cases-file",
+                str(cases_file),
+                "--output-file",
+                str(output_file),
+            ],
+            cwd=PROJECT_ROOT,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if not output_file.is_file():
+            raise RuntimeError(
+                "Memory Worker 未生成结果"
+                + (f": {completed.stdout[-1000:]}" if completed.stdout else "")
+            )
+        result = json.loads(output_file.read_text(encoding="utf-8"))
+        (evidence_dir / "memory-regression-result.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"Memory Worker 失败，退出码={completed.returncode}: "
+                + json.dumps(result, ensure_ascii=False)
+            )
+        return result
+
+
+async def _memory_worker(
+    data_dir: Path, cases_file: Path, output_file: Path
+) -> int:
+    data_dir = data_dir.resolve()
+    os.environ["VANNA_DATA_DIR"] = str(data_dir)
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    if Path(os.environ["VANNA_DATA_DIR"]).resolve() != data_dir:
+        raise RuntimeError("MEMORY_WORKER_DATA_DIR_ASSERTION_FAILED")
+
+    from backend.memory import create_memory
+    from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
+    from backend.sql_guard import SQLGuard
+    from vanna.core.tool import ToolContext
+    from vanna.core.user import User
+
+    memory_cases = json.loads(cases_file.read_text(encoding="utf-8"))
+    memory = create_memory()
+    context = ToolContext(
+        user=User(id="longterm_memory_regression", username="longterm_memory_regression"),
+        conversation_id=str(uuid.uuid4()),
+        request_id=str(uuid.uuid4()),
+        agent_memory=memory,
+        metadata={"stage": "longterm_memory_regression"},
+    )
+    results: list[dict[str, Any]] = []
+    for case in memory_cases:
+        question = str(case["question"])
+        expected_sample_id = str(case["expected_sample_id"])
+        found = await memory.search_similar_usage(
+            question=question,
+            context=context,
+            limit=int(case["search_top_k"]),
+            similarity_threshold=0.0,
+            tool_name_filter="run_sql",
+        )
+        recalled_sample_ids = [
+            str((item.memory.metadata or {}).get("sample_id", ""))
+            for item in found
+            if (item.memory.metadata or {}).get("sample_id")
+        ]
+        target = next(
+            (
+                item
+                for item in found
+                if str((item.memory.metadata or {}).get("sample_id", ""))
+                == expected_sample_id
+            ),
+            None,
+        )
+        target_metadata = target.memory.metadata or {} if target else {}
+        enhancer = SqlExampleContextEnhancer(
+            memory=memory,
+            sql_guard=SQLGuard(),
+            top_k=int(case["enhancer_top_k"]),
+        )
+        examples = await enhancer._retrieve_examples(question)
+        injected_sample_ids = [str(item.get("sample_id", "")) for item in examples]
+        target_recalled = target is not None
+        target_rank = int(target.rank) if target else None
+        target_injected = expected_sample_id in injected_sample_ids
+        observed_training_level = str(target_metadata.get("training_level", ""))
+        observed_train_decision = str(target_metadata.get("train_decision", ""))
+        failure_reasons: list[str] = []
+        if case["expectation"] == "present_and_injected":
+            if not target_recalled:
+                failure_reasons.append("target_not_recalled")
+            if target_rank is None or target_rank > int(case["max_rank"]):
+                failure_reasons.append("target_rank_exceeded")
+            if not target_injected:
+                failure_reasons.append("target_not_injected")
+            if observed_training_level != case["expected_training_level"]:
+                failure_reasons.append("training_level_mismatch")
+            if observed_train_decision != "approved":
+                failure_reasons.append("train_decision_not_approved")
+        else:
+            if target_recalled:
+                failure_reasons.append("absent_target_recalled")
+            if target_injected:
+                failure_reasons.append("absent_target_injected")
+        results.append(
+            {
+                "case_id": case["case_id"],
+                "expected_sample_id": expected_sample_id,
+                "expectation": case["expectation"],
+                "target_rank": target_rank,
+                "target_recalled": target_recalled,
+                "target_injected": target_injected,
+                "recalled_sample_ids": recalled_sample_ids,
+                "injected_sample_ids": injected_sample_ids,
+                "observed_training_level": observed_training_level,
+                "observed_train_decision": observed_train_decision,
+                "passed": not failure_reasons,
+                "failure_reasons": failure_reasons,
+            }
+        )
+    payload = {
+        "memory_case_count": len(results),
+        "memory_pass_count": sum(int(item["passed"]) for item in results),
+        "accepted": all(item["passed"] for item in results),
+        "cases": results,
+    }
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return 0 if payload["accepted"] else 2
+
+
+def _parse_worker_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--memory-worker", action="store_true")
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--cases-file", type=Path)
+    parser.add_argument("--output-file", type=Path)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = _parse_worker_args()
+    if not args.memory_worker or not args.data_dir or not args.cases_file or not args.output_file:
+        raise RuntimeError("仅支持完整的 --memory-worker 调用")
+    return asyncio.run(
+        _memory_worker(
+            args.data_dir.resolve(),
+            args.cases_file.resolve(),
+            args.output_file.resolve(),
+        )
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
