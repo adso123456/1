@@ -171,7 +171,7 @@ Case count: 15
 Suite SHA256: f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34
 ```
 
-候选分类、Plan、重复和 Top-K 验收通过后，在另一个从已验收 candidate 创建的完整回归副本上执行：
+候选分类、Plan、重复和 Top-K 验收通过后，在另一个从已验收 candidate 创建的完整回归副本上执行切换前回归：
 
 ```powershell
 E:\3\posgresql\1\vanna_venv\Scripts\python.exe tools\run_postgresql_f5_regression.py `
@@ -181,7 +181,7 @@ E:\3\posgresql\1\vanna_venv\Scripts\python.exe tools\run_postgresql_f5_regressio
   --evidence-dir <全新Evidence目录>
 ```
 
-该 Runner 会连接 PostgreSQL 执行只读问答回归；必须保留其 `default_transaction_read_only=on`、`statement_timeout=30000`、`lock_timeout=5000` 门禁。不得使用或修改当前受保护的未跟踪审计脚本和结果文件。完整 15/15 未通过，不得切换。
+该 Runner 会连接 PostgreSQL 执行只读问答回归；必须保留其 `default_transaction_read_only=on`、`statement_timeout=30000`、`lock_timeout=5000` 门禁。不得使用或修改当前受保护的未跟踪审计脚本和结果文件。切换前完整回归 15/15 未通过，不得切换；切换后还必须从新正式库创建另一份全新回归副本再次执行 15/15，两个结果分别记录，禁止共用一个 `full_regression=PASS` 字段。
 
 ## 10. 服务停止与目录占用门禁
 
@@ -192,8 +192,9 @@ E:\3\posgresql\1\vanna_venv\Scripts\python.exe tools\run_postgresql_f5_regressio
 3. 正式来源 Tree SHA 与获批 I-B 基线一致；
 4. 已按当前正式来源重新构建并验收 candidate；
 5. candidate 完整回归 15/15 通过；
-6. 同级旧正式目录和 immutable archive 两份恢复来源均可用；
-7. 目录名称、磁盘、时间戳、Evidence 和操作人已复核。
+6. `candidate_working_copy` 完整复制到同级 candidate 后，两棵 Tree SHA 完全一致；
+7. 同级旧正式目录和 immutable archive 两份恢复来源均可用；
+8. 目录名称、磁盘、时间戳、Evidence 和操作人已复核。
 
 服务停止和无 Client 占用是 I-C 执行时事实，不能由 I-B 提前声明。I-C 必须分别显式传入 `--service-stopped-confirmed` 和 `--no-client-occupancy-confirmed`；正式切换授权另由 `--formal-switch-authorized` 提供。缺少任一参数时，工具必须在正式路径存在性判断、哈希、复制、Client 创建、候选构建和运行目录创建之前停止。任何占用无法排除时停止，不得强制终止未知进程或继续重命名。
 
@@ -228,6 +229,10 @@ no_client_occupancy_confirmed = false
 
 不得手工编辑、覆盖或复制生成所谓“批准版” summary。ChatGPT 对 I-B 的验收和 I-C 授权通过新的 I-C 提示词及本次命令行 `--formal-switch-authorized` 体现，不通过篡改 I-B Evidence 体现。
 
+I-C 还必须显式提供 `--approved-drill-summary-sha256`。固定顺序为：读取原始 summary 字节并验证 SHA-256；解析并验证 I-B 全部关键事实；验证三个运行时确认；验证路径参数；最后才允许访问正式来源。哈希或任一事实不符时，正式路径文件系统访问和 Client 创建必须均为 0。
+
+获批 I-B 事实至少包括：`IDENTITY_MIGRATION_REQUIRED` 决策、四棵相同 Tree SHA、115 条 legacy allowlist、候选 `198 total / 115 managed v1 / 0 legacy / 83 non-DDL`、零缺失/变体/非预期/重复、Plan `0/115/0/0`、12 题 Top-K=10、稳定语义 SHA 和 `3/9/10` 命中数，以及三种 sandbox 状态。三个正式运行确认字段在原始 I-B summary 中必须继续为 `false`。
+
 ## 12. 正式前向切换
 
 正式路径固定为：
@@ -250,10 +255,14 @@ vanna_data_failed_f6_1i_<时间戳>
 ```text
 1. vanna_data → vanna_data_pre_f6_1i_<时间戳>
 2. vanna_data_candidate_f6_1i_<时间戳> → vanna_data
-3. 重新打开新正式路径，执行只读分类、Plan、重复、Top-K 和完整回归验收
+3. 重新打开新正式路径，执行只读分类、Plan 和重复验收
+4. 从新正式库创建全新查询副本，与旧来源查询副本执行 12 题 Top-K=10 语义验收
+5. 从新正式库再创建全新回归副本，执行独立的切换后 15/15 完整回归
 ```
 
 禁止在原正式目录中原地删除或改写记录。
+
+切换后分类必须为 `198 total / 115 managed v1 / 0 legacy / 83 non-DDL`，Plan 必须为 `0/115/0/0`，缺失、变体、非预期和两类重复必须均为 0。Top-K 语义顺序必须与旧来源查询副本一致，两类重复槽位为 0，命中数固定为 `3/9/10`，稳定语义 SHA256 固定为 `90ea174bb3e694f8865070437483329001caed630e2fdf486aac892a58cc45e3`。
 
 ## 13. 自动失败回滚
 
@@ -262,10 +271,14 @@ vanna_data_failed_f6_1i_<时间戳>
 ```text
 1. 失败的新 vanna_data → vanna_data_failed_f6_1i_<时间戳>
 2. vanna_data_pre_f6_1i_<时间戳> → vanna_data
-3. 验证恢复后的 Tree SHA、collection 总数和只读分类与切换前一致
+3. 验证恢复后的 Tree SHA 等于切换前正式来源 SHA
+4. 从恢复库创建全新只读验证副本
+5. 验证恢复后的 collection 总数、分类和治理事实与切换前完全一致
 ```
 
 若第一步成功但第二步尚未产生新 `vanna_data`，直接执行旧正式目录恢复。自动回滚只适用于切换未成功或切换后验收失败。
+
+回滚后的 Tree SHA 或分类事实任一无法证明恢复时，状态必须为 `ROLLBACK_VERIFICATION_FAILED`，不得宣称正式库已经恢复。第二步重命名失败、新正式分类/Plan 失败、新正式 Top-K 失败或切换后完整回归失败均必须走同一验证过的回滚路径。
 
 正式切换全部验收成功后，不故意回滚正式资产；保留旧正式目录、immutable archive、candidate 和全部 Evidence。任何清理必须另行授权。
 
@@ -292,19 +305,22 @@ I-C 取得新授权且持有原始 I-B PASS summary 后使用的冻结接口：
 python -m training.sop.ddl_memory_formal_governance `
   --formal-switch `
   --formal-source E:\3\_runtime\vanna-level1\vanna_data `
-  --approved-drill-summary <I-B原始summary.json> `
+  --approved-drill-summary E:\3\_training_backups\f6-1i-b-20260721-091258\evidence\formal-governance-summary.json `
+  --approved-drill-summary-sha256 4b21bf9b075ecaa888449c05a33917d00eda057717b2927e3f8cbec7edb8a21a `
   --formal-switch-authorized `
   --service-stopped-confirmed `
   --no-client-occupancy-confirmed `
   --run-root E:\3\_training_backups\f6-1i-c-<时间戳>
 ```
 
-工具已实现后两种未来接口，但 I-A 禁止调用。`--formal-switch` 的固定顺序是：先只读验证原始 I-B summary 的 PASS、候选、非 DDL、sandbox、来源/archive SHA 和 Plan 事实；再验证三个本次运行显式确认；再验证 CLI 路径格式；最后才允许访问正式来源。I-B 模式禁止携带三个正式切换确认参数。I-B/I-C 授权必须在执行前复核并形成新的范围明确提示；不得因接口已经存在而自动运行。
+工具已实现后两种未来接口，但 F6-1I-C-A 禁止调用正式切换。`--formal-switch` 的固定顺序是：先验证原始 I-B summary 字节 SHA；再验证 PASS、治理决策、候选、非 DDL、sandbox、四棵 SHA、Plan 和 Top-K 事实；再验证三个本次运行显式确认；再验证 CLI 路径格式；最后才允许访问正式来源。I-B 模式禁止携带 summary、summary SHA 或三个正式切换确认参数。执行 F6-1I-C 前仍需新的明确授权。
 
 ## 15. Evidence 与失败处理
 
 每次运行目录必须全新且不存在，失败目录不得复用或删除。Evidence 不得保存 embedding、完整 DDL、完整 Metadata、密码、API Key、数据库完整数据或敏感查询结果。
 
-I-B/I-C 至少保留：来源/archive/candidate 清单及 Tree SHA、治理决策、冻结 allowlist 的脱敏摘要、非 DDL 三元签名对账、候选 Plan/分类/重复摘要、Top-K 稳定语义 SHA、完整回归摘要、sandbox/正式切换步骤、回滚结果和最终状态。I-B 原始 summary 不得修改或覆盖。
+I-B/I-C 至少保留：来源/archive/candidate 清单及 Tree SHA、治理决策、冻结 allowlist 的脱敏摘要、非 DDL 三元签名对账、候选 Plan/分类/重复摘要、Top-K 稳定语义 SHA、切换前与切换后两个独立完整回归摘要、sandbox/正式切换步骤、回滚验证结果和最终状态。I-B 原始 summary 不得修改或覆盖。
+
+正式切换 PASS summary 必须分别记录 `pre_switch_candidate_acceptance`、`pre_switch_topk_semantic_regression`、`pre_switch_full_regression`、`post_switch_candidate_acceptance`、`post_switch_topk_semantic_regression`、`post_switch_full_regression`，并记录 `formal_switch_executed=true`、`automatic_rollback_executed=false`、`successful_switch_rollback_policy=DO_NOT_ROLL_BACK`。
 
 出现 `BLOCKED_FORMAL_STATE`、来源变化、archive 变化、候选验收失败、语义回归变化、完整回归失败或目录占用时立即停止；不得自动重跑、不得复用失败目录、不得修改正式资产。

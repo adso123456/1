@@ -41,6 +41,9 @@ EXPECTED_DDL_COUNT = 115
 EXPECTED_NON_DDL_COUNT = 83
 COLLECTION_NAME = "tool_memories"
 FORMAL_SOURCE = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
+APPROVED_IB_TOPK_SEMANTIC_SHA256 = (
+    "90ea174bb3e694f8865070437483329001caed630e2fdf486aac892a58cc45e3"
+)
 DECISION_STATES = frozenset(
     {
         "ALREADY_MANAGED_NO_SWITCH",
@@ -102,6 +105,15 @@ class CandidateAcceptance:
     unchanged_count: int
     changed_count: int
     removed_count: int
+
+
+class FormalSwitchTransactionError(RuntimeError):
+    """正式切换失败及其回滚验证状态。"""
+
+    def __init__(self, state: str, message: str, *, rollback_verified: bool) -> None:
+        super().__init__(f"{state}: {message}")
+        self.state = state
+        self.rollback_verified = rollback_verified
 
 
 @dataclass(frozen=True)
@@ -530,6 +542,136 @@ def _tree_sha(root: Path) -> str:
     )
 
 
+def verify_sibling_candidate_tree_gate(
+    candidate_working_copy: Path | str, sibling_candidate: Path | str
+) -> str:
+    candidate_path = Path(candidate_working_copy)
+    sibling_path = Path(sibling_candidate)
+    if not candidate_path.is_dir() or not sibling_path.is_dir():
+        raise RuntimeError("candidate Tree SHA 门禁要求两份目录都存在")
+    candidate_sha = _tree_sha(candidate_path)
+    sibling_sha = _tree_sha(sibling_path)
+    if candidate_sha != sibling_sha:
+        raise RuntimeError("sibling candidate Tree SHA 与 candidate_working_copy 不一致")
+    return candidate_sha
+
+
+def _verify_restored_live(
+    live: Path,
+    expected_tree_sha: str,
+    validate_restored_classification: Callable[[Path], bool],
+) -> None:
+    try:
+        if not live.is_dir():
+            raise RuntimeError("恢复后的正式目录不存在")
+        restored_sha = _tree_sha(live)
+        if restored_sha != expected_tree_sha:
+            raise RuntimeError(
+                f"恢复 Tree SHA 不一致：expected={expected_tree_sha}, actual={restored_sha}"
+            )
+        if validate_restored_classification(live) is not True:
+            raise RuntimeError("恢复后的总数、分类或治理事实与切换前不一致")
+    except Exception as exc:
+        raise FormalSwitchTransactionError(
+            "ROLLBACK_VERIFICATION_FAILED",
+            str(exc),
+            rollback_verified=False,
+        ) from exc
+
+
+def execute_formal_switch_transaction(
+    live: Path | str,
+    sibling_candidate: Path | str,
+    pre_switch: Path | str,
+    failed_candidate: Path | str,
+    *,
+    expected_live_tree_sha: str,
+    validate_post_classification: Callable[[Path], None],
+    validate_post_topk: Callable[[Path], None],
+    run_post_full_regression: Callable[[Path], None],
+    validate_restored_classification: Callable[[Path], bool],
+    fail_second_step: bool = False,
+) -> Mapping[str, Any]:
+    live_path = Path(live)
+    candidate_path = Path(sibling_candidate)
+    pre_switch_path = Path(pre_switch)
+    failed_path = Path(failed_candidate)
+    if not live_path.is_dir() or not candidate_path.is_dir():
+        raise ValueError("正式切换要求 live 和 sibling candidate 均存在")
+    if pre_switch_path.exists() or failed_path.exists():
+        raise ValueError("pre-switch 和 failed candidate 目录必须全新且不存在")
+
+    live_path.rename(pre_switch_path)
+    try:
+        if fail_second_step:
+            raise RuntimeError("SIMULATED_SECOND_STEP_FAILURE")
+        candidate_path.rename(live_path)
+    except Exception as exc:
+        try:
+            if live_path.exists():
+                live_path.rename(failed_path)
+            elif candidate_path.exists():
+                candidate_path.rename(failed_path)
+            pre_switch_path.rename(live_path)
+            _verify_restored_live(
+                live_path,
+                expected_live_tree_sha,
+                validate_restored_classification,
+            )
+        except FormalSwitchTransactionError:
+            raise
+        except Exception as rollback_exc:
+            raise FormalSwitchTransactionError(
+                "ROLLBACK_VERIFICATION_FAILED",
+                str(rollback_exc),
+                rollback_verified=False,
+            ) from rollback_exc
+        raise FormalSwitchTransactionError(
+            "ROLLED_BACK_AFTER_SECOND_STEP_FAILURE",
+            str(exc),
+            rollback_verified=True,
+        ) from exc
+
+    post_checks = (
+        ("POST_SWITCH_CLASSIFICATION_FAILURE", validate_post_classification),
+        ("POST_SWITCH_TOPK_FAILURE", validate_post_topk),
+        ("POST_SWITCH_FULL_REGRESSION_FAILURE", run_post_full_regression),
+    )
+    for failure_state, check in post_checks:
+        try:
+            check(live_path)
+        except Exception as exc:
+            try:
+                live_path.rename(failed_path)
+                pre_switch_path.rename(live_path)
+                _verify_restored_live(
+                    live_path,
+                    expected_live_tree_sha,
+                    validate_restored_classification,
+                )
+            except FormalSwitchTransactionError:
+                raise
+            except Exception as rollback_exc:
+                raise FormalSwitchTransactionError(
+                    "ROLLBACK_VERIFICATION_FAILED",
+                    str(rollback_exc),
+                    rollback_verified=False,
+                ) from rollback_exc
+            raise FormalSwitchTransactionError(
+                f"ROLLED_BACK_AFTER_{failure_state}",
+                str(exc),
+                rollback_verified=True,
+            ) from exc
+
+    return {
+        "status": "SWITCHED",
+        "original_tree_sha": expected_live_tree_sha,
+        "new_live_tree_sha": _tree_sha(live_path),
+        "pre_switch_retained": pre_switch_path.is_dir(),
+        "automatic_rollback_executed": False,
+    }
+
+
 def execute_sandbox_switch(
     sandbox_root: Path | str,
     *,
@@ -588,6 +730,7 @@ def validate_ib_drill_summary(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     required_values = {
         "stage": "F6-1I-B",
         "assessment_status": "PASS",
+        "decision_state": "IDENTITY_MIGRATION_REQUIRED",
         "candidate_acceptance": "PASS",
         "non_ddl_preservation": "PASS",
         "formal_switch_authorized": False,
@@ -605,11 +748,43 @@ def validate_ib_drill_summary(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     if payload.get("sandbox_statuses") != expected_sandbox_statuses:
         failures.append("sandbox_statuses")
     source_sha = payload.get("formal_source_tree_sha_before")
-    archive_sha = payload.get("archive_tree_sha")
     if not isinstance(source_sha, str) or re.fullmatch(r"[0-9a-f]{64}", source_sha) is None:
         failures.append("formal_source_tree_sha_before")
-    if archive_sha != source_sha:
-        failures.append("archive_tree_sha")
+    for key in (
+        "archive_tree_sha",
+        "formal_source_tree_sha_after",
+        "archive_tree_sha_after",
+    ):
+        if payload.get(key) != source_sha:
+            failures.append(key)
+    candidate_facts = payload.get("candidate_facts")
+    expected_candidate_facts = {
+        "total_count": EXPECTED_TOTAL_COUNT,
+        "ddl_candidate_count": EXPECTED_DDL_COUNT,
+        "exact_match_record_count": EXPECTED_DDL_COUNT,
+        "exact_match_table_count": EXPECTED_DDL_COUNT,
+        "non_ddl_count": EXPECTED_NON_DDL_COUNT,
+        "managed_v1_ddl_count": EXPECTED_DDL_COUNT,
+        "legacy_expected_ddl_count": 0,
+        "missing_expected_table_count": 0,
+        "content_variant_record_count": 0,
+        "unexpected_ddl_record_count": 0,
+        "exact_duplicate_group_count": 0,
+        "table_identity_duplicate_group_count": 0,
+        "managed_v1_corrupt_count": 0,
+        "deterministic_id_conflict_count": 0,
+        "classification_reconciled": True,
+    }
+    if not isinstance(candidate_facts, Mapping):
+        failures.append("candidate_facts")
+    else:
+        failures.extend(
+            f"candidate_facts.{key}"
+            for key, expected in expected_candidate_facts.items()
+            if candidate_facts.get(key) != expected
+        )
+    if payload.get("legacy_delete_allowlist_count") != EXPECTED_DDL_COUNT:
+        failures.append("legacy_delete_allowlist_count")
     candidate_plan = payload.get("candidate_plan")
     if candidate_plan != {
         "create": 0,
@@ -618,16 +793,47 @@ def validate_ib_drill_summary(payload: Mapping[str, Any]) -> Mapping[str, Any]:
         "removed": 0,
     }:
         failures.append("candidate_plan")
+    expected_topk = {
+        "query_count": 12,
+        "top_k": 10,
+        "semantic_result_sha256": APPROVED_IB_TOPK_SEMANTIC_SHA256,
+        "expected_table_top1_hit_count": 3,
+        "expected_table_top5_hit_count": 9,
+        "expected_table_top10_hit_count": 10,
+    }
+    topk = payload.get("topk_semantic_regression")
+    if not isinstance(topk, Mapping):
+        failures.append("topk_semantic_regression")
+    else:
+        failures.extend(
+            f"topk_semantic_regression.{key}"
+            for key, expected in expected_topk.items()
+            if topk.get(key) != expected
+        )
     if failures:
         raise ValueError(f"I-B summary 演练事实校验失败：{sorted(set(failures))}")
     return payload
 
 
-def require_approved_drill_summary(path: Path | str | None) -> Mapping[str, Any]:
+def require_approved_drill_summary(
+    path: Path | str | None, expected_sha256: str | None
+) -> Mapping[str, Any]:
     if path is None:
         raise ValueError("正式切换必须提供原始 I-B summary.json")
+    if expected_sha256 is None:
+        raise ValueError("正式切换必须提供原始 I-B summary SHA-256")
+    normalized_expected_sha = expected_sha256.lower()
+    if re.fullmatch(r"[0-9a-f]{64}", normalized_expected_sha) is None:
+        raise ValueError("原始 I-B summary SHA-256 格式非法")
     summary_path = Path(path)
-    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary_bytes = summary_path.read_bytes()
+    actual_sha = hashlib.sha256(summary_bytes).hexdigest()
+    if actual_sha != normalized_expected_sha:
+        raise ValueError(
+            "原始 I-B summary SHA-256 不一致："
+            f"expected={normalized_expected_sha}, actual={actual_sha}"
+        )
+    payload = json.loads(summary_bytes.decode("utf-8"))
     return validate_ib_drill_summary(payload)
 
 
@@ -1080,11 +1286,13 @@ def isolated_drill(formal_source: Path | str, run_root: Path | str) -> Mapping[s
     return summary
 
 
-def _run_candidate_full_regression(root: Path, candidate: Path) -> None:
-    regression_copy = root / "candidate_regression_copy"
-    shutil.copytree(candidate, regression_copy, copy_function=shutil.copy2)
-    agent_dir = root / "regression_agent"
-    evidence_dir = root / "evidence" / "full-regression"
+def _run_full_regression(root: Path, source: Path, *, phase: str) -> str:
+    if phase not in {"pre-switch", "post-switch"}:
+        raise ValueError("完整回归 phase 非法")
+    regression_copy = root / f"{phase}_regression_copy"
+    shutil.copytree(source, regression_copy, copy_function=shutil.copy2)
+    agent_dir = root / f"{phase}_regression_agent"
+    evidence_dir = root / "evidence" / f"{phase}-full-regression"
     agent_dir.mkdir()
     command = [
         sys.executable,
@@ -1100,20 +1308,40 @@ def _run_candidate_full_regression(root: Path, candidate: Path) -> None:
     ]
     completed = subprocess.run(command, cwd=Path(__file__).resolve().parents[2])
     if completed.returncode != 0:
-        raise RuntimeError(f"候选完整回归失败：exit={completed.returncode}")
+        raise RuntimeError(f"{phase} 完整回归失败：exit={completed.returncode}")
+    return "PASS"
+
+
+def _validate_topk_frozen_result(
+    actual: Mapping[str, Any], approved: Mapping[str, Any]
+) -> None:
+    keys = (
+        "query_count",
+        "top_k",
+        "semantic_result_sha256",
+        "expected_table_top1_hit_count",
+        "expected_table_top5_hit_count",
+        "expected_table_top10_hit_count",
+    )
+    mismatches = [key for key in keys if actual.get(key) != approved.get(key)]
+    if mismatches:
+        raise RuntimeError(f"Top-K 结果与获批 I-B 基线不一致：{mismatches}")
 
 
 def formal_switch(
     formal_source: Path | str,
     run_root: Path | str,
     approved_drill_summary: Path | str | None,
+    approved_drill_summary_sha256: str | None,
     *,
     formal_switch_authorized: bool,
     service_stopped_confirmed: bool,
     no_client_occupancy_confirmed: bool,
 ) -> Mapping[str, Any]:
-    # 顺序是安全契约：原始 I-B Evidence → 本次运行确认 → 路径参数 → 正式访问。
-    approved = require_approved_drill_summary(approved_drill_summary)
+    # 顺序是安全契约：原始字节/SHA → I-B 事实 → 本次确认 → 路径 → 正式访问。
+    approved = require_approved_drill_summary(
+        approved_drill_summary, approved_drill_summary_sha256
+    )
     validate_formal_switch_authorization(
         formal_switch_authorized,
         service_stopped_confirmed,
@@ -1125,7 +1353,13 @@ def formal_switch(
         "formal_source_tree_sha_before"
     ):
         raise RuntimeError("当前正式来源 Tree SHA 与获批 I-B 基线不一致")
-    _run_candidate_full_regression(root, runtime["candidate_path"])
+    _validate_topk_frozen_result(
+        runtime["public"]["topk_semantic_regression"],
+        approved["topk_semantic_regression"],
+    )
+    pre_switch_full_regression = _run_full_regression(
+        root, runtime["candidate_path"], phase="pre-switch"
+    )
 
     timestamp = root.name.removeprefix("f6-1i-c-")
     parent = source.parent
@@ -1137,20 +1371,17 @@ def formal_switch(
     shutil.copytree(
         runtime["candidate_path"], sibling_candidate, copy_function=shutil.copy2
     )
-    switched = False
-    try:
-        source.rename(pre_switch)
-        try:
-            sibling_candidate.rename(source)
-            switched = True
-        except Exception:
-            pre_switch.rename(source)
-            raise
+    sibling_candidate_tree_sha = verify_sibling_candidate_tree_gate(
+        runtime["candidate_path"], sibling_candidate
+    )
+    post_results: dict[str, Any] = {}
+
+    def validate_post_classification(new_live: Path) -> None:
         post_client, post_collection = _open_runtime_collection(
-            source,
+            new_live,
             formal_source=pre_switch,
             immutable_archive=runtime["archive_path"],
-            allowed_working_copies=[source],
+            allowed_working_copies=[new_live],
         )
         try:
             post_records = _snapshot_collection_records(post_collection)
@@ -1160,23 +1391,90 @@ def formal_switch(
             runtime["desired"], runtime["source_records"], post_records
         )
         if not post_acceptance.accepted:
-            raise RuntimeError(f"新正式路径只读验收失败：{post_acceptance.reasons}")
-    except Exception:
-        if switched and source.exists():
-            source.rename(failed_candidate)
-        if pre_switch.exists() and not source.exists():
-            pre_switch.rename(source)
+            raise RuntimeError(f"新正式路径分类/Plan 验收失败：{post_acceptance.reasons}")
+        post_results["candidate_acceptance"] = post_acceptance
+
+    def validate_post_topk(new_live: Path) -> None:
+        post_query_copy = root / "post_switch_query_copy"
+        shutil.copytree(new_live, post_query_copy, copy_function=shutil.copy2)
+        result = _run_topk_semantic_comparison(
+            root / "source_query_copy",
+            post_query_copy,
+            formal_source=new_live,
+            immutable_archive=runtime["archive_path"],
+        )
+        _validate_topk_frozen_result(result, approved["topk_semantic_regression"])
+        post_results["topk_semantic_regression"] = dict(result)
+
+    def run_post_full_regression(new_live: Path) -> None:
+        post_results["full_regression"] = _run_full_regression(
+            root, new_live, phase="post-switch"
+        )
+
+    def validate_restored_classification(restored_live: Path) -> bool:
+        validation_copy = root / "rollback_validation_copy"
+        shutil.copytree(restored_live, validation_copy, copy_function=shutil.copy2)
+        restored_records = _read_working_copy_records(
+            validation_copy,
+            formal_source=restored_live,
+            immutable_archive=runtime["archive_path"],
+        )
+        restored_facts = analyze_formal_records(runtime["desired"], restored_records)
+        return restored_facts == runtime["source_facts"]
+
+    try:
+        switch_result = execute_formal_switch_transaction(
+            source,
+            sibling_candidate,
+            pre_switch,
+            failed_candidate,
+            expected_live_tree_sha=runtime["public"]["formal_source_tree_sha_before"],
+            validate_post_classification=validate_post_classification,
+            validate_post_topk=validate_post_topk,
+            run_post_full_regression=run_post_full_regression,
+            validate_restored_classification=validate_restored_classification,
+        )
+    except FormalSwitchTransactionError as exc:
+        failure_summary = {
+            "stage": "F6-1I-C",
+            "assessment_status": exc.state,
+            "formal_switch_executed": True,
+            "automatic_rollback_executed": True,
+            "rollback_verification": "PASS" if exc.rollback_verified else "FAIL",
+            "failure": str(exc),
+        }
+        _write_json(
+            runtime["evidence_path"] / "formal-governance-summary.json",
+            failure_summary,
+        )
         raise
 
+    post_acceptance = post_results["candidate_acceptance"]
     summary = {
         "stage": "F6-1I-C",
         "assessment_status": "PASS",
         **runtime["public"],
-        "full_regression": "PASS",
+        "approved_drill_summary_sha256": approved_drill_summary_sha256.lower(),
+        "sibling_candidate_tree_sha": sibling_candidate_tree_sha,
+        "pre_switch_candidate_acceptance": "PASS",
+        "pre_switch_topk_semantic_regression": "PASS",
+        "pre_switch_full_regression": pre_switch_full_regression,
+        "post_switch_candidate_acceptance": "PASS",
+        "post_switch_candidate_facts": _facts_dict(post_acceptance.facts),
+        "post_switch_candidate_plan": {
+            "create": post_acceptance.create_count,
+            "unchanged": post_acceptance.unchanged_count,
+            "changed": post_acceptance.changed_count,
+            "removed": post_acceptance.removed_count,
+        },
+        "post_switch_topk_semantic_regression": "PASS",
+        "post_switch_topk_result": post_results["topk_semantic_regression"],
+        "post_switch_full_regression": post_results["full_regression"],
         "formal_switch_executed": True,
         "automatic_rollback_executed": False,
         "pre_switch_directory": str(pre_switch),
         "successful_switch_rollback_policy": "DO_NOT_ROLL_BACK",
+        "switch_result": dict(switch_result),
     }
     _write_json(runtime["evidence_path"] / "formal-governance-summary.json", summary)
     return summary
@@ -1240,15 +1538,44 @@ def _synthetic_ib_summary() -> dict[str, Any]:
     return {
         "stage": "F6-1I-B",
         "assessment_status": "PASS",
+        "decision_state": "IDENTITY_MIGRATION_REQUIRED",
         "formal_source_tree_sha_before": source_sha,
         "archive_tree_sha": source_sha,
+        "formal_source_tree_sha_after": source_sha,
+        "archive_tree_sha_after": source_sha,
+        "legacy_delete_allowlist_count": EXPECTED_DDL_COUNT,
         "candidate_acceptance": "PASS",
         "non_ddl_preservation": "PASS",
+        "candidate_facts": {
+            "total_count": EXPECTED_TOTAL_COUNT,
+            "ddl_candidate_count": EXPECTED_DDL_COUNT,
+            "exact_match_record_count": EXPECTED_DDL_COUNT,
+            "exact_match_table_count": EXPECTED_DDL_COUNT,
+            "non_ddl_count": EXPECTED_NON_DDL_COUNT,
+            "managed_v1_ddl_count": EXPECTED_DDL_COUNT,
+            "legacy_expected_ddl_count": 0,
+            "missing_expected_table_count": 0,
+            "content_variant_record_count": 0,
+            "unexpected_ddl_record_count": 0,
+            "exact_duplicate_group_count": 0,
+            "table_identity_duplicate_group_count": 0,
+            "managed_v1_corrupt_count": 0,
+            "deterministic_id_conflict_count": 0,
+            "classification_reconciled": True,
+        },
         "candidate_plan": {
             "create": 0,
             "unchanged": EXPECTED_DDL_COUNT,
             "changed": 0,
             "removed": 0,
+        },
+        "topk_semantic_regression": {
+            "query_count": 12,
+            "top_k": 10,
+            "semantic_result_sha256": APPROVED_IB_TOPK_SEMANTIC_SHA256,
+            "expected_table_top1_hit_count": 3,
+            "expected_table_top5_hit_count": 9,
+            "expected_table_top10_hit_count": 10,
         },
         "sandbox_statuses": [
             "SWITCHED",
@@ -1591,13 +1918,56 @@ def self_test() -> int:
             json.dumps(ib_summary, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         summary_bytes_before = summary_path.read_bytes()
-        assert require_approved_drill_summary(summary_path) == ib_summary
+        summary_sha = hashlib.sha256(summary_bytes_before).hexdigest()
+        assert require_approved_drill_summary(summary_path, summary_sha) == ib_summary
         assert summary_path.read_bytes() == summary_bytes_before
+
+        from unittest.mock import patch
+
+        with patch(
+            f"{__name__}.validate_run_paths",
+            side_effect=AssertionError("PATH_VALIDATION_MUST_NOT_RUN"),
+        ), patch(
+            f"{__name__}._prepare_runtime_candidate",
+            side_effect=AssertionError("FORMAL_FILESYSTEM_MUST_NOT_RUN"),
+        ):
+            _expect_error(
+                lambda: formal_switch(
+                    FORMAL_SOURCE,
+                    temp / "unused-hash-root",
+                    summary_path,
+                    "0" * 64,
+                    formal_switch_authorized=True,
+                    service_stopped_confirmed=True,
+                    no_client_occupancy_confirmed=True,
+                ),
+                "SHA-256 不一致",
+            )
 
         invalid_cases = (
             ({**ib_summary, "assessment_status": "FAIL"}, "assessment_status"),
             ({**ib_summary, "sandbox_statuses": ["SWITCHED"]}, "sandbox_statuses"),
             ({**ib_summary, "archive_tree_sha": "b" * 64}, "archive_tree_sha"),
+            (
+                {
+                    **ib_summary,
+                    "candidate_facts": {
+                        **ib_summary["candidate_facts"],
+                        "managed_v1_ddl_count": 114,
+                    },
+                },
+                "candidate_facts.managed_v1_ddl_count",
+            ),
+            (
+                {
+                    **ib_summary,
+                    "topk_semantic_regression": {
+                        **ib_summary["topk_semantic_regression"],
+                        "semantic_result_sha256": "b" * 64,
+                    },
+                },
+                "topk_semantic_regression.semantic_result_sha256",
+            ),
             (
                 {
                     **ib_summary,
@@ -1617,6 +1987,33 @@ def self_test() -> int:
                 expected_text,
             )
 
+        for index, (invalid_summary, expected_text) in enumerate(invalid_cases[3:5]):
+            invalid_path = temp / f"invalid-approved-{index}.json"
+            invalid_bytes = json.dumps(
+                invalid_summary, ensure_ascii=False, indent=2
+            ).encode("utf-8")
+            invalid_path.write_bytes(invalid_bytes)
+            invalid_sha = hashlib.sha256(invalid_bytes).hexdigest()
+            with patch(
+                f"{__name__}.validate_run_paths",
+                side_effect=AssertionError("PATH_VALIDATION_MUST_NOT_RUN"),
+            ), patch(
+                f"{__name__}._prepare_runtime_candidate",
+                side_effect=AssertionError("FORMAL_FILESYSTEM_MUST_NOT_RUN"),
+            ):
+                _expect_error(
+                    lambda p=invalid_path, s=invalid_sha: formal_switch(
+                        FORMAL_SOURCE,
+                        temp / "unused-facts-root",
+                        p,
+                        s,
+                        formal_switch_authorized=True,
+                        service_stopped_confirmed=True,
+                        no_client_occupancy_confirmed=True,
+                    ),
+                    expected_text,
+                )
+
         _expect_error(
             lambda: validate_formal_switch_authorization(False, True, True),
             "--formal-switch-authorized",
@@ -1630,8 +2027,6 @@ def self_test() -> int:
             "--no-client-occupancy-confirmed",
         )
         assert validate_formal_switch_authorization(True, True, True) is None
-
-        from unittest.mock import patch
 
         incomplete_confirmations = (
             (False, True, True, "--formal-switch-authorized"),
@@ -1651,12 +2046,200 @@ def self_test() -> int:
                         FORMAL_SOURCE,
                         temp / "unused-run-root",
                         summary_path,
+                        summary_sha,
                         formal_switch_authorized=authorized,
                         service_stopped_confirmed=stopped,
                         no_client_occupancy_confirmed=unoccupied,
                     ),
                     expected_text,
                 )
+
+        def make_formal_case(name: str) -> tuple[Path, Path, Path, Path]:
+            case = temp / name
+            live = case / "vanna_data"
+            sibling = case / "candidate"
+            live.mkdir(parents=True)
+            sibling.mkdir()
+            (live / "state.txt").write_text("original", encoding="utf-8")
+            (sibling / "state.txt").write_text("candidate", encoding="utf-8")
+            return live, sibling, case / "pre_switch", case / "failed_candidate"
+
+        mismatch_live, mismatch_sibling, _, _ = make_formal_case("tree-mismatch")
+        _expect_error(
+            lambda: verify_sibling_candidate_tree_gate(
+                mismatch_live, mismatch_sibling
+            ),
+            "Tree SHA",
+        )
+
+        def run_failure_case(name: str, failed_stage: str) -> None:
+            live, sibling, pre, failed = make_formal_case(name)
+            original_sha = _tree_sha(live)
+            restored_checks: list[Path] = []
+
+            def check(stage: str) -> Callable[[Path], None]:
+                def inner(_path: Path) -> None:
+                    if stage == failed_stage:
+                        raise RuntimeError(f"SIMULATED_{stage}")
+
+                return inner
+
+            try:
+                execute_formal_switch_transaction(
+                    live,
+                    sibling,
+                    pre,
+                    failed,
+                    expected_live_tree_sha=original_sha,
+                    validate_post_classification=check("CLASSIFICATION"),
+                    validate_post_topk=check("TOPK"),
+                    run_post_full_regression=check("FULL_REGRESSION"),
+                    validate_restored_classification=lambda path: (
+                        restored_checks.append(path) or True
+                    ),
+                )
+            except FormalSwitchTransactionError as exc:
+                assert exc.state == f"ROLLED_BACK_AFTER_POST_SWITCH_{failed_stage}_FAILURE"
+                assert exc.rollback_verified is True
+            else:
+                raise AssertionError(f"预期 {failed_stage} 失败并回滚")
+            assert _tree_sha(live) == original_sha
+            assert restored_checks == [live]
+            assert failed.is_dir()
+
+        run_failure_case("classification-failure", "CLASSIFICATION")
+        run_failure_case("topk-failure", "TOPK")
+        run_failure_case("full-regression-failure", "FULL_REGRESSION")
+
+        live, sibling, pre, failed = make_formal_case("second-step-failure")
+        original_sha = _tree_sha(live)
+        try:
+            execute_formal_switch_transaction(
+                live,
+                sibling,
+                pre,
+                failed,
+                expected_live_tree_sha=original_sha,
+                validate_post_classification=lambda path: None,
+                validate_post_topk=lambda path: None,
+                run_post_full_regression=lambda path: None,
+                validate_restored_classification=lambda path: True,
+                fail_second_step=True,
+            )
+        except FormalSwitchTransactionError as exc:
+            assert exc.state == "ROLLED_BACK_AFTER_SECOND_STEP_FAILURE"
+            assert exc.rollback_verified is True
+        else:
+            raise AssertionError("预期第二步失败并回滚")
+        assert _tree_sha(live) == original_sha
+
+        live, sibling, pre, failed = make_formal_case("rollback-proof-failure")
+        original_sha = _tree_sha(live)
+        try:
+            execute_formal_switch_transaction(
+                live,
+                sibling,
+                pre,
+                failed,
+                expected_live_tree_sha=original_sha,
+                validate_post_classification=lambda path: (_ for _ in ()).throw(
+                    RuntimeError("SIMULATED_CLASSIFICATION")
+                ),
+                validate_post_topk=lambda path: None,
+                run_post_full_regression=lambda path: None,
+                validate_restored_classification=lambda path: False,
+            )
+        except FormalSwitchTransactionError as exc:
+            assert exc.state == "ROLLBACK_VERIFICATION_FAILED"
+            assert exc.rollback_verified is False
+        else:
+            raise AssertionError("回滚验证失败不得宣称恢复")
+
+        success_parent = temp / "formal-success"
+        source = success_parent / "vanna_data"
+        source.mkdir(parents=True)
+        (source / "state.txt").write_text("original", encoding="utf-8")
+        formal_root = temp / "f6-1i-c-20990101-000000"
+        formal_root.mkdir()
+        candidate_path = formal_root / "candidate_working_copy"
+        candidate_path.mkdir()
+        (candidate_path / "state.txt").write_text("candidate", encoding="utf-8")
+        archive_path = formal_root / "immutable_source_archive"
+        archive_path.mkdir()
+        evidence_path = formal_root / "evidence"
+        evidence_path.mkdir()
+        (formal_root / "source_query_copy").mkdir()
+        candidate_facts = analyze_formal_records(desired, managed_source)
+        synthetic_acceptance = CandidateAcceptance(
+            True, (), candidate_facts, 0, EXPECTED_DDL_COUNT, 0, 0
+        )
+        synthetic_runtime = {
+            "desired": desired,
+            "source_records": six_false_positive_records,
+            "candidate_records": managed_source,
+            "source_facts": false_positive_facts,
+            "candidate_path": candidate_path,
+            "archive_path": archive_path,
+            "evidence_path": evidence_path,
+            "public": {
+                "formal_source_tree_sha_before": ib_summary[
+                    "formal_source_tree_sha_before"
+                ],
+                "candidate_acceptance": "PASS",
+                "candidate_facts": _facts_dict(candidate_facts),
+                "candidate_plan": {
+                    "create": 0,
+                    "unchanged": EXPECTED_DDL_COUNT,
+                    "changed": 0,
+                    "removed": 0,
+                },
+                "non_ddl_preservation": "PASS",
+                "topk_semantic_regression": ib_summary[
+                    "topk_semantic_regression"
+                ],
+            },
+        }
+        regression_phases: list[str] = []
+
+        def fake_full_regression(_root: Path, _source: Path, *, phase: str) -> str:
+            regression_phases.append(phase)
+            return "PASS"
+
+        with patch(
+            f"{__name__}.validate_run_paths", return_value=(source, formal_root)
+        ), patch(
+            f"{__name__}._prepare_runtime_candidate", return_value=synthetic_runtime
+        ), patch(
+            f"{__name__}._run_full_regression", side_effect=fake_full_regression
+        ), patch(
+            f"{__name__}._open_runtime_collection", return_value=(object(), object())
+        ), patch(
+            f"{__name__}._snapshot_collection_records", return_value=managed_source
+        ), patch(
+            f"{__name__}._close_runtime_collection", return_value=None
+        ), patch(
+            f"{__name__}.validate_candidate_acceptance",
+            return_value=synthetic_acceptance,
+        ), patch(
+            f"{__name__}._run_topk_semantic_comparison",
+            return_value=ib_summary["topk_semantic_regression"],
+        ):
+            success_summary = formal_switch(
+                source,
+                formal_root,
+                summary_path,
+                summary_sha,
+                formal_switch_authorized=True,
+                service_stopped_confirmed=True,
+                no_client_occupancy_confirmed=True,
+            )
+        assert regression_phases == ["pre-switch", "post-switch"]
+        assert success_summary["pre_switch_full_regression"] == "PASS"
+        assert success_summary["post_switch_full_regression"] == "PASS"
+        assert success_summary["post_switch_candidate_acceptance"] == "PASS"
+        assert success_summary["post_switch_topk_semantic_regression"] == "PASS"
+        assert success_summary["automatic_rollback_executed"] is False
+        assert success_summary["successful_switch_rollback_policy"] == "DO_NOT_ROLL_BACK"
 
         with patch.object(
             sys,
@@ -1673,7 +2256,7 @@ def self_test() -> int:
         ):
             _expect_system_exit(main, "--isolated-drill 禁止携带")
 
-    _expect_error(lambda: require_approved_drill_summary(None), "原始 I-B")
+    _expect_error(lambda: require_approved_drill_summary(None, None), "原始 I-B")
     forbidden_modules = ("chromadb", "vanna", "agent_config")
     assert not any(
         module == forbidden or module.startswith(forbidden + ".")
@@ -1691,6 +2274,9 @@ def self_test() -> int:
     print("SANDBOX_FORWARD_SWITCH_TEST=PASS")
     print("SANDBOX_ROLLBACK_TEST=PASS")
     print("IB_SUMMARY_VALIDATION_TEST=PASS")
+    print("IB_SUMMARY_SHA256_GATE_TEST=PASS")
+    print("IB_CRITICAL_FACTS_GATE_TEST=PASS")
+    print("IB_TOPK_SHA_GATE_TEST=PASS")
     print("IB_SUMMARY_IMMUTABILITY_TEST=PASS")
     print("MISSING_AUTHORIZATION_TEST=PASS")
     print("MISSING_SERVICE_STOP_TEST=PASS")
@@ -1699,6 +2285,15 @@ def self_test() -> int:
     print("IB_FLAG_REJECTION_TEST=PASS")
     print("PRE_FILESYSTEM_FAILURE_TEST=PASS")
     print("FORMAL_SWITCH_APPROVAL_GATE_TEST=PASS")
+    print("SIBLING_CANDIDATE_TREE_GATE_TEST=PASS")
+    print("POST_SWITCH_CLASSIFICATION_ROLLBACK_TEST=PASS")
+    print("POST_SWITCH_TOPK_ROLLBACK_TEST=PASS")
+    print("POST_SWITCH_FULL_REGRESSION_ROLLBACK_TEST=PASS")
+    print("ROLLBACK_TREE_SHA_RESTORE_TEST=PASS")
+    print("ROLLBACK_CLASSIFICATION_RESTORE_TEST=PASS")
+    print("ROLLBACK_VERIFICATION_FAILED_STATE_TEST=PASS")
+    print("PRE_POST_FULL_REGRESSION_SEPARATION_TEST=PASS")
+    print("SUCCESSFUL_SWITCH_NO_ROLLBACK_TEST=PASS")
     print("SHARED_DDL_CLASSIFICATION_CONTRACT_TEST=PASS")
     print("SIX_FALSE_POSITIVE_REGRESSION_TEST=PASS:198/115/115/0/83")
     print("NON_DDL_PRESERVATION_CLASSIFICATION_TEST=PASS:83")
@@ -1720,6 +2315,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--formal-source", type=Path)
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--approved-drill-summary", type=Path)
+    parser.add_argument("--approved-drill-summary-sha256")
     parser.add_argument("--formal-switch-authorized", action="store_true")
     parser.add_argument("--service-stopped-confirmed", action="store_true")
     parser.add_argument("--no-client-occupancy-confirmed", action="store_true")
@@ -1738,12 +2334,17 @@ def main() -> int:
             args.formal_source
             or args.run_root
             or args.approved_drill_summary
+            or args.approved_drill_summary_sha256
             or any(runtime_confirmations)
         ):
             raise SystemExit("--self-test 不接受正式路径参数")
         return self_test()
     if args.isolated_drill:
-        if args.approved_drill_summary or any(runtime_confirmations):
+        if (
+            args.approved_drill_summary
+            or args.approved_drill_summary_sha256
+            or any(runtime_confirmations)
+        ):
             raise SystemExit("--isolated-drill 禁止携带正式切换批准或运行时确认参数")
     if not args.formal_source or not args.run_root:
         raise SystemExit("治理模式必须提供 --formal-source 和 --run-root")
@@ -1754,6 +2355,7 @@ def main() -> int:
             args.formal_source,
             args.run_root,
             args.approved_drill_summary,
+            args.approved_drill_summary_sha256,
             formal_switch_authorized=args.formal_switch_authorized,
             service_stopped_confirmed=args.service_stopped_confirmed,
             no_client_occupancy_confirmed=args.no_client_occupancy_confirmed,
