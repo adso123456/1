@@ -510,7 +510,7 @@ FORMAL_SWITCH_EXECUTED=NO
 
 Evidence：`E:\3\_training_backups\f6-1i-a-r1-20260720-165753\evidence`。F6-1I-A-R1 已完成等待审查；F6-1I-B、F6-1I-C 未开始。
 
-## 17. F6-1I-B-R1 统一正式 DDL 分类契约（已完成，等待审查）
+## 17. F6-1I-B-R1 统一正式 DDL 分类契约（已完成）
 
 F6-1I-B 首次唯一执行在 `E:\3\_training_backups\f6-1i-b-20260720-171235` 安全停止，状态为 `BLOCKED_FORMAL_STATE`。来源复制前、immutable archive、来源复制后 Tree SHA 均为 `ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f`；正式路径 Client 打开 0，未迁移、未执行 Top-K/sandbox、未修改正式资产。失败 summary SHA256 为 `175ad1fd17318b76be8f8bba6ae4c9a739f3fa6086c9f807809aacfbabebf045`，失败目录和 summary 不得修改或复用。
 
@@ -535,7 +535,29 @@ decision_state               IDENTITY_MIGRATION_REQUIRED
 
 6 条 SQL 示例全部进入非 DDL 三元签名；输入倒序不改变审计分类或治理事实。本阶段正式 Chroma 文件系统访问 0、Client 创建 0，未重新执行 I-B。Evidence：`E:\3\_training_backups\f6-1i-b-r1-20260720-172243\evidence`。
 
-## 18. 风险与下一阶段
+## 18. F6-1I-B-R2 完整隔离候选与切换/回滚演练（已完成，等待审查）
+
+2026-07-21 使用全新运行目录 `E:\3\_training_backups\f6-1i-b-20260721-091258` 唯一执行一次 `--isolated-drill`，原始 I-B summary 状态为 `PASS`。正式来源仅用于遍历、读取、文件大小/SHA-256 计算和复制；脚本以正式路径创建 Chroma Client 的次数为 0，未执行正式路径切换。
+
+来源复制前、immutable archive、来源复制后以及演练结束后的 archive Tree SHA 均为：
+
+```text
+ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f
+```
+
+来源治理决策为 `IDENTITY_MIGRATION_REQUIRED`。来源分类为 `198 total / 115 DDL candidate / 115 exact records / 115 exact tables / 0 managed v1 / 115 legacy expected DDL / 83 non-DDL / 0 missing / 0 variant / 0 unexpected / 0 exact duplicate groups / 0 table-identity duplicate groups`。legacy 删除 allowlist 共 115 条，全部由精确规范化 document SHA、`expected_exact_match` 分类和冻结 record ID 共同限定，非 DDL 进入 allowlist 的数量为 0。
+
+迁移仅发生在 `candidate_working_copy`。候选验收为 `PASS`：`198 total / 115 managed v1 / 0 legacy / 83 non-DDL / 0 variant / 0 unexpected / 0 exact duplicate groups / 0 table-identity duplicate groups`；Plan 为 `create=0 / unchanged=115 / changed=0 / removed=0`。83 条非 DDL 的 `record_id + normalized_document_sha256 + canonical_metadata_sha256` 逐记录保持，包含此前误判的 6 条 `CREATE TABLE` SQL 示例；未读取、保存或导出 embedding。
+
+12 题、Top-K=10 的双查询副本语义顺序一致，精确重复槽位和表身份重复槽位均为 0；期望表命中数为 `Top-1=3 / Top-5=9 / Top-10=10`，稳定语义 SHA256 为 `90ea174bb3e694f8865070437483329001caed630e2fdf486aac892a58cc45e3`。本阶段未执行 15 题完整回归。
+
+Sandbox 依序得到 `SWITCHED`、`ROLLED_BACK_AFTER_SECOND_STEP_FAILURE`、`ROLLED_BACK_AFTER_LIVE_ACCEPTANCE_FAILURE`。两类失败均恢复原 live Tree 和来源分类/总数；正常切换保留 pre-switch 且不主动回滚，正式来源和 immutable archive 保持不变。
+
+原始 I-B summary 为 `E:\3\_training_backups\f6-1i-b-20260721-091258\evidence\formal-governance-summary.json`，SHA256 为 `4b21bf9b075ecaa888449c05a33917d00eda057717b2927e3f8cbec7edb8a21a`。其 `formal_switch_authorized`、`service_stopped_confirmed`、`no_client_occupancy_confirmed` 均保持 `false`，未手工修改或生成批准版。
+
+F6-1I-B-R2 已完成并等待审查；F6-1I-C 未开始。当前唯一动作是等待 ChatGPT 审查并决定是否明确授权 F6-1I-C，不得把 F6-1I 或 F6-1 标记为完成。
+
+## 19. 风险与下一阶段
 
 ### BLOCKING_RISK
 
@@ -543,4 +565,4 @@ decision_state               IDENTITY_MIGRATION_REQUIRED
 2. 当前 `save_text_memory` 会生成 UUID 和 timestamp。F6-1D 适配层已绕过该 API，以显式 `record_id` 实现固定存储契约；后续完整 Apply 不得重新调用旧 API。
 3. 当前 collection 混存 Text Memory 与 Tool Memory。正式治理必须按完整副本验收，不能按文本相似度或单条 ID 在正式库原地删除。
 
-下一阶段建议：等待 ChatGPT 审查统一分类契约并重新明确授权 F6-1I-B。下一次必须使用全新运行目录，不得复用首次失败目录；当前不访问或治理正式 198 条 Chroma、不新增正式 Memory、不自动执行隔离演练或正式切换。
+下一阶段建议：等待 ChatGPT 审查本次完整隔离演练，并决定是否明确授权 F6-1I-C。当前不治理正式 198 条 Chroma、不新增正式 Memory、不执行正式切换，也不自动进入 F6-1I-C。
