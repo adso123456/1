@@ -27,6 +27,12 @@ frontend/dist/
 # Runtime data
 vanna_data/
 
+# Generated query results
+agent_data/**/query_results_*.csv
+
+# Local capture logs
+capture/*.jsonl
+
 # Local development artifacts
 .local/
 
