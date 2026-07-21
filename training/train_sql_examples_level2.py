@@ -25,7 +25,7 @@ EXPECTED_EXCLUDED_COUNT = 0
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from agent_config import create_memory
+from backend.memory import create_memory
 from backend.sql_guard import SQLGuard
 from vanna.core.registry import ToolRegistry
 from vanna.core.tool import ToolContext

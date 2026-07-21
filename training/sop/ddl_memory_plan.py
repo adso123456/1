@@ -516,7 +516,7 @@ def self_test() -> int:
     assert build_ddl_memory_plan([], [other_version]).unmanaged_existing_count == 1
 
     assert re.fullmatch(r"[0-9a-f]{64}", mixed.plan_sha256)
-    forbidden_modules = ("chromadb", "vanna", "agent_config")
+    forbidden_modules = ("chromadb", "vanna", "backend.memory")
     assert not any(
         module_name == forbidden or module_name.startswith(forbidden + ".")
         for module_name in sys.modules

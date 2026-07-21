@@ -170,8 +170,8 @@ class FullSchemaTrainingTests(unittest.TestCase):
     def test_import_has_no_runtime_side_effect_dependencies(self) -> None:
         source = (PROJECT_ROOT / "train_step3.py").read_text(encoding="utf-8")
         self.assertNotIn("PostgresRunner", source)
-        self.assertNotIn("from agent_config", source.split("async def _run_training", 1)[0])
-        self.assertNotIn("agent_config", sys.modules)
+        self.assertNotIn("from backend.memory", source.split("async def _run_training", 1)[0])
+        self.assertNotIn("backend.memory", sys.modules)
 
     def test_server_prompt_no_longer_claims_six_tables(self) -> None:
         source = (PROJECT_ROOT / "step4_server.py").read_text(encoding="utf-8")

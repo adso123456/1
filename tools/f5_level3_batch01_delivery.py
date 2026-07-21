@@ -222,7 +222,7 @@ def database_validation() -> dict[str, Any]:
 def open_memory(data: Path, root: Path) -> tuple[Any, Any]:
     if Path(os.environ.get("VANNA_DATA_DIR", "")).resolve() != data.resolve():
         raise RuntimeError("ISOLATED_PATH_MISMATCH")
-    from agent_config import EMBEDDING_FUNCTION
+    from backend.memory import EMBEDDING_FUNCTION
     from vanna.integrations.chromadb import ChromaAgentMemory
     from training.sop.chroma_tool_memory_adapter import ChromaToolMemoryAdapter
     memory = ChromaAgentMemory(

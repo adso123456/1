@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from agent_config import build_db_kwargs, validate_db_config
+from config.settings import build_db_kwargs, validate_db_config
 
 
 BASE_ENV = {
@@ -36,7 +36,7 @@ def raises_value_error(callback) -> tuple[bool, str]:
 
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
-    source = (PROJECT_ROOT / "agent_config.py").read_text(encoding="utf-8")
+    source = (PROJECT_ROOT / "config" / "settings.py").read_text(encoding="utf-8")
     hardcode_removed = 'user="postgres"' not in source and "test123456" not in source
     results.append(("数据库账号密码硬编码已移除", hardcode_removed, "源码静态检查"))
 

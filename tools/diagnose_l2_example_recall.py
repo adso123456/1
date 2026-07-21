@@ -197,7 +197,7 @@ async def diagnose() -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
 
-    from agent_config import create_memory
+    from backend.memory import create_memory
     from backend.metadata_context_enhancer import DeterministicMetadataContextEnhancer
     from backend.metadata_retriever import DeterministicMetadataRetriever
     from vanna.core.enhancer.default import DefaultLlmContextEnhancer

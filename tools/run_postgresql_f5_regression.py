@@ -23,7 +23,7 @@ FORMAL_RUNTIME = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
 EXPECTED_FORMAL_RECORD_COUNT = 198
 EXPECTED_FORMAL_SHA256 = "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
 EXPECTED_SUITE_SHA256 = "f7a3c417819d17e1aa12f59630375e0ab5194e9aa0245c7f4427dc977cb48b34"
-EARLY_MEMORY_MODULES = ("agent_config", "step4_server")
+EARLY_MEMORY_MODULES = ("backend.memory", "step4_server")
 REQUIRED_CASE_FIELDS = {
     "case_id",
     "category",
@@ -406,7 +406,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
     forbidden_imports = sorted(
         name
         for name in imported_modules
-        if name in {"agent_config", "step4_server", "chromadb", "vanna"}
+        if name in {"backend.memory", "step4_server", "chromadb", "vanna"}
         or name.startswith("chromadb.")
         or name.startswith("vanna.")
     )
@@ -418,7 +418,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         same_path_rejected = str(error) == "FORMAL_DATA_DIR_FORBIDDEN"
     early_import_rejected = False
     try:
-        assert_no_early_memory_modules({"agent_config": object()})
+        assert_no_early_memory_modules({"backend.memory": object()})
     except RuntimeError as error:
         early_import_rejected = str(error).startswith("EARLY_MEMORY_MODULE_IMPORT")
     suite_valid = len(suite["cases"]) == suite["case_count"] == 15 and suite_sha == EXPECTED_SUITE_SHA256
@@ -502,7 +502,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         "declarative_rejection_test": rejected,
         "runner_calls_f2_run_case": "run_case" in forbidden_calls,
         "runner_calls_context_diagnostics": "context_diagnostics" in forbidden_calls,
-        "runner_imports_agent_config": "agent_config" in forbidden_imports,
+        "runner_imports_backend_memory": "backend.memory" in forbidden_imports,
         "runner_calls_create_memory": "create_memory" in forbidden_calls,
         "forbidden_imports": forbidden_imports,
         "formal_path_as_validation_rejected": same_path_rejected,

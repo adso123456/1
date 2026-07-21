@@ -87,7 +87,7 @@ def static_audit() -> dict[str, Any]:
             "train_step3.build_all_table_ddls",
         ],
         "write_entry": "train_step3._run_training",
-        "memory_factory": "agent_config.create_memory",
+        "memory_factory": "backend.memory.create_memory",
         "memory_api": "ChromaAgentMemory.save_text_memory",
         "chroma_api": "Collection.upsert",
         "collection_name": COLLECTION_NAME,
@@ -185,7 +185,7 @@ async def reproduce(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any]
         raise RuntimeError(f"代表性 DDL 不足 {SAMPLE_SIZE} 条")
 
     os.environ["VANNA_DATA_DIR"] = str(isolated_chroma)
-    from agent_config import create_memory
+    from backend.memory import create_memory
     from vanna.core.registry import ToolRegistry
     from vanna.core.tool import ToolContext
     from vanna.core.user import User

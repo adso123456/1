@@ -535,7 +535,7 @@ def self_test() -> int:
     assert SHA256_PATTERN.fullmatch(result.apply_result_sha256)
     assert not hasattr(DdlMemoryChromaAdapter, "delete")
     assert not hasattr(DdlMemoryChromaAdapter, "remove")
-    forbidden_modules = ("chromadb", "vanna", "agent_config")
+    forbidden_modules = ("chromadb", "vanna", "backend.memory")
     assert not any(
         module_name == forbidden or module_name.startswith(forbidden + ".")
         for module_name in sys.modules

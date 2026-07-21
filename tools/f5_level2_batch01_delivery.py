@@ -187,7 +187,7 @@ def execute_database_validation(sql: str) -> dict[str, Any]:
 def open_memory(path: Path, isolated_root: Path) -> tuple[Any, ChromaToolMemoryAdapter]:
     if Path(os.environ.get("VANNA_DATA_DIR", "")).resolve() != path.resolve():
         raise RuntimeError("PARENT_MEMORY_PATH_MISMATCH")
-    from agent_config import EMBEDDING_FUNCTION
+    from backend.memory import EMBEDDING_FUNCTION
     from vanna.integrations.chromadb import ChromaAgentMemory
 
     memory = ChromaAgentMemory(
@@ -295,8 +295,8 @@ def run_isolated_worker(root: Path) -> int:
             "VANNA_DISABLE_LEGACY_SQL_EXAMPLES": "0",
         }
     )
-    if "agent_config" in sys.modules:
-        raise RuntimeError("EARLY_AGENT_CONFIG_IMPORT")
+    if "backend.memory" in sys.modules:
+        raise RuntimeError("EARLY_BACKEND_MEMORY_IMPORT")
     batch = load_batch()
     validation = validate_training_batch(batch, sql_guard=SQLGuard())
     plan = build_memory_write_plan(

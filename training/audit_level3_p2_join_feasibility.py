@@ -13,7 +13,7 @@ from typing import Any
 import psycopg2
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-AGENT_CONFIG_PATH = PROJECT_ROOT / "agent_config.py"
+SETTINGS_PATH = PROJECT_ROOT / "config" / "settings.py"
 DRAFT_PATH = Path(__file__).with_name("sql_examples_level3_p2_draft.json")
 REPORT_PATH = Path(__file__).with_name("level3_p2_join_feasibility_result.md")
 
@@ -92,8 +92,8 @@ DEL_FLAG_TABLES = [
 
 
 def load_db_kwargs() -> dict[str, Any]:
-    """从项目配置源码读取字面量 DB_KWARGS，不执行 agent_config.py。"""
-    tree = ast.parse(AGENT_CONFIG_PATH.read_text(encoding="utf-8"))
+    """从项目配置源码读取字面量 DB_KWARGS，不执行 config/settings.py。"""
+    tree = ast.parse(SETTINGS_PATH.read_text(encoding="utf-8"))
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
@@ -103,7 +103,7 @@ def load_db_kwargs() -> dict[str, Any]:
             return {item.arg: ast.literal_eval(item.value) for item in node.value.keywords if item.arg}
         if isinstance(node.value, ast.Dict):
             return ast.literal_eval(node.value)
-    raise RuntimeError("agent_config.py 中未找到可安全读取的 DB_KWARGS")
+    raise RuntimeError("config/settings.py 中未找到可安全读取的 DB_KWARGS")
 
 
 def connect_readonly(db_kwargs: dict[str, Any]):
@@ -436,7 +436,7 @@ def write_report(payload: dict[str, Any]) -> None:
         "",
         "## 执行边界",
         "",
-        "- 数据库连接：是，使用 agent_config.py 的现有 DB_KWARGS",
+        "- 数据库连接：是，使用 config/settings.py 的现有 DB_KWARGS",
         "- 事务只读：是",
         "- 非 SELECT 业务语句：0",
         "- 主服务：未启动",

@@ -188,7 +188,7 @@ def rollback_text(previous_present: bool, previous_value: str) -> str:
     if previous_present:
         action = f"将用户级 VANNA_DATA_DIR 恢复为原值：{previous_value}"
     else:
-        action = "删除用户级 VANNA_DATA_DIR，恢复 agent_config.py 默认路径。"
+        action = "删除用户级 VANNA_DATA_DIR，恢复 config/settings.py 默认路径。"
     return (
         "F4 Level 1 正式运行库切换回滚说明\n\n"
         f"{action}\n\n"
@@ -248,8 +248,8 @@ def port_8000_open() -> bool:
 
 
 def assert_parent_memory_binding(promoted_path: Path) -> None:
-    if "agent_config" in sys.modules:
-        raise RuntimeError("EARLY_AGENT_CONFIG_IMPORT")
+    if "backend.memory" in sys.modules:
+        raise RuntimeError("EARLY_BACKEND_MEMORY_IMPORT")
     raw_path = os.getenv("VANNA_DATA_DIR", "").strip()
     if not raw_path:
         raise RuntimeError("PARENT_VANNA_DATA_DIR_NOT_SET")
@@ -298,7 +298,7 @@ def self_test() -> int:
     assert left["content_sha256"] == right["content_sha256"]
 
     original_vanna_data_dir = os.environ.pop("VANNA_DATA_DIR", None)
-    original_agent_config = sys.modules.pop("agent_config", None)
+    original_backend_memory = sys.modules.pop("backend.memory", None)
     promoted = Path(r"E:\runtime\promoted")
     try:
         try:
@@ -317,16 +317,16 @@ def self_test() -> int:
         os.environ["VANNA_DATA_DIR"] = str(promoted)
         assert_parent_memory_binding(promoted)
 
-        sys.modules["agent_config"] = object()  # type: ignore[assignment]
+        sys.modules["backend.memory"] = object()  # type: ignore[assignment]
         try:
             assert_parent_memory_binding(promoted)
-            raise AssertionError("agent_config 提前导入时应拒绝")
+            raise AssertionError("backend.memory 提前导入时应拒绝")
         except RuntimeError as error:
-            assert str(error) == "EARLY_AGENT_CONFIG_IMPORT"
+            assert str(error) == "EARLY_BACKEND_MEMORY_IMPORT"
     finally:
-        sys.modules.pop("agent_config", None)
-        if original_agent_config is not None:
-            sys.modules["agent_config"] = original_agent_config
+        sys.modules.pop("backend.memory", None)
+        if original_backend_memory is not None:
+            sys.modules["backend.memory"] = original_backend_memory
         if original_vanna_data_dir is None:
             os.environ.pop("VANNA_DATA_DIR", None)
         else:
@@ -472,7 +472,7 @@ def main() -> int:
         "promoted_record_count_before_smoke": promoted_record_count_before_smoke,
         "promoted_record_count_after_smoke": promoted_record_count_after_smoke,
         "parent_process_vanna_data_dir": os.environ["VANNA_DATA_DIR"],
-        "early_agent_config_import": False,
+        "early_backend_memory_import": False,
         "previous_user_vanna_data_dir_present": previous_present,
         "user_vanna_data_dir_after": get_user_environment("VANNA_DATA_DIR")[1],
         "server_started": server_started,

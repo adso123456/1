@@ -366,7 +366,7 @@ def evaluate(
 
 
 async def audit_child(output_path: Path) -> int:
-    from agent_config import create_memory
+    from backend.memory import create_memory
     from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from vanna.core.tool import ToolContext
     from vanna.core.user import User

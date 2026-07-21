@@ -338,7 +338,7 @@ def memory_content(item: Any) -> str:
 
 
 async def context_diagnostics(query: str, targets: list[str], enabled: bool) -> dict[str, Any]:
-    from agent_config import create_memory
+    from backend.memory import create_memory
     from backend.metadata_retriever import DeterministicMetadataRetriever
     from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from backend.sql_guard import SQLGuard

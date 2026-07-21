@@ -606,7 +606,7 @@ def main() -> int:
         )
         adapter._collection = original_collection
         record_result(results, "清点前后 count 变化形成稳定错误", count_rejected, count_detail)
-        record_result(results, "测试未导入 agent_config", "agent_config" not in sys.modules)
+        record_result(results, "测试未导入 backend.memory", "backend.memory" not in sys.modules)
         record_result(results, "测试不含数据库、SQL 执行或 DeepSeek 调用", True)
     finally:
         adapter = None

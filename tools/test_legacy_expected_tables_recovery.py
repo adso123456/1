@@ -461,7 +461,7 @@ def main() -> int:
         & {"psycopg", "psycopg2", "requests", "httpx", "sqlalchemy"},
     )
     module_source = (ROOT / "training" / "sop" / "legacy_expected_tables_recovery.py").read_text(encoding="utf-8")
-    check("纯逻辑模块无存储和网络依赖", not any(name in module_source for name in ("chromadb", "sqlite3", "AgentMemory", "ChromaAgentMemory", "agent_config", "psycopg", "requests", "httpx")))
+    check("纯逻辑模块无存储和网络依赖", not any(name in module_source for name in ("chromadb", "sqlite3", "AgentMemory", "ChromaAgentMemory", "backend.memory", "psycopg", "requests", "httpx")))
     check("测试前后Git状态一致", initial_status == _git_status())
 
     print(f"expected_tables恢复测试汇总: {PASSED} pass / {FAILED} fail")

@@ -267,7 +267,7 @@ def open_isolated_adapter(
     )
     target.mkdir(parents=True, exist_ok=True)
 
-    from agent_config import ChineseChromaAgentMemory, EMBEDDING_FUNCTION
+    from backend.memory import ChineseChromaAgentMemory, EMBEDDING_FUNCTION
 
     memory = ChineseChromaAgentMemory(
         persist_directory=str(target),
@@ -447,7 +447,7 @@ def self_test() -> int:
     assert not hasattr(DdlMemoryChromaAdapter, "remove")
     assert not hasattr(DdlMemoryChromaAdapter, "apply_plan")
 
-    forbidden_modules = ("chromadb", "vanna", "agent_config")
+    forbidden_modules = ("chromadb", "vanna", "backend.memory")
     assert not any(
         module_name == forbidden or module_name.startswith(forbidden + ".")
         for module_name in sys.modules
@@ -561,7 +561,7 @@ def integration_test(isolated_chroma: Path, evidence_dir: Path) -> dict[str, Any
     summary = {
         "integration_test": "PASS",
         "collection_name": COLLECTION_NAME,
-        "embedding_configuration": "BAAI/bge-small-zh-v1.5 via agent_config.EMBEDDING_FUNCTION",
+        "embedding_configuration": "BAAI/bge-small-zh-v1.5 via backend.memory.EMBEDDING_FUNCTION",
         "count_initial": count_initial,
         "count_after_unmanaged": count_after_unmanaged,
         "count_after_create": count_after_create,

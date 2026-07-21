@@ -219,7 +219,7 @@ def select_comment_retrieval_samples(
 
 
 def validate_target_data_dir(environ: Mapping[str, str] | None = None) -> Path:
-    """在导入 agent_config 前验证训练目标是显式的非正式目录。"""
+    """在导入 backend.memory 前验证训练目标是显式的非正式目录。"""
     source = os.environ if environ is None else environ
     raw_path = source.get("VANNA_DATA_DIR")
     if not raw_path or not raw_path.strip():
@@ -250,7 +250,7 @@ async def _run_training(
     tables: Sequence[Mapping[str, Any]],
 ) -> bool:
     """仅在所有静态校验和目标目录保护通过后创建并使用 Memory。"""
-    from agent_config import create_memory
+    from backend.memory import create_memory
     from vanna.core.registry import ToolRegistry
     from vanna.core.tool import ToolContext
     from vanna.core.user import User

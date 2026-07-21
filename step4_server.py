@@ -11,7 +11,8 @@ from vanna.core.registry import ToolRegistry
 from vanna.core.user import UserResolver, User, RequestContext
 from vanna.core.enhancer.default import DefaultLlmContextEnhancer
 from vanna.tools import RunSqlTool, LocalFileSystem
-from agent_config import DB_KWARGS, create_memory, validate_db_config
+from config.settings import DB_KWARGS, validate_db_config
+from backend.memory import create_memory
 from backend.guarded_run_sql_tool import GuardedRunSqlTool
 from backend.metadata_context_enhancer import DeterministicMetadataContextEnhancer
 from backend.metadata_retriever import DeterministicMetadataRetriever

@@ -722,7 +722,7 @@ def self_test() -> int:
     violations = scan_readonly_capabilities(Path(__file__))
     assert violations == ()
 
-    forbidden_modules = ("chromadb", "vanna", "agent_config")
+    forbidden_modules = ("chromadb", "vanna", "backend.memory")
     assert not any(
         module_name == forbidden or module_name.startswith(forbidden + ".")
         for module_name in sys.modules

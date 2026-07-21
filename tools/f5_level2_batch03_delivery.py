@@ -264,8 +264,8 @@ def run_isolated_worker(root: Path) -> int:
     agent_data = root / "agent_data"
     agent_data.mkdir(parents=True, exist_ok=True)
     os.environ.update({"VANNA_DATA_DIR": str(isolated_data), "AGENT_DATA_DIR": str(agent_data), "HF_HUB_OFFLINE": "1", "VANNA_DISABLE_LEGACY_SQL_EXAMPLES": "0"})
-    if "agent_config" in sys.modules:
-        raise RuntimeError("EARLY_AGENT_CONFIG_IMPORT")
+    if "backend.memory" in sys.modules:
+        raise RuntimeError("EARLY_BACKEND_MEMORY_IMPORT")
     configure_common()
     batch = load_batch()
     validation = validate_training_batch(batch, sql_guard=SQLGuard())

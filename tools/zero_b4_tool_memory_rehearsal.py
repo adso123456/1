@@ -197,7 +197,7 @@ def open_isolated_memory(copy_path: Path, rehearsal_root: Path) -> tuple[Any, Ch
     assert_attempt_path(copy_path, rehearsal_root)
     if Path(os.environ.get("VANNA_DATA_DIR", "")).resolve() != copy_path.resolve():
         raise RuntimeError("PARENT_MEMORY_PATH_MISMATCH")
-    from agent_config import EMBEDDING_FUNCTION
+    from backend.memory import EMBEDDING_FUNCTION
     from vanna.integrations.chromadb import ChromaAgentMemory
 
     memory = ChromaAgentMemory(
@@ -330,7 +330,7 @@ def self_test() -> int:
     with restored_process_environment({"ZERO_B4_SELF_TEST": "temporary"}):
         assert os.environ["ZERO_B4_SELF_TEST"] == "temporary"
     assert os.environ.get("ZERO_B4_SELF_TEST") == original
-    assert "agent_config" not in sys.modules
+    assert "backend.memory" not in sys.modules
     print("SELF_TEST: PASS")
     return 0
 

@@ -974,7 +974,7 @@ def main() -> int:
         for index, name in enumerate(old_names)
     }
     module_source = (ROOT / "training/sop/legacy_tool_memory_migration_plan.py").read_text(encoding="utf-8")
-    forbidden = ("chromadb", "sqlite3", "sqlalchemy", "psycopg", "AgentMemory", "ChromaAgentMemory", "agent_config", "requests", "httpx", "socket")
+    forbidden = ("chromadb", "sqlite3", "sqlalchemy", "psycopg", "AgentMemory", "ChromaAgentMemory", "backend.memory", "requests", "httpx", "socket")
     check("迁移模块保持纯逻辑依赖", not any(token in module_source for token in forbidden))
     check("布尔 phase_b_approved 接口已删除", "phase_b_approved" not in module_source)
     check("测试未连接数据库或网络", ".connect(" not in module_source and "urllib" not in module_source)

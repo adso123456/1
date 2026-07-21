@@ -1214,7 +1214,7 @@ def _open_runtime_collection(
     if client_open_audit is not None:
         client_open_audit.append(validated)
     import chromadb
-    from agent_config import EMBEDDING_FUNCTION
+    from backend.memory import EMBEDDING_FUNCTION
 
     client = chromadb.PersistentClient(path=str(path))
     collection = client.get_collection(
@@ -3476,7 +3476,7 @@ def self_test() -> int:
             _expect_system_exit(main, "--isolated-drill 禁止携带")
 
     _expect_error(lambda: require_approved_drill_summary(None, None), "原始 I-B")
-    forbidden_modules = ("chromadb", "vanna", "agent_config")
+    forbidden_modules = ("chromadb", "vanna", "backend.memory")
     assert not any(
         module == forbidden or module.startswith(forbidden + ".")
         for module in sys.modules

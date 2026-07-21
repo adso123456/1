@@ -38,7 +38,7 @@ FORBIDDEN_OPERATIONS = re.compile(
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from agent_config import create_memory
+from backend.memory import create_memory
 from backend.sql_guard import SQLGuard
 from vanna.core.tool import ToolContext
 from vanna.core.user import User

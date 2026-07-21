@@ -420,7 +420,7 @@ def _verify_repeated_results(
 def _open_query_collection(path: Path, run_root: Path) -> Any:
     _validate_client_open_path(path, run_root)
     import chromadb
-    from agent_config import EMBEDDING_FUNCTION
+    from backend.memory import EMBEDDING_FUNCTION
 
     client = chromadb.PersistentClient(path=str(path))
     return client.get_collection(
@@ -807,7 +807,7 @@ def self_test() -> int:
         "formal_archive",
     )
     assert scan_readonly_capabilities(Path(__file__)) == ()
-    forbidden_modules = ("chromadb", "vanna", "agent_config")
+    forbidden_modules = ("chromadb", "vanna", "backend.memory")
     assert not any(
         module_name == forbidden or module_name.startswith(forbidden + ".")
         for module_name in sys.modules
