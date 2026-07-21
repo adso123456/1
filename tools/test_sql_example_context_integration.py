@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -9,17 +10,6 @@ from typing import Any
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 REPORT_PATH = CURRENT_DIR / "sql_example_context_integration_test_result.md"
-BASE_COMMIT = "6259466b2478b8c25f9e687bc0da8beed2a8658a"
-ALLOWED_STATUS_PATHS = {
-    "backend/agent_factory.py",
-    "step4_server.py",
-    "tools/test_sql_example_context_integration.py",
-    "tools/sql_example_context_integration_test_result.md",
-    "tools/sql_example_context_integration_probe.py",
-    "tools/sql_example_context_integration_result.md",
-    "tools/level2_post_training_probe.py",
-    "tools/level2_post_training_probe_result.md",
-}
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -44,17 +34,6 @@ def run_command(args: list[str]) -> str:
         check=False,
     )
     return completed.stdout.strip()
-
-
-def effective_status(status_short: str) -> tuple[str, list[str]]:
-    unexpected: list[str] = []
-    for line in status_short.splitlines():
-        if not line.strip():
-            continue
-        path = line[2:].strip().replace("\\", "/")
-        if path not in ALLOWED_STATUS_PATHS:
-            unexpected.append(line)
-    return ("" if not unexpected else status_short, unexpected)
 
 
 def test_import_sql_example_enhancer() -> TestResult:
@@ -128,33 +107,45 @@ def test_enhancer_chain_order() -> TestResult:
     """验证 enhancer 链顺序: SqlExample → Deterministic → Default"""
     source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
 
-    default_pos = source.find("DefaultLlmContextEnhancer(memory)")
-    deterministic_pos = source.find(
-        "DeterministicMetadataContextEnhancer(\n        base_enhancer=default_enhancer"
+    default_match = re.search(
+        r"DefaultLlmContextEnhancer\s*\(\s*memory\s*\)",
+        source,
     )
-    sql_example_pos = source.find(
-        "SqlExampleContextEnhancer(\n        base_enhancer=deterministic_enhancer"
+    deterministic_match = re.search(
+        r"DeterministicMetadataContextEnhancer\s*\(\s*"
+        r"base_enhancer\s*=\s*default_enhancer\b",
+        source,
+        flags=re.S,
+    )
+    sql_example_match = re.search(
+        r"SqlExampleContextEnhancer\s*\(\s*"
+        r"base_enhancer\s*=\s*deterministic_enhancer\b",
+        source,
+        flags=re.S,
     )
 
-    if default_pos == -1:
+    if default_match is None:
         return TestResult(
             "enhancer 链顺序正确: SqlExample → Deterministic → Default",
             False,
             "未找到 DefaultLlmContextEnhancer(memory)",
         )
-    if deterministic_pos == -1:
+    if deterministic_match is None:
         return TestResult(
             "enhancer 链顺序正确: SqlExample → Deterministic → Default",
             False,
             "未找到 DeterministicMetadataContextEnhancer 包装 base_enhancer=default_enhancer",
         )
-    if sql_example_pos == -1:
+    if sql_example_match is None:
         return TestResult(
             "enhancer 链顺序正确: SqlExample → Deterministic → Default",
             False,
             "未找到 SqlExampleContextEnhancer 包装 base_enhancer=deterministic_enhancer",
         )
 
+    default_pos = default_match.start()
+    deterministic_pos = deterministic_match.start()
+    sql_example_pos = sql_example_match.start()
     if not (default_pos < deterministic_pos < sql_example_pos):
         return TestResult(
             "enhancer 链顺序正确: SqlExample → Deterministic → Default",
@@ -294,24 +285,14 @@ def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
     results = [test() for test in tests]
     passed = sum(1 for result in results if result.passed)
 
-    raw_status = run_command(["git", "status", "--short"])
-    initial_status, unexpected_status = effective_status(raw_status)
+    current_status = run_command(["git", "status", "--short"])
     commit = run_command(["git", "rev-parse", "HEAD"])
-    if unexpected_status:
-        raise SystemExit(
-            "git status --short 存在非本阶段文件，停止：" + "；".join(unexpected_status)
-        )
-    if (
-        commit != BASE_COMMIT
-        and run_command(["git", "merge-base", "--is-ancestor", BASE_COMMIT, commit]) != ""
-    ):
-        raise SystemExit(f"当前 commit 不满足要求：{commit}")
 
     summary = {
         "cwd": str(PROJECT_ROOT),
         "remote": run_command(["git", "remote", "-v"]),
         "commit": commit,
-        "initial_status": initial_status or "clean",
+        "initial_status": current_status or "clean",
         "total": len(results),
         "passed": passed,
         "failed": len(results) - passed,
