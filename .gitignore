@@ -27,6 +27,9 @@ frontend/dist/
 # Runtime data
 vanna_data/
 
+# Local development artifacts
+.local/
+
 # Project instructions
 AGENTS.md
 CLAUDE.md
