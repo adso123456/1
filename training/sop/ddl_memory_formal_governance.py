@@ -44,6 +44,9 @@ FORMAL_SOURCE = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
 APPROVED_IB_TOPK_SEMANTIC_SHA256 = (
     "90ea174bb3e694f8865070437483329001caed630e2fdf486aac892a58cc45e3"
 )
+APPROVED_PRE_SWITCH_TREE_SHA256 = (
+    "ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f"
+)
 DECISION_STATES = frozenset(
     {
         "ALREADY_MANAGED_NO_SWITCH",
@@ -54,8 +57,19 @@ DECISION_STATES = frozenset(
 RUN_ROOT_PATTERNS = {
     "isolated": re.compile(r"f6-1i-b-\d{8}-\d{6}\Z"),
     "formal": re.compile(r"f6-1i-c-\d{8}-\d{6}\Z"),
+    "incident": re.compile(r"f6-1i-c-r2-\d{8}-\d{6}\Z"),
 }
 BACKUP_ROOT = Path(r"E:\3\_training_backups")
+RENAME_TARGET_NAME = re.compile(
+    r"vanna_data(?:_(?:pre|candidate|failed)_f6_1i_\d{8}-\d{6})?\Z"
+)
+INCIDENT_DECISION_STATES = frozenset(
+    {
+        "CURRENT_LIVE_MANAGED_PRE_SWITCH_LEGACY",
+        "CURRENT_LIVE_INVALID_PRE_SWITCH_RECOVERABLE",
+        "BLOCKED_INCIDENT_STATE",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -114,6 +128,16 @@ class FormalSwitchTransactionError(RuntimeError):
         super().__init__(f"{state}: {message}")
         self.state = state
         self.rollback_verified = rollback_verified
+
+
+@dataclass(frozen=True)
+class IncidentDiagnosticDecision:
+    state: str
+    reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.state not in INCIDENT_DECISION_STATES:
+            raise ValueError(f"非法事故诊断状态：{self.state}")
 
 
 @dataclass(frozen=True)
@@ -311,6 +335,69 @@ def decide_formal_governance(
     return FormalGovernanceDecision("ALREADY_MANAGED_NO_SWITCH", (), facts)
 
 
+def _incident_structural_facts_valid(facts: FormalGovernanceFacts) -> bool:
+    return (
+        facts.total_count == EXPECTED_TOTAL_COUNT
+        and facts.ddl_candidate_count == EXPECTED_DDL_COUNT
+        and facts.exact_match_record_count == EXPECTED_DDL_COUNT
+        and facts.exact_match_table_count == EXPECTED_DDL_COUNT
+        and facts.non_ddl_count == EXPECTED_NON_DDL_COUNT
+        and facts.missing_expected_table_count == 0
+        and facts.content_variant_record_count == 0
+        and facts.unexpected_ddl_record_count == 0
+        and facts.exact_duplicate_group_count == 0
+        and facts.table_identity_duplicate_group_count == 0
+        and facts.managed_v1_corrupt_count == 0
+        and facts.deterministic_id_conflict_count == 0
+        and facts.classification_reconciled
+    )
+
+
+def decide_incident_diagnostic_state(
+    current_facts: FormalGovernanceFacts,
+    pre_switch_facts: FormalGovernanceFacts,
+    *,
+    pre_switch_tree_sha256: str,
+    non_ddl_preserved: bool,
+    failed_evidence_reconciled: bool,
+) -> IncidentDiagnosticDecision:
+    reasons = []
+    pre_switch_legacy = (
+        _incident_structural_facts_valid(pre_switch_facts)
+        and pre_switch_facts.managed_v1_ddl_count == 0
+        and pre_switch_facts.legacy_expected_ddl_count == EXPECTED_DDL_COUNT
+    )
+    if pre_switch_tree_sha256 != APPROVED_PRE_SWITCH_TREE_SHA256:
+        reasons.append("pre-switch Tree SHA 不等于旧正式基线")
+    if not pre_switch_legacy:
+        reasons.append("pre-switch 不是完整 legacy 正式基线")
+    if not non_ddl_preserved:
+        reasons.append("current/pre-switch 非 DDL 三元签名不一致")
+    if not failed_evidence_reconciled:
+        reasons.append("失败 Evidence 无法对账")
+    if reasons:
+        return IncidentDiagnosticDecision("BLOCKED_INCIDENT_STATE", tuple(reasons))
+
+    current_managed = (
+        _incident_structural_facts_valid(current_facts)
+        and current_facts.managed_v1_ddl_count == EXPECTED_DDL_COUNT
+        and current_facts.legacy_expected_ddl_count == 0
+    )
+    if current_managed:
+        return IncidentDiagnosticDecision(
+            "CURRENT_LIVE_MANAGED_PRE_SWITCH_LEGACY", ()
+        )
+    if _incident_structural_facts_valid(current_facts):
+        return IncidentDiagnosticDecision(
+            "CURRENT_LIVE_INVALID_PRE_SWITCH_RECOVERABLE",
+            ("current live 未通过完整 managed v1 候选验收",),
+        )
+    return IncidentDiagnosticDecision(
+        "BLOCKED_INCIDENT_STATE",
+        ("current live 总数、分类、非 DDL 或重复状态异常",),
+    )
+
+
 def build_legacy_delete_allowlist(
     decision: FormalGovernanceDecision,
     desired_memories: Sequence[DdlMemoryIdentity],
@@ -495,6 +582,41 @@ def validate_run_paths(
     return source, root
 
 
+def validate_incident_diagnose_paths(
+    formal_source: Path | str,
+    pre_switch_source: Path | str,
+    failed_run_root: Path | str,
+    run_root: Path | str,
+) -> tuple[Path, Path, Path, Path]:
+    current = Path(formal_source).absolute()
+    pre_switch = Path(pre_switch_source).absolute()
+    failed_root = Path(failed_run_root).absolute()
+    root = Path(run_root).absolute()
+    if current != FORMAL_SOURCE.absolute():
+        raise ValueError(f"formal_source 必须精确等于 {FORMAL_SOURCE}")
+    if (
+        pre_switch.parent != current.parent
+        or re.fullmatch(
+            r"vanna_data_pre_f6_1i_\d{8}-\d{6}\Z", pre_switch.name
+        )
+        is None
+    ):
+        raise ValueError("pre-switch-source 路径不符合约束")
+    if (
+        failed_root.parent != BACKUP_ROOT.absolute()
+        or re.fullmatch(r"f6-1i-c-\d{8}-\d{6}\Z", failed_root.name) is None
+    ):
+        raise ValueError("failed-run-root 路径不符合约束")
+    if (
+        root.parent != BACKUP_ROOT.absolute()
+        or RUN_ROOT_PATTERNS["incident"].fullmatch(root.name) is None
+    ):
+        raise ValueError("run_root 命名不符合 F6-1I-C-R2 约束")
+    if root.exists():
+        raise ValueError("run_root 必须全新且不存在")
+    return current, pre_switch, failed_root, root
+
+
 def validate_write_target(
     target: Path | str,
     *,
@@ -518,6 +640,8 @@ def validate_client_open_target(
     allowed_working_copies: Sequence[Path | str],
 ) -> Path:
     resolved = Path(target).absolute()
+    if RENAME_TARGET_NAME.fullmatch(resolved.name):
+        raise ValueError("CLIENT_RENAME_TARGET_CONFLICT：可重命名目录禁止直接打开 Client")
     if resolved == Path(formal_source).absolute():
         raise ValueError("正式来源禁止由 Chroma Client 打开")
     if resolved == Path(immutable_archive).absolute():
@@ -526,6 +650,16 @@ def validate_client_open_target(
     if resolved not in allowed:
         raise ValueError("Client 只能打开获准工作副本")
     return resolved
+
+
+def validate_rename_target_never_opened(
+    client_open_targets: Sequence[Path | str], rename_targets: Sequence[Path | str]
+) -> None:
+    opened = {str(Path(item).absolute()).casefold() for item in client_open_targets}
+    renamed = {str(Path(item).absolute()).casefold() for item in rename_targets}
+    conflicts = sorted(opened & renamed)
+    if conflicts:
+        raise RuntimeError(f"CLIENT_RENAME_TARGET_CONFLICT：{conflicts}")
 
 
 def _tree_sha(root: Path) -> str:
@@ -886,13 +1020,16 @@ def _open_runtime_collection(
     formal_source: Path,
     immutable_archive: Path,
     allowed_working_copies: Sequence[Path],
+    client_open_audit: list[Path] | None = None,
 ) -> tuple[Any, Any]:
-    validate_client_open_target(
+    validated = validate_client_open_target(
         path,
         formal_source=formal_source,
         immutable_archive=immutable_archive,
         allowed_working_copies=allowed_working_copies,
     )
+    if client_open_audit is not None:
+        client_open_audit.append(validated)
     import chromadb
     from agent_config import EMBEDDING_FUNCTION
 
@@ -999,6 +1136,7 @@ def _run_topk_semantic_comparison(
     *,
     formal_source: Path,
     immutable_archive: Path,
+    client_open_audit: list[Path] | None = None,
 ) -> Mapping[str, Any]:
     from training.sop.ddl_memory_topk_impact import (
         _query_collection,
@@ -1014,6 +1152,7 @@ def _run_topk_semantic_comparison(
         formal_source=formal_source,
         immutable_archive=immutable_archive,
         allowed_working_copies=allowed,
+        client_open_audit=client_open_audit,
     )
     try:
         source_results = _query_collection(source_collection, queries, lookup)
@@ -1024,6 +1163,7 @@ def _run_topk_semantic_comparison(
         formal_source=formal_source,
         immutable_archive=immutable_archive,
         allowed_working_copies=allowed,
+        client_open_audit=client_open_audit,
     )
     try:
         candidate_results = _query_collection(candidate_collection, queries, lookup)
@@ -1085,6 +1225,7 @@ def _prepare_runtime_candidate(formal_source: Path, root: Path) -> Mapping[str, 
     candidate = root / "candidate_working_copy"
     candidate_query_copy = root / "candidate_query_copy"
     evidence = root / "evidence"
+    client_open_audit: list[Path] = []
 
     source_before = build_tree_manifest(formal_source)
     root.mkdir(parents=False, exist_ok=False)
@@ -1101,6 +1242,7 @@ def _prepare_runtime_candidate(formal_source: Path, root: Path) -> Mapping[str, 
         formal_source=formal_source,
         immutable_archive=archive,
         allowed_working_copies=allowed,
+        client_open_audit=client_open_audit,
     )
     try:
         source_records = _snapshot_collection_records(source_collection)
@@ -1136,6 +1278,7 @@ def _prepare_runtime_candidate(formal_source: Path, root: Path) -> Mapping[str, 
         formal_source=formal_source,
         immutable_archive=archive,
         allowed_working_copies=allowed,
+        client_open_audit=client_open_audit,
     )
     try:
         candidate_records = _migrate_candidate_collection(
@@ -1159,6 +1302,7 @@ def _prepare_runtime_candidate(formal_source: Path, root: Path) -> Mapping[str, 
         candidate_query_copy,
         formal_source=formal_source,
         immutable_archive=archive,
+        client_open_audit=client_open_audit,
     )
     archive_after = build_tree_manifest(archive)
     if archive_after != archive_before:
@@ -1168,6 +1312,7 @@ def _prepare_runtime_candidate(formal_source: Path, root: Path) -> Mapping[str, 
         "source_records": source_records,
         "candidate_records": candidate_records,
         "source_facts": source_facts,
+        "client_open_audit": client_open_audit,
         "candidate_path": candidate,
         "archive_path": archive,
         "evidence_path": evidence,
@@ -1199,12 +1344,14 @@ def _read_working_copy_records(
     *,
     formal_source: Path,
     immutable_archive: Path,
+    client_open_audit: list[Path] | None = None,
 ) -> tuple[ExistingDdlMemoryRecord, ...]:
     client, collection = _open_runtime_collection(
         path,
         formal_source=formal_source,
         immutable_archive=immutable_archive,
         allowed_working_copies=[path],
+        client_open_audit=client_open_audit,
     )
     try:
         return _snapshot_collection_records(collection)
@@ -1286,7 +1433,117 @@ def isolated_drill(formal_source: Path | str, run_root: Path | str) -> Mapping[s
     return summary
 
 
-def _run_full_regression(root: Path, source: Path, *, phase: str) -> str:
+def _copy_verified_snapshot(source: Path, target: Path) -> str:
+    from training.sop.ddl_memory_formal_readonly_audit import (
+        build_tree_manifest,
+        copy_complete_snapshot,
+        verify_tree_sha_gate,
+    )
+
+    source_before = build_tree_manifest(source)
+    copy_complete_snapshot(source, target)
+    copied = build_tree_manifest(target)
+    source_after = build_tree_manifest(source)
+    verify_tree_sha_gate(source_before, copied, source_after)
+    return copied.tree_sha256
+
+
+def incident_diagnose(
+    formal_source: Path | str,
+    pre_switch_source: Path | str,
+    failed_run_root: Path | str,
+    run_root: Path | str,
+) -> Mapping[str, Any]:
+    current, pre_switch, failed_root, root = validate_incident_diagnose_paths(
+        formal_source, pre_switch_source, failed_run_root, run_root
+    )
+    root.mkdir(parents=False, exist_ok=False)
+    missing = [
+        label
+        for label, path in (
+            ("current_live", current),
+            ("pre_switch", pre_switch),
+            ("failed_run_root", failed_root),
+        )
+        if not path.is_dir()
+    ]
+    if missing:
+        summary = {
+            "stage": "F6-1I-C-R2",
+            "assessment_status": "BLOCKED_INCIDENT_STATE",
+            "decision_reasons": [f"事故目录缺失：{missing}"],
+            "runtime_direct_client_open_count": 0,
+            "rename_executed": False,
+            "recovery_executed": False,
+        }
+        _write_json(root / "evidence" / "incident-diagnosis-summary.json", summary)
+        return summary
+    failed_summary_path = failed_root / "evidence" / "formal-governance-summary.json"
+    try:
+        failed_summary = json.loads(failed_summary_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        failed_summary = {}
+    failed_evidence_reconciled = (
+        failed_summary.get("stage") == "F6-1I-C"
+        and failed_summary.get("assessment_status") == "ROLLBACK_VERIFICATION_FAILED"
+        and failed_summary.get("rollback_verification") == "FAIL"
+    )
+    current_copy = root / "current_live_diagnostic_copy"
+    pre_switch_copy = root / "pre_switch_diagnostic_copy"
+    current_tree_sha = _copy_verified_snapshot(current, current_copy)
+    pre_switch_tree_sha = _copy_verified_snapshot(pre_switch, pre_switch_copy)
+    desired = _build_expected_desired_memories()
+    client_open_audit: list[Path] = []
+    current_records = _read_working_copy_records(
+        current_copy,
+        formal_source=current,
+        immutable_archive=pre_switch,
+        client_open_audit=client_open_audit,
+    )
+    pre_switch_records = _read_working_copy_records(
+        pre_switch_copy,
+        formal_source=current,
+        immutable_archive=pre_switch,
+        client_open_audit=client_open_audit,
+    )
+    validate_rename_target_never_opened(
+        client_open_audit,
+        [current, pre_switch],
+    )
+    current_facts = analyze_formal_records(desired, current_records)
+    pre_switch_facts = analyze_formal_records(desired, pre_switch_records)
+    non_ddl_preserved = _non_ddl_signature(
+        current_records, desired
+    ) == _non_ddl_signature(pre_switch_records, desired)
+    decision = decide_incident_diagnostic_state(
+        current_facts,
+        pre_switch_facts,
+        pre_switch_tree_sha256=pre_switch_tree_sha,
+        non_ddl_preserved=non_ddl_preserved,
+        failed_evidence_reconciled=failed_evidence_reconciled,
+    )
+    summary = {
+        "stage": "F6-1I-C-R2",
+        "assessment_status": decision.state,
+        "decision_reasons": list(decision.reasons),
+        "current_live_tree_sha256": current_tree_sha,
+        "pre_switch_tree_sha256": pre_switch_tree_sha,
+        "current_live_facts": _facts_dict(current_facts),
+        "pre_switch_facts": _facts_dict(pre_switch_facts),
+        "non_ddl_preservation": "PASS" if non_ddl_preserved else "FAIL",
+        "failed_evidence_reconciled": failed_evidence_reconciled,
+        "client_open_targets": [str(path) for path in client_open_audit],
+        "runtime_direct_client_open_count": 0,
+        "rename_executed": False,
+        "recovery_executed": False,
+    }
+    _write_json(root / "evidence" / "incident-diagnosis-summary.json", summary)
+    return summary
+
+
+def _run_full_regression(
+    root: Path, source: Path, *, phase: str, formal_monitor_source: Path
+) -> Mapping[str, Any]:
     if phase not in {"pre-switch", "post-switch"}:
         raise ValueError("完整回归 phase 非法")
     regression_copy = root / f"{phase}_regression_copy"
@@ -1294,6 +1551,9 @@ def _run_full_regression(root: Path, source: Path, *, phase: str) -> str:
     agent_dir = root / f"{phase}_regression_agent"
     evidence_dir = root / "evidence" / f"{phase}-full-regression"
     agent_dir.mkdir()
+    from tools.run_postgresql_f5_regression import directory_state
+
+    formal_monitor = directory_state(formal_monitor_source)
     command = [
         sys.executable,
         "tools/run_postgresql_f5_regression.py",
@@ -1305,11 +1565,22 @@ def _run_full_regression(root: Path, source: Path, *, phase: str) -> str:
         str(agent_dir),
         "--evidence-dir",
         str(evidence_dir),
+        "--expected-formal-record-count",
+        str(formal_monitor["record_count"]),
+        "--expected-formal-sha256",
+        str(formal_monitor["sha256"]),
     ]
     completed = subprocess.run(command, cwd=Path(__file__).resolve().parents[2])
     if completed.returncode != 0:
         raise RuntimeError(f"{phase} 完整回归失败：exit={completed.returncode}")
-    return "PASS"
+    return {
+        "status": "PASS",
+        "formal_monitor_record_count": formal_monitor["record_count"],
+        "formal_monitor_sha256": formal_monitor["sha256"],
+        "formal_monitor_checkpoints": str(
+            evidence_dir / "formal-monitor-checkpoints.json"
+        ),
+    }
 
 
 def _validate_topk_frozen_result(
@@ -1358,7 +1629,10 @@ def formal_switch(
         approved["topk_semantic_regression"],
     )
     pre_switch_full_regression = _run_full_regression(
-        root, runtime["candidate_path"], phase="pre-switch"
+        root,
+        runtime["candidate_path"],
+        phase="pre-switch",
+        formal_monitor_source=source,
     )
 
     timestamp = root.name.removeprefix("f6-1i-c-")
@@ -1377,11 +1651,16 @@ def formal_switch(
     post_results: dict[str, Any] = {}
 
     def validate_post_classification(new_live: Path) -> None:
+        classification_copy = root / "post_switch_classification_copy"
+        post_results["classification_copy_tree_sha"] = _copy_verified_snapshot(
+            new_live, classification_copy
+        )
         post_client, post_collection = _open_runtime_collection(
-            new_live,
-            formal_source=pre_switch,
+            classification_copy,
+            formal_source=new_live,
             immutable_archive=runtime["archive_path"],
-            allowed_working_copies=[new_live],
+            allowed_working_copies=[classification_copy],
+            client_open_audit=runtime["client_open_audit"],
         )
         try:
             post_records = _snapshot_collection_records(post_collection)
@@ -1402,13 +1681,17 @@ def formal_switch(
             post_query_copy,
             formal_source=new_live,
             immutable_archive=runtime["archive_path"],
+            client_open_audit=runtime["client_open_audit"],
         )
         _validate_topk_frozen_result(result, approved["topk_semantic_regression"])
         post_results["topk_semantic_regression"] = dict(result)
 
     def run_post_full_regression(new_live: Path) -> None:
         post_results["full_regression"] = _run_full_regression(
-            root, new_live, phase="post-switch"
+            root,
+            new_live,
+            phase="post-switch",
+            formal_monitor_source=new_live,
         )
 
     def validate_restored_classification(restored_live: Path) -> bool:
@@ -1418,9 +1701,30 @@ def formal_switch(
             validation_copy,
             formal_source=restored_live,
             immutable_archive=runtime["archive_path"],
+            client_open_audit=runtime["client_open_audit"],
         )
         restored_facts = analyze_formal_records(runtime["desired"], restored_records)
         return restored_facts == runtime["source_facts"]
+
+    anticipated_client_targets = [
+        *runtime["client_open_audit"],
+        root / "pre-switch_regression_copy",
+        root / "post_switch_classification_copy",
+        root / "post_switch_query_copy",
+        root / "post-switch_regression_copy",
+        root / "rollback_validation_copy",
+    ]
+    rename_targets = [source, pre_switch, sibling_candidate, failed_candidate]
+    validate_rename_target_never_opened(anticipated_client_targets, rename_targets)
+    _write_json(
+        runtime["evidence_path"] / "client-open-path-audit.json",
+        {
+            "client_open_targets": [str(path) for path in anticipated_client_targets],
+            "rename_targets": [str(path) for path in rename_targets],
+            "intersection": [],
+            "gate": "PASS",
+        },
+    )
 
     try:
         switch_result = execute_formal_switch_transaction(
@@ -1458,7 +1762,8 @@ def formal_switch(
         "sibling_candidate_tree_sha": sibling_candidate_tree_sha,
         "pre_switch_candidate_acceptance": "PASS",
         "pre_switch_topk_semantic_regression": "PASS",
-        "pre_switch_full_regression": pre_switch_full_regression,
+        "pre_switch_full_regression": pre_switch_full_regression["status"],
+        "pre_switch_full_regression_monitor": dict(pre_switch_full_regression),
         "post_switch_candidate_acceptance": "PASS",
         "post_switch_candidate_facts": _facts_dict(post_acceptance.facts),
         "post_switch_candidate_plan": {
@@ -1469,7 +1774,11 @@ def formal_switch(
         },
         "post_switch_topk_semantic_regression": "PASS",
         "post_switch_topk_result": post_results["topk_semantic_regression"],
-        "post_switch_full_regression": post_results["full_regression"],
+        "post_switch_full_regression": post_results["full_regression"]["status"],
+        "post_switch_full_regression_monitor": dict(
+            post_results["full_regression"]
+        ),
+        "client_open_path_audit": "PASS",
         "formal_switch_executed": True,
         "automatic_rollback_executed": False,
         "pre_switch_directory": str(pre_switch),
@@ -1877,6 +2186,62 @@ def self_test() -> int:
             ),
             "immutable archive",
         )
+        rename_target = temp / "vanna_data_candidate_f6_1i_20990101-000000"
+        _expect_error(
+            lambda: validate_client_open_target(
+                rename_target,
+                formal_source=temp / "formal-source",
+                immutable_archive=archive,
+                allowed_working_copies=[rename_target],
+            ),
+            "CLIENT_RENAME_TARGET_CONFLICT",
+        )
+        _expect_error(
+            lambda: validate_rename_target_never_opened(
+                [working, rename_target], [rename_target]
+            ),
+            "CLIENT_RENAME_TARGET_CONFLICT",
+        )
+        assert validate_rename_target_never_opened([working], [rename_target]) is None
+
+        managed_incident = decide_incident_diagnostic_state(
+            managed_facts,
+            false_positive_facts,
+            pre_switch_tree_sha256=APPROVED_PRE_SWITCH_TREE_SHA256,
+            non_ddl_preserved=True,
+            failed_evidence_reconciled=True,
+        )
+        assert managed_incident.state == "CURRENT_LIVE_MANAGED_PRE_SWITCH_LEGACY"
+        recoverable_incident = decide_incident_diagnostic_state(
+            mixed_facts,
+            false_positive_facts,
+            pre_switch_tree_sha256=APPROVED_PRE_SWITCH_TREE_SHA256,
+            non_ddl_preserved=True,
+            failed_evidence_reconciled=True,
+        )
+        assert (
+            recoverable_incident.state
+            == "CURRENT_LIVE_INVALID_PRE_SWITCH_RECOVERABLE"
+        )
+        blocked_incident = decide_incident_diagnostic_state(
+            managed_facts,
+            false_positive_facts,
+            pre_switch_tree_sha256="b" * 64,
+            non_ddl_preserved=True,
+            failed_evidence_reconciled=True,
+        )
+        assert blocked_incident.state == "BLOCKED_INCIDENT_STATE"
+
+        from inspect import getsource
+
+        incident_source = getsource(incident_diagnose)
+        assert ".rename(" not in incident_source and "shutil.move" not in incident_source
+        full_regression_source = getsource(_run_full_regression)
+        assert "regression_copy" in full_regression_source
+        formal_switch_source = getsource(formal_switch)
+        assert "post_switch_classification_copy" in formal_switch_source
+        assert "post_switch_query_copy" in formal_switch_source
+        assert "rollback_validation_copy" in formal_switch_source
 
         def make_sandbox(name: str) -> Path:
             sandbox = temp / name
@@ -2178,6 +2543,7 @@ def self_test() -> int:
             "source_records": six_false_positive_records,
             "candidate_records": managed_source,
             "source_facts": false_positive_facts,
+            "client_open_audit": [],
             "candidate_path": candidate_path,
             "archive_path": archive_path,
             "evidence_path": evidence_path,
@@ -2200,10 +2566,37 @@ def self_test() -> int:
             },
         }
         regression_phases: list[str] = []
+        regression_monitor_shas: list[str] = []
+        client_open_paths: list[Path] = []
+        topk_paths: list[tuple[Path, Path]] = []
 
-        def fake_full_regression(_root: Path, _source: Path, *, phase: str) -> str:
+        def fake_full_regression(
+            _root: Path,
+            _source: Path,
+            *,
+            phase: str,
+            formal_monitor_source: Path,
+        ) -> Mapping[str, Any]:
             regression_phases.append(phase)
-            return "PASS"
+            assert formal_monitor_source.name == "vanna_data"
+            monitor_sha = "c" * 64 if phase == "pre-switch" else "d" * 64
+            regression_monitor_shas.append(monitor_sha)
+            return {
+                "status": "PASS",
+                "formal_monitor_record_count": EXPECTED_TOTAL_COUNT,
+                "formal_monitor_sha256": monitor_sha,
+                "formal_monitor_checkpoints": f"{phase}-checkpoints.json",
+            }
+
+        def fake_open(path: Path, **_kwargs: Any) -> tuple[object, object]:
+            client_open_paths.append(path)
+            return object(), object()
+
+        def fake_topk(
+            source_copy: Path, candidate_copy: Path, **_kwargs: Any
+        ) -> Mapping[str, Any]:
+            topk_paths.append((source_copy, candidate_copy))
+            return ib_summary["topk_semantic_regression"]
 
         with patch(
             f"{__name__}.validate_run_paths", return_value=(source, formal_root)
@@ -2212,7 +2605,7 @@ def self_test() -> int:
         ), patch(
             f"{__name__}._run_full_regression", side_effect=fake_full_regression
         ), patch(
-            f"{__name__}._open_runtime_collection", return_value=(object(), object())
+            f"{__name__}._open_runtime_collection", side_effect=fake_open
         ), patch(
             f"{__name__}._snapshot_collection_records", return_value=managed_source
         ), patch(
@@ -2222,7 +2615,7 @@ def self_test() -> int:
             return_value=synthetic_acceptance,
         ), patch(
             f"{__name__}._run_topk_semantic_comparison",
-            return_value=ib_summary["topk_semantic_regression"],
+            side_effect=fake_topk,
         ):
             success_summary = formal_switch(
                 source,
@@ -2234,6 +2627,10 @@ def self_test() -> int:
                 no_client_occupancy_confirmed=True,
             )
         assert regression_phases == ["pre-switch", "post-switch"]
+        assert regression_monitor_shas == ["c" * 64, "d" * 64]
+        assert all(not RENAME_TARGET_NAME.fullmatch(path.name) for path in client_open_paths)
+        assert any(path.name == "post_switch_classification_copy" for path in client_open_paths)
+        assert topk_paths[-1][1].name == "post_switch_query_copy"
         assert success_summary["pre_switch_full_regression"] == "PASS"
         assert success_summary["post_switch_full_regression"] == "PASS"
         assert success_summary["post_switch_candidate_acceptance"] == "PASS"
@@ -2294,6 +2691,18 @@ def self_test() -> int:
     print("ROLLBACK_VERIFICATION_FAILED_STATE_TEST=PASS")
     print("PRE_POST_FULL_REGRESSION_SEPARATION_TEST=PASS")
     print("SUCCESSFUL_SWITCH_NO_ROLLBACK_TEST=PASS")
+    print("DYNAMIC_FORMAL_MONITOR_PHASE_TEST=PASS")
+    print("POST_SWITCH_CLASSIFICATION_COPY_ONLY_TEST=PASS")
+    print("POST_SWITCH_TOPK_COPY_ONLY_TEST=PASS")
+    print("POST_SWITCH_REGRESSION_COPY_ONLY_TEST=PASS")
+    print("ROLLBACK_CLASSIFICATION_COPY_ONLY_TEST=PASS")
+    print("CLIENT_RENAME_TARGET_CONFLICT_TEST=PASS")
+    print("CLIENT_RENAME_TARGET_DISJOINT_TEST=PASS")
+    print("INCIDENT_MANAGED_LEGACY_DECISION_TEST=PASS")
+    print("INCIDENT_RECOVERABLE_DECISION_TEST=PASS")
+    print("INCIDENT_BLOCKED_DECISION_TEST=PASS")
+    print("INCIDENT_DIAGNOSE_NO_RENAME_TEST=PASS")
+    print("INCIDENT_DIAGNOSE_EXECUTED=NO")
     print("SHARED_DDL_CLASSIFICATION_CONTRACT_TEST=PASS")
     print("SIX_FALSE_POSITIVE_REGRESSION_TEST=PASS:198/115/115/0/83")
     print("NON_DDL_PRESERVATION_CLASSIFICATION_TEST=PASS:83")
@@ -2312,7 +2721,10 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--self-test", action="store_true")
     mode.add_argument("--isolated-drill", action="store_true")
     mode.add_argument("--formal-switch", action="store_true")
+    mode.add_argument("--incident-diagnose", action="store_true")
     parser.add_argument("--formal-source", type=Path)
+    parser.add_argument("--pre-switch-source", type=Path)
+    parser.add_argument("--failed-run-root", type=Path)
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--approved-drill-summary", type=Path)
     parser.add_argument("--approved-drill-summary-sha256")
@@ -2332,6 +2744,8 @@ def main() -> int:
     if args.self_test:
         if (
             args.formal_source
+            or args.pre_switch_source
+            or args.failed_run_root
             or args.run_root
             or args.approved_drill_summary
             or args.approved_drill_summary_sha256
@@ -2346,6 +2760,30 @@ def main() -> int:
             or any(runtime_confirmations)
         ):
             raise SystemExit("--isolated-drill 禁止携带正式切换批准或运行时确认参数")
+    if args.incident_diagnose:
+        if (
+            args.approved_drill_summary
+            or args.approved_drill_summary_sha256
+            or any(runtime_confirmations)
+        ):
+            raise SystemExit("--incident-diagnose 禁止携带正式切换批准或确认参数")
+        if not all(
+            (
+                args.formal_source,
+                args.pre_switch_source,
+                args.failed_run_root,
+                args.run_root,
+            )
+        ):
+            raise SystemExit("事故诊断必须提供 current、pre-switch、failed run 和 run-root")
+        summary = incident_diagnose(
+            args.formal_source,
+            args.pre_switch_source,
+            args.failed_run_root,
+            args.run_root,
+        )
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+        return 0
     if not args.formal_source or not args.run_root:
         raise SystemExit("治理模式必须提供 --formal-source 和 --run-root")
     if args.isolated_drill:

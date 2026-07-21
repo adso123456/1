@@ -8,9 +8,10 @@ import os
 import re
 import sqlite3
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -96,11 +97,35 @@ def directory_state(path: Path) -> dict[str, Any]:
     }
 
 
-def formal_checkpoint(label: str, checkpoints: list[dict[str, Any]], evidence_dir: Path) -> None:
-    state = directory_state(FORMAL_RUNTIME)
+def resolve_formal_monitor_baseline(
+    expected_record_count: int | None, expected_sha256: str | None
+) -> tuple[int, str]:
+    if (expected_record_count is None) != (expected_sha256 is None):
+        raise ValueError(
+            "--expected-formal-record-count 和 --expected-formal-sha256 必须同时提供"
+        )
+    if expected_record_count is None:
+        return EXPECTED_FORMAL_RECORD_COUNT, EXPECTED_FORMAL_SHA256
+    if expected_record_count < 0:
+        raise ValueError("--expected-formal-record-count 不能为负数")
+    if re.fullmatch(r"[0-9a-f]{64}", str(expected_sha256)) is None:
+        raise ValueError("--expected-formal-sha256 必须是64位小写十六进制")
+    return expected_record_count, str(expected_sha256)
+
+
+def formal_checkpoint(
+    label: str,
+    checkpoints: list[dict[str, Any]],
+    evidence_dir: Path,
+    *,
+    expected_record_count: int,
+    expected_sha256: str,
+    state_reader: Callable[[Path], dict[str, Any]] = directory_state,
+) -> None:
+    state = state_reader(FORMAL_RUNTIME)
     passed = (
-        state["record_count"] == EXPECTED_FORMAL_RECORD_COUNT
-        and state["sha256"] == EXPECTED_FORMAL_SHA256
+        state["record_count"] == expected_record_count
+        and state["sha256"] == expected_sha256
     )
     checkpoints.append(
         {
@@ -113,8 +138,8 @@ def formal_checkpoint(label: str, checkpoints: list[dict[str, Any]], evidence_di
     write_json(
         evidence_dir / "formal-monitor-checkpoints.json",
         {
-            "expected_record_count": EXPECTED_FORMAL_RECORD_COUNT,
-            "expected_sha256": EXPECTED_FORMAL_SHA256,
+            "expected_record_count": expected_record_count,
+            "expected_sha256": expected_sha256,
             "formal_runtime_fail_fast_triggered": not passed,
             "checkpoints": checkpoints,
         },
@@ -129,6 +154,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--agent-dir", type=Path)
     parser.add_argument("--evidence-dir", type=Path)
+    parser.add_argument("--expected-formal-record-count", type=int)
+    parser.add_argument("--expected-formal-sha256")
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args()
 
@@ -400,6 +427,55 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         and EXPECTED_FORMAL_SHA256
         == "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
     )
+    legacy_default_monitor_preserved = resolve_formal_monitor_baseline(None, None) == (
+        EXPECTED_FORMAL_RECORD_COUNT,
+        EXPECTED_FORMAL_SHA256,
+    )
+    one_dynamic_parameter_rejected = False
+    try:
+        resolve_formal_monitor_baseline(198, None)
+    except ValueError:
+        one_dynamic_parameter_rejected = True
+    invalid_dynamic_sha_rejected = False
+    try:
+        resolve_formal_monitor_baseline(198, "A" * 64)
+    except ValueError:
+        invalid_dynamic_sha_rejected = True
+    dynamic_sha = "a" * 64
+    dynamic_baseline_passed = False
+    dynamic_change_detected = False
+    with tempfile.TemporaryDirectory(prefix="f5-runner-self-test-") as temp_name:
+        checkpoint_evidence = Path(temp_name)
+        checkpoints: list[dict[str, Any]] = []
+        matching_state = {
+            "path": "synthetic-formal-runtime",
+            "record_count": 198,
+            "sha256": dynamic_sha,
+            "file_count": 2,
+        }
+        formal_checkpoint(
+            "before_service_start",
+            checkpoints,
+            checkpoint_evidence,
+            expected_record_count=198,
+            expected_sha256=dynamic_sha,
+            state_reader=lambda _path: dict(matching_state),
+        )
+        dynamic_baseline_passed = checkpoints[-1]["passed"] is True
+        try:
+            formal_checkpoint(
+                "after_case_01",
+                checkpoints,
+                checkpoint_evidence,
+                expected_record_count=198,
+                expected_sha256=dynamic_sha,
+                state_reader=lambda _path: {
+                    **matching_state,
+                    "sha256": "b" * 64,
+                },
+            )
+        except FormalRuntimeChanged:
+            dynamic_change_detected = checkpoints[-1]["passed"] is False
     runner_self_test_pass = all(
         (
             accepted,
@@ -410,6 +486,11 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             same_path_rejected,
             early_import_rejected,
             formal_baseline_constants_valid,
+            legacy_default_monitor_preserved,
+            one_dynamic_parameter_rejected,
+            invalid_dynamic_sha_rejected,
+            dynamic_baseline_passed,
+            dynamic_change_detected,
         )
     )
     payload = {
@@ -428,6 +509,11 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         "early_memory_module_import_rejected": early_import_rejected,
         "parent_memory_creation_disabled": not forbidden_calls,
         "formal_baseline_constants_valid": formal_baseline_constants_valid,
+        "legacy_default_monitor_preserved": legacy_default_monitor_preserved,
+        "one_dynamic_parameter_rejected": one_dynamic_parameter_rejected,
+        "invalid_dynamic_sha_rejected": invalid_dynamic_sha_rejected,
+        "dynamic_baseline_before_service_start_passed": dynamic_baseline_passed,
+        "dynamic_formal_change_fail_fast_triggered": dynamic_change_detected,
         "expected_formal_record_count": EXPECTED_FORMAL_RECORD_COUNT,
         "expected_formal_sha256": EXPECTED_FORMAL_SHA256,
         "runner_self_test_pass": runner_self_test_pass,
@@ -451,7 +537,15 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
     return 0 if payload["runner_self_test_pass"] else 2
 
 
-def run_suite(suite_path: Path, data_dir: Path, agent_dir: Path, evidence_dir: Path) -> int:
+def run_suite(
+    suite_path: Path,
+    data_dir: Path,
+    agent_dir: Path,
+    evidence_dir: Path,
+    *,
+    expected_formal_record_count: int,
+    expected_formal_sha256: str,
+) -> int:
     assert_no_early_memory_modules()
     validation_dir, formal_dir = validate_isolation_paths(data_dir)
     configure_parent_environment(validation_dir, agent_dir)
@@ -481,6 +575,8 @@ def run_suite(suite_path: Path, data_dir: Path, agent_dir: Path, evidence_dir: P
             "legacy_sql_examples_disabled": os.environ["VANNA_DISABLE_LEGACY_SQL_EXAMPLES"],
             "resolved_data_dir": str(validation_dir),
             "formal_runtime": str(formal_dir),
+            "formal_monitor_record_count": expected_formal_record_count,
+            "formal_monitor_sha256": expected_formal_sha256,
             "formal_path_referenced_as_data_dir": validation_dir == formal_dir,
             "parent_memory_diagnostics_executed": False,
             "parent_memory_creation_disabled": True,
@@ -493,7 +589,13 @@ def run_suite(suite_path: Path, data_dir: Path, agent_dir: Path, evidence_dir: P
     checkpoints: list[dict[str, Any]] = []
     failure: str | None = None
     try:
-        formal_checkpoint("before_service_start", checkpoints, evidence_dir)
+        formal_checkpoint(
+            "before_service_start",
+            checkpoints,
+            evidence_dir,
+            expected_record_count=expected_formal_record_count,
+            expected_sha256=expected_formal_sha256,
+        )
         process, logs, _, key = start_server(validation_dir, agent_dir, False)
         write_json(
             evidence_dir / "server-environment.json",
@@ -507,7 +609,13 @@ def run_suite(suite_path: Path, data_dir: Path, agent_dir: Path, evidence_dir: P
                 "parent_and_server_data_dir_match": Path(os.environ["VANNA_DATA_DIR"]).resolve() == validation_dir,
             },
         )
-        formal_checkpoint("after_service_start", checkpoints, evidence_dir)
+        formal_checkpoint(
+            "after_service_start",
+            checkpoints,
+            evidence_dir,
+            expected_record_count=expected_formal_record_count,
+            expected_sha256=expected_formal_sha256,
+        )
         for index, case in enumerate(suite["cases"], start=1):
             raw = run_http_case(
                 case,
@@ -518,13 +626,25 @@ def run_suite(suite_path: Path, data_dir: Path, agent_dir: Path, evidence_dir: P
                 extract_chart_specs=extract_chart_specs,
             )
             cases.append({"validation": validate_case(case, raw), "execution": sanitized_case_result(raw)})
-            formal_checkpoint(f"after_case_{index:02d}", checkpoints, evidence_dir)
+            formal_checkpoint(
+                f"after_case_{index:02d}",
+                checkpoints,
+                evidence_dir,
+                expected_record_count=expected_formal_record_count,
+                expected_sha256=expected_formal_sha256,
+            )
     except Exception as error:
         failure = f"{type(error).__name__}: {error}"
     finally:
         stop_server(process)
         try:
-            formal_checkpoint("after_service_stop", checkpoints, evidence_dir)
+            formal_checkpoint(
+                "after_service_stop",
+                checkpoints,
+                evidence_dir,
+                expected_record_count=expected_formal_record_count,
+                expected_sha256=expected_formal_sha256,
+            )
         except Exception as error:
             if failure is None:
                 failure = f"{type(error).__name__}: {error}"
@@ -544,6 +664,9 @@ def run_suite(suite_path: Path, data_dir: Path, agent_dir: Path, evidence_dir: P
         "parent_memory_diagnostics_executed": False,
         "parent_memory_creation_disabled": True,
         "formal_runtime_fail_fast_triggered": fail_fast_triggered,
+        "formal_monitor_record_count": expected_formal_record_count,
+        "formal_monitor_sha256": expected_formal_sha256,
+        "formal_monitor_checkpoints": len(checkpoints),
         "failure": failure,
         "cases": cases,
     }
@@ -572,13 +695,23 @@ def run_suite(suite_path: Path, data_dir: Path, agent_dir: Path, evidence_dir: P
 def main() -> int:
     assert_no_early_memory_modules()
     args = parse_args()
+    expected_record_count, expected_sha256 = resolve_formal_monitor_baseline(
+        args.expected_formal_record_count, args.expected_formal_sha256
+    )
     suite_path = args.suite.resolve()
     evidence_dir = args.evidence_dir.resolve() if args.evidence_dir else None
     if args.self_test:
         return self_test(suite_path, evidence_dir)
     if not args.data_dir or not args.agent_dir or not evidence_dir:
         raise RuntimeError("完整运行必须提供 --data-dir、--agent-dir 和 --evidence-dir")
-    return run_suite(suite_path, args.data_dir.resolve(), args.agent_dir.resolve(), evidence_dir)
+    return run_suite(
+        suite_path,
+        args.data_dir.resolve(),
+        args.agent_dir.resolve(),
+        evidence_dir,
+        expected_formal_record_count=expected_record_count,
+        expected_formal_sha256=expected_sha256,
+    )
 
 
 if __name__ == "__main__":
