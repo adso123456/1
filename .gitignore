@@ -24,6 +24,9 @@ frontend/dist/
 # Vite cache
 .vite/
 
+# Runtime data
+vanna_data/
+
 # Project instructions
 AGENTS.md
 CLAUDE.md
