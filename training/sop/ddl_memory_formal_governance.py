@@ -47,6 +47,25 @@ APPROVED_IB_TOPK_SEMANTIC_SHA256 = (
 APPROVED_PRE_SWITCH_TREE_SHA256 = (
     "ab0b141a42bf59e2077895a3e759c944d678f9858a90ee4e62a11f99a53d064f"
 )
+APPROVED_CURRENT_LIVE_TREE_SHA256 = (
+    "608630b65bd54aa18cc0a3143d836d171d706e24666ce74ff1af1004e8c5afe0"
+)
+APPROVED_INCIDENT_SUMMARY_SHA256 = (
+    "c83e16116cb845bdf70022f5ff05828c786691cdb1523e5b09f113cd58c345d6"
+)
+APPROVED_FAILED_SUMMARY_SHA256 = (
+    "9e96d7e62e1e2be610881a29e36dc7331610206f5d47e7d1df89b9bfe19118a1"
+)
+APPROVED_PRE_SWITCH_SOURCE = Path(
+    r"E:\3\_runtime\vanna-level1\vanna_data_pre_f6_1i_20260721-094654"
+)
+APPROVED_FAILED_RUN_ROOT = Path(
+    r"E:\3\_training_backups\f6-1i-c-20260721-094654"
+)
+APPROVED_INCIDENT_SUMMARY = Path(
+    r"E:\3\_training_backups\f6-1i-c-r2-20260721-102627"
+    r"\evidence\incident-diagnosis-summary.json"
+)
 DECISION_STATES = frozenset(
     {
         "ALREADY_MANAGED_NO_SWITCH",
@@ -58,6 +77,7 @@ RUN_ROOT_PATTERNS = {
     "isolated": re.compile(r"f6-1i-b-\d{8}-\d{6}\Z"),
     "formal": re.compile(r"f6-1i-c-\d{8}-\d{6}\Z"),
     "incident": re.compile(r"f6-1i-c-r2-\d{8}-\d{6}\Z"),
+    "incident_acceptance": re.compile(r"f6-1i-c-r3-\d{8}-\d{6}\Z"),
 }
 BACKUP_ROOT = Path(r"E:\3\_training_backups")
 RENAME_TARGET_NAME = re.compile(
@@ -617,6 +637,36 @@ def validate_incident_diagnose_paths(
     return current, pre_switch, failed_root, root
 
 
+def validate_incident_acceptance_paths(
+    formal_source: Path | str,
+    pre_switch_source: Path | str,
+    failed_run_root: Path | str,
+    incident_summary: Path | str,
+    run_root: Path | str,
+) -> tuple[Path, Path, Path, Path, Path]:
+    current = Path(formal_source).absolute()
+    pre_switch = Path(pre_switch_source).absolute()
+    failed_root = Path(failed_run_root).absolute()
+    incident_path = Path(incident_summary).absolute()
+    root = Path(run_root).absolute()
+    expected = (
+        FORMAL_SOURCE.absolute(),
+        APPROVED_PRE_SWITCH_SOURCE.absolute(),
+        APPROVED_FAILED_RUN_ROOT.absolute(),
+        APPROVED_INCIDENT_SUMMARY.absolute(),
+    )
+    if (current, pre_switch, failed_root, incident_path) != expected:
+        raise ValueError("独立验收路径必须精确等于冻结事故路径")
+    if (
+        root.parent != BACKUP_ROOT.absolute()
+        or RUN_ROOT_PATTERNS["incident_acceptance"].fullmatch(root.name) is None
+    ):
+        raise ValueError("run_root 命名不符合 F6-1I-C-R3 约束")
+    if root.exists():
+        raise ValueError("run_root 必须全新且不存在")
+    return current, pre_switch, failed_root, incident_path, root
+
+
 def validate_write_target(
     target: Path | str,
     *,
@@ -971,6 +1021,139 @@ def require_approved_drill_summary(
     return validate_ib_drill_summary(payload)
 
 
+def _expected_incident_facts(*, managed: bool) -> Mapping[str, Any]:
+    return {
+        "total_count": EXPECTED_TOTAL_COUNT,
+        "ddl_candidate_count": EXPECTED_DDL_COUNT,
+        "exact_match_record_count": EXPECTED_DDL_COUNT,
+        "exact_match_table_count": EXPECTED_DDL_COUNT,
+        "non_ddl_count": EXPECTED_NON_DDL_COUNT,
+        "managed_v1_ddl_count": EXPECTED_DDL_COUNT if managed else 0,
+        "legacy_expected_ddl_count": 0 if managed else EXPECTED_DDL_COUNT,
+        "missing_expected_table_count": 0,
+        "content_variant_record_count": 0,
+        "unexpected_ddl_record_count": 0,
+        "exact_duplicate_group_count": 0,
+        "table_identity_duplicate_group_count": 0,
+        "managed_v1_corrupt_count": 0,
+        "deterministic_id_conflict_count": 0,
+        "classification_reconciled": True,
+    }
+
+
+def validate_incident_acceptance_summary(
+    payload: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    required = {
+        "stage": "F6-1I-C-R2",
+        "assessment_status": "CURRENT_LIVE_MANAGED_PRE_SWITCH_LEGACY",
+        "current_live_tree_sha256": APPROVED_CURRENT_LIVE_TREE_SHA256,
+        "pre_switch_tree_sha256": APPROVED_PRE_SWITCH_TREE_SHA256,
+        "non_ddl_preservation": "PASS",
+        "failed_evidence_reconciled": True,
+        "runtime_direct_client_open_count": 0,
+        "rename_executed": False,
+        "recovery_executed": False,
+    }
+    failures = [key for key, value in required.items() if payload.get(key) != value]
+    for key, managed in (("current_live_facts", True), ("pre_switch_facts", False)):
+        facts = payload.get(key)
+        if not isinstance(facts, Mapping):
+            failures.append(key)
+            continue
+        failures.extend(
+            f"{key}.{fact_key}"
+            for fact_key, value in _expected_incident_facts(managed=managed).items()
+            if facts.get(fact_key) != value
+        )
+    if failures:
+        raise ValueError(f"事故 summary 冻结事实校验失败：{sorted(set(failures))}")
+    return payload
+
+
+def validate_failed_governance_summary(
+    payload: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    required = {
+        "stage": "F6-1I-C",
+        "assessment_status": "ROLLBACK_VERIFICATION_FAILED",
+        "rollback_verification": "FAIL",
+    }
+    failures = [key for key, value in required.items() if payload.get(key) != value]
+    if failures:
+        raise ValueError(f"首次失败 summary 状态校验失败：{sorted(failures)}")
+    return payload
+
+
+def _read_frozen_json(
+    path: Path | str,
+    expected_sha256: str | None,
+    approved_sha256: str,
+    *,
+    label: str,
+) -> Mapping[str, Any]:
+    if expected_sha256 is None:
+        raise ValueError(f"{label} 必须提供 SHA-256")
+    normalized = expected_sha256.lower()
+    if re.fullmatch(r"[0-9a-f]{64}", normalized) is None:
+        raise ValueError(f"{label} SHA-256 格式非法")
+    raw = Path(path).read_bytes()
+    actual = hashlib.sha256(raw).hexdigest()
+    if actual != normalized:
+        raise ValueError(
+            f"{label} SHA-256 不一致：expected={normalized}, actual={actual}"
+        )
+    if normalized != approved_sha256:
+        raise ValueError(f"{label} SHA-256 不等于冻结批准值")
+    payload = json.loads(raw.decode("utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{label} 必须是 JSON object")
+    return payload
+
+
+def require_incident_acceptance_evidence(
+    incident_summary: Path | str | None,
+    incident_summary_sha256: str | None,
+    failed_run_root: Path | str | None,
+    failed_summary_sha256: str | None,
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    if incident_summary is None:
+        raise ValueError("独立验收必须提供 incident summary")
+    incident = _read_frozen_json(
+        incident_summary,
+        incident_summary_sha256,
+        APPROVED_INCIDENT_SUMMARY_SHA256,
+        label="incident summary",
+    )
+    validate_incident_acceptance_summary(incident)
+    if failed_run_root is None:
+        raise ValueError("独立验收必须提供首次失败 run root")
+    failed = _read_frozen_json(
+        Path(failed_run_root) / "evidence" / "formal-governance-summary.json",
+        failed_summary_sha256,
+        APPROVED_FAILED_SUMMARY_SHA256,
+        label="首次失败 summary",
+    )
+    validate_failed_governance_summary(failed)
+    return incident, failed
+
+
+def validate_incident_acceptance_authorization(
+    retain_current_live_authorized: bool,
+    service_stopped_confirmed: bool,
+    no_client_occupancy_confirmed: bool,
+) -> None:
+    missing = []
+    if retain_current_live_authorized is not True:
+        missing.append("--retain-current-live-authorized")
+    if service_stopped_confirmed is not True:
+        missing.append("--service-stopped-confirmed")
+    if no_client_occupancy_confirmed is not True:
+        missing.append("--no-client-occupancy-confirmed")
+    if missing:
+        raise ValueError(f"独立验收缺少显式确认：{', '.join(missing)}")
+
+
 def validate_formal_switch_authorization(
     formal_switch_authorized: bool,
     service_stopped_confirmed: bool,
@@ -1197,6 +1380,8 @@ def _run_topk_semantic_comparison(
         "expected_table_top1_hit_count": source_hits[0],
         "expected_table_top5_hit_count": source_hits[1],
         "expected_table_top10_hit_count": source_hits[2],
+        "exact_duplicate_slot_count": 0,
+        "table_identity_duplicate_slot_count": 0,
     }
 
 
@@ -1599,6 +1784,282 @@ def _validate_topk_frozen_result(
         raise RuntimeError(f"Top-K 结果与获批 I-B 基线不一致：{mismatches}")
 
 
+def _run_current_live_full_regression(
+    root: Path, source: Path, *, formal_monitor_source: Path
+) -> Mapping[str, Any]:
+    regression_copy = root / "current_live_regression_copy"
+    shutil.copytree(source, regression_copy, copy_function=shutil.copy2)
+    agent_dir = root / "current_live_regression_agent"
+    evidence_dir = root / "evidence" / "current-live-full-regression"
+    agent_dir.mkdir()
+    from tools.run_postgresql_f5_regression import directory_state
+
+    formal_monitor = directory_state(formal_monitor_source)
+    command = [
+        sys.executable,
+        "tools/run_postgresql_f5_regression.py",
+        "--suite",
+        "training/regression/postgresql_f5_regression_v1.json",
+        "--data-dir",
+        str(regression_copy),
+        "--agent-dir",
+        str(agent_dir),
+        "--evidence-dir",
+        str(evidence_dir),
+        "--expected-formal-record-count",
+        str(formal_monitor["record_count"]),
+        "--expected-formal-sha256",
+        str(formal_monitor["sha256"]),
+    ]
+    completed = subprocess.run(command, cwd=Path(__file__).resolve().parents[2])
+    if completed.returncode != 0:
+        raise RuntimeError(f"current live 完整回归失败：exit={completed.returncode}")
+    return {
+        "status": "PASS",
+        "passed": 15,
+        "total": 15,
+        "formal_monitor_record_count": formal_monitor["record_count"],
+        "formal_monitor_sha256": formal_monitor["sha256"],
+        "formal_monitor_checkpoints": str(
+            evidence_dir / "formal-monitor-checkpoints.json"
+        ),
+    }
+
+
+def _execute_incident_current_live_acceptance(
+    current: Path,
+    pre_switch: Path,
+    failed_root: Path,
+    incident_path: Path,
+    root: Path,
+    incident: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    from training.sop.ddl_memory_formal_readonly_audit import (
+        build_tree_manifest,
+        copy_complete_snapshot,
+    )
+
+    root.mkdir(parents=False, exist_ok=False)
+    evidence_path = root / "evidence" / "formal-current-live-acceptance-summary.json"
+    try:
+        current_before = build_tree_manifest(current)
+        pre_switch_before = build_tree_manifest(pre_switch)
+        if current_before.tree_sha256 != incident["current_live_tree_sha256"]:
+            raise RuntimeError("current live Tree SHA 与事故诊断冻结值不一致")
+        if pre_switch_before.tree_sha256 != incident["pre_switch_tree_sha256"]:
+            raise RuntimeError("pre-switch Tree SHA 与事故诊断冻结值不一致")
+
+        current_copy = root / "current_live_acceptance_copy"
+        pre_switch_copy = root / "pre_switch_acceptance_copy"
+        current_copy_sha = _copy_verified_snapshot(current, current_copy)
+        pre_switch_copy_sha = _copy_verified_snapshot(pre_switch, pre_switch_copy)
+        if current_copy_sha != current_before.tree_sha256:
+            raise RuntimeError("current live 验收副本 Tree SHA 不一致")
+        if pre_switch_copy_sha != pre_switch_before.tree_sha256:
+            raise RuntimeError("pre-switch 验收副本 Tree SHA 不一致")
+
+        desired = _build_expected_desired_memories()
+        client_open_audit: list[Path] = []
+        current_records = _read_working_copy_records(
+            current_copy,
+            formal_source=current,
+            immutable_archive=pre_switch,
+            client_open_audit=client_open_audit,
+        )
+        pre_switch_records = _read_working_copy_records(
+            pre_switch_copy,
+            formal_source=current,
+            immutable_archive=pre_switch,
+            client_open_audit=client_open_audit,
+        )
+        acceptance = validate_candidate_acceptance(
+            desired, pre_switch_records, current_records
+        )
+        if not acceptance.accepted:
+            raise RuntimeError(f"current live 分类、Plan 或非 DDL 验收失败：{acceptance.reasons}")
+        pre_switch_facts = analyze_formal_records(desired, pre_switch_records)
+        if not (
+            _incident_structural_facts_valid(pre_switch_facts)
+            and pre_switch_facts.managed_v1_ddl_count == 0
+            and pre_switch_facts.legacy_expected_ddl_count == EXPECTED_DDL_COUNT
+        ):
+            raise RuntimeError("pre-switch 不是完整 legacy 正式基线")
+        if _non_ddl_signature(current_records, desired) != _non_ddl_signature(
+            pre_switch_records, desired
+        ):
+            raise RuntimeError("current/pre-switch 的 83 条非 DDL 三元签名不一致")
+
+        current_topk_copy = root / "current_live_topk_copy"
+        pre_switch_topk_copy = root / "pre_switch_topk_copy"
+        copy_complete_snapshot(current_copy, current_topk_copy)
+        copy_complete_snapshot(pre_switch_copy, pre_switch_topk_copy)
+        topk = _run_topk_semantic_comparison(
+            pre_switch_topk_copy,
+            current_topk_copy,
+            formal_source=current,
+            immutable_archive=pre_switch,
+            client_open_audit=client_open_audit,
+        )
+        _validate_topk_frozen_result(
+            topk,
+            {
+                "query_count": 12,
+                "top_k": 10,
+                "semantic_result_sha256": APPROVED_IB_TOPK_SEMANTIC_SHA256,
+                "expected_table_top1_hit_count": 3,
+                "expected_table_top5_hit_count": 9,
+                "expected_table_top10_hit_count": 10,
+            },
+        )
+        if (
+            topk.get("exact_duplicate_slot_count") != 0
+            or topk.get("table_identity_duplicate_slot_count") != 0
+        ):
+            raise RuntimeError("Top-K 存在精确或表身份重复槽位")
+        full_regression = _run_current_live_full_regression(
+            root,
+            current_copy,
+            formal_monitor_source=current,
+        )
+        if full_regression.get("status") != "PASS" or (
+            full_regression.get("passed"), full_regression.get("total")
+        ) != (15, 15):
+            raise RuntimeError("current live 完整回归不是 15/15 PASS")
+
+        regression_client_target = (root / "current_live_regression_copy").absolute()
+        allowed_client_targets = {
+            current_copy.absolute(),
+            pre_switch_copy.absolute(),
+            current_topk_copy.absolute(),
+            pre_switch_topk_copy.absolute(),
+            regression_client_target,
+        }
+        if any(path.absolute() not in allowed_client_targets for path in client_open_audit):
+            raise RuntimeError("Client 打开了未获准的验收路径")
+        validate_rename_target_never_opened(client_open_audit, [current, pre_switch])
+
+        current_after = build_tree_manifest(current)
+        pre_switch_after = build_tree_manifest(pre_switch)
+        incident_sha_after = hashlib.sha256(incident_path.read_bytes()).hexdigest()
+        failed_summary_path = failed_root / "evidence" / "formal-governance-summary.json"
+        failed_sha_after = hashlib.sha256(failed_summary_path.read_bytes()).hexdigest()
+        source_integrity = (
+            current_after == current_before
+            and pre_switch_after == pre_switch_before
+            and incident_sha_after == APPROVED_INCIDENT_SUMMARY_SHA256
+            and failed_sha_after == APPROVED_FAILED_SUMMARY_SHA256
+        )
+        if not source_integrity:
+            summary = {
+                "stage": "F6-1I-C-R3-B",
+                "assessment_status": "FORMAL_ACCEPTANCE_SOURCE_CHANGED",
+                "formal_acceptance": "FAIL",
+                "formal_switch_executed": False,
+                "recovery_executed": False,
+                "rename_executed": False,
+                "collection_write_count": 0,
+            }
+            _write_json(evidence_path, summary)
+            raise RuntimeError("FORMAL_ACCEPTANCE_SOURCE_CHANGED")
+
+        summary = {
+            "stage": "F6-1I-C-R3-B",
+            "assessment_status": "CURRENT_LIVE_FORMALLY_ACCEPTED",
+            "formal_acceptance": "PASS",
+            "retain_current_live": True,
+            "formal_switch_executed": False,
+            "recovery_executed": False,
+            "rename_executed": False,
+            "collection_write_count": 0,
+            "current_live_classification": "PASS",
+            "current_live_facts": _facts_dict(acceptance.facts),
+            "current_live_plan": {
+                "create": acceptance.create_count,
+                "unchanged": acceptance.unchanged_count,
+                "changed": acceptance.changed_count,
+                "removed": acceptance.removed_count,
+            },
+            "pre_switch_legacy_baseline": "PASS",
+            "pre_switch_facts": _facts_dict(pre_switch_facts),
+            "non_ddl_preservation": "PASS",
+            "topk_semantic_regression": "PASS",
+            "topk_result": dict(topk),
+            "full_regression": "15 / 15",
+            "full_regression_monitor": dict(full_regression),
+            "source_integrity_after_acceptance": "PASS",
+            "current_live_tree_sha_before": current_before.tree_sha256,
+            "current_live_acceptance_copy_tree_sha": current_copy_sha,
+            "current_live_tree_sha_after": current_after.tree_sha256,
+            "pre_switch_tree_sha_before": pre_switch_before.tree_sha256,
+            "pre_switch_acceptance_copy_tree_sha": pre_switch_copy_sha,
+            "pre_switch_tree_sha_after": pre_switch_after.tree_sha256,
+            "incident_summary_sha256_after": incident_sha_after,
+            "failed_summary_sha256_after": failed_sha_after,
+            "client_open_targets": [
+                *(str(path) for path in client_open_audit),
+                str(regression_client_target),
+            ],
+            "runtime_direct_client_open_count": 0,
+        }
+        _write_json(evidence_path, summary)
+        return summary
+    except Exception as exc:
+        if not evidence_path.exists():
+            _write_json(
+                evidence_path,
+                {
+                    "stage": "F6-1I-C-R3-B",
+                    "assessment_status": "FORMAL_ACCEPTANCE_FAILED",
+                    "formal_acceptance": "FAIL",
+                    "failure": str(exc),
+                    "formal_switch_executed": False,
+                    "recovery_executed": False,
+                    "rename_executed": False,
+                    "collection_write_count": 0,
+                },
+            )
+        raise
+
+
+def incident_accept_current_live(
+    formal_source: Path | str,
+    pre_switch_source: Path | str,
+    failed_run_root: Path | str,
+    incident_summary: Path | str,
+    incident_summary_sha256: str | None,
+    failed_summary_sha256: str | None,
+    run_root: Path | str,
+    *,
+    retain_current_live_authorized: bool,
+    service_stopped_confirmed: bool,
+    no_client_occupancy_confirmed: bool,
+) -> Mapping[str, Any]:
+    # 顺序是安全契约：两份 Evidence → 显式确认 → 路径 → 正式运行时访问。
+    incident, _failed = require_incident_acceptance_evidence(
+        incident_summary,
+        incident_summary_sha256,
+        failed_run_root,
+        failed_summary_sha256,
+    )
+    validate_incident_acceptance_authorization(
+        retain_current_live_authorized,
+        service_stopped_confirmed,
+        no_client_occupancy_confirmed,
+    )
+    current, pre_switch, failed_root, incident_path, root = (
+        validate_incident_acceptance_paths(
+            formal_source,
+            pre_switch_source,
+            failed_run_root,
+            incident_summary,
+            run_root,
+        )
+    )
+    return _execute_incident_current_live_acceptance(
+        current, pre_switch, failed_root, incident_path, root, incident
+    )
+
+
 def formal_switch(
     formal_source: Path | str,
     run_root: Path | str,
@@ -1894,6 +2355,30 @@ def _synthetic_ib_summary() -> dict[str, Any]:
         "formal_switch_authorized": False,
         "service_stopped_confirmed": False,
         "no_client_occupancy_confirmed": False,
+    }
+
+
+def _synthetic_incident_summary() -> dict[str, Any]:
+    return {
+        "stage": "F6-1I-C-R2",
+        "assessment_status": "CURRENT_LIVE_MANAGED_PRE_SWITCH_LEGACY",
+        "current_live_tree_sha256": APPROVED_CURRENT_LIVE_TREE_SHA256,
+        "pre_switch_tree_sha256": APPROVED_PRE_SWITCH_TREE_SHA256,
+        "current_live_facts": dict(_expected_incident_facts(managed=True)),
+        "pre_switch_facts": dict(_expected_incident_facts(managed=False)),
+        "non_ddl_preservation": "PASS",
+        "failed_evidence_reconciled": True,
+        "runtime_direct_client_open_count": 0,
+        "rename_executed": False,
+        "recovery_executed": False,
+    }
+
+
+def _synthetic_failed_summary() -> dict[str, Any]:
+    return {
+        "stage": "F6-1I-C",
+        "assessment_status": "ROLLBACK_VERIFICATION_FAILED",
+        "rollback_verification": "FAIL",
     }
 
 
@@ -2288,6 +2773,343 @@ def self_test() -> int:
         assert summary_path.read_bytes() == summary_bytes_before
 
         from unittest.mock import patch
+
+        incident_summary = _synthetic_incident_summary()
+        failed_summary = _synthetic_failed_summary()
+        assert validate_incident_acceptance_summary(incident_summary) is incident_summary
+        assert validate_failed_governance_summary(failed_summary) is failed_summary
+        incident_path = temp / "synthetic-incident-summary.json"
+        failed_root = temp / "synthetic-failed-run"
+        failed_path = failed_root / "evidence" / "formal-governance-summary.json"
+        incident_path.write_text(
+            json.dumps(incident_summary, ensure_ascii=False, sort_keys=True),
+            encoding="utf-8",
+        )
+        failed_path.parent.mkdir(parents=True)
+        failed_path.write_text(
+            json.dumps(failed_summary, ensure_ascii=False, sort_keys=True),
+            encoding="utf-8",
+        )
+        incident_sha = hashlib.sha256(incident_path.read_bytes()).hexdigest()
+        failed_sha = hashlib.sha256(failed_path.read_bytes()).hexdigest()
+        with patch(
+            f"{__name__}.APPROVED_INCIDENT_SUMMARY_SHA256", incident_sha
+        ), patch(f"{__name__}.APPROVED_FAILED_SUMMARY_SHA256", failed_sha):
+            loaded_incident, loaded_failed = require_incident_acceptance_evidence(
+                incident_path, incident_sha, failed_root, failed_sha
+            )
+            assert loaded_incident == incident_summary
+            assert loaded_failed == failed_summary
+
+            for bad_incident, expected_text in (
+                (
+                    {**incident_summary, "assessment_status": "BLOCKED_INCIDENT_STATE"},
+                    "assessment_status",
+                ),
+                (
+                    {
+                        **incident_summary,
+                        "current_live_facts": {
+                            **incident_summary["current_live_facts"],
+                            "managed_v1_ddl_count": 114,
+                        },
+                    },
+                    "current_live_facts.managed_v1_ddl_count",
+                ),
+                (
+                    {
+                        **incident_summary,
+                        "pre_switch_facts": {
+                            **incident_summary["pre_switch_facts"],
+                            "legacy_expected_ddl_count": 114,
+                        },
+                    },
+                    "pre_switch_facts.legacy_expected_ddl_count",
+                ),
+                (
+                    {**incident_summary, "current_live_tree_sha256": "0" * 64},
+                    "current_live_tree_sha256",
+                ),
+                (
+                    {**incident_summary, "pre_switch_tree_sha256": "0" * 64},
+                    "pre_switch_tree_sha256",
+                ),
+            ):
+                _expect_error(
+                    lambda item=bad_incident: validate_incident_acceptance_summary(
+                        item
+                    ),
+                    expected_text,
+                )
+            _expect_error(
+                lambda: validate_failed_governance_summary(
+                    {**failed_summary, "assessment_status": "PASS"}
+                ),
+                "assessment_status",
+            )
+
+            with patch.object(Path, "exists", return_value=False):
+                accepted_paths = validate_incident_acceptance_paths(
+                    FORMAL_SOURCE,
+                    APPROVED_PRE_SWITCH_SOURCE,
+                    APPROVED_FAILED_RUN_ROOT,
+                    APPROVED_INCIDENT_SUMMARY,
+                    BACKUP_ROOT / "f6-1i-c-r3-20990101-000000",
+                )
+                assert accepted_paths[:4] == (
+                    FORMAL_SOURCE.absolute(),
+                    APPROVED_PRE_SWITCH_SOURCE.absolute(),
+                    APPROVED_FAILED_RUN_ROOT.absolute(),
+                    APPROVED_INCIDENT_SUMMARY.absolute(),
+                )
+                _expect_error(
+                    lambda: validate_incident_acceptance_paths(
+                        temp / "wrong-current",
+                        APPROVED_PRE_SWITCH_SOURCE,
+                        APPROVED_FAILED_RUN_ROOT,
+                        APPROVED_INCIDENT_SUMMARY,
+                        BACKUP_ROOT / "f6-1i-c-r3-20990101-000000",
+                    ),
+                    "冻结事故路径",
+                )
+
+            for confirmations, expected_text in (
+                ((False, True, True), "--retain-current-live-authorized"),
+                ((True, False, True), "--service-stopped-confirmed"),
+                ((True, True, False), "--no-client-occupancy-confirmed"),
+            ):
+                _expect_error(
+                    lambda values=confirmations: validate_incident_acceptance_authorization(
+                        *values
+                    ),
+                    expected_text,
+                )
+            assert validate_incident_acceptance_authorization(True, True, True) is None
+
+            blocked_root = temp / "must-not-be-created"
+            with patch(
+                f"{__name__}.validate_incident_acceptance_paths",
+                side_effect=AssertionError("PATH_GATE_MUST_NOT_RUN"),
+            ), patch(
+                f"{__name__}._execute_incident_current_live_acceptance",
+                side_effect=AssertionError("FORMAL_RUNTIME_MUST_NOT_RUN"),
+            ):
+                _expect_error(
+                    lambda: incident_accept_current_live(
+                        FORMAL_SOURCE,
+                        APPROVED_PRE_SWITCH_SOURCE,
+                        failed_root,
+                        incident_path,
+                        "0" * 64,
+                        failed_sha,
+                        blocked_root,
+                        retain_current_live_authorized=True,
+                        service_stopped_confirmed=True,
+                        no_client_occupancy_confirmed=True,
+                    ),
+                    "SHA-256 不一致",
+                )
+                _expect_error(
+                    lambda: incident_accept_current_live(
+                        FORMAL_SOURCE,
+                        APPROVED_PRE_SWITCH_SOURCE,
+                        failed_root,
+                        incident_path,
+                        incident_sha,
+                        "0" * 64,
+                        blocked_root,
+                        retain_current_live_authorized=True,
+                        service_stopped_confirmed=True,
+                        no_client_occupancy_confirmed=True,
+                    ),
+                    "SHA-256 不一致",
+                )
+                for confirmations, expected_text in (
+                    ((False, True, True), "--retain-current-live-authorized"),
+                    ((True, False, True), "--service-stopped-confirmed"),
+                    ((True, True, False), "--no-client-occupancy-confirmed"),
+                ):
+                    _expect_error(
+                        lambda values=confirmations: incident_accept_current_live(
+                            FORMAL_SOURCE,
+                            APPROVED_PRE_SWITCH_SOURCE,
+                            failed_root,
+                            incident_path,
+                            incident_sha,
+                            failed_sha,
+                            blocked_root,
+                            retain_current_live_authorized=values[0],
+                            service_stopped_confirmed=values[1],
+                            no_client_occupancy_confirmed=values[2],
+                        ),
+                        expected_text,
+                    )
+            assert not blocked_root.exists()
+
+            from training.sop.ddl_memory_formal_readonly_audit import TreeManifest
+
+            legacy_source = _synthetic_source(desired, managed_count=0)
+
+            def run_synthetic_acceptance(
+                name: str, *, change_current_after: bool = False
+            ) -> tuple[Path, Mapping[str, Any] | None]:
+                case = temp / name
+                current = case / "current_live"
+                pre = case / "pre_switch"
+                failed = case / "failed"
+                run_root = case / "run_root"
+                current.mkdir(parents=True)
+                pre.mkdir()
+                failed_summary_path = failed / "evidence" / "formal-governance-summary.json"
+                failed_summary_path.parent.mkdir(parents=True)
+                failed_summary_path.write_bytes(failed_path.read_bytes())
+                synthetic_incident_path = case / "incident-summary.json"
+                synthetic_incident_path.write_bytes(incident_path.read_bytes())
+                manifest_calls = {"current": 0}
+                opened: list[Path] = []
+
+                def fake_manifest(path: Path | str) -> TreeManifest:
+                    target = Path(path)
+                    if target == current:
+                        manifest_calls["current"] += 1
+                        sha = APPROVED_CURRENT_LIVE_TREE_SHA256
+                        if change_current_after and manifest_calls["current"] > 1:
+                            sha = "f" * 64
+                        return TreeManifest(sha, ())
+                    return TreeManifest(APPROVED_PRE_SWITCH_TREE_SHA256, ())
+
+                def fake_verified_copy(source: Path, target: Path) -> str:
+                    target.mkdir()
+                    return (
+                        APPROVED_CURRENT_LIVE_TREE_SHA256
+                        if source == current
+                        else APPROVED_PRE_SWITCH_TREE_SHA256
+                    )
+
+                def fake_complete_copy(_source: Path, target: Path) -> None:
+                    target.mkdir()
+
+                def fake_read(
+                    path: Path, *, client_open_audit: list[Path] | None = None, **_kw: Any
+                ) -> tuple[ExistingDdlMemoryRecord, ...]:
+                    if client_open_audit is not None:
+                        client_open_audit.append(path.absolute())
+                        opened.append(path.absolute())
+                    return managed_source if path.name.startswith("current") else legacy_source
+
+                def fake_topk(
+                    source_copy: Path,
+                    candidate_copy: Path,
+                    *,
+                    client_open_audit: list[Path] | None = None,
+                    **_kw: Any,
+                ) -> Mapping[str, Any]:
+                    if client_open_audit is not None:
+                        client_open_audit.extend(
+                            [source_copy.absolute(), candidate_copy.absolute()]
+                        )
+                    return {
+                        "query_count": 12,
+                        "top_k": 10,
+                        "semantic_result_sha256": APPROVED_IB_TOPK_SEMANTIC_SHA256,
+                        "expected_table_top1_hit_count": 3,
+                        "expected_table_top5_hit_count": 9,
+                        "expected_table_top10_hit_count": 10,
+                        "exact_duplicate_slot_count": 0,
+                        "table_identity_duplicate_slot_count": 0,
+                    }
+
+                def fake_regression(
+                    root: Path, _source: Path, **_kw: Any
+                ) -> Mapping[str, Any]:
+                    (root / "current_live_regression_copy").mkdir()
+                    return {"status": "PASS", "passed": 15, "total": 15}
+
+                with patch(
+                    "training.sop.ddl_memory_formal_readonly_audit.build_tree_manifest",
+                    side_effect=fake_manifest,
+                ), patch(
+                    "training.sop.ddl_memory_formal_readonly_audit.copy_complete_snapshot",
+                    side_effect=fake_complete_copy,
+                ), patch(
+                    f"{__name__}._copy_verified_snapshot",
+                    side_effect=fake_verified_copy,
+                ), patch(
+                    f"{__name__}._build_expected_desired_memories", return_value=desired
+                ), patch(
+                    f"{__name__}._read_working_copy_records", side_effect=fake_read
+                ), patch(
+                    f"{__name__}._run_topk_semantic_comparison", side_effect=fake_topk
+                ), patch(
+                    f"{__name__}._run_current_live_full_regression",
+                    side_effect=fake_regression,
+                ), patch(
+                    f"{__name__}.APPROVED_INCIDENT_SUMMARY_SHA256", incident_sha
+                ), patch(f"{__name__}.APPROVED_FAILED_SUMMARY_SHA256", failed_sha):
+                    if change_current_after:
+                        _expect_error(
+                            lambda: _execute_incident_current_live_acceptance(
+                                current,
+                                pre,
+                                failed,
+                                synthetic_incident_path,
+                                run_root,
+                                incident_summary,
+                            ),
+                            "FORMAL_ACCEPTANCE_SOURCE_CHANGED",
+                        )
+                        return run_root, None
+                    result = _execute_incident_current_live_acceptance(
+                        current,
+                        pre,
+                        failed,
+                        synthetic_incident_path,
+                        run_root,
+                        incident_summary,
+                    )
+                    assert set(Path(item).name for item in result["client_open_targets"]) == {
+                        "current_live_acceptance_copy",
+                        "pre_switch_acceptance_copy",
+                        "current_live_topk_copy",
+                        "pre_switch_topk_copy",
+                        "current_live_regression_copy",
+                    }
+                    return run_root, result
+
+            acceptance_root, acceptance_summary = run_synthetic_acceptance(
+                "incident-accept-success"
+            )
+            assert acceptance_summary is not None
+            assert acceptance_summary["assessment_status"] == "CURRENT_LIVE_FORMALLY_ACCEPTED"
+            assert acceptance_summary["current_live_plan"] == {
+                "create": 0,
+                "unchanged": EXPECTED_DDL_COUNT,
+                "changed": 0,
+                "removed": 0,
+            }
+            assert acceptance_summary["non_ddl_preservation"] == "PASS"
+            assert acceptance_summary["topk_semantic_regression"] == "PASS"
+            assert acceptance_summary["full_regression"] == "15 / 15"
+            assert acceptance_summary["formal_switch_executed"] is False
+            assert acceptance_summary["recovery_executed"] is False
+            assert acceptance_summary["rename_executed"] is False
+            assert acceptance_summary["collection_write_count"] == 0
+            assert (acceptance_root / "current_live_regression_copy").is_dir()
+            changed_root, changed_summary = run_synthetic_acceptance(
+                "incident-accept-source-change", change_current_after=True
+            )
+            assert changed_summary is None
+            changed_payload = json.loads(
+                (changed_root / "evidence" / "formal-current-live-acceptance-summary.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            assert changed_payload["assessment_status"] == "FORMAL_ACCEPTANCE_SOURCE_CHANGED"
+
+        acceptance_source = getsource(_execute_incident_current_live_acceptance)
+        assert ".rename(" not in acceptance_source and "shutil.move" not in acceptance_source
+        assert "collection.add" not in acceptance_source
+        assert "collection.delete" not in acceptance_source
 
         with patch(
             f"{__name__}.validate_run_paths",
@@ -2703,6 +3525,21 @@ def self_test() -> int:
     print("INCIDENT_BLOCKED_DECISION_TEST=PASS")
     print("INCIDENT_DIAGNOSE_NO_RENAME_TEST=PASS")
     print("INCIDENT_DIAGNOSE_EXECUTED=NO")
+    print("INCIDENT_ACCEPTANCE_SUMMARY_SHA_GATE_TEST=PASS")
+    print("FAILED_SUMMARY_SHA_GATE_TEST=PASS")
+    print("INCIDENT_ACCEPTANCE_CRITICAL_FACTS_GATE_TEST=PASS")
+    print("RETAIN_CURRENT_LIVE_AUTHORIZATION_GATE_TEST=PASS")
+    print("INCIDENT_ACCEPTANCE_COPY_ONLY_CLIENT_TEST=PASS")
+    print("INCIDENT_ACCEPTANCE_NO_RENAME_TEST=PASS")
+    print("INCIDENT_ACCEPTANCE_NO_COLLECTION_WRITE_TEST=PASS")
+    print("INCIDENT_ACCEPTANCE_CLASSIFICATION_PLAN_TEST=PASS:0/115/0/0")
+    print("INCIDENT_ACCEPTANCE_PRE_SWITCH_BASELINE_TEST=PASS:115/83")
+    print("INCIDENT_ACCEPTANCE_NON_DDL_TEST=PASS:83")
+    print("INCIDENT_ACCEPTANCE_TOPK_TEST=PASS:12/10/3/9/10")
+    print("INCIDENT_ACCEPTANCE_FULL_REGRESSION_TEST=PASS:15/15")
+    print("INCIDENT_ACCEPTANCE_SOURCE_CHANGE_TEST=PASS")
+    print("INCIDENT_ACCEPTANCE_SUCCESS_STATE_TEST=PASS")
+    print("INCIDENT_ACCEPTANCE_EXECUTED=NO")
     print("SHARED_DDL_CLASSIFICATION_CONTRACT_TEST=PASS")
     print("SIX_FALSE_POSITIVE_REGRESSION_TEST=PASS:198/115/115/0/83")
     print("NON_DDL_PRESERVATION_CLASSIFICATION_TEST=PASS:83")
@@ -2711,7 +3548,10 @@ def self_test() -> int:
     print("FORMAL_CHROMA_FILESYSTEM_ACCESS_DURING_STAGE=0")
     print("FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT=0")
     print("FORMAL_SWITCH_EXECUTED=NO")
+    print("RECOVERY_EXECUTED=NO")
+    print("FORMAL_ACCEPTANCE_EXECUTED=NO")
     print("CHROMA_CLIENT_CREATED=0")
+    print("INCIDENT_RUNTIME_FILESYSTEM_ACCESS_DURING_STAGE=0")
     return 0
 
 
@@ -2722,13 +3562,18 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--isolated-drill", action="store_true")
     mode.add_argument("--formal-switch", action="store_true")
     mode.add_argument("--incident-diagnose", action="store_true")
+    mode.add_argument("--incident-accept-current-live", action="store_true")
     parser.add_argument("--formal-source", type=Path)
     parser.add_argument("--pre-switch-source", type=Path)
     parser.add_argument("--failed-run-root", type=Path)
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--approved-drill-summary", type=Path)
     parser.add_argument("--approved-drill-summary-sha256")
+    parser.add_argument("--incident-summary", type=Path)
+    parser.add_argument("--incident-summary-sha256")
+    parser.add_argument("--failed-summary-sha256")
     parser.add_argument("--formal-switch-authorized", action="store_true")
+    parser.add_argument("--retain-current-live-authorized", action="store_true")
     parser.add_argument("--service-stopped-confirmed", action="store_true")
     parser.add_argument("--no-client-occupancy-confirmed", action="store_true")
     return parser.parse_args()
@@ -2738,6 +3583,7 @@ def main() -> int:
     args = parse_args()
     runtime_confirmations = (
         args.formal_switch_authorized,
+        args.retain_current_live_authorized,
         args.service_stopped_confirmed,
         args.no_client_occupancy_confirmed,
     )
@@ -2749,6 +3595,9 @@ def main() -> int:
             or args.run_root
             or args.approved_drill_summary
             or args.approved_drill_summary_sha256
+            or args.incident_summary
+            or args.incident_summary_sha256
+            or args.failed_summary_sha256
             or any(runtime_confirmations)
         ):
             raise SystemExit("--self-test 不接受正式路径参数")
@@ -2757,6 +3606,9 @@ def main() -> int:
         if (
             args.approved_drill_summary
             or args.approved_drill_summary_sha256
+            or args.incident_summary
+            or args.incident_summary_sha256
+            or args.failed_summary_sha256
             or any(runtime_confirmations)
         ):
             raise SystemExit("--isolated-drill 禁止携带正式切换批准或运行时确认参数")
@@ -2764,6 +3616,9 @@ def main() -> int:
         if (
             args.approved_drill_summary
             or args.approved_drill_summary_sha256
+            or args.incident_summary
+            or args.incident_summary_sha256
+            or args.failed_summary_sha256
             or any(runtime_confirmations)
         ):
             raise SystemExit("--incident-diagnose 禁止携带正式切换批准或确认参数")
@@ -2784,6 +3639,46 @@ def main() -> int:
         )
         print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
         return 0
+    if args.incident_accept_current_live:
+        if (
+            args.approved_drill_summary
+            or args.approved_drill_summary_sha256
+            or args.formal_switch_authorized
+        ):
+            raise SystemExit("--incident-accept-current-live 禁止携带正式切换批准参数")
+        if not all(
+            (
+                args.formal_source,
+                args.pre_switch_source,
+                args.failed_run_root,
+                args.incident_summary,
+                args.incident_summary_sha256,
+                args.failed_summary_sha256,
+                args.run_root,
+            )
+        ):
+            raise SystemExit("独立验收必须提供全部冻结路径、Evidence SHA 和 run-root")
+        summary = incident_accept_current_live(
+            args.formal_source,
+            args.pre_switch_source,
+            args.failed_run_root,
+            args.incident_summary,
+            args.incident_summary_sha256,
+            args.failed_summary_sha256,
+            args.run_root,
+            retain_current_live_authorized=args.retain_current_live_authorized,
+            service_stopped_confirmed=args.service_stopped_confirmed,
+            no_client_occupancy_confirmed=args.no_client_occupancy_confirmed,
+        )
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+        return 0
+    if (
+        args.incident_summary
+        or args.incident_summary_sha256
+        or args.failed_summary_sha256
+        or args.retain_current_live_authorized
+    ):
+        raise SystemExit("治理/正式切换模式禁止携带独立事故验收参数")
     if not args.formal_source or not args.run_root:
         raise SystemExit("治理模式必须提供 --formal-source 和 --run-root")
     if args.isolated_drill:
