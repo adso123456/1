@@ -1,0 +1,42 @@
+# F6-2C O3-R1 临时审查证据
+
+- BASE_COMMIT: `0a5ae735384206facd74a3d31bcd8c3c1d924f71`
+- EVIDENCE_BRANCH: `evidence/f6-2c-o3-r1`
+- OFFLINE_RUN_DIRECTORY: `E:\3\_training_backups\f6-2c-o3-r1-20260722-154737`
+- NOT_FOUND: `NONE`
+
+## 脱敏说明
+
+- 未发现真实 API Key、Cookie、数据库凭据或连接字符串。
+- 测试夹具中的伪 Authorization Token 已替换为 `[REDACTED_SYNTHETIC_TOKEN]`。
+- 回归工具源码副本中的本机回环 IP 已替换为 `[REDACTED_LOOPBACK_IP]`。
+- 环境变量名 `DEEPSEEK_API_KEY` 仅是配置名称，不含密钥值，予以保留。
+- 上述替换仅发生在审查证据副本和证据补丁中；主工作区源码未被改写。
+
+## 文件清单与 SHA256
+
+```text
+.gitattributes  e8984b76b488481c59d8df4675a5a2115b04625bf8eff2d746932e43a4876eeb
+exception-cleanup-test-results.json  e8b03f7afd62db6b2148d46f2f199146f251a49f3cf7e2543ff2a627ffdce886
+full-working-tree.patch  908501b0e695026d592b0ab2c750fa1ac60cfdec8f198c38408b355aebd2307a
+git-diff-check.txt  e7a9387e23b063e10c6365a3e13e9564c97c97ddf5b3d390daddb40ac31a704c
+git-diff-name-status.txt  af3cb7e742b11f0c449b17fd34201ccbcf64ca90cdc16051c19e43396914db9e
+git-diff-stat.txt  a79233157b1eca410b413d0fbf3c38e664a3ba0f76a2a9cf06d11333794cf33f
+git-status.txt  dad5170046e06d186786b92f9925e2c81ef08f039e40b9c8da850d1290b7d600
+provider-policy-test-results.json  5d11aa11cc64828da4ad46e521619116f20df099a22a56a35c7efb48611483a8
+py-compile-result.txt  d64bdb06e052c29b714a073fc6c80aad728dd266b2504e962f4bc98dc6befe3f
+self-test-result.txt  c0c59b41de8d443c8b590df82e5e2d38be0d9de64cdb17276ea18c8c2bc9e4de
+source/backend/agent_factory.py  f1229994488639b2f63cb4cf1a54c1c67fab6db9683a07bc6e49423d0ec57758
+source/backend/prompts.py  0652188405abded887c7744e13f2f98d5523b5741391881bfbd639c952c408a6
+source/backend/query_context.py  98951f275a37bcc0df023ea8b6b091a43026e46a9ed7937ac0b93ae6b7d0e4b4
+source/backend/request_diagnostics.py  bfec1d9ee0c47751dcdbc6b9926d0ea3488252ff737e02fc0ba66608c045c4c4
+source/backend/run_sql_requirement.py  299cc577e3367fb26ccb461483d77c2d35b400d4dc090ae54f60b8995bc429e7
+source/backend/sql_example_context_enhancer.py  ab8eb0915a4787879a985ad5fbec92b0ea6f6217dbc48dc48c79ee1a076a0c70
+source/backend/tracing_llm_service.py  1ba9c93537b0437d8c74462ee436043a38d00470db52c57caf26d19615a1a595
+source/tools/regression_service_harness.py  97a9c561ff990fa45bb0956db99ee9b179fa702bcb98ec42eba2e7473d3bd249
+source/tools/run_postgresql_f5_regression.py  94e9898a01da32681327c2370a723a0c2313de7482b4dc2ac31386325185b46b
+vanna-source-excerpts/llm-request.txt  14f8c74d919e8ce5d922584af835633caa453136046490550528c87323fe5640
+vanna-source-excerpts/openai-sdk-create-signature.txt  4d5d4fe44e99b0640fb18e481b14776e578454e871e0a349cc03832bd53511a8
+vanna-source-excerpts/vanna-openai-service.txt  450bf9bb836051a936007b09bd8a1e6f9039f2c2360918cbd3e35ed2450b61a2
+verification-status.json  ab7f9bba2f3987117dcc1a316c522ea494456c8f3605546ad97c585d19103156
+```

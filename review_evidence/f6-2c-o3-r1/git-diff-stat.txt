@@ -1,0 +1,13 @@
+﻿warning: in the working copy of 'backend/agent_factory.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/prompts.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/query_context.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/sql_example_context_enhancer.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/regression_service_harness.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/run_postgresql_f5_regression.py', LF will be replaced by CRLF the next time Git touches it
+ backend/agent_factory.py                |  24 +-
+ backend/prompts.py                      |  45 +-
+ backend/query_context.py                |  54 +-
+ backend/sql_example_context_enhancer.py |  45 +-
+ tools/regression_service_harness.py     | 185 +++++--
+ tools/run_postgresql_f5_regression.py   | 840 ++++++++++++++++++++++++++++++++
+ 6 files changed, 1146 insertions(+), 47 deletions(-)

@@ -1,0 +1,5 @@
+﻿LlmRequest signature:
+(*, messages: List[vanna.core.llm.models.LlmMessage], tools: Optional[List[Any]] = None, user: vanna.core.user.models.User, stream: bool = False, temperature: Annotated[float, Ge(ge=0.0), Le(le=2.0)] = 0.7, max_tokens: Annotated[Optional[int], Gt(gt=0)] = None, system_prompt: Optional[str] = None, metadata: Dict[str, Any] = <factory>) -> None
+
+LlmRequest annotations:
+{'messages': typing.List[vanna.core.llm.models.LlmMessage], 'tools': typing.Optional[typing.List[typing.Any]], 'user': <class 'vanna.core.user.models.User'>, 'stream': <class 'bool'>, 'temperature': <class 'float'>, 'max_tokens': typing.Optional[int], 'system_prompt': typing.Optional[str], 'metadata': typing.Dict[str, typing.Any]}
