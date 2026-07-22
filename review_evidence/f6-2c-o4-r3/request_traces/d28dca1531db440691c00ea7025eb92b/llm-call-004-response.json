@@ -1,0 +1,17 @@
+{
+  "trace_id": "d28dca1531db440691c00ea7025eb92b",
+  "call_number": 4,
+  "timestamp": "2026-07-22T08:56:36.597653+00:00",
+  "response_type": "stream",
+  "content": "",
+  "tool_calls": [
+    {
+      "id": "call_00_Yq4aOsKXmtXtHS0rmCzE8256",
+      "name": "run_sql",
+      "arguments": {
+        "sql": "\nSELECT station_id, monitor_time, m2_value\nFROM wm_waterquality_day_records\nWHERE m2_value IS NOT NULL\nORDER BY m2_value DESC\nLIMIT 10\n"
+      }
+    }
+  ],
+  "finish_reason": "tool_calls"
+}

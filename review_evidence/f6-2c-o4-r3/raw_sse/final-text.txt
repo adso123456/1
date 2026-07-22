@@ -1,0 +1,29 @@
+SQL Guard 对当前问题已经完全阻止了 `wm_waterquality_*` 相关表的查询。根据已批准的 SQL 示例（L3_P0_SQL_004），正确的查询方式如下：
+
+```sql
+SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level
+FROM wm_waterquality_year_records
+WHERE monitor_year = 2025 AND m2_value IS NOT NULL
+GROUP BY station_id, monitor_year, water_quality_level
+ORDER BY AVG(m2_value) DESC
+LIMIT 20
+```
+
+但由于系统层面的限制（SQL Guard hard block），我无法在当前会话中成功执行此查询。
+
+## 分析与建议
+
+根据已批准的 SQL 示例，查询年度 pH 年均值最高的站点列表的正确方法是从 **`wm_waterquality_year_records`**（水质监测年记录表）中：
+
+1. 使用 `m2_value` 字段（代表 pH 值）
+2. 按 `station_id` 和 `monitor_year` 分组
+3. 计算 `AVG(m2_value)` 作为年均 pH 值
+4. 按年均值降序排列
+
+首次查询返回空结果，可能的原因包括：
+- `wm_waterquality_year_records` 表中当前没有数据
+- 或者 `m2_value` 字段在表中全为 NULL
+
+建议检查年记录表的数据同步状态，或从月/日记录表汇总数据（需 SQL Guard 放行）。
+
+<!-- chart_spec: {"type":"horizontal_bar","title":"年度pH年均值最高的站点排名","xField":"station_id","yFields":["avg_ph"],"seriesField":null,"sizeField":null,"valueField":null,"min":null,"max":null,"unit":"pH"} -->

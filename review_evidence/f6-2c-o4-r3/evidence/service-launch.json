@@ -1,0 +1,10 @@
+﻿{
+    "launcher_pid":  3400,
+    "server_pid":  43180,
+    "started_at":  "2026-07-22T16:56:13.5853103+08:00",
+    "working_directory":  "E:\\3\\_validation_worktrees\\f6-2c-o4-r3-20260722-165401",
+    "metadata_path":  "E:\\3\\_training_backups\\f6-2c-o4-r3-20260722-165401\\agent_data",
+    "chroma_path":  "E:\\3\\_training_backups\\f6-2c-o4-r3-20260722-165401\\candidate_validation_chroma",
+    "trace_path":  "E:\\3\\_training_backups\\f6-2c-o4-r3-20260722-165401\\request_traces",
+    "sql_guard_trace_path":  "E:\\3\\_training_backups\\f6-2c-o4-r3-20260722-165401\\evidence\\sql-guard.jsonl"
+}

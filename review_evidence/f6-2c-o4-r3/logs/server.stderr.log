@@ -1,0 +1,5 @@
+Loading weights:   0%|          | 0/71 [00:00<?, ?it/s]Loading weights: 100%|��������������������| 71/71 [00:00<00:00, 4613.20it/s]
+INFO:     Started server process [43180]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://[REDACTED_BIND_IP]:8000 (Press CTRL+C to quit)

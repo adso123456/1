@@ -1,0 +1,22 @@
+[
+  {
+    "name": "run_sql",
+    "description": "Execute SQL queries against the configured database",
+    "parameter_model_name": "RunSqlToolArgs",
+    "parameters": {
+      "description": "Arguments for run_sql tool.",
+      "properties": {
+        "sql": {
+          "description": "SQL query to execute",
+          "title": "Sql",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sql"
+      ],
+      "title": "RunSqlToolArgs",
+      "type": "object"
+    }
+  }
+]

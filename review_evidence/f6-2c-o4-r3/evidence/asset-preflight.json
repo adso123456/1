@@ -1,0 +1,23 @@
+{
+  "fingerprint_algorithms": {
+    "tree_sha256": "tools.refresh_metadata_index.directory_tree_sha256: length-prefixed relative path and file content",
+    "directory_manifest_content_sha256": "training.sop.storage_snapshot.build_directory_manifest content_sha256",
+    "file_sha256": "SHA256 of raw file bytes"
+  },
+  "candidate_metadata_file_sha256": "e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93",
+  "candidate_metadata_table_count": 115,
+  "candidate_metadata_column_count": 2613,
+  "validation_metadata_file_sha256": "e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93",
+  "candidate_source_tree_sha256_before": "50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6",
+  "candidate_source_manifest_content_sha256_before": "a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46",
+  "validation_chroma_tree_sha256_before_service": "ccb9f54ed1de29b3c05fdb8980c19bec5f10efdeb8baa8c24fe2699a1b31ee4c",
+  "validation_chroma_manifest_content_sha256_before_service": "16b5c585e3f93172e4ad9d1e07f5076438d187a0ed46481e8f9cc9b6b9ff8964",
+  "validation_records_before_service": 198,
+  "validation_managed_ddl_before_service": 115,
+  "validation_non_ddl_before_service": 83,
+  "formal_metadata_file_sha256_before": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_chroma_tree_sha256_before": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "formal_chroma_manifest_content_sha256_before": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_records_expected_baseline": 198,
+  "formal_chroma_opened_via_api": false
+}

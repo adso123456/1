@@ -1,0 +1,29 @@
+{
+  "repr": "'\u67e5\u8be2\u5e74\u5ea6pH\u5e74\u5747\u503c\u6700\u9ad8\u7684\u7ad9\u70b9\u5217\u8868'",
+  "length": 16,
+  "unicode_code_points": [
+    "U+67E5",
+    "U+8BE2",
+    "U+5E74",
+    "U+5EA6",
+    "U+0070",
+    "U+0048",
+    "U+5E74",
+    "U+5747",
+    "U+503C",
+    "U+6700",
+    "U+9AD8",
+    "U+7684",
+    "U+7AD9",
+    "U+70B9",
+    "U+5217",
+    "U+8868"
+  ],
+  "utf8_hex": "e69fa5e8afa2e5b9b4e5baa67048e5b9b4e59d87e580bce69c80e9ab98e79a84e7ab99e782b9e58897e8a1a8",
+  "utf8_sha256": "c198afde8fa966bbe913b904328508dcf99162a7ef4765f0b8fec8f6ecd6e460",
+  "contains_question_mark": false,
+  "round_trip_matches": true,
+  "sys_stdin_encoding": "gbk",
+  "sys_stdout_encoding": "gbk",
+  "locale_preferred_encoding": "cp936"
+}

@@ -1,0 +1,2 @@
+*.log whitespace=-blank-at-eol,-blank-at-eof
+*.sse whitespace=-blank-at-eol,-blank-at-eof
