@@ -8,8 +8,7 @@ from vanna.core.enhancer.default import DefaultLlmContextEnhancer
 from vanna.core.registry import ToolRegistry
 from vanna.core.user import RequestContext, User, UserResolver
 from vanna.integrations.openai import OpenAILlmService
-from vanna.integrations.postgres import PostgresRunner
-from vanna.tools import LocalFileSystem, RunSqlTool
+from vanna.tools import LocalFileSystem
 
 from backend.guarded_run_sql_tool import GuardedRunSqlTool
 from backend.memory import create_memory
@@ -19,6 +18,10 @@ from backend.prompts import OptimizedSystemPromptBuilder
 from backend.query_context import (
     OriginalQuestionContextEnricher,
     OriginalQuestionLifecycleHook,
+)
+from backend.schema_preserving_sql import (
+    SchemaPreservingPostgresRunner,
+    SchemaPreservingRunSqlTool,
 )
 from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
 from backend.sql_guard import SQLGuard
@@ -57,7 +60,7 @@ def create_agent():
 
     print("连接 PostgreSQL...")
     validate_db_config()
-    pg_runner = PostgresRunner(**DB_KWARGS)
+    pg_runner = SchemaPreservingPostgresRunner(**DB_KWARGS)
 
     print("加载 ChromaDB 记忆库 (中文embedding + 0.55阈值)...")
     memory = create_memory()
@@ -65,7 +68,10 @@ def create_agent():
     print("注册工具 (run_sql)...")
     tool_registry = ToolRegistry()
     file_system = LocalFileSystem(working_directory=AGENT_DATA_DIR)
-    raw_run_sql_tool = RunSqlTool(sql_runner=pg_runner, file_system=file_system)
+    raw_run_sql_tool = SchemaPreservingRunSqlTool(
+        sql_runner=pg_runner,
+        file_system=file_system,
+    )
     # GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用同一个 SQLGuard 实例
     sql_guard = SQLGuard()
     tool_registry.register_local_tool(

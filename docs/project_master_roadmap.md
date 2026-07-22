@@ -68,7 +68,7 @@ Tool Memory 总数：75
 当前阶段：
 
 ```text
-F6-2B完成；正式候选Metadata与DDL Memory更新计划已生成，等待F6-2C受控应用
+F6-2C前置回归基线修复已完成并提交；旧正式隔离基线20/20 HTTP、6/6 Memory通过，等待重新执行F6-2C受控应用
 ```
 
 当前禁止越界进入：
@@ -100,6 +100,19 @@ F3       ➖ 无主线功能阻断，跳过
 F4       ✅ 正式 Level 1 切换
 F5       ✅ Level 2 / Level 3 受控训练与最终总验收完成
 ```
+
+### F6-2C 前置回归基线修复
+
+- 年度 pH 目标表 `wm_waterquality_year_records` 当前为空；
+- 固定用例 `level3_p0_annual_ph_ranking` 的 `minimum_rows` 从 `1` 调整为 `0`；
+- 其目标表、预期字段、`GROUP BY`、降序和 `LIMIT` 门禁保持不变；
+- 零行 PostgreSQL 查询现在保留 `cursor.description` 中的输出列；
+- 零行成功不再依赖 CSV 文件判断；
+- 一次请求中的所有 DataFrame 执行事件按顺序保留；
+- 回归只验证第一个实际执行的 DataFrame 事件，后续 SQL 不得覆盖；
+- 所有 Chroma HTTP 回归必须运行在正式资产的校验副本上，服务不得直接打开正式 Chroma；
+- B4 旧正式隔离完整基线：HTTP `20/20`、Memory `6/6`；
+- F6-2C 尚未重新执行。
 
 已完成的受控 Level 2 批次：
 
@@ -1620,7 +1633,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
-| F6-2 Metadata 更新机制 | 进行中 | F6-2B已完成；正式候选Metadata与DDL Memory更新计划已生成，等待F6-2C受控应用 |
+| F6-2 Metadata 更新机制 | 进行中 | F6-2C前置回归基线修复已完成并提交；旧正式隔离基线20/20 HTTP、6/6 Memory通过，等待重新执行F6-2C受控应用 |
 | Vanna 源码移除 + 全项目瘦身 + 目录规范化 | 等待盘点指令 | 下一主板块，尚未开始 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1633,7 +1646,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-执行 F6-2C 正式候选 Metadata 与 DDL Memory 受控应用。
+重新执行 F6-2C 正式候选 Metadata 与 DDL Memory 受控应用。
 ```
 
-F6-1 已正式完成，F6-2B 已完成。F6-2 整体尚未完成；正式 Metadata 索引与正式 Memory 均未修改，下一步仅允许按独立指令进入 F6-2C 受控应用，不进入 Legacy、MySQL 或其他板块。
+F6-1 已正式完成，F6-2C 前置回归基线修复已完成并提交。F6-2 整体尚未完成；正式 Metadata 索引与正式 Memory 均未修改，下一步仅允许按独立指令重新执行 F6-2C 受控应用，不进入 Legacy、MySQL 或其他板块。

@@ -248,7 +248,7 @@
       "limit_max": 20,
       "expected_columns": ["station_id", "monitor_year", "avg_ph", "water_quality_level"],
       "sql_constraints": {"require_join": false, "forbid_join": true, "require_left_join": false, "require_group_by": true, "require_order_desc": true, "forbidden_tables": [], "forbidden_columns": ["geom"], "forbid_select_star": true, "forbid_distinct": false, "forbid_where": false, "forbid_null_filter": false, "expected_chart_types": [], "require_chart_title": false, "require_chart_fields": false},
-      "result_policy": {"exact_rows": null, "minimum_rows": 1, "columns_mode": "contains", "require_answer": true}
+      "result_policy": {"exact_rows": null, "minimum_rows": 0, "columns_mode": "contains", "require_answer": true}
     },
     {
       "case_id": "level3_p1_annual_water_supply",

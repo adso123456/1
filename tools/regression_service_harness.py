@@ -152,6 +152,39 @@ def walk_json(value: Any, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, .
     return found
 
 
+def parse_dataframe_event(
+    event: dict[str, Any], sequence: int
+) -> dict[str, Any] | None:
+    """从单个 SSE 事件提取结构化 DataFrame 执行结果。"""
+    rich = event.get("rich")
+    if not isinstance(rich, dict) or rich.get("type") != "dataframe":
+        return None
+    data = rich.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    rows = data.get("data")
+    if not isinstance(rows, list):
+        rows = data.get("rows")
+    if not isinstance(rows, list):
+        rows = []
+    columns = data.get("columns")
+    if not isinstance(columns, list):
+        columns = []
+    row_count = data.get("row_count")
+    if not isinstance(row_count, int) or isinstance(row_count, bool):
+        row_count = len(rows)
+    return {
+        "sequence": sequence,
+        "sql": str(data.get("sql") or "").strip(),
+        "columns": columns,
+        "rows": rows,
+        "row_count": row_count,
+        "description": str(data.get("description") or ""),
+        "execution_success": data.get("execution_success") is True,
+        "output_file": str(data.get("output_file") or ""),
+    }
+
+
 def post_sse(query: str, timeout: int = 240) -> dict[str, Any]:
     payload = json.dumps(
         {
@@ -177,6 +210,7 @@ def post_sse(query: str, timeout: int = 240) -> dict[str, Any]:
         "rich_types": [],
         "event_rows": [],
         "event_columns": [],
+        "dataframe_events": [],
     }
     answer_parts: list[str] = []
     try:
@@ -199,6 +233,11 @@ def post_sse(query: str, timeout: int = 240) -> dict[str, Any]:
                 result["event_count"] += 1
                 if event.get("type") == "error":
                     result["errors"].append(str(event.get("data") or event))
+                dataframe_event = parse_dataframe_event(
+                    event, len(result["dataframe_events"]) + 1
+                )
+                if dataframe_event is not None:
+                    result["dataframe_events"].append(dataframe_event)
                 for path, value in walk_json(event):
                     key = path[-1].lower() if path else ""
                     if key == "sql" and isinstance(value, str) and value.strip():
@@ -220,6 +259,11 @@ def post_sse(query: str, timeout: int = 240) -> dict[str, Any]:
         result["errors"].append(f"{type(exc).__name__}: {exc}")
     result["rich_types"] = sorted(set(result["rich_types"]))
     result["answer"] = "\n".join(dict.fromkeys(answer_parts))[-12000:]
+    if result["dataframe_events"]:
+        first = result["dataframe_events"][0]
+        result["sql"] = first["sql"]
+        result["event_columns"] = first["columns"]
+        result["event_rows"] = first["rows"]
     return result
 
 

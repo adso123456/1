@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import ast
 import hashlib
 import json
@@ -22,7 +23,7 @@ DEFAULT_SUITE = PROJECT_ROOT / "training" / "regression" / "postgresql_f5_regres
 FORMAL_RUNTIME = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
 EXPECTED_FORMAL_RECORD_COUNT = 198
 EXPECTED_FORMAL_SHA256 = "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
-EXPECTED_SUITE_SHA256 = "5629f5c93ae0b1921e8978c5793f99f3f5fdc1fd4677093b03bbf7cccdea727d"
+EXPECTED_SUITE_SHA256 = "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a"
 EARLY_MEMORY_MODULES = ("backend.memory", "step4_server")
 REQUIRED_CASE_FIELDS = {
     "case_id",
@@ -279,7 +280,7 @@ def validate_case(case: dict[str, Any], case_result: dict[str, Any]) -> dict[str
             and len(statements) == 1
             and not _regex(r"\b(insert|update|delete|drop|alter|create|truncate|comment|merge)\b", sql)
         ),
-        "execution_success": bool(result.get("csv_file")),
+        "execution_success": result.get("execution_success") is True,
         "result_nonempty": row_count >= int(policy["minimum_rows"]),
         "answer_present": not policy["require_answer"] or bool(str(result.get("answer") or "").strip()),
     }
@@ -351,13 +352,16 @@ def run_http_case(
     response = post_sse(case["question"])
     after = query_result_files(agent_dir)
     new_csv = sorted(after - before)
-    response["csv_file"] = new_csv[-1] if new_csv else ""
-    response["columns"] = list(response.get("event_columns") or [])
-    response["row_count"] = len(response.get("event_rows") or [])
-    if new_csv:
-        columns, rows = read_csv(agent_dir / new_csv[-1])
-        response["columns"] = columns
-        response["row_count"] = len(rows)
+    response["csv_files"] = new_csv
+    dataframe_events = list(response.get("dataframe_events") or [])
+    primary = dataframe_events[0] if dataframe_events else {}
+    response["sql"] = str(primary.get("sql") or "")
+    response["columns"] = list(primary.get("columns") or [])
+    response["row_count"] = int(primary.get("row_count") or 0)
+    response["execution_success"] = primary.get("execution_success") is True
+    output_file = str(primary.get("output_file") or "")
+    matching_csv = [item for item in new_csv if Path(item).name == output_file]
+    response["csv_file"] = matching_csv[0] if matching_csv else ""
     response["chart_specs"] = extract_chart_specs(str(response.get("answer") or ""))
     return {
         "id": case["case_id"],
@@ -374,6 +378,14 @@ def sanitized_case_result(case_result: dict[str, Any]) -> dict[str, Any]:
     result["answer"] = {"redacted": True, "nonempty": bool(answer.strip()), "character_count": len(answer)}
     rows = result.get("event_rows") or []
     result["event_rows"] = {"redacted": True, "row_count_in_stream": len(rows) if isinstance(rows, list) else 0}
+    for event in result.get("dataframe_events") or []:
+        event_rows = event.get("rows") or []
+        event["rows"] = {
+            "redacted": True,
+            "row_count_in_stream": len(event_rows)
+            if isinstance(event_rows, list)
+            else 0,
+        }
     result.pop("preview_first3_anonymized", None)
     output["result"] = result
     return output
@@ -417,6 +429,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             "errors": [],
             "sql": "SELECT list_type, list_type_desc, item_code FROM ad_dict LIMIT 10",
             "csv_file": "synthetic.csv",
+            "execution_success": True,
             "columns": ["list_type", "list_type_desc", "item_code"],
             "row_count": 1,
             "answer": "ok",
@@ -427,6 +440,269 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
     rejected_result["result"]["sql"] = "SELECT * FROM ad_dict LIMIT 10"
     accepted = validate_case(synthetic_case, accepted_result)["accepted"]
     rejected = not validate_case(synthetic_case, rejected_result)["accepted"]
+    zero_row_case = next(
+        case
+        for case in suite["cases"]
+        if case["case_id"] == "level3_p0_annual_ph_ranking"
+    )
+    zero_row_result = {
+        "result": {
+            "http_status": 200,
+            "errors": [],
+            "sql": (
+                "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, "
+                "water_quality_level FROM wm_waterquality_year_records "
+                "WHERE monitor_year = 2025 AND m2_value IS NOT NULL "
+                "GROUP BY station_id, monitor_year, water_quality_level "
+                "ORDER BY AVG(m2_value) DESC LIMIT 20"
+            ),
+            "csv_file": "",
+            "execution_success": True,
+            "columns": [
+                "station_id",
+                "monitor_year",
+                "avg_ph",
+                "water_quality_level",
+            ],
+            "row_count": 0,
+            "answer": "当前年度 pH 数据为空。",
+            "chart_specs": [],
+        }
+    }
+    zero_row_policy_test = validate_case(zero_row_case, zero_row_result)["accepted"]
+    zero_row_missing_columns = json.loads(json.dumps(zero_row_result))
+    zero_row_missing_columns["result"]["columns"] = []
+    zero_row_missing_schema_rejected = not validate_case(
+        zero_row_case, zero_row_missing_columns
+    )["accepted"]
+    zero_row_missing_execution = json.loads(json.dumps(zero_row_result))
+    zero_row_missing_execution["result"].pop("execution_success")
+    zero_row_missing_execution_success_rejected = not validate_case(
+        zero_row_case, zero_row_missing_execution
+    )["accepted"]
+
+    from backend.schema_preserving_sql import (
+        RunSqlToolArgs,
+        SchemaPreservingPostgresRunner,
+        SchemaPreservingRunSqlTool,
+        pd,
+    )
+    from tools.regression_service_harness import parse_dataframe_event
+
+    class FakeDescription:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class FakeCursor:
+        description = [
+            FakeDescription("station_id"),
+            FakeDescription("monitor_year"),
+            FakeDescription("avg_ph"),
+            FakeDescription("water_quality_level"),
+        ]
+        rowcount = 0
+
+        def execute(self, _sql: str) -> None:
+            return None
+
+        def fetchall(self) -> list[Any]:
+            return []
+
+        def close(self) -> None:
+            return None
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = FakeCursor()
+
+        def cursor(self, **_kwargs: Any) -> FakeCursor:
+            return self.cursor_instance
+
+        def commit(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    class FakeExtras:
+        RealDictCursor = object
+
+    class FakePsycopg:
+        extras = FakeExtras()
+
+        def __init__(self) -> None:
+            self.connection = FakeConnection()
+
+        def connect(self, *_args: Any, **_kwargs: Any) -> FakeConnection:
+            return self.connection
+
+    fake_psycopg = FakePsycopg()
+    schema_runner = SchemaPreservingPostgresRunner.__new__(
+        SchemaPreservingPostgresRunner
+    )
+    schema_runner.connection_string = "synthetic"
+    schema_runner.connection_params = None
+    schema_runner.psycopg2 = fake_psycopg
+    empty_runner_frame = asyncio.run(
+        schema_runner.run_sql(
+            RunSqlToolArgs(sql=zero_row_result["result"]["sql"]), None
+        )
+    )
+    empty_result_runner_columns_test = (
+        empty_runner_frame.empty
+        and empty_runner_frame.columns.tolist()
+        == zero_row_case["expected_columns"]
+    )
+
+    class FakeEmptyRunner:
+        async def run_sql(self, _args: Any, _context: Any) -> Any:
+            return pd.DataFrame(columns=zero_row_case["expected_columns"])
+
+    class FakeNonemptyRunner:
+        async def run_sql(self, _args: Any, _context: Any) -> Any:
+            return pd.DataFrame(
+                [{"list_type": "A", "list_type_desc": "B", "item_code": "C"}]
+            )
+
+    class FakeFileSystem:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+
+        async def write_file(
+            self,
+            filename: str,
+            _content: str,
+            _context: Any,
+            overwrite: bool = False,
+        ) -> None:
+            if overwrite:
+                self.writes.append(filename)
+
+    empty_files = FakeFileSystem()
+    empty_tool = SchemaPreservingRunSqlTool(
+        sql_runner=FakeEmptyRunner(), file_system=empty_files
+    )
+    empty_tool_result = asyncio.run(
+        empty_tool.execute(
+            None, RunSqlToolArgs(sql=zero_row_result["result"]["sql"])
+        )
+    )
+    empty_component = empty_tool_result.ui_component.rich_component
+    empty_result_tool_component_test = (
+        empty_tool_result.success
+        and empty_component.rows == []
+        and empty_component.columns == zero_row_case["expected_columns"]
+        and empty_component.data.get("execution_success") is True
+        and empty_files.writes == []
+    )
+
+    first_sql = zero_row_result["result"]["sql"]
+    second_sql = first_sql.replace(
+        ", water_quality_level", ""
+    ).replace(
+        ", water_quality_level GROUP BY", " GROUP BY"
+    )
+
+    def synthetic_dataframe_sse(
+        sql: str, columns: list[str], rows: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return {
+            "rich": {
+                "type": "dataframe",
+                "data": {
+                    "sql": sql,
+                    "columns": columns,
+                    "data": rows,
+                    "row_count": len(rows),
+                    "description": "synthetic",
+                    "execution_success": True,
+                },
+            },
+            "simple": {"type": "text", "text": "synthetic"},
+        }
+
+    parsed_events = [
+        parse_dataframe_event(
+            synthetic_dataframe_sse(
+                first_sql, zero_row_case["expected_columns"], []
+            ),
+            1,
+        ),
+        parse_dataframe_event(
+            synthetic_dataframe_sse(
+                second_sql, zero_row_case["expected_columns"][:-1], []
+            ),
+            2,
+        ),
+    ]
+    dataframe_events = [event for event in parsed_events if event is not None]
+    multi_response = {
+        "http_status": 200,
+        "errors": [],
+        "answer": "当前年度 pH 数据为空。",
+        "dataframe_events": dataframe_events,
+    }
+    multi_execution = run_http_case(
+        zero_row_case,
+        Path("synthetic-agent-data"),
+        post_sse=lambda _query: json.loads(json.dumps(multi_response)),
+        query_result_files=lambda _path: set(),
+        read_csv=lambda _path: ([], []),
+        extract_chart_specs=lambda _answer: [],
+    )
+    first_dataframe_event_selected_test = (
+        multi_execution["result"]["sql"] == first_sql
+        and multi_execution["result"]["columns"]
+        == zero_row_case["expected_columns"]
+    )
+    later_sql_does_not_overwrite_test = (
+        multi_execution["result"]["sql"] != second_sql
+    )
+    dataframe_event_count = len(multi_execution["result"]["dataframe_events"])
+
+    nonempty_rows = [
+        {"list_type": "A", "list_type_desc": "B", "item_code": "C"}
+    ]
+    nonempty_event = parse_dataframe_event(
+        synthetic_dataframe_sse(
+            accepted_result["result"]["sql"],
+            synthetic_case["expected_columns"],
+            nonempty_rows,
+        ),
+        1,
+    )
+    nonempty_response = {
+        "http_status": 200,
+        "errors": [],
+        "answer": "ok",
+        "dataframe_events": [nonempty_event],
+    }
+    nonempty_execution = run_http_case(
+        synthetic_case,
+        Path("synthetic-agent-data"),
+        post_sse=lambda _query: json.loads(json.dumps(nonempty_response)),
+        query_result_files=lambda _path: set(),
+        read_csv=lambda _path: ([], []),
+        extract_chart_specs=lambda _answer: [],
+    )
+    nonempty_dataframe_compatibility_test = validate_case(
+        synthetic_case, nonempty_execution
+    )["accepted"]
+
+    nonempty_files = FakeFileSystem()
+    nonempty_tool = SchemaPreservingRunSqlTool(
+        sql_runner=FakeNonemptyRunner(), file_system=nonempty_files
+    )
+    nonempty_tool_result = asyncio.run(
+        nonempty_tool.execute(
+            None, RunSqlToolArgs(sql=accepted_result["result"]["sql"])
+        )
+    )
+    nonempty_dataframe_compatibility_test = (
+        nonempty_dataframe_compatibility_test
+        and nonempty_tool_result.success
+        and len(nonempty_files.writes) == 1
+    )
     source = Path(__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
     imported_modules = {
@@ -540,6 +816,15 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         (
             accepted,
             rejected,
+            zero_row_policy_test,
+            zero_row_missing_schema_rejected,
+            zero_row_missing_execution_success_rejected,
+            empty_result_runner_columns_test,
+            empty_result_tool_component_test,
+            first_dataframe_event_selected_test,
+            later_sql_does_not_overwrite_test,
+            dataframe_event_count == 2,
+            nonempty_dataframe_compatibility_test,
             suite_valid,
             memory_schema_valid,
             invalid_memory_expectation_rejected,
@@ -565,6 +850,41 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         "structure_valid": suite_valid,
         "declarative_acceptance_test": accepted,
         "declarative_rejection_test": rejected,
+        "zero_row_policy_test": zero_row_policy_test,
+        "zero_row_missing_schema_rejected": zero_row_missing_schema_rejected,
+        "zero_row_missing_execution_success_rejected": (
+            zero_row_missing_execution_success_rejected
+        ),
+        "empty_result_runner_columns_test": empty_result_runner_columns_test,
+        "empty_result_tool_component_test": empty_result_tool_component_test,
+        "first_dataframe_event_selected_test": first_dataframe_event_selected_test,
+        "later_sql_does_not_overwrite_test": later_sql_does_not_overwrite_test,
+        "dataframe_event_count": dataframe_event_count,
+        "nonempty_dataframe_compatibility_test": (
+            nonempty_dataframe_compatibility_test
+        ),
+        "ZERO_ROW_POLICY_TEST": "PASS" if zero_row_policy_test else "FAIL",
+        "ZERO_ROW_MISSING_SCHEMA_REJECTED": (
+            "PASS" if zero_row_missing_schema_rejected else "FAIL"
+        ),
+        "ZERO_ROW_MISSING_EXECUTION_SUCCESS_REJECTED": (
+            "PASS" if zero_row_missing_execution_success_rejected else "FAIL"
+        ),
+        "EMPTY_RESULT_RUNNER_COLUMNS_TEST": (
+            "PASS" if empty_result_runner_columns_test else "FAIL"
+        ),
+        "EMPTY_RESULT_TOOL_COMPONENT_TEST": (
+            "PASS" if empty_result_tool_component_test else "FAIL"
+        ),
+        "FIRST_DATAFRAME_EVENT_SELECTED_TEST": (
+            "PASS" if first_dataframe_event_selected_test else "FAIL"
+        ),
+        "LATER_SQL_DOES_NOT_OVERWRITE_TEST": (
+            "PASS" if later_sql_does_not_overwrite_test else "FAIL"
+        ),
+        "NONEMPTY_DATAFRAME_COMPATIBILITY_TEST": (
+            "PASS" if nonempty_dataframe_compatibility_test else "FAIL"
+        ),
         "runner_calls_f2_run_case": "run_case" in forbidden_calls,
         "runner_calls_context_diagnostics": "context_diagnostics" in forbidden_calls,
         "runner_imports_backend_memory": "backend.memory" in forbidden_imports,
