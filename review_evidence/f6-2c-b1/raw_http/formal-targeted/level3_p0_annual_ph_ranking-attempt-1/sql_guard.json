@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "severity": "ok",
+  "used_tables": [
+    "wm_waterquality_year_records"
+  ],
+  "used_columns": [
+    "wm_waterquality_year_records.station_id",
+    "wm_waterquality_year_records.monitor_year",
+    "wm_waterquality_year_records.m2_value"
+  ],
+  "unknown_tables": [],
+  "unknown_columns": [],
+  "forbidden_operations": [],
+  "candidate_mismatch": [],
+  "reason": "SQL 静态校验通过"
+}

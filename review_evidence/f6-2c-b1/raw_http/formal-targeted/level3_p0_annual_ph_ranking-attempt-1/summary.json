@@ -1,0 +1,39 @@
+{
+  "case_id": "level3_p0_annual_ph_ranking",
+  "attempt": 1,
+  "accepted": false,
+  "validation_field_used": "accepted",
+  "failed_checks": [
+    "execution_success",
+    "expected_columns"
+  ],
+  "generated_sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+  "used_tables": [
+    "wm_waterquality_year_records"
+  ],
+  "used_columns": [
+    "wm_waterquality_year_records.station_id",
+    "wm_waterquality_year_records.monitor_year",
+    "wm_waterquality_year_records.m2_value"
+  ],
+  "result_columns": [],
+  "result_row_count": 0,
+  "answer_present": true,
+  "sql_guard": {
+    "passed": true,
+    "severity": "ok",
+    "used_tables": [
+      "wm_waterquality_year_records"
+    ],
+    "used_columns": [
+      "wm_waterquality_year_records.station_id",
+      "wm_waterquality_year_records.monitor_year",
+      "wm_waterquality_year_records.m2_value"
+    ],
+    "unknown_tables": [],
+    "unknown_columns": [],
+    "forbidden_operations": [],
+    "candidate_mismatch": [],
+    "reason": "SQL 静态校验通过"
+  }
+}

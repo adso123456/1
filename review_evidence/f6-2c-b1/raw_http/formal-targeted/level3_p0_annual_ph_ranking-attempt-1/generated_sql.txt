@@ -1,0 +1,6 @@
+SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph
+FROM wm_waterquality_year_records
+WHERE m2_value IS NOT NULL
+GROUP BY station_id, monitor_year
+ORDER BY AVG(m2_value) DESC
+LIMIT 20

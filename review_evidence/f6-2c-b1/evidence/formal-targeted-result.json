@@ -1,0 +1,143 @@
+{
+  "suite_sha256": "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a",
+  "accepted": false,
+  "failure": "level3_p0_annual_ph_ranking: FIRST_ATTEMPT_FAILED",
+  "attempts": [
+    {
+      "summary": {
+        "case_id": "level3_p0_annual_ph_ranking",
+        "attempt": 1,
+        "accepted": false,
+        "validation_field_used": "accepted",
+        "failed_checks": [
+          "execution_success",
+          "expected_columns"
+        ],
+        "generated_sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+        "used_tables": [
+          "wm_waterquality_year_records"
+        ],
+        "used_columns": [
+          "wm_waterquality_year_records.station_id",
+          "wm_waterquality_year_records.monitor_year",
+          "wm_waterquality_year_records.m2_value"
+        ],
+        "result_columns": [],
+        "result_row_count": 0,
+        "answer_present": true,
+        "sql_guard": {
+          "passed": true,
+          "severity": "ok",
+          "used_tables": [
+            "wm_waterquality_year_records"
+          ],
+          "used_columns": [
+            "wm_waterquality_year_records.station_id",
+            "wm_waterquality_year_records.monitor_year",
+            "wm_waterquality_year_records.m2_value"
+          ],
+          "unknown_tables": [],
+          "unknown_columns": [],
+          "forbidden_operations": [],
+          "candidate_mismatch": [],
+          "reason": "SQL 静态校验通过"
+        }
+      },
+      "validation": {
+        "case_id": "level3_p0_annual_ph_ranking",
+        "category": "batch_target",
+        "question": "查询年度pH年均值最高的站点列表",
+        "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+        "used_tables": [
+          "wm_waterquality_year_records"
+        ],
+        "used_columns": [
+          "wm_waterquality_year_records.station_id",
+          "wm_waterquality_year_records.monitor_year",
+          "wm_waterquality_year_records.m2_value"
+        ],
+        "columns": [],
+        "row_count": 0,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": false,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": false,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [
+          "execution_success",
+          "expected_columns"
+        ],
+        "accepted": false
+      },
+      "execution": {
+        "id": "level3_p0_annual_ph_ranking",
+        "query": "查询年度pH年均值最高的站点列表",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 14,
+          "errors": [],
+          "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 664
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 0
+          },
+          "event_columns": [],
+          "csv_file": "",
+          "columns": [],
+          "row_count": 0,
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "r1_requests_reused": false,
+  "r1_requests_counted_in_r2": 0
+}
