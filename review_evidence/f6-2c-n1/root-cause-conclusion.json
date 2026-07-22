@@ -1,0 +1,28 @@
+{
+  "root_cause_classification": "INSUFFICIENT_RAW_LLM_EVIDENCE",
+  "root_cause_evidence": [
+    "The N1 aggregate proves HTTP 200 with no SSE error and no dataframe/SQL execution event.",
+    "The guarded run_sql tool was registered for the server and other cases executed SQL, but the actual failed LLM tool schema was not preserved.",
+    "The exact candidate SQL memory exists and passes an independent retrieval/injection gate, but actual injection into the failed HTTP request was not preserved.",
+    "The target table has identical 71-column metadata and remains the top-ranked table in both indexes.",
+    "Static inspection found no cross-request state leak; per-request IDs and history were not preserved for runtime certification.",
+    "B3R and B4 succeeded for the same question with old formal assets, but complete prompts and tool definitions are unavailable for equivalence proof."
+  ],
+  "evidence_limitations": [
+    "N1 annual pH raw response.sse not found",
+    "N1 annual pH complete events.json not found",
+    "N1 final text content not found",
+    "N1 conversation_id and request_id not found",
+    "N1 and B3R raw LLM request bodies not found",
+    "N1 and B3R actual system prompts and tool-definition payloads not found",
+    "Actual per-request SQL-memory injection is not proven"
+  ],
+  "excluded_classifications": {
+    "CONTEXT_CHANGED_AND_SQL_EXAMPLE_NOT_INJECTED": "Actual failed-request injection is unknown.",
+    "CONTEXT_CHANGED_DESPITE_SQL_EXAMPLE_INJECTED": "Actual failed-request injection is unknown.",
+    "CONVERSATION_OR_REQUEST_STATE_CONTAMINATION": "No leak was found, but runtime IDs/history are missing.",
+    "RUN_SQL_TOOL_NOT_AVAILABLE_TO_LLM": "Tool registration is proven; actual failed-request schema delivery is unknown.",
+    "CONTEXT_EQUIVALENT_MODEL_TOOL_OMISSION": "The strict equivalence prerequisites are not proven."
+  },
+  "final_conclusion": "BLOCKED_BY_INSUFFICIENT_EVIDENCE"
+}

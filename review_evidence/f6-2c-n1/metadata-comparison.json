@@ -1,0 +1,42 @@
+{
+  "question": "查询年度pH年均值最高的站点列表",
+  "target_table": "wm_waterquality_year_records",
+  "old_column_count": 71,
+  "candidate_column_count": 71,
+  "target_table_metadata_changed": false,
+  "target_table_changed_columns": [],
+  "target_table_changed_comments": [],
+  "global_added_column_count": 41,
+  "global_added_columns_on_relevant_granularity_tables": {
+    "wm_waterquality_year_records": [],
+    "wm_waterquality_month_records": [],
+    "wm_waterquality_day_records": [
+      "record_type"
+    ]
+  },
+  "old_top_table_order": [
+    "wm_waterquality_year_records",
+    "wm_waterquality_day_records",
+    "wm_waterquality_hour_records",
+    "wm_waterquality_month_records",
+    "rs_outlet_monitor_v2"
+  ],
+  "candidate_top_table_order": [
+    "wm_waterquality_year_records",
+    "wm_waterquality_day_records",
+    "wm_waterquality_hour_records",
+    "wm_waterquality_month_records",
+    "rs_outlet_monitor_v2",
+    "wst_layer_river",
+    "gis_naturereserve",
+    "wm_waterbody_info",
+    "day_quality_setting",
+    "gis_ecologicalregion"
+  ],
+  "metadata_top_table_order_changed": true,
+  "target_table_rank_old": 1,
+  "target_table_rank_candidate": 1,
+  "target_table_score_old": 6300,
+  "target_table_score_candidate": 6300,
+  "interpretation": "The expanded candidate index changes lower-ranked context, but it does not alter the target table, its fields/comments, or its first-place ranking. The unrelated 41-column expansion is not sufficient evidence of causation."
+}

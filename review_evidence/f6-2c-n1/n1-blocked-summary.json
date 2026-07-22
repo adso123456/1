@@ -1,0 +1,55 @@
+{
+  "run_stage": "F6-2C-N1",
+  "base_commit": "0a5ae735384206facd74a3d31bcd8c3c1d924f71",
+  "run_directory": "E:\\3\\_training_backups\\f6-2c-n1-20260722-133555",
+  "candidate_worktree": "E:\\3\\_validation_worktrees\\f6-2c-n1-20260722-133555",
+  "candidate_memory_result": "6/6",
+  "candidate_http_result": "19/20",
+  "candidate_http_request_count": 20,
+  "candidate_http_retry_count": 0,
+  "candidate_failed_cases": [
+    {
+      "case_id": "level3_p0_annual_ph_ranking",
+      "first_dataframe_event_sql": "",
+      "columns": [],
+      "row_count": 0,
+      "execution_success": false,
+      "failed_checks": [
+        "sql_present",
+        "sql_guard_pass",
+        "used_tables_exact",
+        "single_select_only",
+        "execution_success",
+        "limit_at_most",
+        "expected_columns",
+        "require_group_by",
+        "require_order_desc"
+      ],
+      "dataframe_event_count": 0
+    }
+  ],
+  "candidate_annual_ph_first_event_accepted": false,
+  "candidate_source_index_sha_after": "e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93",
+  "candidate_source_chroma_sha_after": "50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6",
+  "candidate_validation_sha_after": "03c73bfbe7165f69449a9d9ea368b79782d5b5082ff9529d533c79c669c61998",
+  "candidate_validation_counts_after": {
+    "quick_check": [
+      "ok"
+    ],
+    "embeddings": 198,
+    "acquire_write": 76
+  },
+  "old_formal_index_sha_after": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "old_formal_chroma_sha_after": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "old_formal_counts_after": {
+    "quick_check": [
+      "ok"
+    ],
+    "embeddings": 198,
+    "acquire_write": 72
+  },
+  "formal_switch_performed": false,
+  "rollback_performed": false,
+  "database_write_performed": false,
+  "final_conclusion": "BLOCKED_BY_CANDIDATE_REGRESSION"
+}

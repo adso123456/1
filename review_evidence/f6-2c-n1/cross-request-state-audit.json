@@ -1,0 +1,21 @@
+{
+  "annual_ph_case_sequence": 18,
+  "inspected_keys": [
+    "sql_guard_hard_blocked",
+    "original_question",
+    "last_user_message",
+    "conversation/request component cache",
+    "LLM context enhancer state"
+  ],
+  "findings": {
+    "sql_guard_hard_blocked": "Stored only in an individual ToolContext metadata mapping by GuardedRunSqlTool; no shared global hard-block flag found.",
+    "original_question": "Managed by a ContextVar in backend/query_context.py, set for a request and cleared after the message; forged incoming metadata is removed before insertion.",
+    "last_user_message": "Read from the current tool/request context; no cross-request store found.",
+    "conversation_request_cache": "Harness sends null IDs and the framework generates IDs per request. Runtime N1 IDs were not preserved, so this is a source-contract finding.",
+    "sql_example_last_stats": "Shared mutable diagnostic statistics are reset per retrieval, but are not injected into ToolContext or used to decide tool availability. They may make concurrent diagnostics racy; the N1 requests were sequential and no causal path was found."
+  },
+  "cross_request_state_leak_found": false,
+  "leaked_state_keys": [],
+  "evidence_scope": "offline static code audit plus preserved aggregate artifacts",
+  "runtime_limitation": "No N1 raw request IDs, histories, or LLM request bodies were preserved."
+}

@@ -1,0 +1,26 @@
+{
+  "read_method": "sqlite3 immutable URI; no Chroma API",
+  "candidate_source": "E:\\3\\_training_backups\\f6-2c-20260722-100422\\candidate_chroma_failed_after_switch",
+  "embedding_id": "b1e2c0e8-d075-4972-8e0e-800450d0d012",
+  "match_count": 1,
+  "record_id_in_sqlite": 28,
+  "training_level": "level3_p0_sql_examples",
+  "sample_id": "L3_P0_SQL_004",
+  "question": "查询年度pH年均值最高的站点列表",
+  "tool_name": "run_sql",
+  "success": true,
+  "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE monitor_year = 2025 AND m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+  "sql_sha256": "83028c1062a77b1b9bf2dbc1016b031f87de04f77d65609c264c7ed8fb83911b",
+  "candidate_exact_sql_memory_present": true,
+  "candidate_exact_sql_memory_content_match": true,
+  "candidate_memory_gate_result": {
+    "case_id": "memory_l3_p0_sql_004",
+    "target_rank": 1,
+    "target_recalled": true,
+    "target_injected": true,
+    "scope": "separate deterministic memory regression gate"
+  },
+  "candidate_exact_sql_memory_retrieved_in_n1_failed_http_request": "NOT_PROVEN",
+  "old_formal_exact_sql_memory_retrieved_in_b3r_http_request": "NOT_PROVEN",
+  "evidence_boundary": "Record existence and the separate memory gate do not prove what was injected into either actual HTTP request. Neither HTTP run preserved the final LLM request context."
+}

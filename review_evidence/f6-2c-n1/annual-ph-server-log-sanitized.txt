@@ -1,0 +1,9 @@
+Source: E:\3\_training_backups\f6-2c-n1-20260722-133555\evidence\candidate-regression\server-log.txt
+
+Sanitized structural observations:
+- The server startup log records registration of the guarded run_sql tool.
+- The run contains 20 successful HTTP POST status entries.
+- Endpoint addresses, IP addresses, ports, credentials, headers, cookies, and temporary identifiers are omitted.
+- The log does not contain the failed request's raw LLM request body, complete system prompt, tool-definition payload, retrieved SQL examples, final response text, or complete SSE event stream.
+
+No raw business rows were copied.

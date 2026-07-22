@@ -1,0 +1,21 @@
+{
+  "http_case_count": 20,
+  "annual_ph_case_sequence": 18,
+  "previous_case_id": "level2_water_intake_route",
+  "harness_request_contract": {
+    "source": "tools/regression_service_harness.py:192-193",
+    "conversation_id": null,
+    "request_id": null
+  },
+  "framework_contract": {
+    "source": "vanna/servers/base/chat_handler.py:37,63",
+    "behavior": "A new conversation_id and request_id are generated when the incoming values are null."
+  },
+  "runtime_conversation_ids_preserved_for_n1": false,
+  "runtime_request_ids_preserved_for_n1": false,
+  "annual_ph_history_payload_preserved": false,
+  "conversation_isolated": "SUPPORTED_BY_SOURCE_CONTRACT_BUT_NOT_RUNTIME_PROVEN",
+  "history_contamination_found": false,
+  "history_contamination_evidence": "NONE_FOUND",
+  "limitation": "N1 did not preserve the 20 runtime conversation/request IDs or the failed request message history, so empirical per-request isolation cannot be certified from N1 artifacts alone."
+}

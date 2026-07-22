@@ -1,0 +1,2951 @@
+{
+  "suite_id": "postgresql-f5-regression-v1",
+  "suite_content_sha256": "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a",
+  "question_count": 20,
+  "question_pass_count": 19,
+  "memory_case_count": 6,
+  "memory_pass_count": 6,
+  "memory_accepted": true,
+  "memory_cases": [
+    {
+      "case_id": "memory_l2_sql_018",
+      "expected_sample_id": "L2_SQL_018",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L2_SQL_018",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_019",
+        "L3_P1_SQL_021",
+        "L3_P1_SQL_020",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_014",
+        "F5_L2_B07_SQL_001",
+        "L3_P1_SQL_024",
+        "L3_P2_SQL_003"
+      ],
+      "injected_sample_ids": [
+        "L2_SQL_018",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_019",
+        "L3_P1_SQL_021",
+        "L3_P1_SQL_020",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_014",
+        "F5_L2_B07_SQL_001",
+        "L3_P1_SQL_024",
+        "L3_P2_SQL_003"
+      ],
+      "observed_training_level": "level2_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p0_sql_004",
+      "expected_sample_id": "L3_P0_SQL_004",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L3_P0_SQL_004",
+        "L3_P0_SQL_011",
+        "L3_P0_SQL_012",
+        "L3_P0_SQL_002",
+        "L3_P0_SQL_005",
+        "L3_P0_SQL_017",
+        "L3_P0_SQL_001",
+        "L3_P0_SQL_014",
+        "L3_P0_SQL_018",
+        "L3_P0_SQL_007"
+      ],
+      "injected_sample_ids": [
+        "L3_P0_SQL_004",
+        "L3_P0_SQL_011",
+        "L3_P0_SQL_012"
+      ],
+      "observed_training_level": "level3_p0_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p1_sql_024",
+      "expected_sample_id": "L3_P1_SQL_024",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L3_P1_SQL_024",
+        "L3_P1_SQL_019",
+        "L2_SQL_018",
+        "L3_P0_SQL_001",
+        "L3_P1_SQL_020",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_023",
+        "L3_P1_SQL_021",
+        "L2_SQL_002",
+        "L3_P2_SQL_006"
+      ],
+      "injected_sample_ids": [
+        "L3_P1_SQL_024",
+        "L3_P1_SQL_019",
+        "L2_SQL_018",
+        "L3_P0_SQL_001",
+        "L3_P1_SQL_020",
+        "L3_P1_SQL_022"
+      ],
+      "observed_training_level": "level3_p1_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p2_sql_011",
+      "expected_sample_id": "L3_P2_SQL_011",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L3_P2_SQL_011",
+        "L3_P2_SQL_001",
+        "L3_P2_SQL_003",
+        "L2_SQL_010",
+        "L3_P1_SQL_006",
+        "L3_P1_SQL_003",
+        "L2_SQL_009",
+        "L2_SQL_013",
+        "L3_P2_SQL_004",
+        "L3_P2_SQL_002"
+      ],
+      "injected_sample_ids": [
+        "L3_P2_SQL_011",
+        "L3_P2_SQL_001",
+        "L3_P2_SQL_003",
+        "L2_SQL_010",
+        "L3_P1_SQL_006",
+        "L3_P1_SQL_003",
+        "L2_SQL_009",
+        "L2_SQL_013",
+        "L3_P2_SQL_004",
+        "L3_P2_SQL_002"
+      ],
+      "observed_training_level": "level3_p2_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p1_sql_004_absent",
+      "expected_sample_id": "L3_P1_SQL_004",
+      "expectation": "absent",
+      "target_rank": null,
+      "target_recalled": false,
+      "target_injected": false,
+      "recalled_sample_ids": [
+        "L2_SQL_013",
+        "L3_P1_SQL_003",
+        "L3_P2_SQL_001",
+        "L2_SQL_009",
+        "L3_P2_SQL_003",
+        "L3_P2_SQL_011",
+        "L3_P1_SQL_006",
+        "L2_SQL_014",
+        "L2_SQL_010",
+        "L3_P1_SQL_002"
+      ],
+      "injected_sample_ids": [
+        "L2_SQL_013",
+        "L3_P1_SQL_003",
+        "L3_P2_SQL_001",
+        "L2_SQL_009",
+        "L3_P2_SQL_003",
+        "L3_P2_SQL_011",
+        "L3_P1_SQL_006",
+        "L2_SQL_014",
+        "L2_SQL_010"
+      ],
+      "observed_training_level": "",
+      "observed_train_decision": "",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p2_sql_009_absent",
+      "expected_sample_id": "L3_P2_SQL_009",
+      "expectation": "absent",
+      "target_rank": null,
+      "target_recalled": false,
+      "target_injected": false,
+      "recalled_sample_ids": [
+        "L3_P1_SQL_012",
+        "L3_P1_SQL_013",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_018",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_020",
+        "L2_SQL_018",
+        "L3_P1_SQL_014",
+        "F5_L2_B06_SQL_001",
+        "L2_SQL_015"
+      ],
+      "injected_sample_ids": [
+        "L3_P1_SQL_012",
+        "L3_P1_SQL_013",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_018",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_020",
+        "L2_SQL_018",
+        "L3_P1_SQL_014",
+        "F5_L2_B06_SQL_001"
+      ],
+      "observed_training_level": "",
+      "observed_train_decision": "",
+      "passed": true,
+      "failure_reasons": []
+    }
+  ],
+  "accepted": false,
+  "parent_memory_diagnostics_executed": false,
+  "parent_memory_creation_disabled": true,
+  "formal_runtime_fail_fast_triggered": false,
+  "formal_monitor_record_count": 198,
+  "formal_monitor_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_monitor_checkpoints": 25,
+  "failure": null,
+  "cases": [
+    {
+      "validation": {
+        "case_id": "f2_dictionary_list_items",
+        "category": "f2_fixed",
+        "question": "查询数据字典中的列表类型、列表描述、列表项代码和列表项名称，最多返回50条",
+        "sql": "SELECT list_type, list_type_desc, item_code, item_name FROM ad_dict WHERE del_flag = '0' OR del_flag IS NULL LIMIT 50",
+        "used_tables": [
+          "ad_dict"
+        ],
+        "used_columns": [
+          "ad_dict.list_type",
+          "ad_dict.list_type_desc",
+          "ad_dict.item_code",
+          "ad_dict.item_name",
+          "ad_dict.del_flag"
+        ],
+        "columns": [
+          "list_type",
+          "list_type_desc",
+          "item_code",
+          "item_name"
+        ],
+        "row_count": 50,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "f2_dictionary_list_items",
+        "query": "查询数据字典中的列表类型、列表描述、列表项代码和列表项名称，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 8,
+          "errors": [],
+          "sql": "SELECT list_type, list_type_desc, item_code, item_name FROM ad_dict WHERE del_flag = '0' OR del_flag IS NULL LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1899
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 50
+          },
+          "event_columns": [
+            "list_type",
+            "list_type_desc",
+            "item_code",
+            "item_name"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT list_type, list_type_desc, item_code, item_name FROM ad_dict WHERE del_flag = '0' OR del_flag IS NULL LIMIT 50",
+              "columns": [
+                "list_type",
+                "list_type_desc",
+                "item_code",
+                "item_name"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 50
+              },
+              "row_count": 50,
+              "description": "SQL query returned 50 rows with 4 columns",
+              "execution_success": true,
+              "output_file": "query_results_559815e8.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_559815e8.csv"
+          ],
+          "columns": [
+            "list_type",
+            "list_type_desc",
+            "item_code",
+            "item_name"
+          ],
+          "row_count": 50,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_559815e8.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "f2_outlet_codes",
+        "category": "f2_fixed",
+        "question": "查询排污口名称、排污口编码和省级编码，最多返回50条",
+        "sql": "SELECT outlet_name, outlet_code, outlet_code_province\nFROM rs_outlet\nORDER BY outlet_name\nLIMIT 50",
+        "used_tables": [
+          "rs_outlet"
+        ],
+        "used_columns": [
+          "rs_outlet.outlet_name",
+          "rs_outlet.outlet_code",
+          "rs_outlet.outlet_code_province"
+        ],
+        "columns": [
+          "outlet_name",
+          "outlet_code",
+          "outlet_code_province"
+        ],
+        "row_count": 50,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "f2_outlet_codes",
+        "query": "查询排污口名称、排污口编码和省级编码，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT outlet_name, outlet_code, outlet_code_province\nFROM rs_outlet\nORDER BY outlet_name\nLIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1797
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 50
+          },
+          "event_columns": [
+            "outlet_name",
+            "outlet_code",
+            "outlet_code_province"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT outlet_name, outlet_code, outlet_code_province\nFROM rs_outlet\nORDER BY outlet_name\nLIMIT 50",
+              "columns": [
+                "outlet_name",
+                "outlet_code",
+                "outlet_code_province"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 50
+              },
+              "row_count": 50,
+              "description": "SQL query returned 50 rows with 3 columns",
+              "execution_success": true,
+              "output_file": "query_results_cbd8ed54.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_cbd8ed54.csv"
+          ],
+          "columns": [
+            "outlet_name",
+            "outlet_code",
+            "outlet_code_province"
+          ],
+          "row_count": 50,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_cbd8ed54.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "f2_hourly_water_quality_latest",
+        "category": "f2_fixed",
+        "question": "查询站点1408最近的水质小时变化趋势，返回监测时间、pH、溶解氧和水质等级，最多100条",
+        "sql": "SELECT station_id, monitor_time, m2_value AS ph, m3_value AS dissolved_oxygen, water_quality_level\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408\nORDER BY monitor_time DESC\nLIMIT 100",
+        "used_tables": [
+          "wm_waterquality_hour_records"
+        ],
+        "used_columns": [
+          "wm_waterquality_hour_records.station_id",
+          "wm_waterquality_hour_records.monitor_time",
+          "wm_waterquality_hour_records.m2_value",
+          "wm_waterquality_hour_records.m3_value",
+          "wm_waterquality_hour_records.water_quality_level"
+        ],
+        "columns": [
+          "station_id",
+          "monitor_time",
+          "ph",
+          "dissolved_oxygen",
+          "water_quality_level"
+        ],
+        "row_count": 100,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "f2_hourly_water_quality_latest",
+        "query": "查询站点1408最近的水质小时变化趋势，返回监测时间、pH、溶解氧和水质等级，最多100条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 8,
+          "errors": [],
+          "sql": "SELECT station_id, monitor_time, m2_value AS ph, m3_value AS dissolved_oxygen, water_quality_level\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408\nORDER BY monitor_time DESC\nLIMIT 100",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2036
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 100
+          },
+          "event_columns": [
+            "station_id",
+            "monitor_time",
+            "ph",
+            "dissolved_oxygen",
+            "water_quality_level"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT station_id, monitor_time, m2_value AS ph, m3_value AS dissolved_oxygen, water_quality_level\nFROM wm_waterquality_hour_records\nWHERE station_id = 1408\nORDER BY monitor_time DESC\nLIMIT 100",
+              "columns": [
+                "station_id",
+                "monitor_time",
+                "ph",
+                "dissolved_oxygen",
+                "water_quality_level"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 100
+              },
+              "row_count": 100,
+              "description": "SQL query returned 100 rows with 5 columns",
+              "execution_success": true,
+              "output_file": "query_results_6335392e.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_6335392e.csv"
+          ],
+          "columns": [
+            "station_id",
+            "monitor_time",
+            "ph",
+            "dissolved_oxygen",
+            "water_quality_level"
+          ],
+          "row_count": 100,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_6335392e.csv",
+          "chart_specs": [
+            {
+              "type": "line",
+              "title": "站点1408 pH与溶解氧小时变化趋势",
+              "xField": "monitor_time",
+              "yFields": [
+                "ph",
+                "dissolved_oxygen"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "f2_outlet_remediation_detail",
+        "category": "f2_fixed",
+        "question": "查询排污口国家编码、名称及对应整治状态和整治类型记录明细，最多50条",
+        "sql": "SELECT o.outlet_code_national, o.outlet_name, r.is_remediated, r.remediation_type\nFROM rs_outlet_info_v2 AS o\nINNER JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id\nWHERE o.del_flag = '0' AND r.del_flag = '0'\nORDER BY o.outlet_name\nLIMIT 50",
+        "used_tables": [
+          "rs_outlet_info_v2",
+          "rs_outlet_remediation_v2"
+        ],
+        "used_columns": [
+          "rs_outlet_info_v2.outlet_code_national",
+          "rs_outlet_info_v2.outlet_name",
+          "rs_outlet_remediation_v2.is_remediated",
+          "rs_outlet_remediation_v2.remediation_type",
+          "rs_outlet_info_v2.del_flag",
+          "rs_outlet_remediation_v2.del_flag",
+          "rs_outlet_info_v2.id",
+          "rs_outlet_remediation_v2.outlet_id"
+        ],
+        "columns": [
+          "outlet_code_national",
+          "outlet_name",
+          "is_remediated",
+          "remediation_type"
+        ],
+        "row_count": 50,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "f2_outlet_remediation_detail",
+        "query": "查询排污口国家编码、名称及对应整治状态和整治类型记录明细，最多50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT o.outlet_code_national, o.outlet_name, r.is_remediated, r.remediation_type\nFROM rs_outlet_info_v2 AS o\nINNER JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id\nWHERE o.del_flag = '0' AND r.del_flag = '0'\nORDER BY o.outlet_name\nLIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2051
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 50
+          },
+          "event_columns": [
+            "outlet_code_national",
+            "outlet_name",
+            "is_remediated",
+            "remediation_type"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT o.outlet_code_national, o.outlet_name, r.is_remediated, r.remediation_type\nFROM rs_outlet_info_v2 AS o\nINNER JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id\nWHERE o.del_flag = '0' AND r.del_flag = '0'\nORDER BY o.outlet_name\nLIMIT 50",
+              "columns": [
+                "outlet_code_national",
+                "outlet_name",
+                "is_remediated",
+                "remediation_type"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 50
+              },
+              "row_count": 50,
+              "description": "SQL query returned 50 rows with 4 columns",
+              "execution_success": true,
+              "output_file": "query_results_2e889660.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_2e889660.csv"
+          ],
+          "columns": [
+            "outlet_code_national",
+            "outlet_name",
+            "is_remediated",
+            "remediation_type"
+          ],
+          "row_count": 50,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_2e889660.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": "排污口整治记录明细",
+              "xField": null,
+              "yFields": [],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "f2_section_waterbody_detail",
+        "category": "f2_fixed",
+        "question": "查询断面编码、断面名称以及所属水体的编码、名称和类型，最多100条",
+        "sql": "SELECT s.section_code, s.section_name, w.water_body_code, w.water_body_name, w.water_body_type\nFROM wm_section_info AS s\nINNER JOIN wm_waterbody_info AS w ON s.water_body_id = w.id\nWHERE s.del_flag = '0' AND w.del_flag = '0'\nORDER BY w.water_body_name, s.section_name\nLIMIT 100",
+        "used_tables": [
+          "wm_section_info",
+          "wm_waterbody_info"
+        ],
+        "used_columns": [
+          "wm_section_info.section_code",
+          "wm_section_info.section_name",
+          "wm_waterbody_info.water_body_code",
+          "wm_waterbody_info.water_body_name",
+          "wm_waterbody_info.water_body_type",
+          "wm_section_info.del_flag",
+          "wm_waterbody_info.del_flag",
+          "wm_section_info.water_body_id",
+          "wm_waterbody_info.id"
+        ],
+        "columns": [
+          "section_code",
+          "section_name",
+          "water_body_code",
+          "water_body_name",
+          "water_body_type"
+        ],
+        "row_count": 55,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "f2_section_waterbody_detail",
+        "query": "查询断面编码、断面名称以及所属水体的编码、名称和类型，最多100条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT s.section_code, s.section_name, w.water_body_code, w.water_body_name, w.water_body_type\nFROM wm_section_info AS s\nINNER JOIN wm_waterbody_info AS w ON s.water_body_id = w.id\nWHERE s.del_flag = '0' AND w.del_flag = '0'\nORDER BY w.water_body_name, s.section_name\nLIMIT 100",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2034
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 55
+          },
+          "event_columns": [
+            "section_code",
+            "section_name",
+            "water_body_code",
+            "water_body_name",
+            "water_body_type"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT s.section_code, s.section_name, w.water_body_code, w.water_body_name, w.water_body_type\nFROM wm_section_info AS s\nINNER JOIN wm_waterbody_info AS w ON s.water_body_id = w.id\nWHERE s.del_flag = '0' AND w.del_flag = '0'\nORDER BY w.water_body_name, s.section_name\nLIMIT 100",
+              "columns": [
+                "section_code",
+                "section_name",
+                "water_body_code",
+                "water_body_name",
+                "water_body_type"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 55
+              },
+              "row_count": 55,
+              "description": "SQL query returned 55 rows with 5 columns",
+              "execution_success": true,
+              "output_file": "query_results_ebdc041f.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_ebdc041f.csv"
+          ],
+          "columns": [
+            "section_code",
+            "section_name",
+            "water_body_code",
+            "water_body_name",
+            "water_body_type"
+          ],
+          "row_count": 55,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_ebdc041f.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "f2_outlet_region_remediation_counts",
+        "category": "f2_fixed",
+        "question": "按省市区县统计排污口总数和有整治记录的排污口数量，包含没有整治记录的排污口，并用横向柱状图展示，最多100个地区",
+        "sql": "SELECT o.province_city_district, COUNT(DISTINCT o.id) AS outlet_count, COUNT(DISTINCT r.outlet_id) AS remediation_record_outlet_count\nFROM rs_outlet_info_v2 AS o\nLEFT JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id AND r.del_flag = '0'\nWHERE o.del_flag = '0'\nGROUP BY o.province_city_district\nORDER BY COUNT(DISTINCT r.outlet_id) DESC\nLIMIT 100",
+        "used_tables": [
+          "rs_outlet_info_v2",
+          "rs_outlet_remediation_v2"
+        ],
+        "used_columns": [
+          "rs_outlet_info_v2.province_city_district",
+          "rs_outlet_info_v2.id",
+          "rs_outlet_remediation_v2.outlet_id",
+          "rs_outlet_info_v2.del_flag",
+          "rs_outlet_remediation_v2.del_flag"
+        ],
+        "columns": [
+          "province_city_district",
+          "outlet_count",
+          "remediation_record_outlet_count"
+        ],
+        "row_count": 14,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "f2_outlet_region_remediation_counts",
+        "query": "按省市区县统计排污口总数和有整治记录的排污口数量，包含没有整治记录的排污口，并用横向柱状图展示，最多100个地区",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT o.province_city_district, COUNT(DISTINCT o.id) AS outlet_count, COUNT(DISTINCT r.outlet_id) AS remediation_record_outlet_count\nFROM rs_outlet_info_v2 AS o\nLEFT JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id AND r.del_flag = '0'\nWHERE o.del_flag = '0'\nGROUP BY o.province_city_district\nORDER BY COUNT(DISTINCT r.outlet_id) DESC\nLIMIT 100",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1297
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 14
+          },
+          "event_columns": [
+            "province_city_district",
+            "outlet_count",
+            "remediation_record_outlet_count"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT o.province_city_district, COUNT(DISTINCT o.id) AS outlet_count, COUNT(DISTINCT r.outlet_id) AS remediation_record_outlet_count\nFROM rs_outlet_info_v2 AS o\nLEFT JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id AND r.del_flag = '0'\nWHERE o.del_flag = '0'\nGROUP BY o.province_city_district\nORDER BY COUNT(DISTINCT r.outlet_id) DESC\nLIMIT 100",
+              "columns": [
+                "province_city_district",
+                "outlet_count",
+                "remediation_record_outlet_count"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 14
+              },
+              "row_count": 14,
+              "description": "SQL query returned 14 rows with 3 columns",
+              "execution_success": true,
+              "output_file": "query_results_c34ea424.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_c34ea424.csv"
+          ],
+          "columns": [
+            "province_city_district",
+            "outlet_count",
+            "remediation_record_outlet_count"
+          ],
+          "row_count": 14,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_c34ea424.csv",
+          "chart_specs": [
+            {
+              "type": "horizontal_bar",
+              "title": "各省市区县排污口总数与有整治记录数量对比",
+              "xField": "province_city_district",
+              "yFields": [
+                "outlet_count",
+                "remediation_record_outlet_count"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": "个"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch02_watershed_river",
+        "category": "batch_target",
+        "question": "查询流域河流的河流名称、别名、河流长度、流域面积和源头省份，最多返回50条",
+        "sql": "SELECT river_name, river_alias, river_length, watershed_area, source_province FROM se_watershed_river LIMIT 50",
+        "used_tables": [
+          "se_watershed_river"
+        ],
+        "used_columns": [
+          "se_watershed_river.river_name",
+          "se_watershed_river.river_alias",
+          "se_watershed_river.river_length",
+          "se_watershed_river.watershed_area",
+          "se_watershed_river.source_province"
+        ],
+        "columns": [
+          "river_name",
+          "river_alias",
+          "river_length",
+          "watershed_area",
+          "source_province"
+        ],
+        "row_count": 50,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch02_watershed_river",
+        "query": "查询流域河流的河流名称、别名、河流长度、流域面积和源头省份，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 8,
+          "errors": [],
+          "sql": "SELECT river_name, river_alias, river_length, watershed_area, source_province FROM se_watershed_river LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2165
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 50
+          },
+          "event_columns": [
+            "river_name",
+            "river_alias",
+            "river_length",
+            "watershed_area",
+            "source_province"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT river_name, river_alias, river_length, watershed_area, source_province FROM se_watershed_river LIMIT 50",
+              "columns": [
+                "river_name",
+                "river_alias",
+                "river_length",
+                "watershed_area",
+                "source_province"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 50
+              },
+              "row_count": 50,
+              "description": "SQL query returned 50 rows with 5 columns",
+              "execution_success": true,
+              "output_file": "query_results_1ce191da.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_1ce191da.csv"
+          ],
+          "columns": [
+            "river_name",
+            "river_alias",
+            "river_length",
+            "watershed_area",
+            "source_province"
+          ],
+          "row_count": 50,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_1ce191da.csv",
+          "chart_specs": [
+            {
+              "type": "scatter",
+              "title": "河流长度与流域面积关系",
+              "xField": "river_length",
+              "yFields": [
+                "watershed_area"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch03_meteorological_station",
+        "category": "batch_target",
+        "question": "查询气象站的站点编码、站点名称、简称、行政区编码和所属城市，最多返回50条",
+        "sql": "SELECT station_code, station_name, short_name, region_code, belong_to_city FROM wm_meteorological_info LIMIT 50",
+        "used_tables": [
+          "wm_meteorological_info"
+        ],
+        "used_columns": [
+          "wm_meteorological_info.station_code",
+          "wm_meteorological_info.station_name",
+          "wm_meteorological_info.short_name",
+          "wm_meteorological_info.region_code",
+          "wm_meteorological_info.belong_to_city"
+        ],
+        "columns": [
+          "station_code",
+          "station_name",
+          "short_name",
+          "region_code",
+          "belong_to_city"
+        ],
+        "row_count": 7,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch03_meteorological_station",
+        "query": "查询气象站的站点编码、站点名称、简称、行政区编码和所属城市，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 8,
+          "errors": [],
+          "sql": "SELECT station_code, station_name, short_name, region_code, belong_to_city FROM wm_meteorological_info LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1083
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 7
+          },
+          "event_columns": [
+            "station_code",
+            "station_name",
+            "short_name",
+            "region_code",
+            "belong_to_city"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT station_code, station_name, short_name, region_code, belong_to_city FROM wm_meteorological_info LIMIT 50",
+              "columns": [
+                "station_code",
+                "station_name",
+                "short_name",
+                "region_code",
+                "belong_to_city"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 7
+              },
+              "row_count": 7,
+              "description": "SQL query returned 7 rows with 5 columns",
+              "execution_success": true,
+              "output_file": "query_results_e6ccff6f.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_e6ccff6f.csv"
+          ],
+          "columns": [
+            "station_code",
+            "station_name",
+            "short_name",
+            "region_code",
+            "belong_to_city"
+          ],
+          "row_count": 7,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_e6ccff6f.csv",
+          "chart_specs": [
+            {
+              "type": "bar",
+              "title": "各城市气象站数量分布",
+              "xField": "所属城市",
+              "yFields": [
+                "count"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch04_control_unit",
+        "category": "batch_target",
+        "question": "查询水环境管控单元的编码、名称和面积，最多返回50条",
+        "sql": "SELECT control_unit_code, control_unit_name, area FROM gis_control_unit LIMIT 50",
+        "used_tables": [
+          "gis_control_unit"
+        ],
+        "used_columns": [
+          "gis_control_unit.control_unit_code",
+          "gis_control_unit.control_unit_name",
+          "gis_control_unit.area"
+        ],
+        "columns": [
+          "control_unit_code",
+          "control_unit_name",
+          "area"
+        ],
+        "row_count": 15,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch04_control_unit",
+        "query": "查询水环境管控单元的编码、名称和面积，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT control_unit_code, control_unit_name, area FROM gis_control_unit LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2022
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 15
+          },
+          "event_columns": [
+            "control_unit_code",
+            "control_unit_name",
+            "area"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT control_unit_code, control_unit_name, area FROM gis_control_unit LIMIT 50",
+              "columns": [
+                "control_unit_code",
+                "control_unit_name",
+                "area"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 15
+              },
+              "row_count": 15,
+              "description": "SQL query returned 15 rows with 3 columns",
+              "execution_success": true,
+              "output_file": "query_results_4dcf27e6.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_4dcf27e6.csv"
+          ],
+          "columns": [
+            "control_unit_code",
+            "control_unit_name",
+            "area"
+          ],
+          "row_count": 15,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_4dcf27e6.csv",
+          "chart_specs": [
+            {
+              "type": "horizontal_bar",
+              "title": "水环境管控单元面积对比",
+              "xField": "control_unit_name",
+              "yFields": [
+                "area"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": "㎡"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch05_watershed_year",
+        "category": "batch_target",
+        "question": "查询流域年度信息的流域名称、所属区域编码、统计年份和流域面积，最多返回50条",
+        "sql": "SELECT name, region_code, statistic_year, total_watershed_area FROM se_watershed LIMIT 50",
+        "used_tables": [
+          "se_watershed"
+        ],
+        "used_columns": [
+          "se_watershed.name",
+          "se_watershed.region_code",
+          "se_watershed.statistic_year",
+          "se_watershed.total_watershed_area"
+        ],
+        "columns": [
+          "name",
+          "region_code",
+          "statistic_year",
+          "total_watershed_area"
+        ],
+        "row_count": 12,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch05_watershed_year",
+        "query": "查询流域年度信息的流域名称、所属区域编码、统计年份和流域面积，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 8,
+          "errors": [],
+          "sql": "SELECT name, region_code, statistic_year, total_watershed_area FROM se_watershed LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1334
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 12
+          },
+          "event_columns": [
+            "name",
+            "region_code",
+            "statistic_year",
+            "total_watershed_area"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT name, region_code, statistic_year, total_watershed_area FROM se_watershed LIMIT 50",
+              "columns": [
+                "name",
+                "region_code",
+                "statistic_year",
+                "total_watershed_area"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 12
+              },
+              "row_count": 12,
+              "description": "SQL query returned 12 rows with 4 columns",
+              "execution_success": true,
+              "output_file": "query_results_47bd1657.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_47bd1657.csv"
+          ],
+          "columns": [
+            "name",
+            "region_code",
+            "statistic_year",
+            "total_watershed_area"
+          ],
+          "row_count": 12,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_47bd1657.csv",
+          "chart_specs": [
+            {
+              "type": "bar",
+              "title": "各统计年份流域面积",
+              "xField": "statistic_year",
+              "yFields": [
+                "total_watershed_area"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": "km²"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch06_trace_control_zone",
+        "category": "batch_target",
+        "question": "查询水安全溯源分区的分区编码、分区名称和划分依据，最多返回50条",
+        "sql": "SELECT zone_code, zone_name, divide_basis FROM wst_control_zone LIMIT 50",
+        "used_tables": [
+          "wst_control_zone"
+        ],
+        "used_columns": [
+          "wst_control_zone.zone_code",
+          "wst_control_zone.zone_name",
+          "wst_control_zone.divide_basis"
+        ],
+        "columns": [
+          "zone_code",
+          "zone_name",
+          "divide_basis"
+        ],
+        "row_count": 50,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch06_trace_control_zone",
+        "query": "查询水安全溯源分区的分区编码、分区名称和划分依据，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT zone_code, zone_name, divide_basis FROM wst_control_zone LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1828
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 50
+          },
+          "event_columns": [
+            "zone_code",
+            "zone_name",
+            "divide_basis"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT zone_code, zone_name, divide_basis FROM wst_control_zone LIMIT 50",
+              "columns": [
+                "zone_code",
+                "zone_name",
+                "divide_basis"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 50
+              },
+              "row_count": 50,
+              "description": "SQL query returned 50 rows with 3 columns",
+              "execution_success": true,
+              "output_file": "query_results_aafd7786.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_aafd7786.csv"
+          ],
+          "columns": [
+            "zone_code",
+            "zone_name",
+            "divide_basis"
+          ],
+          "row_count": 50,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_aafd7786.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch07_trace_asset_type",
+        "category": "batch_target",
+        "question": "查询水安全溯源资产类型的类型编码、类型名称、资产分组编码、资产分组名称和上级类型编码，最多返回50条",
+        "sql": "SELECT asset_type, asset_type_name, asset_group, asset_group_name, parent_type FROM wst_asset_type_dict LIMIT 50",
+        "used_tables": [
+          "wst_asset_type_dict"
+        ],
+        "used_columns": [
+          "wst_asset_type_dict.asset_type",
+          "wst_asset_type_dict.asset_type_name",
+          "wst_asset_type_dict.asset_group",
+          "wst_asset_type_dict.asset_group_name",
+          "wst_asset_type_dict.parent_type"
+        ],
+        "columns": [
+          "asset_type",
+          "asset_type_name",
+          "asset_group",
+          "asset_group_name",
+          "parent_type"
+        ],
+        "row_count": 33,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch07_trace_asset_type",
+        "query": "查询水安全溯源资产类型的类型编码、类型名称、资产分组编码、资产分组名称和上级类型编码，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 8,
+          "errors": [],
+          "sql": "SELECT asset_type, asset_type_name, asset_group, asset_group_name, parent_type FROM wst_asset_type_dict LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1894
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 33
+          },
+          "event_columns": [
+            "asset_type",
+            "asset_type_name",
+            "asset_group",
+            "asset_group_name",
+            "parent_type"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT asset_type, asset_type_name, asset_group, asset_group_name, parent_type FROM wst_asset_type_dict LIMIT 50",
+              "columns": [
+                "asset_type",
+                "asset_type_name",
+                "asset_group",
+                "asset_group_name",
+                "parent_type"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 33
+              },
+              "row_count": 33,
+              "description": "SQL query returned 33 rows with 5 columns",
+              "execution_success": true,
+              "output_file": "query_results_80ebb9c6.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_80ebb9c6.csv"
+          ],
+          "columns": [
+            "asset_type",
+            "asset_type_name",
+            "asset_group",
+            "asset_group_name",
+            "parent_type"
+          ],
+          "row_count": 33,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_80ebb9c6.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": "",
+              "xField": null,
+              "yFields": [],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch08_trace_relation_type",
+        "category": "batch_target",
+        "question": "查询水安全溯源资产关系大类的关系编码、关系名称和关系说明，最多返回50条",
+        "sql": "SELECT type_code, type_name, description FROM wst_relation_type_dict LIMIT 50",
+        "used_tables": [
+          "wst_relation_type_dict"
+        ],
+        "used_columns": [
+          "wst_relation_type_dict.type_code",
+          "wst_relation_type_dict.type_name",
+          "wst_relation_type_dict.description"
+        ],
+        "columns": [
+          "type_code",
+          "type_name",
+          "description"
+        ],
+        "row_count": 6,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch08_trace_relation_type",
+        "query": "查询水安全溯源资产关系大类的关系编码、关系名称和关系说明，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 8,
+          "errors": [],
+          "sql": "SELECT type_code, type_name, description FROM wst_relation_type_dict LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1064
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 6
+          },
+          "event_columns": [
+            "type_code",
+            "type_name",
+            "description"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT type_code, type_name, description FROM wst_relation_type_dict LIMIT 50",
+              "columns": [
+                "type_code",
+                "type_name",
+                "description"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 6
+              },
+              "row_count": 6,
+              "description": "SQL query returned 6 rows with 3 columns",
+              "execution_success": true,
+              "output_file": "query_results_ecda8fbd.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_ecda8fbd.csv"
+          ],
+          "columns": [
+            "type_code",
+            "type_name",
+            "description"
+          ],
+          "row_count": 6,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_ecda8fbd.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch09_phosphogypsum_repository",
+        "category": "batch_target",
+        "question": "查询磷石膏库的名称、矿山名称、所属企业、所在市、所在县和地址，最多返回50条",
+        "sql": "SELECT name, mine_name, enterprise, city, county, address FROM rs_enterprise_info_lsg LIMIT 50",
+        "used_tables": [
+          "rs_enterprise_info_lsg"
+        ],
+        "used_columns": [
+          "rs_enterprise_info_lsg.name",
+          "rs_enterprise_info_lsg.mine_name",
+          "rs_enterprise_info_lsg.enterprise",
+          "rs_enterprise_info_lsg.city",
+          "rs_enterprise_info_lsg.county",
+          "rs_enterprise_info_lsg.address"
+        ],
+        "columns": [
+          "name",
+          "mine_name",
+          "enterprise",
+          "city",
+          "county",
+          "address"
+        ],
+        "row_count": 17,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch09_phosphogypsum_repository",
+        "query": "查询磷石膏库的名称、矿山名称、所属企业、所在市、所在县和地址，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT name, mine_name, enterprise, city, county, address FROM rs_enterprise_info_lsg LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2233
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 17
+          },
+          "event_columns": [
+            "name",
+            "mine_name",
+            "enterprise",
+            "city",
+            "county",
+            "address"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT name, mine_name, enterprise, city, county, address FROM rs_enterprise_info_lsg LIMIT 50",
+              "columns": [
+                "name",
+                "mine_name",
+                "enterprise",
+                "city",
+                "county",
+                "address"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 17
+              },
+              "row_count": 17,
+              "description": "SQL query returned 17 rows with 6 columns",
+              "execution_success": true,
+              "output_file": "query_results_a3cffb3c.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_a3cffb3c.csv"
+          ],
+          "columns": [
+            "name",
+            "mine_name",
+            "enterprise",
+            "city",
+            "county",
+            "address"
+          ],
+          "row_count": 17,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_a3cffb3c.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "batch10_sewage_treatment_project",
+        "category": "batch_target",
+        "question": "查询污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位，最多返回50条",
+        "sql": "SELECT admin_division, project_name, treatment_process, design_scale, actual_assess_scale, operation_unit FROM rs_sewage_info_v2 LIMIT 50",
+        "used_tables": [
+          "rs_sewage_info_v2"
+        ],
+        "used_columns": [
+          "rs_sewage_info_v2.admin_division",
+          "rs_sewage_info_v2.project_name",
+          "rs_sewage_info_v2.treatment_process",
+          "rs_sewage_info_v2.design_scale",
+          "rs_sewage_info_v2.actual_assess_scale",
+          "rs_sewage_info_v2.operation_unit"
+        ],
+        "columns": [
+          "admin_division",
+          "project_name",
+          "treatment_process",
+          "design_scale",
+          "actual_assess_scale",
+          "operation_unit"
+        ],
+        "row_count": 1,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "result_row_count_exact": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "batch10_sewage_treatment_project",
+        "query": "查询污水处理厂项目的行政区划、项目名称、处理工艺、设计规模、实际考核规模和运营单位，最多返回50条",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT admin_division, project_name, treatment_process, design_scale, actual_assess_scale, operation_unit FROM rs_sewage_info_v2 LIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 699
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 1
+          },
+          "event_columns": [
+            "admin_division",
+            "project_name",
+            "treatment_process",
+            "design_scale",
+            "actual_assess_scale",
+            "operation_unit"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT admin_division, project_name, treatment_process, design_scale, actual_assess_scale, operation_unit FROM rs_sewage_info_v2 LIMIT 50",
+              "columns": [
+                "admin_division",
+                "project_name",
+                "treatment_process",
+                "design_scale",
+                "actual_assess_scale",
+                "operation_unit"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 1
+              },
+              "row_count": 1,
+              "description": "SQL query returned 1 rows with 6 columns",
+              "execution_success": true,
+              "output_file": "query_results_0a3442a0.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_0a3442a0.csv"
+          ],
+          "columns": [
+            "admin_division",
+            "project_name",
+            "treatment_process",
+            "design_scale",
+            "actual_assess_scale",
+            "operation_unit"
+          ],
+          "row_count": 1,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_0a3442a0.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": "",
+              "xField": null,
+              "yFields": [],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "level2_monthly_water_quality",
+        "category": "batch_target",
+        "question": "某站点水质月变化趋势",
+        "sql": "SELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 60",
+        "used_tables": [
+          "wm_waterquality_month_records"
+        ],
+        "used_columns": [
+          "wm_waterquality_month_records.station_id",
+          "wm_waterquality_month_records.monitor_year",
+          "wm_waterquality_month_records.monitor_month",
+          "wm_waterquality_month_records.m2_value",
+          "wm_waterquality_month_records.m3_value",
+          "wm_waterquality_month_records.water_quality_level"
+        ],
+        "columns": [
+          "station_id",
+          "monitor_year",
+          "monitor_month",
+          "m2_value",
+          "m3_value",
+          "water_quality_level"
+        ],
+        "row_count": 2,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "level2_monthly_water_quality",
+        "query": "某站点水质月变化趋势",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 10,
+          "errors": [],
+          "sql": "SELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 60",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1218
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 2
+          },
+          "event_columns": [
+            "station_id",
+            "monitor_year",
+            "monitor_month",
+            "m2_value",
+            "m3_value",
+            "water_quality_level"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408 AND monitor_year >= 2025\nORDER BY monitor_year, monitor_month\nLIMIT 60",
+              "columns": [
+                "station_id",
+                "monitor_year",
+                "monitor_month",
+                "m2_value",
+                "m3_value",
+                "water_quality_level"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 2
+              },
+              "row_count": 2,
+              "description": "SQL query returned 2 rows with 6 columns",
+              "execution_success": true,
+              "output_file": "query_results_e8ae267d.csv"
+            },
+            {
+              "sequence": 2,
+              "sql": "SELECT station_id, monitor_year, monitor_month, m2_value, m3_value, water_quality_level\nFROM wm_waterquality_month_records\nWHERE station_id = 1408\nORDER BY monitor_year, monitor_month\nLIMIT 60",
+              "columns": [
+                "station_id",
+                "monitor_year",
+                "monitor_month",
+                "m2_value",
+                "m3_value",
+                "water_quality_level"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 2
+              },
+              "row_count": 2,
+              "description": "SQL query returned 2 rows with 6 columns",
+              "execution_success": true,
+              "output_file": "query_results_fdcd86a9.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_e8ae267d.csv",
+            "2a97516c354b6884\\query_results_fdcd86a9.csv"
+          ],
+          "columns": [
+            "station_id",
+            "monitor_year",
+            "monitor_month",
+            "m2_value",
+            "m3_value",
+            "water_quality_level"
+          ],
+          "row_count": 2,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_e8ae267d.csv",
+          "chart_specs": [
+            {
+              "type": "bar",
+              "title": "站点1408水质指标月对比（2026年）",
+              "xField": "monitor_month",
+              "yFields": [
+                "m2_value",
+                "m3_value"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "level2_water_intake_route",
+        "category": "batch_target",
+        "question": "查询取水口名称和水源类型",
+        "sql": "SELECT name, region_name, city, county, water_type, code\nFROM wm_water_intake\nORDER BY name\nLIMIT 50",
+        "used_tables": [
+          "wm_water_intake"
+        ],
+        "used_columns": [
+          "wm_water_intake.name",
+          "wm_water_intake.region_name",
+          "wm_water_intake.city",
+          "wm_water_intake.county",
+          "wm_water_intake.water_type",
+          "wm_water_intake.code"
+        ],
+        "columns": [
+          "name",
+          "region_name",
+          "city",
+          "county",
+          "water_type",
+          "code"
+        ],
+        "row_count": 50,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "level2_water_intake_route",
+        "query": "查询取水口名称和水源类型",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT name, region_name, city, county, water_type, code\nFROM wm_water_intake\nORDER BY name\nLIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2066
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 50
+          },
+          "event_columns": [
+            "name",
+            "region_name",
+            "city",
+            "county",
+            "water_type",
+            "code"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT name, region_name, city, county, water_type, code\nFROM wm_water_intake\nORDER BY name\nLIMIT 50",
+              "columns": [
+                "name",
+                "region_name",
+                "city",
+                "county",
+                "water_type",
+                "code"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 50
+              },
+              "row_count": 50,
+              "description": "SQL query returned 50 rows with 6 columns",
+              "execution_success": true,
+              "output_file": "query_results_80fdb62b.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_80fdb62b.csv"
+          ],
+          "columns": [
+            "name",
+            "region_name",
+            "city",
+            "county",
+            "water_type",
+            "code"
+          ],
+          "row_count": 50,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_80fdb62b.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": "取水口名称与水源类型明细",
+              "xField": null,
+              "yFields": [],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "level3_p0_annual_ph_ranking",
+        "category": "batch_target",
+        "question": "查询年度pH年均值最高的站点列表",
+        "sql": "",
+        "used_tables": [],
+        "used_columns": [],
+        "columns": [],
+        "row_count": 0,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": false,
+          "sql_guard_pass": false,
+          "used_tables_exact": false,
+          "single_select_only": false,
+          "execution_success": false,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": false,
+          "expected_columns": false,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": false,
+          "require_order_desc": false,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [
+          "sql_present",
+          "sql_guard_pass",
+          "used_tables_exact",
+          "single_select_only",
+          "execution_success",
+          "limit_at_most",
+          "expected_columns",
+          "require_group_by",
+          "require_order_desc"
+        ],
+        "accepted": false
+      },
+      "execution": {
+        "id": "level3_p0_annual_ph_ranking",
+        "query": "查询年度pH年均值最高的站点列表",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 14,
+          "errors": [],
+          "sql": "",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 969
+          },
+          "rich_types": [
+            "chat_input_update",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 0
+          },
+          "event_columns": [],
+          "dataframe_events": [],
+          "csv_files": [],
+          "columns": [],
+          "row_count": 0,
+          "execution_success": false,
+          "csv_file": "",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": null,
+              "xField": null,
+              "yFields": null,
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "level3_p1_annual_water_supply",
+        "category": "batch_target",
+        "question": "按年实际取水量从高到低查看水源地及其服务人口",
+        "sql": "SELECT name, service_people_count, supply_water_year, supply_water_daily\nFROM wm_water_source\nWHERE supply_water_year IS NOT NULL\nORDER BY supply_water_year DESC, service_people_count DESC\nLIMIT 20",
+        "used_tables": [
+          "wm_water_source"
+        ],
+        "used_columns": [
+          "wm_water_source.name",
+          "wm_water_source.service_people_count",
+          "wm_water_source.supply_water_year",
+          "wm_water_source.supply_water_daily"
+        ],
+        "columns": [
+          "name",
+          "service_people_count",
+          "supply_water_year",
+          "supply_water_daily"
+        ],
+        "row_count": 20,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "level3_p1_annual_water_supply",
+        "query": "按年实际取水量从高到低查看水源地及其服务人口",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT name, service_people_count, supply_water_year, supply_water_daily\nFROM wm_water_source\nWHERE supply_water_year IS NOT NULL\nORDER BY supply_water_year DESC, service_people_count DESC\nLIMIT 20",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 1821
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 20
+          },
+          "event_columns": [
+            "name",
+            "service_people_count",
+            "supply_water_year",
+            "supply_water_daily"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT name, service_people_count, supply_water_year, supply_water_daily\nFROM wm_water_source\nWHERE supply_water_year IS NOT NULL\nORDER BY supply_water_year DESC, service_people_count DESC\nLIMIT 20",
+              "columns": [
+                "name",
+                "service_people_count",
+                "supply_water_year",
+                "supply_water_daily"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 20
+              },
+              "row_count": 20,
+              "description": "SQL query returned 20 rows with 4 columns",
+              "execution_success": true,
+              "output_file": "query_results_c946b95d.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_c946b95d.csv"
+          ],
+          "columns": [
+            "name",
+            "service_people_count",
+            "supply_water_year",
+            "supply_water_daily"
+          ],
+          "row_count": 20,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_c946b95d.csv",
+          "chart_specs": [
+            {
+              "type": "horizontal_bar",
+              "title": "水源地年实际取水量排名（万m³/年）",
+              "xField": "name",
+              "yFields": [
+                "supply_water_year"
+              ],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": "万m³/年"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "validation": {
+        "case_id": "level3_p2_three_table_outlet_detail",
+        "category": "batch_target",
+        "question": "查询排污口国家编码、名称、整治状态、规范化状态及实况在线监测状态联合记录明细",
+        "sql": "SELECT o.outlet_code_national, o.outlet_name, r.is_remediated, r.is_standardized, l.drainage_feature, l.has_online_monitor\nFROM rs_outlet_info_v2 AS o\nINNER JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id\nINNER JOIN rs_outlet_live_v2 AS l ON o.id = l.outlet_id\nWHERE o.del_flag = '0' AND r.del_flag = '0' AND l.del_flag = '0'\nORDER BY o.outlet_name\nLIMIT 50",
+        "used_tables": [
+          "rs_outlet_info_v2",
+          "rs_outlet_remediation_v2",
+          "rs_outlet_live_v2"
+        ],
+        "used_columns": [
+          "rs_outlet_info_v2.outlet_code_national",
+          "rs_outlet_info_v2.outlet_name",
+          "rs_outlet_remediation_v2.is_remediated",
+          "rs_outlet_remediation_v2.is_standardized",
+          "rs_outlet_live_v2.drainage_feature",
+          "rs_outlet_live_v2.has_online_monitor",
+          "rs_outlet_info_v2.del_flag",
+          "rs_outlet_remediation_v2.del_flag",
+          "rs_outlet_live_v2.del_flag",
+          "rs_outlet_info_v2.id",
+          "rs_outlet_remediation_v2.outlet_id",
+          "rs_outlet_live_v2.outlet_id"
+        ],
+        "columns": [
+          "outlet_code_national",
+          "outlet_name",
+          "is_remediated",
+          "is_standardized",
+          "drainage_feature",
+          "has_online_monitor"
+        ],
+        "row_count": 50,
+        "checks": {
+          "http_200": true,
+          "no_sse_error": true,
+          "sql_present": true,
+          "sql_guard_pass": true,
+          "used_tables_exact": true,
+          "single_select_only": true,
+          "execution_success": true,
+          "result_nonempty": true,
+          "answer_present": true,
+          "limit_at_most": true,
+          "expected_columns": true,
+          "require_join": true,
+          "forbid_join": true,
+          "require_left_join": true,
+          "require_group_by": true,
+          "require_order_desc": true,
+          "forbidden_tables": true,
+          "forbidden_columns": true,
+          "forbid_select_star": true,
+          "forbid_distinct": true,
+          "forbid_where": true,
+          "forbid_null_filter": true,
+          "expected_chart_types": true,
+          "require_chart_title": true,
+          "require_chart_fields": true
+        },
+        "failed_checks": [],
+        "accepted": true
+      },
+      "execution": {
+        "id": "level3_p2_three_table_outlet_detail",
+        "query": "查询排污口国家编码、名称、整治状态、规范化状态及实况在线监测状态联合记录明细",
+        "parent_memory_diagnostics_executed": false,
+        "result": {
+          "http_status": 200,
+          "event_count": 7,
+          "errors": [],
+          "sql": "SELECT o.outlet_code_national, o.outlet_name, r.is_remediated, r.is_standardized, l.drainage_feature, l.has_online_monitor\nFROM rs_outlet_info_v2 AS o\nINNER JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id\nINNER JOIN rs_outlet_live_v2 AS l ON o.id = l.outlet_id\nWHERE o.del_flag = '0' AND r.del_flag = '0' AND l.del_flag = '0'\nORDER BY o.outlet_name\nLIMIT 50",
+          "answer": {
+            "redacted": true,
+            "nonempty": true,
+            "character_count": 2220
+          },
+          "rich_types": [
+            "chat_input_update",
+            "dataframe",
+            "status_bar_update",
+            "task_tracker_update",
+            "text"
+          ],
+          "event_rows": {
+            "redacted": true,
+            "row_count_in_stream": 50
+          },
+          "event_columns": [
+            "outlet_code_national",
+            "outlet_name",
+            "is_remediated",
+            "is_standardized",
+            "drainage_feature",
+            "has_online_monitor"
+          ],
+          "dataframe_events": [
+            {
+              "sequence": 1,
+              "sql": "SELECT o.outlet_code_national, o.outlet_name, r.is_remediated, r.is_standardized, l.drainage_feature, l.has_online_monitor\nFROM rs_outlet_info_v2 AS o\nINNER JOIN rs_outlet_remediation_v2 AS r ON o.id = r.outlet_id\nINNER JOIN rs_outlet_live_v2 AS l ON o.id = l.outlet_id\nWHERE o.del_flag = '0' AND r.del_flag = '0' AND l.del_flag = '0'\nORDER BY o.outlet_name\nLIMIT 50",
+              "columns": [
+                "outlet_code_national",
+                "outlet_name",
+                "is_remediated",
+                "is_standardized",
+                "drainage_feature",
+                "has_online_monitor"
+              ],
+              "rows": {
+                "redacted": true,
+                "row_count_in_stream": 50
+              },
+              "row_count": 50,
+              "description": "SQL query returned 50 rows with 6 columns",
+              "execution_success": true,
+              "output_file": "query_results_7b6cf303.csv"
+            }
+          ],
+          "csv_files": [
+            "2a97516c354b6884\\query_results_7b6cf303.csv"
+          ],
+          "columns": [
+            "outlet_code_national",
+            "outlet_name",
+            "is_remediated",
+            "is_standardized",
+            "drainage_feature",
+            "has_online_monitor"
+          ],
+          "row_count": 50,
+          "execution_success": true,
+          "csv_file": "2a97516c354b6884\\query_results_7b6cf303.csv",
+          "chart_specs": [
+            {
+              "type": "none",
+              "title": "",
+              "xField": null,
+              "yFields": [],
+              "seriesField": null,
+              "sizeField": null,
+              "valueField": null,
+              "min": null,
+              "max": null,
+              "unit": null
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

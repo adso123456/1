@@ -1,0 +1,32 @@
+{
+  "case_id": "level3_p0_annual_ph_ranking",
+  "question": "查询年度pH年均值最高的站点列表",
+  "case_sequence": 18,
+  "case_count": 20,
+  "previous_case_id": "level2_water_intake_route",
+  "http_status": 200,
+  "sse_errors": [],
+  "aggregate_event_count": 14,
+  "aggregate_rich_types": [
+    "chat_input_update",
+    "status_bar_update",
+    "task_tracker_update",
+    "text"
+  ],
+  "tool_call_event_present_in_preserved_aggregate": false,
+  "sql_guard_event_present_in_preserved_aggregate": false,
+  "dataframe_event_present": false,
+  "sql": "",
+  "columns": [],
+  "row_count": 0,
+  "execution_success": false,
+  "answer_present": true,
+  "final_text_available": false,
+  "final_text_claims_no_data": "NOT_DETERMINABLE",
+  "conversation_id_available": false,
+  "request_id_available": false,
+  "raw_response_sse_available": false,
+  "complete_events_json_available": false,
+  "raw_llm_request_available": false,
+  "evidence_boundary": "N1 preserved only the regression harness aggregate. It did not preserve raw SSE, complete events, final text, runtime IDs, or the LLM request body."
+}

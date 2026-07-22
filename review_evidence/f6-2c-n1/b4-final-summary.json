@@ -1,0 +1,38 @@
+{
+  "validation_sha_after_run": "d1d061c7ebd778c2ce9b2488c551c38cbb18cf83daecd6d23f88a1a2963153f1",
+  "validation_embeddings_before": 198,
+  "validation_embeddings_after": 198,
+  "validation_acquire_write_before": 72,
+  "validation_acquire_write_after": 74,
+  "formal_chroma_sha_after_run": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "formal_manifest_sha_after_run": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_record_count_after_run": 198,
+  "formal_quick_check_after_run": [
+    "ok"
+  ],
+  "formal_chroma_unchanged": true,
+  "formal_metadata_index_sha_after_run": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_metadata_index_unchanged": true,
+  "service_vanna_data_dir": "E:\\3\\_training_backups\\f6-2c-b4-20260722-130105\\validation_chroma",
+  "service_agent_data_dir": "E:\\3\\_training_backups\\f6-2c-b4-20260722-130105\\agent_data",
+  "service_used_formal_chroma": false,
+  "formal_chroma_opened_by_service": false,
+  "formal_path_in_server_log": false,
+  "memory_case_count": 6,
+  "memory_pass_count": 6,
+  "http_request_count": 20,
+  "http_retry_count": 0,
+  "http_pass_count": 20,
+  "failed_http_cases": [],
+  "annual_ph_first_event_accepted": true,
+  "annual_ph_first_event_columns": [
+    "station_id",
+    "monitor_year",
+    "avg_ph",
+    "water_quality_level"
+  ],
+  "annual_ph_first_event_row_count": 0,
+  "annual_ph_first_event_execution_success": true,
+  "annual_ph_later_event_overwrite": false,
+  "final_conclusion": "READY_FOR_B5_COMMIT_BASELINE_FIX"
+}
