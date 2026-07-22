@@ -1,0 +1,86 @@
+[
+    {
+        "path":  "context-cleanup-test-results.json",
+        "sha256":  "b84c43819d8bf87acd0d08f20c24fdc39698cce2415d3fa1dea0f17c601e70e5"
+    },
+    {
+        "path":  "full-working-tree.patch",
+        "sha256":  "cf7b0d592262df15c8ff6a816cb14acf6d1d9c3ff07c4c1b433c545dfb3dd1e4"
+    },
+    {
+        "path":  "git-diff-check.txt",
+        "sha256":  "2f9acb02faa121bb2a3621951f57b4c690655337edee2e5ac350be2b3be88ea8"
+    },
+    {
+        "path":  "git-diff-name-status.txt",
+        "sha256":  "715b38b450e4a93254ad19a5cceeb6960f0f5d88bc779002c2ce48387158f6fb"
+    },
+    {
+        "path":  "git-status.txt",
+        "sha256":  "502f94b611744946c922cd796c537f239d6bd8330e28df95c4dd885a1b44e236"
+    },
+    {
+        "path":  "non-thinking-turn-test-results.json",
+        "sha256":  "0b774f58a1e2c7feba06a91263a39af7eea72ea866167350eb21c271030fc704"
+    },
+    {
+        "path":  "py-compile-result.txt",
+        "sha256":  "03524efee0cbd2e9166092c9a1afd80d1f47156c2fb13fde8f803b1f6b5cbcf2"
+    },
+    {
+        "path":  "runner-self-test.json",
+        "sha256":  "7aa30499de4b94d74f2468e51ee3aeccd310ba03bac405ebd6a9d41d63d34216"
+    },
+    {
+        "path":  "runner-static-guard.json",
+        "sha256":  "e930e3776aba5102e82de5239c085cfc550c77dc6b56f39670526f267faac190"
+    },
+    {
+        "path":  "self-test-result.txt",
+        "sha256":  "4f81a0343e51e93ca9cdbcf506be8480e223bb9f58aaa42dd87f2db5a59092fd"
+    },
+    {
+        "path":  "source/backend/agent_factory.py",
+        "sha256":  "f1229994488639b2f63cb4cf1a54c1c67fab6db9683a07bc6e49423d0ec57758"
+    },
+    {
+        "path":  "source/backend/guarded_run_sql_tool.py",
+        "sha256":  "da55cd4b62229513f3c5427043bc76058be2e49b851b460a21400d66ed74d1b9"
+    },
+    {
+        "path":  "source/backend/prompts.py",
+        "sha256":  "0652188405abded887c7744e13f2f98d5523b5741391881bfbd639c952c408a6"
+    },
+    {
+        "path":  "source/backend/query_context.py",
+        "sha256":  "98951f275a37bcc0df023ea8b6b091a43026e46a9ed7937ac0b93ae6b7d0e4b4"
+    },
+    {
+        "path":  "source/backend/request_diagnostics.py",
+        "sha256":  "bfec1d9ee0c47751dcdbc6b9926d0ea3488252ff737e02fc0ba66608c045c4c4"
+    },
+    {
+        "path":  "source/backend/run_sql_requirement.py",
+        "sha256":  "e1aac9549f987f6c5f64894801eee80f9eea133056ed797dfc651a7ed5902019"
+    },
+    {
+        "path":  "source/backend/sql_example_context_enhancer.py",
+        "sha256":  "ab8eb0915a4787879a985ad5fbec92b0ea6f6217dbc48dc48c79ee1a076a0c70"
+    },
+    {
+        "path":  "source/backend/tracing_llm_service.py",
+        "sha256":  "d8af62c64d12c52a4a08ff1b0104843f65d720a75d992ca78ed1728e93c3c098"
+    },
+    {
+        "path":  "source/tools/regression_service_harness.py",
+        "sha256":  "97a9c561ff990fa45bb0956db99ee9b179fa702bcb98ec42eba2e7473d3bd249"
+    },
+    {
+        "path":  "source/tools/run_postgresql_f5_regression.py",
+        "sha256":  "4fa323e0dbc56a2859f638f1a7fd034902b92800f834c6f21446cff73f66b2a9"
+    },
+    {
+        "path":  "tool-phase-closure-test-results.json",
+        "sha256":  "e6b44e2b0f57a82ff0418588509d75e87fc7b5593f65208581fd4fd2ed78cf59"
+    }
+]
