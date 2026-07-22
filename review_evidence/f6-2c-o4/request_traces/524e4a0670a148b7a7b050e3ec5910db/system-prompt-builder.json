@@ -1,0 +1,7 @@
+{
+  "trace_id": "524e4a0670a148b7a7b050e3ec5910db",
+  "base_prompt_sha256": "83bd251634390673277e2f47f5220ecf3428e75bf1407adf35f4f7784c38c16d",
+  "final_prompt_sha256": "ff9e41094912080a8b83fe72f9639ade8465766741b44e6b1cbccb321aaf7fbd",
+  "tool_count": 1,
+  "tool_serialization_errors": []
+}

@@ -1,0 +1,17 @@
+{
+  "trace_id": "524e4a0670a148b7a7b050e3ec5910db",
+  "call_number": 4,
+  "timestamp": "2026-07-22T06:56:57.258826+00:00",
+  "response_type": "stream",
+  "content": "",
+  "tool_calls": [
+    {
+      "id": "call_00_qy0fO5lybIbosXH2ckIc2451",
+      "name": "run_sql",
+      "arguments": {
+        "sql": "\nSELECT \n    outlet_name,\n    ph,\n    sampling_time\nFROM rs_outlet_monitor_v2\nWHERE ph IS NOT NULL\nORDER BY sampling_time DESC\nLIMIT 50\n"
+      }
+    }
+  ],
+  "finish_reason": "tool_calls"
+}

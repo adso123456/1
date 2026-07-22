@@ -1,0 +1,17 @@
+{
+  "trace_id": "524e4a0670a148b7a7b050e3ec5910db",
+  "call_number": 5,
+  "timestamp": "2026-07-22T06:57:03.115275+00:00",
+  "response_type": "stream",
+  "content": "",
+  "tool_calls": [
+    {
+      "id": "call_00_QTbUyV6qJeseHKeucJw05869",
+      "name": "run_sql",
+      "arguments": {
+        "sql": "\nSELECT *\nFROM rs_outlet\nLIMIT 5\n"
+      }
+    }
+  ],
+  "finish_reason": "tool_calls"
+}

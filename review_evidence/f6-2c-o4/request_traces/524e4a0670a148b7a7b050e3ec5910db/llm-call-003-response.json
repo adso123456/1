@@ -1,0 +1,17 @@
+{
+  "trace_id": "524e4a0670a148b7a7b050e3ec5910db",
+  "call_number": 3,
+  "timestamp": "2026-07-22T06:56:52.939382+00:00",
+  "response_type": "stream",
+  "content": "",
+  "tool_calls": [
+    {
+      "id": "call_00_Dgpu4Rni5goUAiUYGXqU2609",
+      "name": "run_sql",
+      "arguments": {
+        "sql": "\nSELECT \n    mon.outlet_name,\n    mon.ph,\n    mon.sampling_time\nFROM rs_outlet_monitor_v2 AS mon\nWHERE mon.ph IS NOT NULL\n  AND mon.ph NOT BETWEEN 6 AND 9\nORDER BY mon.sampling_time DESC\nLIMIT 50\n"
+      }
+    }
+  ],
+  "finish_reason": "tool_calls"
+}

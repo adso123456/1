@@ -1,0 +1,22 @@
+{
+  "authorized_intended_question": "查询年度pH年均值最高的站点列表",
+  "authorized_intended_question_provenance": "O4 authorization; not a persisted runner artifact",
+  "question_literal_in_runner": "NOT_AVAILABLE",
+  "question_before_json_dumps": "????pH??????????",
+  "serialized_request_body": "NOT_AVAILABLE",
+  "request_body_encoding_declared_in_source": "utf-8",
+  "http_content_type": "application/json",
+  "http_content_type_evidence_scope": "Static source excerpt; outbound wire headers were not persisted",
+  "request_start_original_question": "????pH??????????",
+  "llm_user_message": "????pH??????????",
+  "first_corruption_stage": "QUESTION_BEFORE_JSON_DUMPS",
+  "first_corruption_stage_basis": "request-count.json was written from the Python question variable before post_sse was called and already contains question marks. The original inline invocation command was not persisted, so no earlier stage can be determined from evidence.",
+  "evidence_files": {
+    "question_before_json_dumps": "evidence/request-count.json",
+    "request_construction_source": "execution_context/post_sse-source-excerpt.py",
+    "request_start_original_question": "request_traces/524e4a0670a148b7a7b050e3ec5910db/request-start.json",
+    "llm_user_message": "request_traces/524e4a0670a148b7a7b050e3ec5910db/llm-call-001-request.json",
+    "raw_sse": "raw_sse/response.sse",
+    "missing_artifacts": "not-found.json"
+  }
+}
