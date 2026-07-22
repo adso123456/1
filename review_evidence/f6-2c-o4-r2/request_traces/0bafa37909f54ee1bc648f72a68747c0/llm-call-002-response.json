@@ -1,0 +1,10 @@
+{
+  "trace_id": "0bafa37909f54ee1bc648f72a68747c0",
+  "call_number": 2,
+  "timestamp": "2026-07-22T08:23:07.575215+00:00",
+  "response_type": "stream_exception",
+  "content": "",
+  "tool_calls": [],
+  "exception_type": "BadRequestError",
+  "error_message": "Error code: 400 - {'error': {'message': 'The `reasoning_content` in the thinking mode must be passed back to the API.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}"
+}

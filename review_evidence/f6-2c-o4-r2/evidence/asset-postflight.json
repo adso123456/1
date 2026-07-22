@@ -1,0 +1,19 @@
+{
+  "fingerprint_algorithms": {
+    "tree_sha256": "tools.refresh_metadata_index.directory_tree_sha256: length-prefixed relative path and file content",
+    "directory_manifest_content_sha256": "training.sop.storage_snapshot.build_directory_manifest content_sha256",
+    "file_sha256": "SHA256 of raw file bytes"
+  },
+  "candidate_source_tree_sha256_after": "50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6",
+  "validation_chroma_tree_sha256_after": "19d22c68cb34a944e6681e414958e173a4318ad6fd459395df3292ce208d937b",
+  "validation_chroma_manifest_content_sha256_after": "f66b54d49173d98090564f4336c912ec196b5f2ca2938bf2cd7efdb42e4e1031",
+  "validation_records_after": 198,
+  "formal_metadata_file_sha256_after": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_chroma_tree_sha256_after": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "formal_chroma_manifest_content_sha256_after": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_records_after": 198,
+  "formal_records_verification_method": "unchanged formal Chroma tree SHA against the established 198-record baseline; formal Chroma API not opened",
+  "formal_chroma_opened_via_api": false,
+  "database_write_performed": false,
+  "database_write_basis": "The only SQL tool event was a SQLGuard-approved SELECT; DB connection config enforces default_transaction_read_only=on."
+}

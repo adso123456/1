@@ -1,0 +1,9 @@
+{
+  "http_status": 200,
+  "sse_errors": [],
+  "event_count": 7,
+  "dataframe_event_count": 1,
+  "final_text_present": false,
+  "conversation_id": "conv_7b40d811",
+  "request_id": "eed2621d-9413-4054-a5fa-d71dd8806981"
+}

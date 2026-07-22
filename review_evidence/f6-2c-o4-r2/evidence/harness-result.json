@@ -1,0 +1,38 @@
+{
+  "http_status": 200,
+  "event_count": 7,
+  "errors": [],
+  "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+  "answer": "Query executed successfully. No rows returned.\nError: An unexpected error occurred. Please try again. (Conversation ID: conv_7b40d811)",
+  "rich_types": [
+    "chat_input_update",
+    "dataframe",
+    "status_bar_update",
+    "status_card",
+    "task_tracker_update"
+  ],
+  "event_rows": [],
+  "event_columns": [
+    "station_id",
+    "monitor_year",
+    "avg_ph",
+    "water_quality_level"
+  ],
+  "dataframe_events": [
+    {
+      "sequence": 1,
+      "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+      "columns": [
+        "station_id",
+        "monitor_year",
+        "avg_ph",
+        "water_quality_level"
+      ],
+      "rows": [],
+      "row_count": 0,
+      "description": "No rows returned",
+      "execution_success": true,
+      "output_file": ""
+    }
+  ]
+}

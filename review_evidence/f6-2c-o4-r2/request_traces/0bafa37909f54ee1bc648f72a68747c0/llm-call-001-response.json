@@ -1,0 +1,17 @@
+{
+  "trace_id": "0bafa37909f54ee1bc648f72a68747c0",
+  "call_number": 1,
+  "timestamp": "2026-07-22T08:23:07.277926+00:00",
+  "response_type": "stream",
+  "content": "",
+  "tool_calls": [
+    {
+      "id": "call_00_BIfXblio3ZDdOMWlmWy43723",
+      "name": "run_sql",
+      "arguments": {
+        "sql": "\nSELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20\n"
+      }
+    }
+  ],
+  "finish_reason": "tool_calls"
+}

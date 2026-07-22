@@ -1,0 +1,72 @@
+{
+  "trace_id": "0bafa37909f54ee1bc648f72a68747c0",
+  "requires_run_sql": true,
+  "requirement_reasons": [
+    "approved_sql_example_injected"
+  ],
+  "sql_example_injected_count": 3,
+  "llm_call_index": 2,
+  "provider_hostname": "api.deepseek.com",
+  "model": "deepseek-v4-pro",
+  "provider_strategy": "original_request",
+  "original_tool_choice": "auto",
+  "effective_tool_choice": "auto",
+  "original_thinking": null,
+  "effective_thinking": null,
+  "original_reasoning_effort": null,
+  "effective_reasoning_effort": null,
+  "run_sql_schema_present": true,
+  "thinking_override_applied": false,
+  "forced_tool_choice_applied": false,
+  "forced_tool_name": "",
+  "parent_llm_called": true,
+  "error_type": "",
+  "failure_reason": "",
+  "calls": [
+    {
+      "llm_call_index": 1,
+      "provider_hostname": "api.deepseek.com",
+      "model": "deepseek-v4-pro",
+      "provider_strategy": "deepseek_non_thinking_first_tool_call",
+      "original_tool_choice": "auto",
+      "effective_tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "run_sql"
+        }
+      },
+      "original_thinking": null,
+      "effective_thinking": {
+        "type": "disabled"
+      },
+      "original_reasoning_effort": null,
+      "effective_reasoning_effort": null,
+      "run_sql_schema_present": true,
+      "thinking_override_applied": true,
+      "forced_tool_choice_applied": true,
+      "forced_tool_name": "run_sql",
+      "parent_llm_called": true,
+      "error_type": "",
+      "failure_reason": ""
+    },
+    {
+      "llm_call_index": 2,
+      "provider_hostname": "api.deepseek.com",
+      "model": "deepseek-v4-pro",
+      "provider_strategy": "original_request",
+      "original_tool_choice": "auto",
+      "effective_tool_choice": "auto",
+      "original_thinking": null,
+      "effective_thinking": null,
+      "original_reasoning_effort": null,
+      "effective_reasoning_effort": null,
+      "run_sql_schema_present": true,
+      "thinking_override_applied": false,
+      "forced_tool_choice_applied": false,
+      "forced_tool_name": "",
+      "parent_llm_called": true,
+      "error_type": "",
+      "failure_reason": ""
+    }
+  ]
+}

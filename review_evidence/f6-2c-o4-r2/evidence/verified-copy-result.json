@@ -1,0 +1,116 @@
+{
+  "source_before": {
+    "manifest_version": "1.0",
+    "directory_count": 2,
+    "file_count": 5,
+    "total_bytes": 5314724,
+    "directories": [
+      ".",
+      "68092f4b-e2a5-4ccd-b126-95b1218cb050"
+    ],
+    "files": [
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
+        "size": 218800,
+        "sha256": "6d7805077f6569f23e157ca99a3a4dd7e264ecd3b2b67c63abe0cafb32cd0f3a"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/header.bin",
+        "size": 100,
+        "sha256": "5c8a407226e15554f8aa5e2dc70831bc8e464bd1433ac370e1dc9bef7e839d5a"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
+        "size": 400,
+        "sha256": "c08aaa88094c7513cabc7da048f418fc44f20bcb4872916edfb2524463ced0f5"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/link_lists.bin",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "chroma.sqlite3",
+        "size": 5095424,
+        "sha256": "811862218cba3635bf4ea2f0850e025730b347493395e5d6f1959f6570287fb4"
+      }
+    ],
+    "content_sha256": "a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46"
+  },
+  "source_after": {
+    "manifest_version": "1.0",
+    "directory_count": 2,
+    "file_count": 5,
+    "total_bytes": 5314724,
+    "directories": [
+      ".",
+      "68092f4b-e2a5-4ccd-b126-95b1218cb050"
+    ],
+    "files": [
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
+        "size": 218800,
+        "sha256": "6d7805077f6569f23e157ca99a3a4dd7e264ecd3b2b67c63abe0cafb32cd0f3a"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/header.bin",
+        "size": 100,
+        "sha256": "5c8a407226e15554f8aa5e2dc70831bc8e464bd1433ac370e1dc9bef7e839d5a"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
+        "size": 400,
+        "sha256": "c08aaa88094c7513cabc7da048f418fc44f20bcb4872916edfb2524463ced0f5"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/link_lists.bin",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "chroma.sqlite3",
+        "size": 5095424,
+        "sha256": "811862218cba3635bf4ea2f0850e025730b347493395e5d6f1959f6570287fb4"
+      }
+    ],
+    "content_sha256": "a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46"
+  },
+  "destination": {
+    "manifest_version": "1.0",
+    "directory_count": 2,
+    "file_count": 5,
+    "total_bytes": 5314724,
+    "directories": [
+      ".",
+      "68092f4b-e2a5-4ccd-b126-95b1218cb050"
+    ],
+    "files": [
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
+        "size": 218800,
+        "sha256": "6d7805077f6569f23e157ca99a3a4dd7e264ecd3b2b67c63abe0cafb32cd0f3a"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/header.bin",
+        "size": 100,
+        "sha256": "5c8a407226e15554f8aa5e2dc70831bc8e464bd1433ac370e1dc9bef7e839d5a"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
+        "size": 400,
+        "sha256": "c08aaa88094c7513cabc7da048f418fc44f20bcb4872916edfb2524463ced0f5"
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/link_lists.bin",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "chroma.sqlite3",
+        "size": 5095424,
+        "sha256": "811862218cba3635bf4ea2f0850e025730b347493395e5d6f1959f6570287fb4"
+      }
+    ],
+    "content_sha256": "a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46"
+  }
+}
