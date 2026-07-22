@@ -82,5 +82,9 @@
     {
         "path":  "tool-phase-closure-test-results.json",
         "sha256":  "e6b44e2b0f57a82ff0418588509d75e87fc7b5593f65208581fd4fd2ed78cf59"
+    },
+    {
+        "path":  "verification-status.json",
+        "sha256":  "ab7f9bba2f3987117dcc1a316c522ea494456c8f3605546ad97c585d19103156"
     }
 ]
