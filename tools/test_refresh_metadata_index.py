@@ -17,8 +17,10 @@ from tools.refresh_metadata_index import (
     MetadataValidationError,
     ReadOnlyGateError,
     build_metadata_manifest,
+    classify_metadata_scope,
     diff_metadata_indexes,
     extract_postgresql_metadata,
+    load_metadata_scope_policy,
     normalize_metadata_rows,
     serialize_metadata_index,
     validate_output_directory,
@@ -54,6 +56,23 @@ class RefreshMetadataIndexTests(unittest.TestCase):
             row("alpha", "name", "character varying(20)", ordinal_position=2),
             row("beta", "id", "bigint", ordinal_position=1),
         ]
+
+    def scope_policy(self) -> dict[str, object]:
+        return {
+            "schema_version": "1.0",
+            "datasource_id": "postgresql-main",
+            "dialect": "postgresql",
+            "schema": "public",
+            "preserve_baseline_tables": True,
+            "exclude_exact_tables": [
+                "geography_columns",
+                "geometry_columns",
+                "spatial_ref_sys",
+            ],
+            "exclude_prefixes": ["_stg_", "stg_"],
+            "exclude_name_patterns": [r"(?:^|_)bak\d*(?:$|_)"],
+            "deferred_new_tables": ["v_deferred"],
+        }
 
     def test_different_input_order_produces_identical_index_and_sha(self) -> None:
         forward = serialize_metadata_index(self.baseline)
@@ -113,6 +132,24 @@ class RefreshMetadataIndexTests(unittest.TestCase):
         change = diff_metadata_indexes(self.baseline, current)["changed_column_comments"][0]
         self.assertEqual((change["old_comment"], change["new_comment"]), ("字段注释", "新字段注释"))
 
+    def test_crlf_and_lf_comments_normalize_equal_but_are_audited(self) -> None:
+        baseline = [row("alpha", "id", comment="第一行\r\n第二行")]
+        current = [row("alpha", "id", comment="第一行\n第二行")]
+        self.assertEqual(
+            normalize_metadata_rows(baseline)[0]["comment"],
+            normalize_metadata_rows(current)[0]["comment"],
+        )
+        diff = diff_metadata_indexes(baseline, current)
+        self.assertEqual(diff["changed_column_comments"], [])
+        self.assertEqual(len(diff["line_ending_only_column_comments"]), 1)
+
+    def test_real_comment_change_remains_semantic(self) -> None:
+        baseline = [row("alpha", "id", comment="旧文本\r\n第二行")]
+        current = [row("alpha", "id", comment="新文本\n第二行")]
+        diff = diff_metadata_indexes(baseline, current)
+        self.assertEqual(len(diff["changed_column_comments"]), 1)
+        self.assertEqual(diff["line_ending_only_column_comments"], [])
+
     def test_changed_table_comment(self) -> None:
         current = deepcopy(self.baseline)
         for item in current:
@@ -170,6 +207,105 @@ class RefreshMetadataIndexTests(unittest.TestCase):
         self.assertEqual(manifest["dialect"], "postgresql")
         self.assertTrue(manifest["database_read_only"])
         self.assertEqual(manifest["object_types"], ["table"])
+
+    def test_repository_scope_policy_loads(self) -> None:
+        policy = load_metadata_scope_policy(PROJECT_ROOT / "config" / "postgresql_metadata_scope.json")
+        self.assertEqual(policy["datasource_id"], "postgresql-main")
+        self.assertTrue(policy["preserve_baseline_tables"])
+
+    def test_baseline_table_wins_over_exclusion_rules(self) -> None:
+        baseline = [row("stg_existing", "id", ordinal_position=1)]
+        candidate, review = classify_metadata_scope(
+            baseline, baseline, self.scope_policy()
+        )
+        self.assertEqual({item["table"] for item in candidate}, {"stg_existing"})
+        self.assertEqual(review["excluded_staging_tables"], [])
+
+    def test_new_staging_prefixes_are_excluded(self) -> None:
+        raw = self.baseline + [
+            row("_stg_alpha", "id", ordinal_position=1),
+            row("stg_beta", "id", ordinal_position=1),
+        ]
+        candidate, review = classify_metadata_scope(raw, self.baseline, self.scope_policy())
+        self.assertEqual(len(review["excluded_staging_tables"]), 2)
+        self.assertFalse({"_stg_alpha", "stg_beta"} & {item["table"] for item in candidate})
+
+    def test_postgis_exact_tables_are_excluded(self) -> None:
+        raw = self.baseline + [row("spatial_ref_sys", "srid", ordinal_position=1)]
+        _, review = classify_metadata_scope(raw, self.baseline, self.scope_policy())
+        self.assertEqual(
+            [item["table"] for item in review["excluded_system_tables"]],
+            ["spatial_ref_sys"],
+        )
+
+    def test_backup_pattern_is_excluded(self) -> None:
+        raw = self.baseline + [row("alpha_bak0617", "id", ordinal_position=1)]
+        _, review = classify_metadata_scope(raw, self.baseline, self.scope_policy())
+        self.assertEqual(
+            [item["table"] for item in review["excluded_backup_tables"]],
+            ["alpha_bak0617"],
+        )
+
+    def test_deferred_view_is_not_in_candidate(self) -> None:
+        deferred = row("v_deferred", "id", ordinal_position=1)
+        deferred["object_type"] = "view"
+        candidate, review = classify_metadata_scope(
+            self.baseline + [deferred], self.baseline, self.scope_policy()
+        )
+        self.assertEqual(
+            [item["table"] for item in review["deferred_business_views"]],
+            ["v_deferred"],
+        )
+        self.assertNotIn("v_deferred", {item["table"] for item in candidate})
+
+    def test_unknown_new_table_requires_review(self) -> None:
+        raw = self.baseline + [row("new_business", "id", ordinal_position=1)]
+        candidate, review = classify_metadata_scope(raw, self.baseline, self.scope_policy())
+        self.assertEqual(
+            [item["table"] for item in review["review_required_tables"]],
+            ["new_business"],
+        )
+        self.assertNotIn("new_business", {item["table"] for item in candidate})
+
+    def test_candidate_keeps_new_column_on_baseline_table(self) -> None:
+        raw = self.baseline + [row("alpha", "new_field", ordinal_position=3)]
+        candidate, review = classify_metadata_scope(raw, self.baseline, self.scope_policy())
+        self.assertIn(("alpha", "new_field"), {(item["table"], item["column"]) for item in candidate})
+        self.assertEqual(review["new_columns_on_baseline_column_count"], 1)
+
+    def test_scope_candidate_preserves_original_line_endings_for_diff(self) -> None:
+        baseline = [row("alpha", "id", comment="第一行\n第二行", ordinal_position=1)]
+        raw = [row("alpha", "id", comment="第一行\r\n第二行", ordinal_position=1)]
+        candidate, _ = classify_metadata_scope(raw, baseline, self.scope_policy())
+        diff = diff_metadata_indexes(baseline, candidate)
+        self.assertEqual(diff["changed_column_comments"], [])
+        self.assertEqual(len(diff["line_ending_only_column_comments"]), 1)
+        serialized = json.loads(serialize_metadata_index(candidate).decode("utf-8"))
+        self.assertEqual(serialized[0]["comment"], "第一行\n第二行")
+
+    def test_raw_inventory_remains_complete_while_candidate_is_filtered(self) -> None:
+        raw = self.baseline + [row("stg_new", "id", ordinal_position=1)]
+        candidate, _ = classify_metadata_scope(raw, self.baseline, self.scope_policy())
+        self.assertEqual(len(normalize_metadata_rows(raw)), 4)
+        self.assertEqual(len(candidate), 3)
+
+    def test_scope_result_is_independent_of_input_and_policy_order(self) -> None:
+        raw = self.baseline + [
+            row("stg_new", "id", ordinal_position=1),
+            row("spatial_ref_sys", "srid", ordinal_position=1),
+        ]
+        first_policy = self.scope_policy()
+        second_policy = deepcopy(first_policy)
+        for field in (
+            "exclude_exact_tables",
+            "exclude_prefixes",
+            "exclude_name_patterns",
+            "deferred_new_tables",
+        ):
+            second_policy[field] = list(reversed(second_policy[field]))
+        first = classify_metadata_scope(raw, self.baseline, first_policy)
+        second = classify_metadata_scope(list(reversed(raw)), self.baseline, second_policy)
+        self.assertEqual(first, second)
 
     def test_read_only_gate_stops_before_catalog_query(self) -> None:
         class FakeCursor:

@@ -68,7 +68,7 @@ Tool Memory 总数：75
 当前阶段：
 
 ```text
-F6-2A完成；等待Metadata差异人工审查
+F6-2B完成；正式候选Metadata与DDL Memory更新计划已生成，等待F6-2C受控应用
 ```
 
 当前禁止越界进入：
@@ -1022,6 +1022,8 @@ F6-2A PostgreSQL Metadata 只读刷新与差异报告已完成：
 
 历史工具清理已完成，进入本阶段前工作区已收口；历史迁移工具已移除，F6-4 Legacy Tool Memory 继续只读保留。正式 Metadata 索引尚未替换，当前等待人工审查 Metadata diff。F6-2 整体尚未标记完成，不在当前阶段做定时同步、自动审批、DDL / Memory 更新或重新训练。
 
+F6-2B Metadata 范围策略、正式候选索引与 DDL 更新计划已完成。原始数据库对象为 167 张，正式候选范围为 115 张；排除 staging 43 张、backup 3 张、PostGIS 系统对象 3 张，暂缓新业务视图 3 张，无未知新增对象待分类。正式表新增 41 个字段，涉及 13 张表；语义注释变化为 0，19 项仅为换行差异。DDL Memory 更新计划为 `0 create / 102 unchanged / 13 changed / 0 removed`。正式 Metadata 索引尚未替换，正式 Memory 尚未写入，等待 F6-2C 受控应用。
+
 ---
 
 ## 14. F6-3：Embedding Profile
@@ -1618,7 +1620,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
-| F6-2 Metadata 更新机制 | 进行中 | F6-2A已完成；等待Metadata差异人工审查，正式索引尚未替换 |
+| F6-2 Metadata 更新机制 | 进行中 | F6-2B已完成；正式候选Metadata与DDL Memory更新计划已生成，等待F6-2C受控应用 |
 | Vanna 源码移除 + 全项目瘦身 + 目录规范化 | 等待盘点指令 | 下一主板块，尚未开始 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1631,7 +1633,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-人工审查 F6-2A PostgreSQL Metadata diff。
+执行 F6-2C 正式候选 Metadata 与 DDL Memory 受控应用。
 ```
 
-F6-1 已正式完成，F6-2A 已完成。当前只等待 Metadata 差异人工审查；不替换正式 Metadata 索引，不开始 DDL / Memory 更新、重新训练、Legacy、MySQL 或其他板块。
+F6-1 已正式完成，F6-2B 已完成。F6-2 整体尚未完成；正式 Metadata 索引与正式 Memory 均未修改，下一步仅允许按独立指令进入 F6-2C 受控应用，不进入 Legacy、MySQL 或其他板块。

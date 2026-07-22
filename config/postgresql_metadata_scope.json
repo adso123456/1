@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "datasource_id": "postgresql-main",
+  "dialect": "postgresql",
+  "schema": "public",
+  "preserve_baseline_tables": true,
+  "exclude_exact_tables": [
+    "geography_columns",
+    "geometry_columns",
+    "spatial_ref_sys"
+  ],
+  "exclude_prefixes": [
+    "_stg_",
+    "stg_"
+  ],
+  "exclude_name_patterns": [
+    "(?:^|_)bak\\d*(?:$|_)"
+  ],
+  "deferred_new_tables": [
+    "v_wst_trace_edge_downstream",
+    "v_wst_trace_edge_upstream_conservative",
+    "v_wst_trace_edge_upstream_strict"
+  ]
+}
