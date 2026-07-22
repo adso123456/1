@@ -1,0 +1,12 @@
+﻿warning: in the working copy of 'backend/agent_factory.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/prompts.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/query_context.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/sql_example_context_enhancer.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/regression_service_harness.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/run_postgresql_f5_regression.py', LF will be replaced by CRLF the next time Git touches it
+M	backend/agent_factory.py
+M	backend/prompts.py
+M	backend/query_context.py
+M	backend/sql_example_context_enhancer.py
+M	tools/regression_service_harness.py
+M	tools/run_postgresql_f5_regression.py

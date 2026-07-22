@@ -1,0 +1,3 @@
+﻿COMMAND: E:\3\posgresql\1\vanna_venv\Scripts\python.exe -m py_compile backend\run_sql_requirement.py backend\tracing_llm_service.py backend\request_diagnostics.py backend\query_context.py tools\run_postgresql_f5_regression.py
+EXIT_CODE: 0
+RESULT: PASS
