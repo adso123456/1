@@ -1,0 +1,62 @@
+
+Loading weights:   0%|          | 0/71 [00:00<?, ?it/s]
+Loading weights: 100%|��������������������| 71/71 [00:00<00:00, 7810.42it/s]
+INFO:     Started server process [42100]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://[REDACTED_IP]:8000 (Press CTRL+C to quit)
+Error in send_message (conversation_id=conv_d41f9acc): Error code: 400 - {'error': {'message': 'Thinking mode does not support this tool_choice', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+Traceback (most recent call last):
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\core\agent\agent.py", line 162, in send_message
+    async for component in self._send_message(
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\core\agent\agent.py", line 653, in _send_message
+    response = await self._handle_streaming_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\core\agent\agent.py", line 1356, in _handle_streaming_response
+    async for chunk in self.llm_service.stream_request(request):
+  File "E:\3\_validation_worktrees\f6-2c-o4-r1-20260722-152015\backend\tracing_llm_service.py", line 188, in stream_request
+    async for chunk in self._stream_parent_request(effective_request):
+  File "E:\3\_validation_worktrees\f6-2c-o4-r1-20260722-152015\backend\tracing_llm_service.py", line 132, in _stream_parent_request
+    async for chunk in super().stream_request(request):
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\integrations\openai\llm.py", line 111, in stream_request
+    stream = self._client.chat.completions.create(**payload, stream=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\_utils\_utils.py", line 298, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\resources\chat\completions\completions.py", line 1251, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\_base_client.py", line 1332, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\_base_client.py", line 1105, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.BadRequestError: Error code: 400 - {'error': {'message': 'Thinking mode does not support this tool_choice', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+Traceback (most recent call last):
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\core\agent\agent.py", line 162, in send_message
+    async for component in self._send_message(
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\core\agent\agent.py", line 653, in _send_message
+    response = await self._handle_streaming_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\core\agent\agent.py", line 1356, in _handle_streaming_response
+    async for chunk in self.llm_service.stream_request(request):
+  File "E:\3\_validation_worktrees\f6-2c-o4-r1-20260722-152015\backend\tracing_llm_service.py", line 188, in stream_request
+    async for chunk in self._stream_parent_request(effective_request):
+  File "E:\3\_validation_worktrees\f6-2c-o4-r1-20260722-152015\backend\tracing_llm_service.py", line 132, in _stream_parent_request
+    async for chunk in super().stream_request(request):
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\integrations\openai\llm.py", line 111, in stream_request
+    stream = self._client.chat.completions.create(**payload, stream=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\_utils\_utils.py", line 298, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\resources\chat\completions\completions.py", line 1251, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\_base_client.py", line 1332, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\3\posgresql\1\vanna_venv\Lib\site-packages\openai\_base_client.py", line 1105, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.BadRequestError: Error code: 400 - {'error': {'message': 'Thinking mode does not support this tool_choice', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}

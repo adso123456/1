@@ -1,0 +1,36 @@
+{
+  "trace_id": "b145327de84048febc36a0d182e363da",
+  "requires_run_sql": true,
+  "requirement_reasons": [
+    "approved_sql_example_injected"
+  ],
+  "sql_example_injected_count": 3,
+  "llm_call_index": 1,
+  "original_tool_choice": "auto",
+  "effective_tool_choice": {
+    "type": "function",
+    "function": {
+      "name": "run_sql"
+    }
+  },
+  "run_sql_schema_present": true,
+  "forced_tool_choice_applied": true,
+  "forced_tool_name": "run_sql",
+  "error_type": "",
+  "calls": [
+    {
+      "llm_call_index": 1,
+      "original_tool_choice": "auto",
+      "effective_tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "run_sql"
+        }
+      },
+      "run_sql_schema_present": true,
+      "forced_tool_choice_applied": true,
+      "forced_tool_name": "run_sql",
+      "error_type": ""
+    }
+  ]
+}

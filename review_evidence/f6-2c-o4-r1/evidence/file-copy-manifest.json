@@ -1,0 +1,61 @@
+﻿{
+    "base_commit":  "0a5ae735384206facd74a3d31bcd8c3c1d924f71",
+    "source_worktree":  "E:\\3\\posgresql\\1",
+    "validation_worktree":  "E:\\3\\_validation_worktrees\\f6-2c-o4-r1-20260722-152015",
+    "files":  [
+                  {
+                      "path":  "backend/agent_factory.py",
+                      "source_sha256":  "f1229994488639b2f63cb4cf1a54c1c67fab6db9683a07bc6e49423d0ec57758",
+                      "validation_sha256":  "f1229994488639b2f63cb4cf1a54c1c67fab6db9683a07bc6e49423d0ec57758",
+                      "match":  true
+                  },
+                  {
+                      "path":  "backend/prompts.py",
+                      "source_sha256":  "0652188405abded887c7744e13f2f98d5523b5741391881bfbd639c952c408a6",
+                      "validation_sha256":  "0652188405abded887c7744e13f2f98d5523b5741391881bfbd639c952c408a6",
+                      "match":  true
+                  },
+                  {
+                      "path":  "backend/query_context.py",
+                      "source_sha256":  "ba161d65baa5f3072c6e04b6b258b75d027272296b3602da9a90d58aaf27479d",
+                      "validation_sha256":  "ba161d65baa5f3072c6e04b6b258b75d027272296b3602da9a90d58aaf27479d",
+                      "match":  true
+                  },
+                  {
+                      "path":  "backend/request_diagnostics.py",
+                      "source_sha256":  "bfec1d9ee0c47751dcdbc6b9926d0ea3488252ff737e02fc0ba66608c045c4c4",
+                      "validation_sha256":  "bfec1d9ee0c47751dcdbc6b9926d0ea3488252ff737e02fc0ba66608c045c4c4",
+                      "match":  true
+                  },
+                  {
+                      "path":  "backend/run_sql_requirement.py",
+                      "source_sha256":  "7f111879d82e45b2207330ecea16e5937e4a4dc65657e576d5bb7ce9cdbb4389",
+                      "validation_sha256":  "7f111879d82e45b2207330ecea16e5937e4a4dc65657e576d5bb7ce9cdbb4389",
+                      "match":  true
+                  },
+                  {
+                      "path":  "backend/sql_example_context_enhancer.py",
+                      "source_sha256":  "ab8eb0915a4787879a985ad5fbec92b0ea6f6217dbc48dc48c79ee1a076a0c70",
+                      "validation_sha256":  "ab8eb0915a4787879a985ad5fbec92b0ea6f6217dbc48dc48c79ee1a076a0c70",
+                      "match":  true
+                  },
+                  {
+                      "path":  "backend/tracing_llm_service.py",
+                      "source_sha256":  "558b6350080df09da6f7e114ebe901fe75362b8daefbc7d7c84bf2c95e49f83c",
+                      "validation_sha256":  "558b6350080df09da6f7e114ebe901fe75362b8daefbc7d7c84bf2c95e49f83c",
+                      "match":  true
+                  },
+                  {
+                      "path":  "tools/regression_service_harness.py",
+                      "source_sha256":  "a25b1ca2bf792cd907b38fd2169e871780c0f5c4bec4d84edfddb41e233711bc",
+                      "validation_sha256":  "a25b1ca2bf792cd907b38fd2169e871780c0f5c4bec4d84edfddb41e233711bc",
+                      "match":  true
+                  },
+                  {
+                      "path":  "tools/run_postgresql_f5_regression.py",
+                      "source_sha256":  "19ba750e3f24ead063fe313625f87b45085c18c475105cb74e424fedc3345565",
+                      "validation_sha256":  "19ba750e3f24ead063fe313625f87b45085c18c475105cb74e424fedc3345565",
+                      "match":  true
+                  }
+              ]
+}

@@ -1,0 +1,16 @@
+{
+  "http_status": 200,
+  "event_count": 6,
+  "errors": [],
+  "sql": "",
+  "answer": "Error: An unexpected error occurred. Please try again. (Conversation ID: conv_d41f9acc)",
+  "rich_types": [
+    "chat_input_update",
+    "status_bar_update",
+    "status_card",
+    "task_tracker_update"
+  ],
+  "event_rows": [],
+  "event_columns": [],
+  "dataframe_events": []
+}

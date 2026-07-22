@@ -1,0 +1,10 @@
+﻿{
+    "not_found":  [
+                      "evidence/sql-guard.jsonl",
+                      "request_traces/b145327de84048febc36a0d182e363da/request-end.json"
+                  ],
+    "reason":  {
+                   "evidence/sql-guard.jsonl":  "The provider rejected the first LLM request before any SQL tool execution.",
+                   "request_traces/b145327de84048febc36a0d182e363da/request-end.json":  "The request ended through the Vanna exception path; no request-end trace was emitted."
+               }
+}

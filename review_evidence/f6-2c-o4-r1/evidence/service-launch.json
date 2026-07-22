@@ -1,0 +1,8 @@
+{
+  "service_start_count": 1,
+  "launcher_pid": 2980,
+  "credential_source": "process environment",
+  "service_project_root": "E:\\3\\_validation_worktrees\\f6-2c-o4-r1-20260722-152015",
+  "vanna_data_dir": "E:\\3\\_training_backups\\f6-2c-o4-r1-20260722-152015\\candidate_validation_chroma",
+  "agent_data_dir": "E:\\3\\_training_backups\\f6-2c-o4-r1-20260722-152015\\agent_data"
+}

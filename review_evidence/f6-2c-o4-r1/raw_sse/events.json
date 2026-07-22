@@ -1,0 +1,148 @@
+[
+  {
+    "rich": {
+      "id": "vanna-status-bar",
+      "type": "status_bar_update",
+      "lifecycle": "create",
+      "children": [],
+      "timestamp": "2026-07-22T07:22:40.743945",
+      "visible": true,
+      "interactive": false,
+      "data": {
+        "status": "working",
+        "message": "Processing your request...",
+        "detail": "Analyzing query"
+      }
+    },
+    "simple": null,
+    "conversation_id": "conv_d41f9acc",
+    "request_id": "4cb139f1-1169-41eb-9eac-ba26a303f529",
+    "timestamp": 1784704960.7439451
+  },
+  {
+    "rich": {
+      "id": "vanna-task-tracker",
+      "type": "task_tracker_update",
+      "lifecycle": "create",
+      "children": [],
+      "timestamp": "2026-07-22T07:22:40.744944",
+      "visible": true,
+      "interactive": false,
+      "data": {
+        "operation": "add_task",
+        "task": {
+          "id": "0f49042b-1606-442d-ae09-bd6375c49e5f",
+          "title": "Load conversation context",
+          "description": "Reading message history and user context",
+          "status": "pending",
+          "progress": null,
+          "created_at": "2026-07-22T07:22:40.744944",
+          "completed_at": null,
+          "metadata": {}
+        },
+        "task_id": null,
+        "status": null,
+        "progress": null,
+        "detail": null
+      }
+    },
+    "simple": null,
+    "conversation_id": "conv_d41f9acc",
+    "request_id": "4cb139f1-1169-41eb-9eac-ba26a303f529",
+    "timestamp": 1784704960.7449446
+  },
+  {
+    "rich": {
+      "id": "vanna-task-tracker",
+      "type": "task_tracker_update",
+      "lifecycle": "create",
+      "children": [],
+      "timestamp": "2026-07-22T07:22:40.744944",
+      "visible": true,
+      "interactive": false,
+      "data": {
+        "operation": "update_task",
+        "task": null,
+        "task_id": "0f49042b-1606-442d-ae09-bd6375c49e5f",
+        "status": "completed",
+        "progress": null,
+        "detail": null
+      }
+    },
+    "simple": null,
+    "conversation_id": "conv_d41f9acc",
+    "request_id": "4cb139f1-1169-41eb-9eac-ba26a303f529",
+    "timestamp": 1784704960.7449446
+  },
+  {
+    "rich": {
+      "id": "05ea037d-fcb3-4864-9fb4-b8105ad094c5",
+      "type": "status_card",
+      "lifecycle": "create",
+      "children": [],
+      "timestamp": "2026-07-22T07:22:42.149379",
+      "visible": true,
+      "interactive": false,
+      "data": {
+        "title": "Error Processing Message",
+        "status": "error",
+        "description": "An unexpected error occurred while processing your message. Please try again.\n\nConversation ID: conv_d41f9acc",
+        "icon": "⚠️",
+        "metadata": {},
+        "actions": [],
+        "collapsible": false,
+        "collapsed": false
+      }
+    },
+    "simple": {
+      "type": "text",
+      "semantic_type": null,
+      "metadata": null,
+      "text": "Error: An unexpected error occurred. Please try again. (Conversation ID: conv_d41f9acc)"
+    },
+    "conversation_id": "conv_d41f9acc",
+    "request_id": "4cb139f1-1169-41eb-9eac-ba26a303f529",
+    "timestamp": 1784704962.1493795
+  },
+  {
+    "rich": {
+      "id": "vanna-status-bar",
+      "type": "status_bar_update",
+      "lifecycle": "create",
+      "children": [],
+      "timestamp": "2026-07-22T07:22:42.149379",
+      "visible": true,
+      "interactive": false,
+      "data": {
+        "status": "error",
+        "message": "Error occurred",
+        "detail": "An unexpected error occurred while processing your message"
+      }
+    },
+    "simple": null,
+    "conversation_id": "conv_d41f9acc",
+    "request_id": "4cb139f1-1169-41eb-9eac-ba26a303f529",
+    "timestamp": 1784704962.1493795
+  },
+  {
+    "rich": {
+      "id": "vanna-chat-input",
+      "type": "chat_input_update",
+      "lifecycle": "create",
+      "children": [],
+      "timestamp": "2026-07-22T07:22:42.149379",
+      "visible": true,
+      "interactive": false,
+      "data": {
+        "placeholder": "Try again...",
+        "disabled": false,
+        "value": null,
+        "focus": null
+      }
+    },
+    "simple": null,
+    "conversation_id": "conv_d41f9acc",
+    "request_id": "4cb139f1-1169-41eb-9eac-ba26a303f529",
+    "timestamp": 1784704962.1493795
+  }
+]

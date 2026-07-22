@@ -1,0 +1,9 @@
+{
+  "trace_id": "b145327de84048febc36a0d182e363da",
+  "call_number": 1,
+  "timestamp": "2026-07-22T07:22:41.953604+00:00",
+  "response_type": "stream_exception",
+  "content": "",
+  "tool_calls": [],
+  "exception_type": "BadRequestError"
+}

@@ -1,0 +1,231 @@
+{
+  "trace_id": "b145327de84048febc36a0d182e363da",
+  "question": "查询年度pH年均值最高的站点列表",
+  "top_n": 10,
+  "result_count": 10,
+  "results": [
+    {
+      "table_name": "wm_waterquality_year_records",
+      "score": 6300,
+      "matched_by": [
+        "waterquality_intent",
+        "implicit_station_waterquality_intent",
+        "annual_waterquality_granularity"
+      ],
+      "matched_columns": [],
+      "table_comment": "水质监测年记录表",
+      "conflict_family": "wm_waterquality_records",
+      "risk_level": "high",
+      "reason": "水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表；年度粒度与站点水质指标语义命中年记录表"
+    },
+    {
+      "table_name": "wm_waterquality_day_records",
+      "score": 4120,
+      "matched_by": [
+        "column_comment_substring",
+        "waterquality_intent",
+        "implicit_station_waterquality_intent"
+      ],
+      "matched_columns": [
+        {
+          "column_name": "record_type",
+          "column_type": "character(1)",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        }
+      ],
+      "table_comment": "水质监测日记录表",
+      "conflict_family": "wm_waterquality_records",
+      "risk_level": "high",
+      "reason": "字段名或字段注释命中；水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表"
+    },
+    {
+      "table_name": "wm_waterquality_hour_records",
+      "score": 2700,
+      "matched_by": [
+        "waterquality_intent",
+        "implicit_station_waterquality_intent"
+      ],
+      "matched_columns": [],
+      "table_comment": "水质监测小时记录表",
+      "conflict_family": "wm_waterquality_records",
+      "risk_level": "high",
+      "reason": "水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表"
+    },
+    {
+      "table_name": "wm_waterquality_month_records",
+      "score": 2700,
+      "matched_by": [
+        "waterquality_intent",
+        "implicit_station_waterquality_intent"
+      ],
+      "matched_columns": [],
+      "table_comment": "水质监测月记录表",
+      "conflict_family": "wm_waterquality_records",
+      "risk_level": "high",
+      "reason": "水质问题优先匹配水质监测记录表；站点或断面水质指标问题命中水质记录表"
+    },
+    {
+      "table_name": "rs_outlet_monitor_v2",
+      "score": 2140,
+      "matched_by": [
+        "column_name_substring",
+        "column_comment_substring"
+      ],
+      "matched_columns": [
+        {
+          "column_name": "ph",
+          "column_type": "numeric(6,2)",
+          "column_comment": "pH",
+          "matched_by": [
+            "column_name_substring",
+            "column_comment_substring"
+          ]
+        }
+      ],
+      "table_comment": "排污口监测",
+      "conflict_family": "rs_outlet",
+      "risk_level": "high",
+      "reason": "字段名或字段注释命中"
+    },
+    {
+      "table_name": "wst_layer_river",
+      "score": 1420,
+      "matched_by": [
+        "column_comment_substring"
+      ],
+      "matched_columns": [
+        {
+          "column_name": "metadata_json",
+          "column_type": "jsonb",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        }
+      ],
+      "table_comment": "溯源图层河流表",
+      "conflict_family": "",
+      "risk_level": "low",
+      "reason": "字段名或字段注释命中"
+    },
+    {
+      "table_name": "gis_naturereserve",
+      "score": 1420,
+      "matched_by": [
+        "column_comment_substring"
+      ],
+      "matched_columns": [
+        {
+          "column_name": "buffer_area",
+          "column_type": "double precision",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        },
+        {
+          "column_name": "core_area",
+          "column_type": "double precision",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        },
+        {
+          "column_name": "total_area",
+          "column_type": "double precision",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        }
+      ],
+      "table_comment": "自然保护区表",
+      "conflict_family": "",
+      "risk_level": "low",
+      "reason": "字段名或字段注释命中"
+    },
+    {
+      "table_name": "wm_waterbody_info",
+      "score": 1420,
+      "matched_by": [
+        "column_comment_substring"
+      ],
+      "matched_columns": [
+        {
+          "column_name": "country",
+          "column_type": "character varying(255)",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        }
+      ],
+      "table_comment": "水体信息实体类",
+      "conflict_family": "",
+      "risk_level": "low",
+      "reason": "字段名或字段注释命中"
+    },
+    {
+      "table_name": "day_quality_setting",
+      "score": 1420,
+      "matched_by": [
+        "column_comment_substring"
+      ],
+      "matched_columns": [
+        {
+          "column_name": "span_standard_value",
+          "column_type": "double precision",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        },
+        {
+          "column_name": "span_value",
+          "column_type": "double precision",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        },
+        {
+          "column_name": "zero_standard_value",
+          "column_type": "double precision",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        }
+      ],
+      "table_comment": "日质控设置",
+      "conflict_family": "day_quality",
+      "risk_level": "high",
+      "reason": "字段名或字段注释命中"
+    },
+    {
+      "table_name": "gis_ecologicalregion",
+      "score": 1420,
+      "matched_by": [
+        "column_comment_substring"
+      ],
+      "matched_columns": [
+        {
+          "column_name": "area",
+          "column_type": "double precision",
+          "column_comment": "",
+          "matched_by": [
+            "column_comment_substring"
+          ]
+        }
+      ],
+      "table_comment": "生态保护红线区域表",
+      "conflict_family": "",
+      "risk_level": "low",
+      "reason": "字段名或字段注释命中"
+    }
+  ]
+}
