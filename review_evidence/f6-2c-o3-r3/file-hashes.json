@@ -5,7 +5,7 @@
     },
     {
         "path":  "full-working-tree.patch",
-        "sha256":  "cf7b0d592262df15c8ff6a816cb14acf6d1d9c3ff07c4c1b433c545dfb3dd1e4"
+        "sha256":  "aa2294e96536cc51f7e9833915e918f0faf2e2d757b19c738b48b1b79b0b3409"
     },
     {
         "path":  "git-diff-check.txt",

@@ -8,7 +8,7 @@ index f55f133..1c69c48 100644
  from vanna.core.user import RequestContext, User, UserResolver
 -from vanna.integrations.openai import OpenAILlmService
  from vanna.tools import LocalFileSystem
- 
+
  from backend.guarded_run_sql_tool import GuardedRunSqlTool
 @@ -23,8 +22,10 @@ from backend.schema_preserving_sql import (
      SchemaPreservingPostgresRunner,
@@ -19,12 +19,12 @@ index f55f133..1c69c48 100644
  from backend.sql_guard import SQLGuard
 +from backend.tracing_llm_service import TracingOpenAILlmService
  from config.settings import AGENT_DATA_DIR, DB_KWARGS, validate_db_config
- 
- 
+
+
 @@ -49,10 +50,27 @@ class SimpleUserResolver(UserResolver):
          )
- 
- 
+
+
 +class DiagnosticMetadataRetriever(DeterministicMetadataRetriever):
 +    """旁路记录实际确定性 Metadata 检索，不改变检索结果。"""
 +
@@ -57,7 +57,7 @@ index f55f133..1c69c48 100644
 -        metadata_retriever=DeterministicMetadataRetriever(),
 +        metadata_retriever=DiagnosticMetadataRetriever(),
      )
- 
+
      # 第3层：SQL 示例 context enhancer（L2 approved SQL 示例注入到 system prompt）
 diff --git a/backend/guarded_run_sql_tool.py b/backend/guarded_run_sql_tool.py
 index ece4ac9..ad4b884 100644
@@ -65,15 +65,15 @@ index ece4ac9..ad4b884 100644
 +++ b/backend/guarded_run_sql_tool.py
 @@ -12,6 +12,7 @@ from vanna.components import ComponentType, NotificationComponent, SimpleTextCom
  from vanna.core.tool import Tool, ToolContext, ToolResult
- 
+
  from backend.sql_guard import SQLGuard, SQLGuardResult
 +from backend.run_sql_requirement import record_successful_run_sql_result
- 
- 
+
+
  class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
 @@ -84,6 +85,7 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
              return self._blocked_result(guard_result, query_source=query_source)
- 
+
          result = await self.inner_tool.execute(context, args)
 +        record_successful_run_sql_result(result)
          result.metadata = dict(result.metadata or {})
@@ -85,14 +85,14 @@ index e83d20b..a2b4b11 100644
 +++ b/backend/prompts.py
 @@ -1,7 +1,11 @@
  """项目 System Prompt。"""
- 
+
 +import hashlib
 +
  from vanna.core.system_prompt.default import DefaultSystemPromptBuilder
- 
+
 +from backend.request_diagnostics import write_trace_json
 +
- 
+
  class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
      """在默认 prompt 基础上追加本项目专属的查询优化规则"""
 @@ -78,4 +82,43 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
@@ -147,7 +147,7 @@ index 123e65c..98bf7da 100644
 @@ -8,21 +8,73 @@ from vanna.core.lifecycle import LifecycleHook
  from vanna.core.tool import ToolContext
  from vanna.core.user import User
- 
+
 +from backend.request_diagnostics import (
 +    clear_request_diagnostics,
 +    get_request_diagnostics,
@@ -160,12 +160,12 @@ index 123e65c..98bf7da 100644
 +    initialize_run_sql_requirement,
 +)
 +
- 
+
  _original_question: ContextVar[str | None] = ContextVar(
      "original_question", default=None
  )
- 
- 
+
+
 +def get_original_question() -> str | None:
 +    return _original_question.get()
 +
@@ -198,7 +198,7 @@ index 123e65c..98bf7da 100644
 +
  class OriginalQuestionLifecycleHook(LifecycleHook):
      """在其他 Hook 修改消息前保存服务端收到的原始问题。"""
- 
+
      async def before_message(self, user: User, message: str) -> None:
          _original_question.set(message)
 +        initialize_run_sql_requirement()
@@ -212,12 +212,12 @@ index 123e65c..98bf7da 100644
 +            },
 +        )
          return None
- 
+
      async def after_message(self, result: Any) -> None:
 -        _original_question.set(None)
 +        finalize_request_context(status="success", result=result)
- 
- 
+
+
  class OriginalQuestionContextEnricher(ToolContextEnricher):
 diff --git a/backend/sql_example_context_enhancer.py b/backend/sql_example_context_enhancer.py
 index 8e73f3d..d683e60 100644
@@ -225,23 +225,23 @@ index 8e73f3d..d683e60 100644
 +++ b/backend/sql_example_context_enhancer.py
 @@ -1,5 +1,6 @@
  from __future__ import annotations
- 
+
 +import hashlib
  import re
  from dataclasses import dataclass, field
  from types import SimpleNamespace
 @@ -7,6 +8,8 @@ from typing import Any
- 
+
  from vanna.core.enhancer import LlmContextEnhancer
- 
+
 +from backend.request_diagnostics import write_trace_json, write_trace_text
 +from backend.run_sql_requirement import record_injected_sql_examples
  from backend.sql_guard import SQLGuard
- 
+
  ALLOWED_TRAINING_LEVELS = {
 @@ -55,10 +58,44 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
              )
- 
+
          examples = await self._retrieve_examples(user_message)
 -        if not examples:
 -            return enhanced_prompt
@@ -285,7 +285,7 @@ index 8e73f3d..d683e60 100644
 +        )
 +        write_trace_text("final-system-prompt.txt", final_prompt)
 +        return final_prompt
- 
+
      async def enhance_user_messages(self, messages: list[Any], user: Any) -> list[Any]:
          if self.base_enhancer:
 diff --git a/tools/regression_service_harness.py b/tools/regression_service_harness.py
@@ -294,8 +294,8 @@ index 46c554c..fd3fd7b 100644
 +++ b/tools/regression_service_harness.py
 @@ -185,7 +185,94 @@ def parse_dataframe_event(
      }
- 
- 
+
+
 -def post_sse(query: str, timeout: int = 240) -> dict[str, Any]:
 +def parse_sse_text(raw_text: str) -> tuple[list[dict[str, Any]], list[str]]:
 +    events: list[dict[str, Any]] = []
