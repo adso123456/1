@@ -79,7 +79,9 @@ P1 指纹溯源结论：
 当前阶段：
 
 ```text
-F6-2 已完成：正式 Metadata 与正式 Chroma 已切换，切换后全新隔离副本通过 20/20 HTTP + 6/6 Memory；后续阶段尚未开始。
+阶段 2 已完成：仓库 vendored Vanna 源码已删除，editable 依赖已移除，
+requirements.txt 已锁定 vanna==2.0.2，运行时从 vanna_venv\Lib\site-packages\vanna 加载；
+下一阶段为阶段 3：多数据源核心架构，尚未开始实现。
 ```
 
 当前禁止越界进入：
@@ -87,9 +89,7 @@ F6-2 已完成：正式 Metadata 与正式 Chroma 已切换，切换后全新隔
 ```text
 新增正式Memory
 Legacy迁移
-未经盘点指令直接开始 Vanna 源码移除或目录调整
 MySQL 接入
-多数据源改造
 一句话生成报表
 外部网站机器人集成
 ```
@@ -336,7 +336,7 @@ F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确
 ```text
 PostgreSQL训练关闭
 → F6关键治理
-→ Vanna依赖解耦
+→ Vanna源码移除与安装包依赖锁定
 → 多数据源底座
 → MySQL
 → 报表
@@ -347,7 +347,7 @@ PostgreSQL训练关闭
 排序原则：
 
 1. 先固定 PostgreSQL 可工作的训练和回归基线；
-2. 再解耦 Vanna，避免后续 MySQL、报表和网站模块继续依赖 Vanna 内部接口；
+2. 再删除仓库 vendored Vanna 源码并锁定安装包版本；
 3. 多数据源底座必须先于 MySQL 训练；
 4. 报表引擎应直接建立在多数据源统一接口之上；
 5. 外部网站集成应依赖稳定的自有 API，而不是直接暴露 Vanna 接口；
@@ -1142,71 +1142,50 @@ F6 再根据实际收益选择：
 
 ---
 
-# 第三大板块：Vanna 解耦与项目内源码移除
+# 第三大板块：Vanna 源码移除与安装包依赖锁定（已完成）
 
-## 17. 执行时机
+## 17. 已完成范围
 
-必须在：
+已确认完成：
 
 ```text
-PostgreSQL F5 / F6 关键基线固定之后
-MySQL 接入之前
+仓库 vendored Vanna 源码 vanna_src 已删除
+editable Vanna 依赖已移除
+requirements.txt 已锁定 vanna[chromadb,fastapi,openai,postgres]==2.0.2
+当前运行时从 vanna_venv\Lib\site-packages\vanna 加载
+项目继续直接使用安装包中的 Vanna API
 ```
 
-不能现在删除，也不能等 MySQL、报表和网站集成全部完成后再删除。
+对应提交：
+
+```text
+f7d5d51ceeaa640100185dec8a6555c42121a36f
+  Replace editable Vanna dependency
+
+268934dcb24657a97e4261f8750bc70573f71836
+  Remove vendored Vanna source
+
+4bd6eeea9f513357279f0d0be23e948248622741
+  Revert "Add Vanna server adapter boundary"
+```
 
 ---
 
-## 18. 当前结构问题
+## 18. 当前运行状态
 
-当前后端入口仍直接承担：
-
-```text
-LLM 创建
-PostgreSQL Runner 创建
-Memory 创建
-Tool 注册
-Context Enhancer 组装
-Agent 创建
-FastAPI Server 启动
-```
-
-当前前端还直接请求：
+当前项目直接使用已安装的 `vanna==2.0.2`。Vanna 的实际加载文件为：
 
 ```text
-/api/vanna/v2/chat_sse
+E:\3\posgresql\1\vanna_venv\Lib\site-packages\vanna\__init__.py
 ```
 
-后续必须逐步解除业务代码对 Vanna 内部接口和事件格式的直接依赖。
+本阶段未建立 `integrations/vanna_adapter.py`，未建立自有 SSE 事件模型，未新增 `/api/chat/stream`，未迁移前端 API，也未全面抽离 AgentFactory、MemoryFactory 或 ToolRegistry。这些内容不属于阶段 2 的完成范围。
 
 ---
 
-## 19. Vanna 解耦步骤
+## 19. 完成结论
 
-```text
-1. 盘点所有直接 import vanna.* 的文件
-2. 确认 Python 实际加载的 vanna.__file__
-3. 确认项目内 Vanna 源码是否遮蔽 pip 包
-4. 锁定当前可工作的 Vanna 版本
-5. 建立 integrations/vanna_adapter.py
-6. 抽离 AgentFactory
-7. 抽离 MemoryFactory
-8. 抽离 ToolRegistryFactory
-9. 建立项目自有 SSE 事件格式
-10. 让运行时不再依赖项目内源码副本
-11. 执行完整回归
-12. 最后删除项目内 Vanna 源码
-```
-
-删除源码前必须满足：
-
-```text
-运行时已不再引用本地源码目录
-完整问答和训练回归通过
-正式 Chroma 不受影响
-依赖版本已锁定
-恢复方案明确
-```
+阶段 2 已完成。仓库中不存在 `vanna_src`，当前安装不是 editable，运行时使用 requirements 锁定的 Vanna 2.0.2 安装包。
 
 ---
 
@@ -1669,8 +1648,8 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
 | F6-2 Metadata 更新机制 | 已完成 | 正式 Metadata 与 Chroma 已切换；切换后全新隔离副本通过 20/20 HTTP、6/6 Memory |
-| Vanna 源码移除 + 全项目瘦身 + 目录规范化 | 等待盘点指令 | 下一主板块，尚未开始 |
-| 多数据源架构 | 已排期 | Vanna 解耦后 |
+| Vanna 源码移除与安装包依赖锁定 | 已完成 | vanna_src 已删除；非 editable；运行时使用 vanna==2.0.2 |
+| 多数据源架构 | 下一阶段 | 阶段 3，尚未开始实现 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
 | 一句话报表 | 已登记 | MySQL 接入后 |
 | 外部网站机器人 | 已登记 | 自有 API 和报表稳定后 |
@@ -1681,7 +1660,8 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-F6-2 已完成；本次不执行后续阶段。
+阶段 2 已完成；下一唯一动作是阶段 3：多数据源核心架构。
+本次仅完成文档收口，不开始阶段 3 实现。
 ```
 
-F6-1 与 F6-2 均已正式完成。F6-2 的旧正式基线、候选切换前验收和切换后全新隔离副本验收均已通过，正式 Metadata 与正式 Chroma 已切换；本次不进入后续阶段。
+F6-1、F6-2 与阶段 2 均已正式完成。项目继续直接使用已安装的 Vanna 2.0.2 API；下一阶段为阶段 3：多数据源核心架构。

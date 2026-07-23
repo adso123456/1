@@ -50,7 +50,7 @@ docs/project_master_roadmap.md
 
 ```text
 阶段 1：完成 F6-2 Metadata 更新机制
-阶段 2：Vanna 解耦、项目瘦身和目录规范化
+阶段 2：移除 vendored Vanna 源码并锁定安装包依赖
 阶段 3：建立多数据源核心架构
 阶段 4：将现有 PostgreSQL 迁移到多数据源架构
 阶段 5：接入和训练 MySQL
@@ -406,9 +406,9 @@ d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
 
 ---
 
-## 8. 当前阶段：F6-2 已完成
+## 8. 阶段 1：F6-2 已完成
 
-当前阶段目标：
+阶段目标：
 
 ```text
 完成新的 PostgreSQL Metadata 和相应 DDL Memory 更新机制，
@@ -476,40 +476,41 @@ detached worktree 不包含该虚拟环境。
 
 ---
 
-## 9. 阶段 2：Vanna 解耦和项目瘦身
+## 9. 阶段 2：Vanna 源码移除与依赖锁定（已完成）
 
 目标：
 
 ```text
-消除业务代码对 Vanna 内部结构和项目内源码副本的直接依赖。
+删除仓库 vendored Vanna 源码，移除 editable 安装，
+将运行时固定到已安装的 vanna==2.0.2。
 ```
 
-执行内容：
+已完成事实：
 
 ```text
-盘点所有 vanna.* import
-确认实际加载的 vanna.__file__
-锁定可用 Vanna 版本
-建立 integrations/vanna_adapter.py
-保留和完善 AgentFactory
-抽离 MemoryFactory
-抽离 ToolRegistry
-建立项目自己的 SSE 事件模型
-建立 /api/chat/stream
-让前端迁移到自有 API
-完成完整回归
-最后删除不再使用的项目内 Vanna 源码
-整理目录和依赖
+f7d5d51ceeaa640100185dec8a6555c42121a36f：
+移除 editable Vanna 依赖，新增 requirements.txt，
+锁定 vanna[chromadb,fastapi,openai,postgres]==2.0.2。
+
+268934dcb24657a97e4261f8750bc70573f71836：
+删除仓库中的 vanna_src。
+
+4bd6eeea9f513357279f0d0be23e948248622741：
+撤销误做的 Vanna Server 适配层，恢复直接使用已安装 Vanna API。
+
+当前 vanna.__file__ 位于：
+vanna_venv\Lib\site-packages\vanna\__init__.py
+
+项目继续直接使用安装包提供的 Agent、Memory、Tool、SSE 和 FastAPI API。
 ```
 
 完成标准：
 
 ```text
-项目功能回归通过
-正式 Chroma 不受影响
-运行时不依赖项目内 Vanna 源码
-前端不依赖 Vanna 内部 SSE
-依赖版本已锁定
+仓库中不存在 vanna_src
+Vanna 不再以 editable 方式安装
+requirements.txt 已锁定 vanna==2.0.2
+运行时从 vanna_venv\Lib\site-packages\vanna 加载
 ```
 
 ---
@@ -788,11 +789,12 @@ Collection 重构
 当前立即执行：
 
 ```text
-F6-2 已完成。
+阶段 1 F6-2 已完成。
 
 旧正式隔离基线、候选切换前验收和正式切换后验收均为：
 20/20 HTTP，6/6 Memory。
 
 正式 Metadata 和正式 Chroma 已切换，正式基线已更新；
-未开始执行后续阶段。
+阶段 2 Vanna 源码移除与依赖锁定已完成；
+下一阶段为阶段 3：多数据源核心架构，尚未开始实现。
 ```
