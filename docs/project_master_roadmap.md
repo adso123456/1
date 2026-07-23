@@ -68,7 +68,7 @@ Tool Memory 总数：75
 当前阶段：
 
 ```text
-F6-2C前置回归基线修复已完成并提交；旧正式隔离基线20/20 HTTP、6/6 Memory通过，等待重新执行F6-2C受控应用
+F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交；下一步在旧正式资产隔离副本上重新执行 20 个 HTTP + 6 个 Memory 完整基线。候选资产尚未切换。
 ```
 
 当前禁止越界进入：
@@ -1037,6 +1037,21 @@ F6-2A PostgreSQL Metadata 只读刷新与差异报告已完成：
 
 F6-2B Metadata 范围策略、正式候选索引与 DDL 更新计划已完成。原始数据库对象为 167 张，正式候选范围为 115 张；排除 staging 43 张、backup 3 张、PostGIS 系统对象 3 张，暂缓新业务视图 3 张，无未知新增对象待分类。正式表新增 41 个字段，涉及 13 张表；语义注释变化为 0，19 项仅为换行差异。DDL Memory 更新计划为 `0 create / 102 unchanged / 13 changed / 0 removed`。正式 Metadata 索引尚未替换，正式 Memory 尚未写入，等待 F6-2C 受控应用。
 
+F6-2C 当前进展（尚未完成）：
+
+- 请求级 Trace、Provider payload、SQL 示例注入和请求结束证据已实现；
+- approved SQL 示例实际注入时，首轮确定性指定 `run_sql`；
+- DeepSeek 同一工具调用链使用非 Thinking，避免 `tool_choice` 与 `reasoning_content` 冲突；
+- 首个成功 `SELECT` 后关闭工具阶段；
+- Answer-only 续轮移除 `tools`、`tool_choice` 和 `reasoning_effort`；
+- 首次成功工具结果包含实际 SQL、行数和列名；
+- O4-R5 功能门禁通过：2 次 LLM、1 次 SQL、1 个 DataFrame、无重试；
+- 已知非阻断偏差：零行最终回答可能附带未经验证的原因推测或后续查询建议；
+- 该偏差记录为回答质量技术债，不阻断当前 F6-2C 资产切换流程；
+- 正式 Metadata 和正式 Chroma 尚未切换。
+
+下一允许步骤固定为旧正式资产隔离完整基线：HTTP `20/20`、Memory `6/6`。
+
 ---
 
 ## 14. F6-3：Embedding Profile
@@ -1633,7 +1648,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
-| F6-2 Metadata 更新机制 | 进行中 | F6-2C前置回归基线修复已完成并提交；旧正式隔离基线20/20 HTTP、6/6 Memory通过，等待重新执行F6-2C受控应用 |
+| F6-2 Metadata 更新机制 | 进行中 | F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交；下一步执行旧正式资产隔离完整基线（20/20 HTTP、6/6 Memory），候选资产尚未切换 |
 | Vanna 源码移除 + 全项目瘦身 + 目录规范化 | 等待盘点指令 | 下一主板块，尚未开始 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1646,7 +1661,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-重新执行 F6-2C 正式候选 Metadata 与 DDL Memory 受控应用。
+旧正式资产隔离完整基线：20/20 HTTP、6/6 Memory。
 ```
 
-F6-1 已正式完成，F6-2C 前置回归基线修复已完成并提交。F6-2 整体尚未完成；正式 Metadata 索引与正式 Memory 均未修改，下一步仅允许按独立指令重新执行 F6-2C 受控应用，不进入 Legacy、MySQL 或其他板块。
+F6-1 已正式完成，F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交。F6-2 与 F6-2C 均尚未完成；正式 Metadata 索引与正式 Chroma 均未切换。下一步仅允许在旧正式资产隔离副本上执行 20 个 HTTP + 6 个 Memory 完整基线，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。
