@@ -8,8 +8,10 @@ import os
 import sys
 import tempfile
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from threading import Barrier
 from typing import Any
 
 
@@ -350,6 +352,177 @@ def main() -> int:
             )
         )
 
+        same_source_bindings = ConversationDataSourceBindings()
+        same_source_barrier = Barrier(12)
+
+        def bind_same_source() -> Any:
+            same_source_barrier.wait()
+            return same_source_bindings.bind(
+                "conversation-concurrent-same",
+                first_resolved,
+            )
+
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            same_source_results = list(
+                executor.map(lambda _: bind_same_source(), range(12))
+            )
+        results.append(
+            (
+                "并发同源绑定全部幂等返回同一对象",
+                all(
+                    binding is same_source_results[0]
+                    for binding in same_source_results
+                )
+                and len(same_source_bindings.bindings) == 1,
+                f"results={len(same_source_results)}",
+            )
+        )
+
+        cross_source_bindings = ConversationDataSourceBindings()
+        cross_source_barrier = Barrier(12)
+
+        def bind_cross_source(resolved: ResolvedDataSource) -> tuple[str, Any]:
+            cross_source_barrier.wait()
+            try:
+                return (
+                    "success",
+                    cross_source_bindings.bind(
+                        "conversation-concurrent-cross",
+                        resolved,
+                    ),
+                )
+            except ValueError as exc:
+                return ("conflict", str(exc))
+
+        cross_inputs = [first_resolved, second_resolved] * 6
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            cross_results = list(
+                executor.map(bind_cross_source, cross_inputs)
+            )
+        cross_successes = [
+            value for status, value in cross_results if status == "success"
+        ]
+        cross_conflicts = [
+            value for status, value in cross_results if status == "conflict"
+        ]
+        cross_final = cross_source_bindings.require(
+            "conversation-concurrent-cross"
+        )
+        losing_source_id = (
+            "postgresql-archive"
+            if cross_final.source_id == "postgresql-main"
+            else "postgresql-main"
+        )
+        results.append(
+            (
+                "并发跨源绑定仅一个源获胜且状态完整",
+                bool(cross_successes)
+                and bool(cross_conflicts)
+                and all(
+                    binding is cross_successes[0]
+                    and binding is cross_final
+                    for binding in cross_successes
+                )
+                and all(
+                    cross_final.conversation_id in message
+                    and cross_final.source_id in message
+                    and losing_source_id in message
+                    for message in cross_conflicts
+                )
+                and len(cross_source_bindings.bindings) == 1,
+                (
+                    f"winner={cross_final.source_id}, "
+                    f"success={len(cross_successes)}, "
+                    f"conflict={len(cross_conflicts)}"
+                ),
+            )
+        )
+
+        mixed_bindings = ConversationDataSourceBindings()
+        mixed_bindings.bind("conversation-concurrent-mixed", first_resolved)
+        mixed_barrier = Barrier(4)
+
+        def mixed_bind() -> tuple[str, Any]:
+            mixed_barrier.wait()
+            return (
+                "bind",
+                mixed_bindings.bind(
+                    "conversation-concurrent-mixed",
+                    first_resolved,
+                ),
+            )
+
+        def mixed_require() -> tuple[str, Any]:
+            mixed_barrier.wait()
+            try:
+                return (
+                    "require",
+                    mixed_bindings.require("conversation-concurrent-mixed"),
+                )
+            except ValueError as exc:
+                return ("require_missing", str(exc))
+
+        def mixed_snapshot() -> tuple[str, Any]:
+            mixed_barrier.wait()
+            return ("snapshot", tuple(mixed_bindings.bindings.values()))
+
+        def mixed_release() -> tuple[str, Any]:
+            mixed_barrier.wait()
+            try:
+                return (
+                    "release",
+                    mixed_bindings.release("conversation-concurrent-mixed"),
+                )
+            except ValueError as exc:
+                return ("release_missing", str(exc))
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            mixed_futures = [
+                executor.submit(callback)
+                for callback in (
+                    mixed_bind,
+                    mixed_require,
+                    mixed_snapshot,
+                    mixed_release,
+                )
+            ]
+            mixed_results = [future.result() for future in mixed_futures]
+
+        mixed_values_valid = True
+        for status, value in mixed_results:
+            if status in {"bind", "require", "release"}:
+                mixed_values_valid &= (
+                    isinstance(value, ConversationDataSourceBinding)
+                    and value.conversation_id
+                    == "conversation-concurrent-mixed"
+                    and value.source_id == "postgresql-main"
+                )
+            elif status == "snapshot":
+                mixed_values_valid &= len(value) <= 1 and all(
+                    isinstance(item, ConversationDataSourceBinding)
+                    and item.conversation_id
+                    == "conversation-concurrent-mixed"
+                    and item.source_id == "postgresql-main"
+                    for item in value
+                )
+            else:
+                mixed_values_valid &= status in {
+                    "require_missing",
+                    "release_missing",
+                }
+
+        try:
+            mixed_bindings.release("conversation-concurrent-mixed")
+        except ValueError:
+            pass
+        results.append(
+            (
+                "bind、require、snapshot、release 并发状态可串行化",
+                mixed_values_valid and not mixed_bindings.bindings,
+                str([status for status, _ in mixed_results]),
+            )
+        )
+
         repr_text = (
             repr(first_binding)
             + repr(bindings)
@@ -426,6 +599,7 @@ def main() -> int:
             "__future__",
             "collections.abc",
             "dataclasses",
+            "threading",
             "types",
             "typing",
             "backend.data_source_selection",

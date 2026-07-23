@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -13,10 +15,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.data_source_registry import (
-    DataSourceRegistry,
-    build_current_data_source_registry,
-)
 from config.data_source_config import DataSourceConfig
 
 
@@ -58,6 +56,40 @@ def _expect_error(
 
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
+    environment_reads: list[str] = []
+    original_getenv = os.getenv
+
+    def tracked_getenv(key: str, default: str | None = None) -> str | None:
+        environment_reads.append(key)
+        return original_getenv(key, default)
+
+    os.getenv = tracked_getenv
+    try:
+        registry_module = importlib.import_module(
+            "backend.data_source_registry"
+        )
+    finally:
+        os.getenv = original_getenv
+
+    DataSourceRegistry = registry_module.DataSourceRegistry
+    build_current_data_source_registry = (
+        registry_module.build_current_data_source_registry
+    )
+    results.append(
+        (
+            "Registry 首次导入不读取环境变量",
+            not environment_reads,
+            f"reads={environment_reads}",
+        )
+    )
+    results.append(
+        (
+            "Registry 首次导入不加载 config.data_sources",
+            "config.data_sources" not in sys.modules,
+            str("config.data_sources" in sys.modules),
+        )
+    )
+
     with tempfile.TemporaryDirectory(prefix="data-source-registry-test-") as temp_name:
         root = Path(temp_name).resolve()
         first = _make_config(root, "postgresql-main")

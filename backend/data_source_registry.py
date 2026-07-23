@@ -7,7 +7,6 @@ from pathlib import Path
 from types import MappingProxyType
 
 from config.data_source_config import DataSourceConfig
-from config.data_sources import build_postgresql_data_source_config
 
 
 class DataSourceRegistry:
@@ -66,6 +65,8 @@ def build_current_data_source_registry(
     scope_path: Path | None = None,
 ) -> DataSourceRegistry:
     """用当前 PostgreSQL 离线配置构造单数据源 Registry。"""
+    from config.data_sources import build_postgresql_data_source_config
+
     build_kwargs: dict[str, object] = {"environ": environ}
     if scope_path is not None:
         build_kwargs["scope_path"] = scope_path
