@@ -1,0 +1,10 @@
+{
+  "forbidden_imports": [],
+  "forbidden_calls": [],
+  "formal_path_as_validation_rejected": true,
+  "early_memory_module_import_rejected": true,
+  "formal_baseline_constants_valid": true,
+  "expected_formal_record_count": 198,
+  "expected_formal_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+  "static_guard_pass": true
+}
