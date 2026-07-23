@@ -1,0 +1,12 @@
+{
+  "candidate_source_tree_sha256_after": "50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6",
+  "validation_chroma_tree_sha256_after": "a886d9a4afe6c65b4d6233bec673ea765cbabc93e710acba7c33c06a9fba5b7a",
+  "validation_records_after": 198,
+  "validation_collection_counts_after": {
+    "tool_memories": 198
+  },
+  "formal_metadata_file_sha256_after": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_chroma_tree_sha256_after": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "formal_chroma_opened_via_api": false,
+  "database_write_performed": false
+}

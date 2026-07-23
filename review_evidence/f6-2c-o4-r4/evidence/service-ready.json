@@ -1,0 +1,8 @@
+{
+  "ready": true,
+  "launcher_alive": true,
+  "server_alive": true,
+  "port_8000_listening": true,
+  "http_endpoint_status": 200,
+  "checked_at": "2026-07-23T01:20:39.165437+00:00"
+}

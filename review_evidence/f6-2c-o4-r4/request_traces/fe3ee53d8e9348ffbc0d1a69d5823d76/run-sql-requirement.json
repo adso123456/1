@@ -1,0 +1,108 @@
+{
+  "trace_id": "fe3ee53d8e9348ffbc0d1a69d5823d76",
+  "requires_run_sql": true,
+  "requirement_reasons": [
+    "approved_sql_example_injected"
+  ],
+  "sql_example_injected_count": 3,
+  "successful_run_sql_completed": true,
+  "successful_run_sql_count": 1,
+  "successful_run_sql_row_count": 0,
+  "successful_run_sql_columns": [
+    "station_id",
+    "monitor_year",
+    "avg_ph",
+    "water_quality_level"
+  ],
+  "tool_phase_closed": true,
+  "tool_phase_close_reason": "first_successful_run_sql_for_approved_example",
+  "llm_call_index": 2,
+  "provider_hostname": "api.deepseek.com",
+  "model": "deepseek-v4-pro",
+  "provider_strategy": "deepseek_non_thinking_answer_only_continuation",
+  "original_tool_choice": "auto",
+  "effective_tool_choice": null,
+  "original_thinking": null,
+  "effective_thinking": {
+    "type": "disabled"
+  },
+  "original_reasoning_effort": null,
+  "effective_reasoning_effort": null,
+  "run_sql_schema_present": true,
+  "thinking_override_applied": true,
+  "deepseek_non_thinking_tool_turn_active": true,
+  "non_thinking_turn_started_on_call": 1,
+  "non_thinking_continuation_applied": false,
+  "answer_only_continuation_applied": true,
+  "final_payload_tools_present": false,
+  "final_payload_tool_choice_present": false,
+  "synthetic_reasoning_content_injected": false,
+  "forced_tool_choice_applied": false,
+  "forced_tool_name": "",
+  "parent_llm_called": true,
+  "error_type": "",
+  "failure_reason": "",
+  "calls": [
+    {
+      "llm_call_index": 1,
+      "provider_hostname": "api.deepseek.com",
+      "model": "deepseek-v4-pro",
+      "provider_strategy": "deepseek_non_thinking_first_tool_call",
+      "original_tool_choice": "auto",
+      "effective_tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "run_sql"
+        }
+      },
+      "original_thinking": null,
+      "effective_thinking": {
+        "type": "disabled"
+      },
+      "original_reasoning_effort": null,
+      "effective_reasoning_effort": null,
+      "run_sql_schema_present": true,
+      "thinking_override_applied": true,
+      "deepseek_non_thinking_tool_turn_active": true,
+      "non_thinking_turn_started_on_call": 1,
+      "non_thinking_continuation_applied": false,
+      "answer_only_continuation_applied": false,
+      "final_payload_tools_present": true,
+      "final_payload_tool_choice_present": true,
+      "synthetic_reasoning_content_injected": false,
+      "forced_tool_choice_applied": true,
+      "forced_tool_name": "run_sql",
+      "parent_llm_called": true,
+      "error_type": "",
+      "failure_reason": ""
+    },
+    {
+      "llm_call_index": 2,
+      "provider_hostname": "api.deepseek.com",
+      "model": "deepseek-v4-pro",
+      "provider_strategy": "deepseek_non_thinking_answer_only_continuation",
+      "original_tool_choice": "auto",
+      "effective_tool_choice": null,
+      "original_thinking": null,
+      "effective_thinking": {
+        "type": "disabled"
+      },
+      "original_reasoning_effort": null,
+      "effective_reasoning_effort": null,
+      "run_sql_schema_present": true,
+      "thinking_override_applied": true,
+      "deepseek_non_thinking_tool_turn_active": true,
+      "non_thinking_turn_started_on_call": 1,
+      "non_thinking_continuation_applied": false,
+      "answer_only_continuation_applied": true,
+      "final_payload_tools_present": false,
+      "final_payload_tool_choice_present": false,
+      "synthetic_reasoning_content_injected": false,
+      "forced_tool_choice_applied": false,
+      "forced_tool_name": "",
+      "parent_llm_called": true,
+      "error_type": "",
+      "failure_reason": ""
+    }
+  ]
+}

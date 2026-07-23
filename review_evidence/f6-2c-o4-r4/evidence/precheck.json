@@ -1,0 +1,7 @@
+﻿{
+    "script_ascii_only":  true,
+    "script_non_ascii_byte_count":  0,
+    "question_source":  "Unicode escapes in run_o4_r4.py",
+    "py_compile":  "PASS",
+    "self_test":  "PASS"
+}

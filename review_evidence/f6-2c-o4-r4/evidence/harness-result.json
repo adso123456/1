@@ -1,0 +1,38 @@
+{
+  "http_status": 200,
+  "event_count": 7,
+  "errors": [],
+  "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+  "answer": "Query executed successfully. No rows returned.\n\u770b\u8d77\u6765\u67e5\u8be2\u6ca1\u6709\u8fd4\u56de\u4efb\u4f55\u7ed3\u679c\u3002\u53ef\u80fd\u7684\u539f\u56e0\u662f\u6307\u5b9a\u7684\u5b57\u6bb5 `m2_value` \u5728\u5e74\u8bb0\u5f55\u8868\u4e2d\u6ca1\u6709\u6570\u636e\u3002\u8ba9\u6211\u653e\u5bbd\u6761\u4ef6\uff0c\u4e0d\u9650\u5b9a\u7279\u5b9a\u5e74\u4efd\uff0c\u5e76\u68c0\u67e5\u662f\u5426\u9700\u8981\u7528\u4e0d\u540c\u7684\u65b9\u5f0f\u83b7\u53d6pH\u6570\u636e\u3002\n\n\u8ba9\u6211\u91cd\u65b0\u5c1d\u8bd5\u2014\u2014\u6839\u636e\u793a\u4f8b `L3_P0_SQL_004`\uff0c\u5b83\u4f7f\u7528\u4e86 `monitor_year = 2025` \u7684\u8fc7\u6ee4\u6761\u4ef6\u3002\u4f46\u5982\u679c\u6ca1\u6709\u8fd4\u56de\u6570\u636e\uff0c\u53ef\u80fd\u662f\u6570\u636e\u8868\u4e2d\u76ee\u524d\u6ca1\u6709 2025 \u5e74\u7684\u8bb0\u5f55\u3002\u8ba9\u6211\u79fb\u9664\u5e74\u4efd\u8fc7\u6ee4\uff0c\u76f4\u63a5\u67e5\u8be2\u6240\u6709\u5e74\u4efd\u7684\u6570\u636e\uff1a\n\n<!-- chart_spec: {\"type\":\"horizontal_bar\",\"title\":\"\u5e74\u5ea6pH\u5e74\u5747\u503c\u6700\u9ad8\u7684\u7ad9\u70b9\u6392\u540d\uff08Top 20\uff09\",\"xField\":\"station_id\",\"yFields\":[\"avg_ph\"],\"seriesField\":\"monitor_year\",\"sizeField\":null,\"valueField\":null,\"min\":null,\"max\":null,\"unit\":null} -->",
+  "rich_types": [
+    "chat_input_update",
+    "dataframe",
+    "status_bar_update",
+    "task_tracker_update",
+    "text"
+  ],
+  "event_rows": [],
+  "event_columns": [
+    "station_id",
+    "monitor_year",
+    "avg_ph",
+    "water_quality_level"
+  ],
+  "dataframe_events": [
+    {
+      "sequence": 1,
+      "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+      "columns": [
+        "station_id",
+        "monitor_year",
+        "avg_ph",
+        "water_quality_level"
+      ],
+      "rows": [],
+      "row_count": 0,
+      "description": "No rows returned",
+      "execution_success": true,
+      "output_file": ""
+    }
+  ]
+}

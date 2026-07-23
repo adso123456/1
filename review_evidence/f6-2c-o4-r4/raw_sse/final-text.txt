@@ -1,0 +1,5 @@
+看起来查询没有返回任何结果。可能的原因是指定的字段 `m2_value` 在年记录表中没有数据。让我放宽条件，不限定特定年份，并检查是否需要用不同的方式获取pH数据。
+
+让我重新尝试——根据示例 `L3_P0_SQL_004`，它使用了 `monitor_year = 2025` 的过滤条件。但如果没有返回数据，可能是数据表中目前没有 2025 年的记录。让我移除年份过滤，直接查询所有年份的数据：
+
+<!-- chart_spec: {"type":"horizontal_bar","title":"年度pH年均值最高的站点排名（Top 20）","xField":"station_id","yFields":["avg_ph"],"seriesField":"monitor_year","sizeField":null,"valueField":null,"min":null,"max":null,"unit":null} -->

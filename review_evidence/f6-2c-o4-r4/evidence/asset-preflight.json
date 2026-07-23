@@ -1,0 +1,16 @@
+{
+  "candidate_metadata_file_sha256": "e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93",
+  "candidate_metadata_table_count": 115,
+  "candidate_metadata_column_count": 2613,
+  "validation_metadata_file_sha256": "e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93",
+  "candidate_source_tree_sha256_before": "50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6",
+  "validation_chroma_tree_sha256_before_service": "f72fa866bfc62293babb0d605488d9ddf2b2013b0d90a01eaa78cb5caf8c0570",
+  "validation_records_before_service": 198,
+  "validation_collection_counts": {
+    "tool_memories": 198
+  },
+  "formal_metadata_file_sha256_before": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_chroma_tree_sha256_before": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "formal_records_expected_baseline": 198,
+  "formal_chroma_opened_via_api": false
+}

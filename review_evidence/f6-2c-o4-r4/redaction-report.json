@@ -1,0 +1,11 @@
+{
+  "redacted_items": {
+    "authorization": 0,
+    "api_key": 0,
+    "loopback_ip": 2,
+    "local_host": 1,
+    "local_user": 0
+  },
+  "credentials_removed": true,
+  "business_rows_included": false
+}
