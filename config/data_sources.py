@@ -7,10 +7,11 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from backend.data_source_config import DataSourceConfig
-from backend.metadata_retriever import DEFAULT_INDEX_PATH, METADATA_INDEX_PATH_ENV
+from config.data_source_config import DataSourceConfig
 from config.settings import (
     CHROMA_DIR,
+    DEFAULT_METADATA_INDEX_PATH,
+    METADATA_INDEX_PATH_ENV,
     PROJECT_ROOT,
     build_db_kwargs,
     validate_db_config,
@@ -24,9 +25,13 @@ DEFAULT_POSTGRESQL_SCOPE_PATH = (
 
 def _resolve_metadata_path(environ: Mapping[str, str] | None) -> Path:
     if environ is None:
-        selected_path = os.getenv(METADATA_INDEX_PATH_ENV) or DEFAULT_INDEX_PATH
+        selected_path = (
+            os.getenv(METADATA_INDEX_PATH_ENV) or DEFAULT_METADATA_INDEX_PATH
+        )
     else:
-        selected_path = environ.get(METADATA_INDEX_PATH_ENV) or DEFAULT_INDEX_PATH
+        selected_path = (
+            environ.get(METADATA_INDEX_PATH_ENV) or DEFAULT_METADATA_INDEX_PATH
+        )
     return Path(selected_path).expanduser().resolve()
 
 

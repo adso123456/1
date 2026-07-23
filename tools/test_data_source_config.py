@@ -14,10 +14,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.data_source_config import DataSourceConfig
+from backend.data_source_config import DataSourceConfig as BackendConfig
+from config.data_source_config import DataSourceConfig as ConfigConfig
 from config.data_sources import build_postgresql_data_source_config
 
 
+DataSourceConfig = ConfigConfig
 TEST_PASSWORD = "offline-password-that-must-not-appear"
 BASE_CONNECTION_SETTINGS = {
     "host": "offline.invalid",
@@ -94,6 +96,25 @@ def main() -> int:
         config = build_postgresql_data_source_config(
             environ=environ,
             scope_path=scope_path,
+        )
+        results.append(
+            (
+                "新旧导入路径指向同一个类对象",
+                BackendConfig is ConfigConfig
+                and type(config) is ConfigConfig,
+                str(BackendConfig is ConfigConfig),
+            )
+        )
+        data_sources_source = (
+            PROJECT_ROOT / "config" / "data_sources.py"
+        ).read_text(encoding="utf-8")
+        results.append(
+            (
+                "config.data_sources 不导入 backend",
+                "from backend" not in data_sources_source
+                and "import backend" not in data_sources_source,
+                "static import check",
+            )
         )
         results.append(
             (

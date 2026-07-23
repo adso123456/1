@@ -7,6 +7,10 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+METADATA_INDEX_PATH_ENV = "METADATA_INDEX_PATH"
+DEFAULT_METADATA_INDEX_PATH = (
+    PROJECT_ROOT / "agent_data" / "column_metadata_index.json"
+).resolve()
 
 configured_path = os.getenv("VANNA_DATA_DIR", "").strip()
 CHROMA_DIR = str(

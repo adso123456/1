@@ -8,11 +8,13 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-
-DEFAULT_INDEX_PATH = (
-    Path(__file__).resolve().parents[1] / "agent_data" / "column_metadata_index.json"
+from config.settings import (
+    DEFAULT_METADATA_INDEX_PATH,
+    METADATA_INDEX_PATH_ENV,
 )
-METADATA_INDEX_PATH_ENV = "METADATA_INDEX_PATH"
+
+
+DEFAULT_INDEX_PATH = DEFAULT_METADATA_INDEX_PATH
 
 
 def resolve_index_path(index_path: str | Path | None = None) -> Path:
