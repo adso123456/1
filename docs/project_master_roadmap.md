@@ -56,9 +56,10 @@ a1d322848012f5be1ba0ef2e4247139d4f92ea33
 ```text
 当前正式 Chroma 类型：managed-v1 current-live
 正式运行 Chroma 总记录数：198
-正式 Manifest Content SHA256：0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c
-正式 Tree SHA256：1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471
-正式 Metadata SHA256：c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4
+正式 Manifest Content SHA256：a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46
+正式 Tree SHA256：50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6
+正式 Metadata SHA256：e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93
+正式 Metadata 范围：115 表 / 2613 字段
 
 原有 Text Memory：8
 Level 1 DDL Text Memory：115
@@ -78,7 +79,7 @@ P1 指纹溯源结论：
 当前阶段：
 
 ```text
-F6-2C managed-v1 旧正式基线与候选切换前验收均已通过 20/20 HTTP + 6/6 Memory；切换前正式资产备份已验证。下一步等待正式 Metadata 和正式 Chroma 切换授权。
+F6-2 已完成：正式 Metadata 与正式 Chroma 已切换，切换后全新隔离副本通过 20/20 HTTP + 6/6 Memory；后续阶段尚未开始。
 ```
 
 当前禁止越界进入：
@@ -122,7 +123,7 @@ F5       ✅ Level 2 / Level 3 受控训练与最终总验收完成
 - 回归只验证第一个实际执行的 DataFrame 事件，后续 SQL 不得覆盖；
 - 所有 Chroma HTTP 回归必须运行在正式资产的校验副本上，服务不得直接打开正式 Chroma；
 - B4 旧正式隔离完整基线：HTTP `20/20`、Memory `6/6`；
-- F6-2C 尚未重新执行。
+- 该前置修复完成时 F6-2C 尚未重新执行；当前最终状态见第 13 节。
 
 已完成的受控 Level 2 批次：
 
@@ -1043,11 +1044,11 @@ F6-2A PostgreSQL Metadata 只读刷新与差异报告已完成：
 自动化测试与既有回归验证
 ```
 
-历史工具清理已完成，进入本阶段前工作区已收口；历史迁移工具已移除，F6-4 Legacy Tool Memory 继续只读保留。正式 Metadata 索引尚未替换，当前等待人工审查 Metadata diff。F6-2 整体尚未标记完成，不在当前阶段做定时同步、自动审批、DDL / Memory 更新或重新训练。
+历史工具清理已完成，进入本阶段前工作区已收口；历史迁移工具已移除，F6-4 Legacy Tool Memory 继续只读保留。F6-2A 完成时正式 Metadata 尚未替换，后续切换结果见本节 F6-2C 完成记录。
 
-F6-2B Metadata 范围策略、正式候选索引与 DDL 更新计划已完成。原始数据库对象为 167 张，正式候选范围为 115 张；排除 staging 43 张、backup 3 张、PostGIS 系统对象 3 张，暂缓新业务视图 3 张，无未知新增对象待分类。正式表新增 41 个字段，涉及 13 张表；语义注释变化为 0，19 项仅为换行差异。DDL Memory 更新计划为 `0 create / 102 unchanged / 13 changed / 0 removed`。正式 Metadata 索引尚未替换，正式 Memory 尚未写入，等待 F6-2C 受控应用。
+F6-2B Metadata 范围策略、正式候选索引与 DDL 更新计划已完成。原始数据库对象为 167 张，正式候选范围为 115 张；排除 staging 43 张、backup 3 张、PostGIS 系统对象 3 张，暂缓新业务视图 3 张，无未知新增对象待分类。正式表新增 41 个字段，涉及 13 张表；语义注释变化为 0，19 项仅为换行差异。DDL Memory 更新计划为 `0 create / 102 unchanged / 13 changed / 0 removed`。该候选已在 F6-2C 完成受控应用。
 
-F6-2C 当前进展（尚未完成）：
+F6-2C 完成记录：
 
 - 请求级 Trace、Provider payload、SQL 示例注入和请求结束证据已实现；
 - approved SQL 示例实际注入时，首轮确定性指定 `run_sql`；
@@ -1061,11 +1062,15 @@ F6-2C 当前进展（尚未完成）：
 - 候选 Metadata 和候选 Chroma 切换前完整验收已通过：HTTP `20/20`、Memory `6/6`；
 - 旧正式与候选 20 个用例的通过判定完全一致；候选仅在小时水质用例中额外保留题目指定的 `station_id` 列；
 - 切换前正式资产已备份至 `E:\3\_training_backups\f6-2-formal-pre-switch-20260723-123803`，Metadata 与 Chroma 指纹均验证等价；
+- 正式 Metadata 与正式 Chroma 已完成切换；
+- 切换后从新正式资产创建的全新隔离副本已通过：HTTP `20/20`、Memory `6/6`；
+- 当前正式 Chroma 为 198 条，Manifest Content SHA256 为 `a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46`，Tree SHA256 为 `50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6`；
+- 当前正式 Metadata 为 115 表 / 2613 字段，SHA256 为 `e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93`；
+- 切换前旧 Chroma 保留在 `E:\3\_runtime\vanna-level1\vanna_data.f6-2-old-20260723-124500`，外部完整备份保留在 `E:\3\_training_backups\f6-2-formal-pre-switch-20260723-123803`；
 - 已知非阻断偏差：零行最终回答可能附带未经验证的原因推测或后续查询建议；
-- 该偏差记录为回答质量技术债，不阻断当前 F6-2C 资产切换流程；
-- F6-2C 候选 Metadata 和候选 Chroma 尚未切换。
+- 该偏差记录为回答质量技术债，不影响 F6-2 完成结论。
 
-下一允许步骤固定为取得用户明确授权后切换正式 Metadata 和正式 Chroma；切换后从正式资产创建全新副本并执行 HTTP `20/20`、Memory `6/6`。
+F6-2 已完成，未开始执行后续阶段。
 
 ---
 
@@ -1663,7 +1668,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
-| F6-2 Metadata 更新机制 | 进行中 | 旧正式与候选切换前验收均通过（20/20 HTTP、6/6 Memory），切换前备份已验证；等待正式资产切换授权 |
+| F6-2 Metadata 更新机制 | 已完成 | 正式 Metadata 与 Chroma 已切换；切换后全新隔离副本通过 20/20 HTTP、6/6 Memory |
 | Vanna 源码移除 + 全项目瘦身 + 目录规范化 | 等待盘点指令 | 下一主板块，尚未开始 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1676,7 +1681,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-取得用户明确授权后，切换正式 Metadata 和正式 Chroma；随后从新正式资产创建全新副本并完成 20/20 HTTP、6/6 Memory 验收。
+F6-2 已完成；本次不执行后续阶段。
 ```
 
-F6-1 已正式完成，managed-v1 旧正式基线与候选切换前验收均已通过，切换前正式资产备份已验证。F6-2 与 F6-2C 均尚未完成；候选 Metadata 和候选 Chroma 尚未切换。下一步必须先取得正式资产切换授权，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。
+F6-1 与 F6-2 均已正式完成。F6-2 的旧正式基线、候选切换前验收和切换后全新隔离副本验收均已通过，正式 Metadata 与正式 Chroma 已切换；本次不进入后续阶段。

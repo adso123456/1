@@ -345,6 +345,27 @@
   {
     "table": "day_quality_setting",
     "table_comment": "日质控设置",
+    "column": "span_value",
+    "type": "double precision",
+    "comment": ""
+  },
+  {
+    "table": "day_quality_setting",
+    "table_comment": "日质控设置",
+    "column": "zero_standard_value",
+    "type": "double precision",
+    "comment": ""
+  },
+  {
+    "table": "day_quality_setting",
+    "table_comment": "日质控设置",
+    "column": "span_standard_value",
+    "type": "double precision",
+    "comment": ""
+  },
+  {
+    "table": "day_quality_setting",
+    "table_comment": "日质控设置",
     "column": "audit_by",
     "type": "bigint",
     "comment": "审核人"
@@ -1213,6 +1234,13 @@
   {
     "table": "gis_ecologicalregion",
     "table_comment": "生态保护红线区域表",
+    "column": "area",
+    "type": "double precision",
+    "comment": ""
+  },
+  {
+    "table": "gis_ecologicalregion",
+    "table_comment": "生态保护红线区域表",
     "column": "ecosystem_vegetation",
     "type": "character varying(255)",
     "comment": "生态系统植被概况"
@@ -1454,6 +1482,27 @@
     "column": "protect_target",
     "type": "character varying(255)",
     "comment": "主要保护对象"
+  },
+  {
+    "table": "gis_naturereserve",
+    "table_comment": "自然保护区表",
+    "column": "total_area",
+    "type": "double precision",
+    "comment": ""
+  },
+  {
+    "table": "gis_naturereserve",
+    "table_comment": "自然保护区表",
+    "column": "core_area",
+    "type": "double precision",
+    "comment": ""
+  },
+  {
+    "table": "gis_naturereserve",
+    "table_comment": "自然保护区表",
+    "column": "buffer_area",
+    "type": "double precision",
+    "comment": ""
   },
   {
     "table": "gis_naturereserve",
@@ -2149,6 +2198,27 @@
     "comment": "对应断面名称"
   },
   {
+    "table": "gis_watershed_partition_4",
+    "table_comment": "四级流域分区表",
+    "column": "2021",
+    "type": "character varying(50)",
+    "comment": ""
+  },
+  {
+    "table": "gis_watershed_partition_4",
+    "table_comment": "四级流域分区表",
+    "column": "2025",
+    "type": "character varying(50)",
+    "comment": ""
+  },
+  {
+    "table": "gis_watershed_partition_4",
+    "table_comment": "四级流域分区表",
+    "column": "2035",
+    "type": "character varying(50)",
+    "comment": ""
+  },
+  {
     "table": "layer_boundary_enterprise",
     "table_comment": "工业园区-企业边界",
     "column": "id",
@@ -2809,6 +2879,41 @@
   {
     "table": "layer_reservoir_provincial",
     "table_comment": "省控水库",
+    "column": "elemstime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial",
+    "table_comment": "省控水库",
+    "column": "elemetime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial",
+    "table_comment": "省控水库",
+    "column": "ecrm",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial",
+    "table_comment": "省控水库",
+    "column": "wrid",
+    "type": "character varying(16)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial",
+    "table_comment": "省控水库",
+    "column": "wrgr",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial",
+    "table_comment": "省控水库",
     "column": "areacode",
     "type": "bigint",
     "comment": "行政区划代码"
@@ -2819,6 +2924,13 @@
     "column": "changetype",
     "type": "integer",
     "comment": "变更类型"
+  },
+  {
+    "table": "layer_reservoir_provincial",
+    "table_comment": "省控水库",
+    "column": "changeatt",
+    "type": "character varying(64)",
+    "comment": ""
   },
   {
     "table": "layer_reservoir_provincial",
@@ -2963,6 +3075,41 @@
   {
     "table": "layer_reservoir_provincial_label",
     "table_comment": "省控水库注记",
+    "column": "elemstime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_label",
+    "table_comment": "省控水库注记",
+    "column": "elemetime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_label",
+    "table_comment": "省控水库注记",
+    "column": "ecrm",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_label",
+    "table_comment": "省控水库注记",
+    "column": "wrid",
+    "type": "character varying(16)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_label",
+    "table_comment": "省控水库注记",
+    "column": "wrgr",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_label",
+    "table_comment": "省控水库注记",
     "column": "areacode",
     "type": "bigint",
     "comment": "行政区划代码"
@@ -2973,6 +3120,13 @@
     "column": "changetype",
     "type": "integer",
     "comment": "变更类型"
+  },
+  {
+    "table": "layer_reservoir_provincial_label",
+    "table_comment": "省控水库注记",
+    "column": "changeatt",
+    "type": "character varying(64)",
+    "comment": ""
   },
   {
     "table": "layer_reservoir_provincial_label",
@@ -3110,6 +3264,41 @@
   {
     "table": "layer_reservoir_provincial_合并",
     "table_comment": "省控水库",
+    "column": "elemstime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_合并",
+    "table_comment": "省控水库",
+    "column": "elemetime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_合并",
+    "table_comment": "省控水库",
+    "column": "ecrm",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_合并",
+    "table_comment": "省控水库",
+    "column": "wrid",
+    "type": "character varying(16)",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_合并",
+    "table_comment": "省控水库",
+    "column": "wrgr",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_reservoir_provincial_合并",
+    "table_comment": "省控水库",
     "column": "areacode",
     "type": "bigint",
     "comment": "行政区划代码"
@@ -3120,6 +3309,13 @@
     "column": "changetype",
     "type": "integer",
     "comment": "变更类型"
+  },
+  {
+    "table": "layer_reservoir_provincial_合并",
+    "table_comment": "省控水库",
+    "column": "changeatt",
+    "type": "character varying(64)",
+    "comment": ""
   },
   {
     "table": "layer_reservoir_provincial_合并",
@@ -3222,6 +3418,41 @@
   {
     "table": "layer_river_provincial",
     "table_comment": "省级河流空间表",
+    "column": "elemstime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_river_provincial",
+    "table_comment": "省级河流空间表",
+    "column": "elemetime",
+    "type": "character varying(8)",
+    "comment": ""
+  },
+  {
+    "table": "layer_river_provincial",
+    "table_comment": "省级河流空间表",
+    "column": "ecrm",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_river_provincial",
+    "table_comment": "省级河流空间表",
+    "column": "wrid",
+    "type": "character varying(16)",
+    "comment": ""
+  },
+  {
+    "table": "layer_river_provincial",
+    "table_comment": "省级河流空间表",
+    "column": "wrgr",
+    "type": "integer",
+    "comment": ""
+  },
+  {
+    "table": "layer_river_provincial",
+    "table_comment": "省级河流空间表",
     "column": "areacode",
     "type": "bigint",
     "comment": "行政区划代码"
@@ -3239,6 +3470,13 @@
     "column": "changetype",
     "type": "integer",
     "comment": "变更类型"
+  },
+  {
+    "table": "layer_river_provincial",
+    "table_comment": "省级河流空间表",
+    "column": "changeatt",
+    "type": "character varying(64)",
+    "comment": ""
   },
   {
     "table": "layer_river_provincial",
@@ -5150,6 +5388,13 @@
     "column": "quick_detect_sl",
     "type": "character varying(50)",
     "comment": "水质快速检测-流量(m^3/D)"
+  },
+  {
+    "table": "rs_outlet",
+    "table_comment": "排污口信息表",
+    "column": "quick_detect_desc",
+    "type": "character varying(255)",
+    "comment": ""
   },
   {
     "table": "rs_outlet",
@@ -11839,6 +12084,27 @@
   {
     "table": "wm_raster_inversion_config",
     "table_comment": "遥感反演配置表",
+    "column": "boundaries_json",
+    "type": "text",
+    "comment": ""
+  },
+  {
+    "table": "wm_raster_inversion_config",
+    "table_comment": "遥感反演配置表",
+    "column": "labels_json",
+    "type": "text",
+    "comment": ""
+  },
+  {
+    "table": "wm_raster_inversion_config",
+    "table_comment": "遥感反演配置表",
+    "column": "colors_json",
+    "type": "text",
+    "comment": ""
+  },
+  {
+    "table": "wm_raster_inversion_config",
+    "table_comment": "遥感反演配置表",
     "column": "create_time",
     "type": "timestamp without time zone",
     "comment": "创建时间"
@@ -13680,6 +13946,13 @@
   {
     "table": "wm_waterbody_info",
     "table_comment": "水体信息实体类",
+    "column": "country",
+    "type": "character varying(255)",
+    "comment": ""
+  },
+  {
+    "table": "wm_waterbody_info",
+    "table_comment": "水体信息实体类",
     "column": "start_village",
     "type": "character varying(255)",
     "comment": "起点村/社区"
@@ -14215,6 +14488,13 @@
     "column": "water_quality_level",
     "type": "character varying(20)",
     "comment": "水质级别"
+  },
+  {
+    "table": "wm_waterquality_day_records",
+    "table_comment": "水质监测日记录表",
+    "column": "record_type",
+    "type": "character(1)",
+    "comment": ""
   },
   {
     "table": "wm_waterquality_day_records",
@@ -16924,6 +17204,13 @@
     "column": "geom",
     "type": "geometry(MultiLineString,4326)",
     "comment": "空间几何数据"
+  },
+  {
+    "table": "wst_layer_river",
+    "table_comment": "溯源图层河流表",
+    "column": "metadata_json",
+    "type": "jsonb",
+    "comment": ""
   },
   {
     "table": "wst_layer_river",

@@ -358,20 +358,45 @@ py_compile 或 TypeScript 检查
 正式 Chroma 类型：
 managed-v1 current-live
 
+正式 Chroma 路径：
+E:\3\_runtime\vanna-level1\vanna_data
+
 正式 Chroma 记录数：
 198
 
 正式 Manifest Content SHA256：
-0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c
+a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46
 
 正式 Tree SHA256：
-1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471
+50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6
 
 正式 Metadata SHA256：
-c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4
+e296deb6762df0a13a962f3ef96758e7f8710fe74548e2ef4a042eb7b584bd93
+
+正式 Metadata 范围：
+115 表 / 2613 字段
 ```
 
-旧：
+F6-2 切换前正式基线与回滚位置：
+
+```text
+Manifest Content SHA256：
+0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c
+
+Tree SHA256：
+1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471
+
+Metadata SHA256：
+c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4
+
+同级 Chroma 回滚目录：
+E:\3\_runtime\vanna-level1\vanna_data.f6-2-old-20260723-124500
+
+外部完整备份：
+E:\3\_training_backups\f6-2-formal-pre-switch-20260723-123803
+```
+
+更早的 legacy/pre-switch 历史快照：
 
 ```text
 d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
@@ -381,7 +406,7 @@ d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
 
 ---
 
-## 8. 当前阶段：完成 F6-2
+## 8. 当前阶段：F6-2 已完成
 
 当前阶段目标：
 
@@ -399,11 +424,11 @@ d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992
 2. 在候选 Metadata 和候选 Chroma 隔离副本上执行同一套完整验收 ✅
 3. 比较旧正式与候选结果 ✅
 4. 候选通过后，备份当前正式资产 ✅
-5. 切换正式 Metadata 和正式 Chroma
-6. 从切换后的正式资产创建全新副本
-7. 再执行 20 个 HTTP + 6 个 Memory
-8. 更新总路线和正式基线
-9. 提交并清理工作区
+5. 切换正式 Metadata 和正式 Chroma ✅
+6. 从切换后的正式资产创建全新副本 ✅
+7. 再执行 20 个 HTTP + 6 个 Memory ✅
+8. 更新总路线和正式基线 ✅
+9. 提交并清理工作区 ✅
 ```
 
 ### 8.2 当前环境阻断处理
@@ -429,7 +454,9 @@ detached worktree 不包含该虚拟环境。
 
 主工作区 Runner 复验发现 `level2_water_intake_route` 在精确命中 approved SQL 示例时仍自行删减输出字段。当前已在原阶段内修复：精确同题必须原样执行 approved SQL，语义近似问题仍只把示例作为参考。定向用例通过，随后旧正式隔离完整基线通过 `20/20 HTTP + 6/6 Memory`。
 
-候选 Metadata 与候选 Chroma 的隔离完整验收已通过 `20/20 HTTP + 6/6 Memory`，与旧正式基线的 20 个用例通过判定完全一致。候选仅在小时水质用例中额外保留题目指定的 `station_id` 列，仍满足冻结契约。切换前正式资产已备份并完成指纹等价校验；下一步为正式 Metadata 与正式 Chroma 切换，执行前必须取得用户明确授权。
+候选 Metadata 与候选 Chroma 的隔离完整验收已通过 `20/20 HTTP + 6/6 Memory`，与旧正式基线的 20 个用例通过判定完全一致。候选仅在小时水质用例中额外保留题目指定的 `station_id` 列，仍满足冻结契约。切换前正式资产已备份并完成指纹等价校验。
+
+正式 Metadata 与正式 Chroma 已完成切换。切换后从新正式资产创建的全新隔离副本通过 `20/20 HTTP + 6/6 Memory`，正式资产监控未发现漂移，F6-2 已完成。
 
 ### 8.3 F6-2 完成标准
 
@@ -761,14 +788,11 @@ Collection 重构
 当前立即执行：
 
 ```text
-继续完成 F6-2。
+F6-2 已完成。
 
-managed-v1 正式隔离基线和候选切换前验收均已完成：
+旧正式隔离基线、候选切换前验收和正式切换后验收均为：
 20/20 HTTP，6/6 Memory。
 
-旧正式与候选结果比较、切换前正式资产备份均已完成。
-当前等待正式 Metadata 与正式 Chroma 切换授权；
-授权后继续完成正式切换、切换后回归和 F6-2 收口。
-
-整个 F6-2 视为同一个阶段，不再创建 P、R、O 等子阶段名称。
+正式 Metadata 和正式 Chroma 已切换，正式基线已更新；
+未开始执行后续阶段。
 ```
