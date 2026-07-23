@@ -54,7 +54,11 @@ a1d322848012f5be1ba0ef2e4247139d4f92ea33
 当前正式训练资产：
 
 ```text
+当前正式 Chroma 类型：managed-v1 current-live
 正式运行 Chroma 总记录数：198
+正式 Manifest Content SHA256：0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c
+正式 Tree SHA256：1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471
+正式 Metadata SHA256：c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4
 
 原有 Text Memory：8
 Level 1 DDL Text Memory：115
@@ -62,6 +66,12 @@ LEGACY_READ_ONLY Tool Memory：64
 确定性受控 Tool Memory：11
 Tool Memory 总数：75
 ```
+
+P1 指纹溯源结论：
+
+- 旧 `d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992` 是 F5 Level 3 Batch 01 交付时的 legacy/pre-switch 历史快照，不是当前正式 managed-v1 基线；
+- 当前正式资产已在 F6-1I-C-R3-B 中通过验收：managed-v1 DDL `115/115`、legacy expected DDL `0`、non-DDL `83`、full regression `15/15`，并明确 `retain_current_live = true`；
+- 当前正式 managed-v1 资产保持不变，P1 审计分类为 `D8EB_EXPECTATION_MISBOUND`。
 
 当前仓库 HEAD 以 Git 为准，不在路线文档中维护自引用提交 SHA。
 
@@ -270,7 +280,7 @@ F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确
 - duplicate_found：`NO`
 - sql_guard：`PASS`
 - record_id：`toolmem-v1-d7bd8ebc76a246817b20f5619ca3a0324f8401ed8c19d24691ce45d4681c38b6`
-- 正式Chroma：198条，`d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992`
+- F5 Level 3 Batch 01 交付时 legacy/pre-switch 历史快照：198条，`d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992`（`HISTORICAL_ONLY`，`NOT_CURRENT_FORMAL_BASELINE`）
 - 确定性受控Tool Memory：11条
 - Tool Memory总数：75条
 - HOUR：仍为 `SAME_CLUSTER_DEFERRED_VARIANT`，未交付
@@ -302,7 +312,7 @@ F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确
 ### F5 PostgreSQL最终总验收完成
 
 - PostgreSQL F1—F5全部完成并通过最终验收；
-- 正式Chroma：198条，SHA256为 `d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992`；
+- F5 PostgreSQL 最终验收时 legacy/pre-switch 历史快照：198条，SHA256为 `d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992`（`HISTORICAL_ONLY`，`NOT_CURRENT_FORMAL_BASELINE`）；
 - Text Memory：123条，其中原有Text 8条、Level 1 DDL Text 115条；
 - Legacy Tool Memory：64条；
 - 确定性受控Tool Memory：11条，完整性验收11/11；
@@ -1048,7 +1058,7 @@ F6-2C 当前进展（尚未完成）：
 - O4-R5 功能门禁通过：2 次 LLM、1 次 SQL、1 个 DataFrame、无重试；
 - 已知非阻断偏差：零行最终回答可能附带未经验证的原因推测或后续查询建议；
 - 该偏差记录为回答质量技术债，不阻断当前 F6-2C 资产切换流程；
-- 正式 Metadata 和正式 Chroma 尚未切换。
+- F6-2C 候选 Metadata 和候选 Chroma 尚未切换。
 
 下一允许步骤固定为旧正式资产隔离完整基线：HTTP `20/20`、Memory `6/6`。
 
@@ -1664,4 +1674,4 @@ M vanna_data/chroma.sqlite3
 旧正式资产隔离完整基线：20/20 HTTP、6/6 Memory。
 ```
 
-F6-1 已正式完成，F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交。F6-2 与 F6-2C 均尚未完成；正式 Metadata 索引与正式 Chroma 均未切换。下一步仅允许在旧正式资产隔离副本上执行 20 个 HTTP + 6 个 Memory 完整基线，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。
+F6-1 已正式完成，F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交。F6-2 与 F6-2C 均尚未完成；F6-2C 候选 Metadata 和候选 Chroma 均未切换。下一步仅允许在旧正式资产隔离副本上执行 20 个 HTTP + 6 个 Memory 完整基线，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。

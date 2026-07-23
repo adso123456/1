@@ -22,7 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 DEFAULT_SUITE = PROJECT_ROOT / "training" / "regression" / "postgresql_f5_regression_v1.json"
 FORMAL_RUNTIME = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
 EXPECTED_FORMAL_RECORD_COUNT = 198
-EXPECTED_FORMAL_SHA256 = "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
+EXPECTED_FORMAL_SHA256 = "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c"
 EXPECTED_SUITE_SHA256 = "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a"
 EARLY_MEMORY_MODULES = ("backend.memory", "step4_server")
 REQUIRED_CASE_FIELDS = {
@@ -761,7 +761,11 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
     formal_baseline_constants_valid = (
         EXPECTED_FORMAL_RECORD_COUNT == 198
         and EXPECTED_FORMAL_SHA256
-        == "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
+        == "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c"
+    )
+    old_formal_manifest_not_default = (
+        EXPECTED_FORMAL_SHA256
+        != "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992"
     )
     legacy_default_monitor_preserved = resolve_formal_monitor_baseline(None, None) == (
         EXPECTED_FORMAL_RECORD_COUNT,
@@ -778,6 +782,9 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
     except ValueError:
         invalid_dynamic_sha_rejected = True
     dynamic_sha = "a" * 64
+    explicit_baseline_override_preserved = resolve_formal_monitor_baseline(
+        198, dynamic_sha
+    ) == (198, dynamic_sha)
     dynamic_baseline_passed = False
     dynamic_change_detected = False
     with tempfile.TemporaryDirectory(prefix="f5-runner-self-test-") as temp_name:
@@ -2134,9 +2141,11 @@ LIMIT 20"""
             same_path_rejected,
             early_import_rejected,
             formal_baseline_constants_valid,
+            old_formal_manifest_not_default,
             legacy_default_monitor_preserved,
             one_dynamic_parameter_rejected,
             invalid_dynamic_sha_rejected,
+            explicit_baseline_override_preserved,
             dynamic_baseline_passed,
             dynamic_change_detected,
             request_trace_context_test,
@@ -2264,9 +2273,11 @@ LIMIT 20"""
         "early_memory_module_import_rejected": early_import_rejected,
         "parent_memory_creation_disabled": not forbidden_calls,
         "formal_baseline_constants_valid": formal_baseline_constants_valid,
+        "old_formal_manifest_not_default": old_formal_manifest_not_default,
         "legacy_default_monitor_preserved": legacy_default_monitor_preserved,
         "one_dynamic_parameter_rejected": one_dynamic_parameter_rejected,
         "invalid_dynamic_sha_rejected": invalid_dynamic_sha_rejected,
+        "explicit_baseline_override_preserved": explicit_baseline_override_preserved,
         "dynamic_baseline_before_service_start_passed": dynamic_baseline_passed,
         "dynamic_formal_change_fail_fast_triggered": dynamic_change_detected,
         "REQUEST_TRACE_CONTEXT_TEST": "PASS" if request_trace_context_test else "FAIL",
@@ -2442,6 +2453,10 @@ LIMIT 20"""
                 "formal_path_as_validation_rejected": same_path_rejected,
                 "early_memory_module_import_rejected": early_import_rejected,
                 "formal_baseline_constants_valid": formal_baseline_constants_valid,
+                "old_formal_manifest_not_default": old_formal_manifest_not_default,
+                "explicit_baseline_override_preserved": (
+                    explicit_baseline_override_preserved
+                ),
                 "expected_formal_record_count": EXPECTED_FORMAL_RECORD_COUNT,
                 "expected_formal_sha256": EXPECTED_FORMAL_SHA256,
                 "static_guard_pass": runner_self_test_pass,
