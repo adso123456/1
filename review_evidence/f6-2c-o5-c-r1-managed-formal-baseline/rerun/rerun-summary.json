@@ -1,0 +1,26 @@
+{
+  "run_stage": "F6-2C-O5-C-R1",
+  "continuation_of_evidence_commit": "35155b949ae6daa4ca177be36e17d4939e61e734",
+  "runner_project_root": "E:\\3\\posgresql\\1",
+  "main_worktree_python": "E:\\3\\posgresql\\1\\vanna_venv\\Scripts\\python.exe",
+  "data_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_chroma",
+  "agent_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_agent_data",
+  "evidence_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\runner_evidence_rerun",
+  "dynamic_formal_baseline_parameters_passed": false,
+  "http_request_count": 20,
+  "http_retry_count": 0,
+  "http_pass_count": 19,
+  "http_fail_count": 1,
+  "failed_http_cases": [
+    "level2_water_intake_route"
+  ],
+  "memory_pass_count": 6,
+  "memory_fail_count": 0,
+  "failed_memory_cases": [],
+  "formal_monitor_checkpoint_count": 25,
+  "all_formal_monitor_checkpoints_passed": true,
+  "formal_asset_modified": false,
+  "code_or_doc_modified": false,
+  "accepted": false,
+  "final_conclusion": "BLOCKED_BY_MANAGED_FORMAL_BASELINE_FAILURE"
+}

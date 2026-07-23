@@ -1,0 +1,29 @@
+{
+  "case_id": "level2_water_intake_route",
+  "sequence": 17,
+  "question": "查询取水口名称和水源类型",
+  "failed_checks": [
+    "expected_columns"
+  ],
+  "expected_table": "wm_water_intake",
+  "expected_columns": [
+    "name",
+    "region_name",
+    "city",
+    "county",
+    "water_type",
+    "code"
+  ],
+  "actual_sql": "SELECT name, water_type FROM wm_water_intake ORDER BY name LIMIT 50",
+  "actual_columns": [
+    "name",
+    "water_type"
+  ],
+  "http_status": 200,
+  "sse_errors": [],
+  "sql_guard_pass": true,
+  "execution_success": true,
+  "row_count": 50,
+  "retry_performed": false,
+  "automatic_fix_performed": false
+}

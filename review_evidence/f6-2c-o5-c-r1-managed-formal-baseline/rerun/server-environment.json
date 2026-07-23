@@ -1,0 +1,9 @@
+{
+  "server_entry_point": "step4_server.py",
+  "vanna_data_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_chroma",
+  "agent_data_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_agent_data",
+  "resolved_data_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_chroma",
+  "confirmation_method": "start_server arguments and child env construction contract",
+  "server_started": true,
+  "parent_and_server_data_dir_match": true
+}

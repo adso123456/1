@@ -1,0 +1,211 @@
+{
+  "memory_case_count": 6,
+  "memory_pass_count": 6,
+  "accepted": true,
+  "cases": [
+    {
+      "case_id": "memory_l2_sql_018",
+      "expected_sample_id": "L2_SQL_018",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L2_SQL_018",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_019",
+        "L3_P1_SQL_021",
+        "L3_P1_SQL_020",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_014",
+        "F5_L2_B07_SQL_001",
+        "L3_P1_SQL_024",
+        "L3_P2_SQL_003"
+      ],
+      "injected_sample_ids": [
+        "L2_SQL_018",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_019",
+        "L3_P1_SQL_021",
+        "L3_P1_SQL_020",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_014",
+        "F5_L2_B07_SQL_001",
+        "L3_P1_SQL_024",
+        "L3_P2_SQL_003"
+      ],
+      "observed_training_level": "level2_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p0_sql_004",
+      "expected_sample_id": "L3_P0_SQL_004",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L3_P0_SQL_004",
+        "L3_P0_SQL_011",
+        "L3_P0_SQL_012",
+        "L3_P0_SQL_002",
+        "L3_P0_SQL_005",
+        "L3_P0_SQL_017",
+        "L3_P0_SQL_001",
+        "L3_P0_SQL_014",
+        "L3_P0_SQL_018",
+        "L3_P0_SQL_007"
+      ],
+      "injected_sample_ids": [
+        "L3_P0_SQL_004",
+        "L3_P0_SQL_011",
+        "L3_P0_SQL_012"
+      ],
+      "observed_training_level": "level3_p0_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p1_sql_024",
+      "expected_sample_id": "L3_P1_SQL_024",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L3_P1_SQL_024",
+        "L3_P1_SQL_019",
+        "L2_SQL_018",
+        "L3_P0_SQL_001",
+        "L3_P1_SQL_020",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_023",
+        "L3_P1_SQL_021",
+        "L2_SQL_002",
+        "L3_P2_SQL_006"
+      ],
+      "injected_sample_ids": [
+        "L3_P1_SQL_024",
+        "L3_P1_SQL_019",
+        "L2_SQL_018",
+        "L3_P0_SQL_001",
+        "L3_P1_SQL_020",
+        "L3_P1_SQL_022"
+      ],
+      "observed_training_level": "level3_p1_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p2_sql_011",
+      "expected_sample_id": "L3_P2_SQL_011",
+      "expectation": "present_and_injected",
+      "target_rank": 1,
+      "target_recalled": true,
+      "target_injected": true,
+      "recalled_sample_ids": [
+        "L3_P2_SQL_011",
+        "L3_P2_SQL_001",
+        "L3_P2_SQL_003",
+        "L2_SQL_010",
+        "L3_P1_SQL_006",
+        "L3_P1_SQL_003",
+        "L2_SQL_009",
+        "L2_SQL_013",
+        "L3_P2_SQL_004",
+        "L3_P2_SQL_002"
+      ],
+      "injected_sample_ids": [
+        "L3_P2_SQL_011",
+        "L3_P2_SQL_001",
+        "L3_P2_SQL_003",
+        "L2_SQL_010",
+        "L3_P1_SQL_006",
+        "L3_P1_SQL_003",
+        "L2_SQL_009",
+        "L2_SQL_013",
+        "L3_P2_SQL_004",
+        "L3_P2_SQL_002"
+      ],
+      "observed_training_level": "level3_p2_sql_examples",
+      "observed_train_decision": "approved",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p1_sql_004_absent",
+      "expected_sample_id": "L3_P1_SQL_004",
+      "expectation": "absent",
+      "target_rank": null,
+      "target_recalled": false,
+      "target_injected": false,
+      "recalled_sample_ids": [
+        "L2_SQL_013",
+        "L3_P1_SQL_003",
+        "L3_P2_SQL_001",
+        "L2_SQL_009",
+        "L3_P2_SQL_003",
+        "L3_P2_SQL_011",
+        "L3_P1_SQL_006",
+        "L2_SQL_014",
+        "L2_SQL_010",
+        "L3_P1_SQL_002"
+      ],
+      "injected_sample_ids": [
+        "L2_SQL_013",
+        "L3_P1_SQL_003",
+        "L3_P2_SQL_001",
+        "L2_SQL_009",
+        "L3_P2_SQL_003",
+        "L3_P2_SQL_011",
+        "L3_P1_SQL_006",
+        "L2_SQL_014",
+        "L2_SQL_010"
+      ],
+      "observed_training_level": "",
+      "observed_train_decision": "",
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "memory_l3_p2_sql_009_absent",
+      "expected_sample_id": "L3_P2_SQL_009",
+      "expectation": "absent",
+      "target_rank": null,
+      "target_recalled": false,
+      "target_injected": false,
+      "recalled_sample_ids": [
+        "L3_P1_SQL_012",
+        "L3_P1_SQL_013",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_018",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_020",
+        "L2_SQL_018",
+        "L3_P1_SQL_014",
+        "F5_L2_B06_SQL_001",
+        "L2_SQL_015"
+      ],
+      "injected_sample_ids": [
+        "L3_P1_SQL_012",
+        "L3_P1_SQL_013",
+        "L3_P1_SQL_022",
+        "L3_P1_SQL_018",
+        "L3_P2_SQL_007",
+        "L3_P1_SQL_020",
+        "L2_SQL_018",
+        "L3_P1_SQL_014",
+        "F5_L2_B06_SQL_001",
+        "L2_SQL_015"
+      ],
+      "observed_training_level": "",
+      "observed_train_decision": "",
+      "passed": true,
+      "failure_reasons": []
+    }
+  ]
+}

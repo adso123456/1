@@ -1,0 +1,232 @@
+{
+  "expected_record_count": 198,
+  "expected_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_runtime_fail_fast_triggered": false,
+  "checkpoints": [
+    {
+      "label": "before_memory_regression",
+      "checked_at": "2026-07-23T11:30:18.452269+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_memory_regression",
+      "checked_at": "2026-07-23T11:30:36.250737+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "before_service_start",
+      "checked_at": "2026-07-23T11:30:36.269687+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_service_start",
+      "checked_at": "2026-07-23T11:30:53.553673+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_01",
+      "checked_at": "2026-07-23T11:31:01.556784+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_02",
+      "checked_at": "2026-07-23T11:31:09.914926+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_03",
+      "checked_at": "2026-07-23T11:31:20.988008+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_04",
+      "checked_at": "2026-07-23T11:31:30.607471+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_05",
+      "checked_at": "2026-07-23T11:31:39.537163+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_06",
+      "checked_at": "2026-07-23T11:31:49.471895+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_07",
+      "checked_at": "2026-07-23T11:31:58.004473+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_08",
+      "checked_at": "2026-07-23T11:32:05.093498+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_09",
+      "checked_at": "2026-07-23T11:32:15.377849+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_10",
+      "checked_at": "2026-07-23T11:32:22.594435+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_11",
+      "checked_at": "2026-07-23T11:32:35.247628+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_12",
+      "checked_at": "2026-07-23T11:32:43.262669+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_13",
+      "checked_at": "2026-07-23T11:32:49.853453+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_14",
+      "checked_at": "2026-07-23T11:33:02.263062+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_15",
+      "checked_at": "2026-07-23T11:33:06.890014+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_16",
+      "checked_at": "2026-07-23T11:33:14.883182+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_17",
+      "checked_at": "2026-07-23T11:33:22.926914+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_18",
+      "checked_at": "2026-07-23T11:33:28.378522+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_19",
+      "checked_at": "2026-07-23T11:33:37.454707+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_case_20",
+      "checked_at": "2026-07-23T11:33:48.021915+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_service_stop",
+      "checked_at": "2026-07-23T11:33:48.041651+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+
+Loading weights:   0%|          | 0/71 [00:00<?, ?it/s]
+Loading weights: 100%|��������������������| 71/71 [00:00<00:00, 5255.46it/s]
+��ʼ�� LLM ���� (deepseek-v4-pro via DeepSeek official API)...
+���� PostgreSQL...
+���� ChromaDB ����� (����embedding + 0.55��ֵ)...
+ע�Ṥ�� (run_sql)...
+���� Agent (ȷ����Ԫ���� + SQLʾ�������� + DefaultLlmContextEnhancer ע���������)...
+Legacy SQL examples: ENABLED
+Agent �������!
+
+Your app is running at:
+http://localhost:8000
+INFO:     Started server process [21112]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:57791 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57792 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57805 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51044 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50079 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53206 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53217 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53224 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53232 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53239 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49695 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49706 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49670 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49676 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49684 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57953 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57963 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57977 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57993 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58007 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65218 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK
