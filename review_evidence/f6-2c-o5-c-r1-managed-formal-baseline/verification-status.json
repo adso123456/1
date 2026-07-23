@@ -1,0 +1,23 @@
+{
+  "status": "BLOCKED",
+  "prechecks_passed": true,
+  "py_compile_passed": true,
+  "runner_self_test_passed": true,
+  "full_baseline_accepted": false,
+  "failure_stage": "MEMORY_WORKER_PROCESS_START",
+  "http_user_question_request_count": 0,
+  "http_retry_count": 0,
+  "memory_cases_executed": 0,
+  "service_started": false,
+  "port_8000_released": true,
+  "formal_chroma_opened_by_service": false,
+  "formal_chroma_opened_by_chroma_api": false,
+  "formal_metadata_modified": false,
+  "formal_chroma_modified": false,
+  "database_write_performed": false,
+  "code_files_modified": false,
+  "doc_files_modified": false,
+  "suite_modified": false,
+  "rerun_performed": false,
+  "final_conclusion": "BLOCKED_BY_MANAGED_FORMAL_BASELINE_FAILURE"
+}

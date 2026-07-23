@@ -1,0 +1,16 @@
+{
+  "base_commit": "c3b880ee707334a1c49527e711b30aecf9d5a9ce",
+  "files": [
+    {"path": "backend/agent_factory.py", "sha256": "f1229994488639b2f63cb4cf1a54c1c67fab6db9683a07bc6e49423d0ec57758"},
+    {"path": "backend/guarded_run_sql_tool.py", "sha256": "af64ac8cecf9a744c8fe6ee05c035700afcec8fa785643353e84e3eca05806bb"},
+    {"path": "backend/prompts.py", "sha256": "0652188405abded887c7744e13f2f98d5523b5741391881bfbd639c952c408a6"},
+    {"path": "backend/query_context.py", "sha256": "98951f275a37bcc0df023ea8b6b091a43026e46a9ed7937ac0b93ae6b7d0e4b4"},
+    {"path": "backend/request_diagnostics.py", "sha256": "bfec1d9ee0c47751dcdbc6b9926d0ea3488252ff737e02fc0ba66608c045c4c4"},
+    {"path": "backend/run_sql_requirement.py", "sha256": "e1aac9549f987f6c5f64894801eee80f9eea133056ed797dfc651a7ed5902019"},
+    {"path": "backend/sql_example_context_enhancer.py", "sha256": "ab8eb0915a4787879a985ad5fbec92b0ea6f6217dbc48dc48c79ee1a076a0c70"},
+    {"path": "backend/tracing_llm_service.py", "sha256": "d8af62c64d12c52a4a08ff1b0104843f65d720a75d992ca78ed1728e93c3c098"},
+    {"path": "tools/regression_service_harness.py", "sha256": "a25b1ca2bf792cd907b38fd2169e871780c0f5c4bec4d84edfddb41e233711bc"},
+    {"path": "tools/run_postgresql_f5_regression.py", "sha256": "b5a83ed8c003ba34db0bdf1793ff96d4d061a6808cd859136cb42ae57a1f4fef"}
+  ],
+  "code_files_modified": false
+}

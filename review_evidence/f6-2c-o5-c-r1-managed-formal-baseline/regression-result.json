@@ -1,0 +1,19 @@
+{
+  "suite_id": "postgresql-f5-regression-v1",
+  "suite_content_sha256": "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a",
+  "question_count": 0,
+  "question_pass_count": 0,
+  "memory_case_count": 6,
+  "memory_pass_count": 0,
+  "memory_accepted": false,
+  "memory_cases": [],
+  "accepted": false,
+  "parent_memory_diagnostics_executed": false,
+  "parent_memory_creation_disabled": true,
+  "formal_runtime_fail_fast_triggered": false,
+  "formal_monitor_record_count": 198,
+  "formal_monitor_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_monitor_checkpoints": 2,
+  "failure": "FileNotFoundError: [WinError 2] 系统找不到指定的文件。",
+  "cases": []
+}

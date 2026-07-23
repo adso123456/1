@@ -1,0 +1,30 @@
+{
+  "run_stage": "F6-2C-O5-C-R1",
+  "base_commit": "c3b880ee707334a1c49527e711b30aecf9d5a9ce",
+  "run_directory": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840",
+  "status": "BLOCKED_BEFORE_MEMORY_EXECUTION",
+  "blocking_gate": "DETACHED_WORKTREE_VENV_PATH_NOT_FOUND",
+  "failure": "FileNotFoundError: [WinError 2] 系统找不到指定的文件。",
+  "root_cause_evidence": {
+    "harness_file": "tools/regression_service_harness.py",
+    "python_executable_expression": "PROJECT_ROOT / \"vanna_venv\" / \"Scripts\" / \"python.exe\"",
+    "resolved_project_root": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_worktree",
+    "resolved_python_executable_exists": false
+  },
+  "suite_id": "postgresql-f5-regression-v1",
+  "suite_content_sha256": "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a",
+  "expected_http_cases": 20,
+  "executed_http_cases": 0,
+  "http_user_question_request_count": 0,
+  "http_retry_count": 0,
+  "expected_memory_cases": 6,
+  "executed_memory_cases": 0,
+  "memory_pass_count": 0,
+  "full_baseline_accepted": false,
+  "service_started": false,
+  "model_request_performed": false,
+  "database_connection_performed": false,
+  "database_write_performed": false,
+  "rerun_performed": false,
+  "final_conclusion": "BLOCKED_BY_MANAGED_FORMAL_BASELINE_FAILURE"
+}

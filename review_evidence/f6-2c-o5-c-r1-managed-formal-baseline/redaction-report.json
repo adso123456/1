@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "credentials_included": false,
+  "authorization_headers_included": false,
+  "database_connection_strings_included": false,
+  "business_data_rows_included": false,
+  "full_prompts_included": false,
+  "chroma_binary_files_included": false,
+  "request_traces_included": false,
+  "notes": "运行在服务启动前失败，没有真实请求 Trace、SQL 结果或业务数据。环境检查只记录凭据是否存在，未记录其值。"
+}

@@ -1,0 +1,10 @@
+{
+  "expected_case_count": 6,
+  "executed_case_count": 0,
+  "pass_count": 0,
+  "fail_count": 0,
+  "not_run_count": 6,
+  "accepted": false,
+  "failed_memory_cases": [],
+  "not_run_reason": "Detached validation worktree 中不存在 regression_service_harness.py 所解析的 vanna_venv Python 可执行文件。"
+}

@@ -1,0 +1,10 @@
+{
+  "approved_example_trace_verified": false,
+  "no_approved_example_trace_verified": false,
+  "zero_row_trace_verified": false,
+  "request_trace_count": 0,
+  "provider_retry_observed": false,
+  "answer_quality_deviation_cases": [],
+  "status": "NOT_RUN",
+  "reason": "服务未启动且未发送 HTTP 用户问题。"
+}

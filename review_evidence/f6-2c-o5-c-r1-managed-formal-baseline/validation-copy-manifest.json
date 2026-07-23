@@ -1,0 +1,12 @@
+{
+  "source_manifest_before_copy": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "copy_manifest_after_copy": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "source_stable_during_copy": true,
+  "source_record_count": 198,
+  "copy_record_count_before_run": 198,
+  "copy_record_count_after_run": 198,
+  "copy_manifest_after_run": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "copy_tree_sha256_after_run": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "copy_opened_by_chroma_api": false,
+  "copy_created_with": "training.sop.storage_snapshot.create_verified_copy"
+}

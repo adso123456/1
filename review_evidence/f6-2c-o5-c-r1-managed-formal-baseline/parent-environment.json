@@ -1,0 +1,13 @@
+{
+  "vanna_data_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_chroma",
+  "agent_data_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_agent_data",
+  "hf_hub_offline": "1",
+  "legacy_sql_examples_disabled": "0",
+  "resolved_data_dir": "E:\\3\\_training_backups\\f6-2c-o5-c-r1-managed-formal-20260723-111840\\validation_chroma",
+  "formal_runtime": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+  "formal_monitor_record_count": 198,
+  "formal_monitor_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_path_referenced_as_data_dir": false,
+  "parent_memory_diagnostics_executed": false,
+  "parent_memory_creation_disabled": true
+}

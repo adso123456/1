@@ -1,0 +1,11 @@
+{
+  "expected_case_count": 20,
+  "executed_case_count": 0,
+  "user_question_request_count": 0,
+  "retry_count": 0,
+  "pass_count": 0,
+  "fail_count": 0,
+  "not_run_count": 20,
+  "failed_http_cases": [],
+  "not_run_reason": "Memory Worker 启动前发生 FileNotFoundError；服务未启动，未发送 HTTP 用户问题。"
+}

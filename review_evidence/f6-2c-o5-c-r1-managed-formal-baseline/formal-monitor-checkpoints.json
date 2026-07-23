@@ -1,0 +1,25 @@
+{
+  "expected_record_count": 198,
+  "expected_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_runtime_fail_fast_triggered": false,
+  "checkpoints": [
+    {
+      "label": "before_memory_regression",
+      "checked_at": "2026-07-23T11:19:49.406989+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    },
+    {
+      "label": "after_service_stop",
+      "checked_at": "2026-07-23T11:19:49.442441+08:00",
+      "path": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "record_count": 198,
+      "sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "file_count": 5,
+      "passed": true
+    }
+  ]
+}
