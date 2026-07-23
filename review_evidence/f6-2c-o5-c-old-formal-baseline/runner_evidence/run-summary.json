@@ -1,0 +1,17 @@
+{
+  "run_stage": "F6-2C-O5-C",
+  "base_commit": "570c5a6a9c142885ba43a20a6581d68673714b15",
+  "status": "BLOCKED_AT_FORMAL_ASSET_PREFLIGHT",
+  "blocking_gate": "FORMAL_CHROMA_MANIFEST_CONTENT_SHA256_MISMATCH",
+  "expected_manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+  "actual_manifest_content_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_record_count": 198,
+  "formal_tree_sha256": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "http_user_question_request_count": 0,
+  "http_retry_count": 0,
+  "memory_cases_executed": 0,
+  "service_started": false,
+  "database_connection_performed": false,
+  "database_write_performed": false,
+  "final_conclusion": "BLOCKED_BY_OLD_FORMAL_BASELINE_FAILURE"
+}

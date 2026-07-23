@@ -1,0 +1,7 @@
+{
+  "suite_id": "postgresql-f5-regression-v1",
+  "suite_content_sha256": "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a",
+  "http_case_count": 20,
+  "memory_case_count": 6,
+  "git_blob_sha": "661645c4f594694cfacdfe43c4555e3a223710dd"
+}

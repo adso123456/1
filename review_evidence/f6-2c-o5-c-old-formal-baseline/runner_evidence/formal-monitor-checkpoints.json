@@ -1,0 +1,17 @@
+{
+  "checkpoints": [
+    {
+      "label": "preflight",
+      "record_count": 198,
+      "manifest_content_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "tree_sha256": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471"
+    },
+    {
+      "label": "postflight_after_verified_file_copy_only",
+      "record_count": 198,
+      "manifest_content_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "tree_sha256": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471"
+    }
+  ],
+  "unchanged_during_stage": true
+}

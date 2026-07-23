@@ -1,0 +1,10 @@
+{
+  "status": "NOT_RUN_DUE_TO_FORMAL_ASSET_PREFLIGHT_FAILURE",
+  "suite_http_case_count": 20,
+  "http_user_question_request_count": 0,
+  "http_retry_count": 0,
+  "http_pass_count": 0,
+  "http_fail_count": 0,
+  "failed_http_cases": [],
+  "answer_quality_deviation_cases": []
+}

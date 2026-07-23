@@ -1,0 +1,10 @@
+{
+  "credentials_included": false,
+  "business_data_rows_included": false,
+  "complete_prompt_included": false,
+  "chroma_binary_included": false,
+  "redacted_items": [],
+  "notes": [
+    "No service or user-question request was started, so no request payload, response, trace, SQLGuard log, or business row exists."
+  ]
+}

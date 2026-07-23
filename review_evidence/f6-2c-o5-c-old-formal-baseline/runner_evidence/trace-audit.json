@@ -1,0 +1,8 @@
+{
+  "status": "NOT_AVAILABLE_BECAUSE_SERVICE_WAS_NOT_STARTED",
+  "trace_count": 0,
+  "approved_example_trace_verified": false,
+  "no_approved_example_trace_verified": false,
+  "zero_row_trace_verified": false,
+  "provider_retry_observed": false
+}

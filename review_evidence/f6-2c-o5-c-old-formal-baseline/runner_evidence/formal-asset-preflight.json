@@ -1,0 +1,16 @@
+{
+  "formal_metadata_file_sha256_expected": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_metadata_file_sha256_actual": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_chroma_record_count_expected": 198,
+  "formal_chroma_record_count_actual": 198,
+  "formal_chroma_manifest_content_sha256_expected": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+  "formal_chroma_manifest_content_sha256_actual": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+  "formal_chroma_tree_sha256_expected": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "formal_chroma_tree_sha256_actual": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "manifest_content_gate_passed": false,
+  "tree_gate_passed": true,
+  "record_count_gate_passed": true,
+  "metadata_gate_passed": true,
+  "overall_passed": false,
+  "formal_chroma_opened_via_chroma_api": false
+}

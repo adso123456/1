@@ -1,0 +1,8 @@
+{
+  "status": "NOT_RUN_DUE_TO_FORMAL_ASSET_PREFLIGHT_FAILURE",
+  "suite_memory_case_count": 6,
+  "memory_cases_executed": 0,
+  "memory_pass_count": 0,
+  "memory_fail_count": 0,
+  "failed_memory_cases": []
+}

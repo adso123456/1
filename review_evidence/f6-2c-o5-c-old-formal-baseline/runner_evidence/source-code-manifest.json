@@ -1,0 +1,16 @@
+{
+  "validation_worktree_head": "570c5a6a9c142885ba43a20a6581d68673714b15",
+  "git_blobs": {
+    "backend/agent_factory.py": "1c69c48052240a61943081b3760c14682cbb47e6",
+    "backend/guarded_run_sql_tool.py": "54806bccbd84845929bcced3b6f9fbe8d3668306",
+    "backend/prompts.py": "a2b4b11dff023659ea9abae3de3e48af2d742126",
+    "backend/query_context.py": "98bf7dab974357082b75545417dd6c810b6ada08",
+    "backend/request_diagnostics.py": "f384af250dbefa7de98edf6140ff9dce47665a1c",
+    "backend/run_sql_requirement.py": "7ca66cf6dc109278b30819f46a1db14eea94a39c",
+    "backend/sql_example_context_enhancer.py": "d683e60e3b05f0acf816bbf64f0f0833c4302b6d",
+    "backend/tracing_llm_service.py": "f6c1a61e8e10be22045840a9e6e9db1d6a146578",
+    "tools/regression_service_harness.py": "fd3fd7b4b1740ab45e250c2fe03e7509ae273590",
+    "tools/run_postgresql_f5_regression.py": "e7d1a80a767e4b3b4ef3594ae96e30235ac3a9cc",
+    "step4_server.py": "81c6f5aaceffdb367eb67a3af44359d20866aaff"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "manifest": {
+    "content_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+    "directories": [
+      ".",
+      "68092f4b-e2a5-4ccd-b126-95b1218cb050"
+    ],
+    "directory_count": 2,
+    "file_count": 5,
+    "files": [
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
+        "sha256": "78c0b83896c4edecc7de297078711b694695672adb137b24bef8022b73e2b1be",
+        "size": 218800
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/header.bin",
+        "sha256": "5c8a407226e15554f8aa5e2dc70831bc8e464bd1433ac370e1dc9bef7e839d5a",
+        "size": 100
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
+        "sha256": "0b4157a3016bc0bbd23b13a755e8188522feb5e6a66b76f82ed0569055374948",
+        "size": 400
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/link_lists.bin",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "chroma.sqlite3",
+        "sha256": "bd2e99f888d91ff066108e37de92d1500900f66fd37ad52ba6f6d269ba0ea32b",
+        "size": 5070848
+      }
+    ],
+    "manifest_version": "1.0",
+    "total_bytes": 5290148
+  },
+  "result": "VALID"
+}
