@@ -6,11 +6,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from backend.metadata_retriever import DeterministicMetadataRetriever
-
-
-DEFAULT_INDEX_PATH = (
-    Path(__file__).resolve().parents[1] / "agent_data" / "column_metadata_index.json"
+from backend.metadata_retriever import (
+    DeterministicMetadataRetriever,
+    resolve_index_path,
 )
 
 FORBIDDEN_OPERATIONS = {
@@ -165,7 +163,7 @@ class SQLGuard:
     """基于本地元数据索引的 SQL 静态校验器。"""
 
     def __init__(self, index_path: str | Path | None = None) -> None:
-        self.index_path = Path(index_path or DEFAULT_INDEX_PATH)
+        self.index_path = resolve_index_path(index_path)
         self.table_columns = self._load_table_columns()
         self.retriever = DeterministicMetadataRetriever(self.index_path)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections import defaultdict
 from difflib import SequenceMatcher
@@ -11,6 +12,16 @@ from typing import Any
 DEFAULT_INDEX_PATH = (
     Path(__file__).resolve().parents[1] / "agent_data" / "column_metadata_index.json"
 )
+METADATA_INDEX_PATH_ENV = "METADATA_INDEX_PATH"
+
+
+def resolve_index_path(index_path: str | Path | None = None) -> Path:
+    selected_path = (
+        index_path
+        or os.getenv(METADATA_INDEX_PATH_ENV)
+        or DEFAULT_INDEX_PATH
+    )
+    return Path(selected_path).resolve()
 
 
 def _clean_text(value: Any) -> str:
@@ -36,7 +47,7 @@ class DeterministicMetadataRetriever:
     """基于元数据 JSON 的确定性候选表检索器。"""
 
     def __init__(self, index_path: str | Path | None = None) -> None:
-        self.index_path = Path(index_path or DEFAULT_INDEX_PATH)
+        self.index_path = resolve_index_path(index_path)
         self.tables = self._load_tables()
         self.conflict_families = self._build_conflict_families()
 
