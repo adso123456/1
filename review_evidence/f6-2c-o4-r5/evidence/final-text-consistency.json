@@ -1,0 +1,17 @@
+{
+  "successful_execution_acknowledged": true,
+  "zero_rows_acknowledged": true,
+  "future_query_claim_absent": false,
+  "nonexistent_year_filter_claim_absent": true,
+  "sql_guard_failure_claim_absent": true,
+  "fabricated_data_absent": true,
+  "executed_sql_matches_authoritative_tool_result": true,
+  "consistent_with_execution": false,
+  "blocking_findings": [
+    "The final text suggests querying the month, day, or other tables and asks whether another query should be performed.",
+    "The final text offers a future year-filtered query, contrary to the answer-only finalization rule.",
+    "The final text speculates that the annual table was not generated, m2_value was uncollected, or only certain years exist; none of these causes was established by the executed SQL result."
+  ],
+  "year_filter_assessment": "The final text does not claim that the executed SQL contained monitor_year = 2025, but it makes unsupported speculation about year availability and offers a future year filter.",
+  "fabrication_assessment": "No station, pH value, ranking, trend, proportion, or chart data was fabricated. Unsupported causal speculation is recorded separately as a consistency failure."
+}

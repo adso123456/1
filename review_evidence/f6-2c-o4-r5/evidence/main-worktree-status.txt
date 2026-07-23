@@ -1,0 +1,14 @@
+HEAD: 0a5ae735384206facd74a3d31bcd8c3c1d924f71
+origin/master: 0a5ae735384206facd74a3d31bcd8c3c1d924f71
+STAGED_FILES: NONE
+MODIFIED_FILES:
+ M backend/agent_factory.py
+ M backend/guarded_run_sql_tool.py
+ M backend/prompts.py
+ M backend/query_context.py
+ M backend/sql_example_context_enhancer.py
+ M tools/regression_service_harness.py
+ M tools/run_postgresql_f5_regression.py
+?? backend/request_diagnostics.py
+?? backend/run_sql_requirement.py
+?? backend/tracing_llm_service.py

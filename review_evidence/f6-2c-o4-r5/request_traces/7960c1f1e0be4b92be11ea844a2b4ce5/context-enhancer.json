@@ -1,0 +1,39 @@
+{
+  "trace_id": "7960c1f1e0be4b92be11ea844a2b4ce5",
+  "user_question": "查询年度pH年均值最高的站点列表",
+  "input_system_prompt_sha256": "ba9dab71ac78f672f2c8cf0a0db0a95bc746ae8b3458b6e1d6191fd9eb9c2b0f",
+  "base_enhanced_prompt_sha256": "9a133ad2e188f5f9729f4fce9239314b270a093ed794c98c0cc0b8698f3fa695",
+  "final_enhanced_prompt_sha256": "8f5646003b9aa59369771aab71375c0975b40c3035a22eea51ebd1f102de0594",
+  "retrieved_count": 3,
+  "injected_count": 3,
+  "filtered_examples": [],
+  "injected_examples": [
+    {
+      "sample_id": "L3_P0_SQL_004",
+      "question": "查询年度pH年均值最高的站点列表",
+      "sql": "SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level\nFROM wm_waterquality_year_records\nWHERE monitor_year = 2025 AND m2_value IS NOT NULL\nGROUP BY station_id, monitor_year, water_quality_level\nORDER BY AVG(m2_value) DESC\nLIMIT 20",
+      "sql_sha256": "83028c1062a77b1b9bf2dbc1016b031f87de04f77d65609c264c7ed8fb83911b",
+      "tables": [
+        "wm_waterquality_year_records"
+      ]
+    },
+    {
+      "sample_id": "L3_P0_SQL_011",
+      "question": "查看某站点日记录中pH值最高的记录",
+      "sql": "SELECT station_id, monitor_time, m2_value, water_quality_level\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL\nORDER BY m2_value DESC\nLIMIT 5",
+      "sql_sha256": "0d72d3faf4ad73471829620c0bc7188714b41b7874a1c4b8e69fb6eef3ad5093",
+      "tables": [
+        "wm_waterquality_day_records"
+      ]
+    },
+    {
+      "sample_id": "L3_P0_SQL_012",
+      "question": "查看某站点日记录中pH值最低的记录",
+      "sql": "SELECT station_id, monitor_time, m2_value, water_quality_level\nFROM wm_waterquality_day_records\nWHERE station_id = 1408 AND m2_value IS NOT NULL\nORDER BY m2_value ASC\nLIMIT 5",
+      "sql_sha256": "7f4b654b1256ceefc478a9b5cef677e1eef96b0336b8cd53edd7b986d563e568",
+      "tables": [
+        "wm_waterquality_day_records"
+      ]
+    }
+  ]
+}

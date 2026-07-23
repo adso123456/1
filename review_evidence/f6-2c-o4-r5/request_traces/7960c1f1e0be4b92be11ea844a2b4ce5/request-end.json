@@ -1,0 +1,9 @@
+{
+  "trace_id": "7960c1f1e0be4b92be11ea844a2b4ce5",
+  "timestamp": "2026-07-23T01:47:23.499595+00:00",
+  "status": "success",
+  "result_type": "Conversation",
+  "exception_type": null,
+  "error_message": "",
+  "context_cleanup_completed": true
+}

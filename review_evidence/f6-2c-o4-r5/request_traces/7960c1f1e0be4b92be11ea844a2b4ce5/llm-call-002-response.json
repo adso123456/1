@@ -1,0 +1,9 @@
+{
+  "trace_id": "7960c1f1e0be4b92be11ea844a2b4ce5",
+  "call_number": 2,
+  "timestamp": "2026-07-23T01:47:23.487562+00:00",
+  "response_type": "stream",
+  "content": "查询已执行成功，但**未返回任何数据**。这说明 `wm_waterquality_year_records` 表中当前没有可用的 pH 记录（`m2_value` 均为空或表中无数据）。\n\n### 可能的原因：\n1. **年记录表尚未生成**：年度汇总数据可能还未写入该表。\n2. **pH 字段为空**：表中虽然存在 `m2_value` 字段，但 pH 数据可能未被采集或填充。\n3. **数据时效性**：该表可能仅包含特定年份的数据，当前查询范围内无匹配记录。\n\n### 建议：\n- 如果您需要查看 pH 数据，可以尝试从 **月记录表**（`wm_waterquality_month_records`）或 **日记录表**（`wm_waterquality_day_records`）中查询，这些表数据粒度更细、更新更及时。\n- 如果您指定具体年份，我可以用年度条件进一步筛选查询。\n\n需要我帮您从其他表中查询 pH 数据吗？\n\n<!-- chart_spec: {\"type\":\"none\",\"title\":\"年度pH年均值最高站点列表\",\"xField\":null,\"yFields\":null,\"seriesField\":null,\"sizeField\":null,\"valueField\":null,\"min\":null,\"max\":null,\"unit\":null} -->",
+  "tool_calls": [],
+  "finish_reason": "stop"
+}

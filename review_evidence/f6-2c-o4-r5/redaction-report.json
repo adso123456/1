@@ -1,0 +1,20 @@
+{
+  "redacted_items": {
+    "authorization": 0,
+    "api_key": 0,
+    "database_credentials": 0,
+    "connection_string": 0,
+    "loopback_ip": 2,
+    "bind_ip": 1,
+    "local_host": 1,
+    "local_user": 0,
+    "business_rows": 0
+  },
+  "credentials_removed": true,
+  "business_rows_included": false,
+  "notes": [
+    "Loopback and bind IP addresses in the copied server log were replaced.",
+    "The local host label in the copied server log was replaced.",
+    "The zero-row DataFrame contains column names and row count only; no business data rows are present."
+  ]
+}

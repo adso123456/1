@@ -1,0 +1,19 @@
+
+Loading weights:   0%|          | 0/71 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 71/71 [00:00<00:00, 4852.15it/s]
+初始化 LLM 服务 (deepseek-v4-pro via DeepSeek official API)...
+连接 PostgreSQL...
+加载 ChromaDB 记忆库 (中文embedding + 0.55阈值)...
+注册工具 (run_sql)...
+创建 Agent (确定性元数据 + SQL示例上下文 + DefaultLlmContextEnhancer 注入检索记忆)...
+Legacy SQL examples: ENABLED
+Agent 创建完成!
+
+Your app is running at:
+http://[REDACTED_LOCAL_HOST]:8000
+INFO:     Started server process [33188]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://[REDACTED_BIND_IP]:8000 (Press CTRL+C to quit)
+INFO:     [REDACTED_LOOPBACK_IP]:62693 - "GET /health HTTP/1.1" 200 OK
+INFO:     [REDACTED_LOOPBACK_IP]:62695 - "POST /api/vanna/v2/chat_sse HTTP/1.1" 200 OK

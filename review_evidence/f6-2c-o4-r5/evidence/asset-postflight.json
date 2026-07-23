@@ -1,0 +1,19 @@
+{
+  "candidate_source_tree_sha256_after": "50c45963774e9586ae079a3591fe9afc87198edd0e15909eb317c66dd74223a6",
+  "validation_chroma_tree_sha256_after": "e0e70113f3a2ccb3545fd0dafd28cba865622fdfded5d9001646b0328177048e",
+  "validation_records_after": 198,
+  "validation_collection_counts_after": {
+    "tool_memories": 198
+  },
+  "formal_metadata_file_sha256_after": "c878e748669fac52bd60cd9e59e7670cc46757a10207078a46e1d29cedbf62e4",
+  "formal_chroma_tree_sha256_after": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "formal_metadata_unchanged": true,
+  "formal_chroma_tree_unchanged": true,
+  "formal_chroma_opened_via_api": false,
+  "database_write_performed": false,
+  "database_operations_observed": [
+    "SHOW transaction_read_only",
+    "SELECT"
+  ],
+  "port_8000_free_after_postflight": true
+}
