@@ -78,7 +78,7 @@ P1 指纹溯源结论：
 当前阶段：
 
 ```text
-F6-2C managed-v1 旧正式资产隔离完整基线已通过 20/20 HTTP + 6/6 Memory；下一步执行候选 Metadata 和候选 Chroma 的切换前完整验收。候选资产尚未切换。
+F6-2C managed-v1 旧正式基线与候选切换前验收均已通过 20/20 HTTP + 6/6 Memory；切换前正式资产备份已验证。下一步等待正式 Metadata 和正式 Chroma 切换授权。
 ```
 
 当前禁止越界进入：
@@ -1058,11 +1058,14 @@ F6-2C 当前进展（尚未完成）：
 - O4-R5 功能门禁通过：2 次 LLM、1 次 SQL、1 个 DataFrame、无重试；
 - approved SQL 示例与当前问题精确匹配时原样执行，防止模型删减冻结输出字段；语义近似问题仍只把示例作为参考；
 - managed-v1 旧正式资产隔离完整基线已通过：HTTP `20/20`、Memory `6/6`；
+- 候选 Metadata 和候选 Chroma 切换前完整验收已通过：HTTP `20/20`、Memory `6/6`；
+- 旧正式与候选 20 个用例的通过判定完全一致；候选仅在小时水质用例中额外保留题目指定的 `station_id` 列；
+- 切换前正式资产已备份至 `E:\3\_training_backups\f6-2-formal-pre-switch-20260723-123803`，Metadata 与 Chroma 指纹均验证等价；
 - 已知非阻断偏差：零行最终回答可能附带未经验证的原因推测或后续查询建议；
 - 该偏差记录为回答质量技术债，不阻断当前 F6-2C 资产切换流程；
 - F6-2C 候选 Metadata 和候选 Chroma 尚未切换。
 
-下一允许步骤固定为候选 Metadata 和候选 Chroma 的切换前完整验收：HTTP `20/20`、Memory `6/6`。
+下一允许步骤固定为取得用户明确授权后切换正式 Metadata 和正式 Chroma；切换后从正式资产创建全新副本并执行 HTTP `20/20`、Memory `6/6`。
 
 ---
 
@@ -1660,7 +1663,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
-| F6-2 Metadata 更新机制 | 进行中 | managed-v1 旧正式资产隔离完整基线已通过（20/20 HTTP、6/6 Memory）；下一步执行候选 Metadata 和候选 Chroma 的切换前完整验收 |
+| F6-2 Metadata 更新机制 | 进行中 | 旧正式与候选切换前验收均通过（20/20 HTTP、6/6 Memory），切换前备份已验证；等待正式资产切换授权 |
 | Vanna 源码移除 + 全项目瘦身 + 目录规范化 | 等待盘点指令 | 下一主板块，尚未开始 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1673,7 +1676,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-候选 Metadata 和候选 Chroma 切换前完整验收：20/20 HTTP、6/6 Memory。
+取得用户明确授权后，切换正式 Metadata 和正式 Chroma；随后从新正式资产创建全新副本并完成 20/20 HTTP、6/6 Memory 验收。
 ```
 
-F6-1 已正式完成，managed-v1 旧正式资产隔离完整基线已通过。F6-2 与 F6-2C 均尚未完成；F6-2C 候选 Metadata 和候选 Chroma 均未切换。下一步仅允许在候选资产隔离副本上执行 20 个 HTTP + 6 个 Memory 完整验收，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。
+F6-1 已正式完成，managed-v1 旧正式基线与候选切换前验收均已通过，切换前正式资产备份已验证。F6-2 与 F6-2C 均尚未完成；候选 Metadata 和候选 Chroma 尚未切换。下一步必须先取得正式资产切换授权，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。
