@@ -1,0 +1,28 @@
+{
+  "file": "training/sop/storage_snapshot.py",
+  "commit_a": "a1d322848012f5be1ba0ef2e4247139d4f92ea33",
+  "commit_b": "570c5a6a9c142885ba43a20a6581d68673714b15",
+  "blob_a": "30576f41903b7c5a1a9659dc6a609c958782c111",
+  "blob_b": "30576f41903b7c5a1a9659dc6a609c958782c111",
+  "manifest_algorithm_unchanged": true,
+  "manifest_version": "1.0",
+  "canonical_json": {
+    "encoding": "UTF-8",
+    "ensure_ascii": false,
+    "sort_keys": true,
+    "separators": [
+      ",",
+      ":"
+    ]
+  },
+  "digest_fields": [
+    "manifest_version",
+    "directory_count",
+    "file_count",
+    "total_bytes",
+    "directories",
+    "files[].path",
+    "files[].size",
+    "files[].sha256"
+  ]
+}

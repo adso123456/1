@@ -1,0 +1,65 @@
+{
+  "manifest": {
+    "content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+    "directories": [
+      ".",
+      "68092f4b-e2a5-4ccd-b126-95b1218cb050"
+    ],
+    "directory_count": 2,
+    "file_count": 5,
+    "files": [
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
+        "sha256": "8d63f0a3f871c2ea9a79439d89d66c80819bb768918a91d15faedd72d209253a",
+        "size": 218800
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/header.bin",
+        "sha256": "5c8a407226e15554f8aa5e2dc70831bc8e464bd1433ac370e1dc9bef7e839d5a",
+        "size": 100
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
+        "sha256": "5dade11089c8d95b1e4724f68611e2e69aeb39ffb76421538b0a9dda0a77c590",
+        "size": 400
+      },
+      {
+        "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/link_lists.bin",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "chroma.sqlite3",
+        "sha256": "45144bde34ed9dcb6310ef7f96f70a8a5b01766709e1f6dabf37d66059825f84",
+        "size": 5054464
+      }
+    ],
+    "manifest_version": "1.0",
+    "total_bytes": 5273764
+  },
+  "record_count": 198,
+  "source_path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\isolated-validation\\vanna_data",
+  "timestamp_evidence_trust": "LOW",
+  "timestamps": {
+    "68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin": {
+      "ctime_ns": 1784512115989946200,
+      "mtime_ns": 1784512233275386300
+    },
+    "68092f4b-e2a5-4ccd-b126-95b1218cb050/header.bin": {
+      "ctime_ns": 1784512115991843700,
+      "mtime_ns": 1784512233275386300
+    },
+    "68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin": {
+      "ctime_ns": 1784512115993885600,
+      "mtime_ns": 1784512233276386500
+    },
+    "68092f4b-e2a5-4ccd-b126-95b1218cb050/link_lists.bin": {
+      "ctime_ns": 1784512115994842300,
+      "mtime_ns": 1784512233275386300
+    },
+    "chroma.sqlite3": {
+      "ctime_ns": 1784512115995921800,
+      "mtime_ns": 1784512233134878500
+    }
+  }
+}

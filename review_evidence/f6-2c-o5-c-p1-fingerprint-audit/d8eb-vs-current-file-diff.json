@@ -1,0 +1,106 @@
+{
+  "changed_physical_files": 3,
+  "files": [
+    {
+      "content_changed": true,
+      "current_sha256": "78c0b83896c4edecc7de297078711b694695672adb137b24bef8022b73e2b1be",
+      "current_size": 218800,
+      "current_source_root": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "current_timestamp": {
+        "ctime_ns": 1784695091995365100,
+        "mtime_ns": 1784695091995365100
+      },
+      "old_sha256": "8d63f0a3f871c2ea9a79439d89d66c80819bb768918a91d15faedd72d209253a",
+      "old_size": 218800,
+      "old_source_root": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\isolated-validation\\vanna_data",
+      "old_timestamp": {
+        "ctime_ns": 1784512115989946200,
+        "mtime_ns": 1784512233275386300
+      },
+      "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
+      "size_changed": false,
+      "timestamp_evidence_trust": "LOW"
+    },
+    {
+      "content_changed": false,
+      "current_sha256": "5c8a407226e15554f8aa5e2dc70831bc8e464bd1433ac370e1dc9bef7e839d5a",
+      "current_size": 100,
+      "current_source_root": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "current_timestamp": {
+        "ctime_ns": 1784695092007425700,
+        "mtime_ns": 1784695092007425700
+      },
+      "old_sha256": "5c8a407226e15554f8aa5e2dc70831bc8e464bd1433ac370e1dc9bef7e839d5a",
+      "old_size": 100,
+      "old_source_root": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\isolated-validation\\vanna_data",
+      "old_timestamp": {
+        "ctime_ns": 1784512115991843700,
+        "mtime_ns": 1784512233275386300
+      },
+      "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/header.bin",
+      "size_changed": false,
+      "timestamp_evidence_trust": "LOW"
+    },
+    {
+      "content_changed": true,
+      "current_sha256": "0b4157a3016bc0bbd23b13a755e8188522feb5e6a66b76f82ed0569055374948",
+      "current_size": 400,
+      "current_source_root": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "current_timestamp": {
+        "ctime_ns": 1784695092008424900,
+        "mtime_ns": 1784695092008424900
+      },
+      "old_sha256": "5dade11089c8d95b1e4724f68611e2e69aeb39ffb76421538b0a9dda0a77c590",
+      "old_size": 400,
+      "old_source_root": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\isolated-validation\\vanna_data",
+      "old_timestamp": {
+        "ctime_ns": 1784512115993885600,
+        "mtime_ns": 1784512233276386500
+      },
+      "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
+      "size_changed": false,
+      "timestamp_evidence_trust": "LOW"
+    },
+    {
+      "content_changed": false,
+      "current_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "current_size": 0,
+      "current_source_root": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "current_timestamp": {
+        "ctime_ns": 1784695092009431900,
+        "mtime_ns": 1784695092009431900
+      },
+      "old_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "old_size": 0,
+      "old_source_root": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\isolated-validation\\vanna_data",
+      "old_timestamp": {
+        "ctime_ns": 1784512115994842300,
+        "mtime_ns": 1784512233275386300
+      },
+      "path": "68092f4b-e2a5-4ccd-b126-95b1218cb050/link_lists.bin",
+      "size_changed": false,
+      "timestamp_evidence_trust": "LOW"
+    },
+    {
+      "content_changed": true,
+      "current_sha256": "bd2e99f888d91ff066108e37de92d1500900f66fd37ad52ba6f6d269ba0ea32b",
+      "current_size": 5070848,
+      "current_source_root": "E:\\3\\_runtime\\vanna-level1\\vanna_data",
+      "current_timestamp": {
+        "ctime_ns": 1784695092009431900,
+        "mtime_ns": 1784695092013006300
+      },
+      "old_sha256": "45144bde34ed9dcb6310ef7f96f70a8a5b01766709e1f6dabf37d66059825f84",
+      "old_size": 5054464,
+      "old_source_root": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\isolated-validation\\vanna_data",
+      "old_timestamp": {
+        "ctime_ns": 1784512115995921800,
+        "mtime_ns": 1784512233134878500
+      },
+      "path": "chroma.sqlite3",
+      "size_changed": true,
+      "timestamp_evidence_trust": "LOW"
+    }
+  ],
+  "timestamp_evidence_trust": "LOW"
+}

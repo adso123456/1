@@ -1,0 +1,1689 @@
+{
+  "candidate_count": 187,
+  "candidates": [
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8",
+      "path": "E:\\3\\_training_backups\\0B-2B-backup-rehearsal-20260714-152130\\formal-chroma-backup",
+      "record_count": 72,
+      "source_stage_or_backup_name": "0B-2B-backup-rehearsal-20260714-152130",
+      "total_bytes": 1083556
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8",
+      "path": "E:\\3\\_training_backups\\0B-2B-backup-rehearsal-20260714-152130\\formal-chroma-restored",
+      "record_count": 72,
+      "source_stage_or_backup_name": "0B-2B-backup-rehearsal-20260714-152130",
+      "total_bytes": 1083556
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c92e62a2d50f5a64f47417f85c95f181273db6d25249b6aedda35db6cbe6d974",
+      "path": "E:\\3\\_training_backups\\f2-end-to-end-mvp-20260715-154345\\vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "f2-end-to-end-mvp-20260715-154345",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8",
+      "path": "E:\\3\\_training_backups\\f4-pre-cutover-20260715-160948\\legacy-formal-vanna_data",
+      "record_count": 72,
+      "source_stage_or_backup_name": "f4-pre-cutover-20260715-160948",
+      "total_bytes": 1083556
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8",
+      "path": "E:\\3\\_training_backups\\f4-pre-cutover-20260715-162219\\legacy-formal-vanna_data",
+      "record_count": 72,
+      "source_stage_or_backup_name": "f4-pre-cutover-20260715-162219",
+      "total_bytes": 1083556
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "2c7e673751ea39c4a89685bafe473c7441a79b04f4f8fafe8bb9bbb9ff331e38",
+      "path": "E:\\3\\_training_backups\\f4-runtime-binding-incident-20260715-162000\\altered-legacy-formal-vanna_data",
+      "record_count": 72,
+      "source_stage_or_backup_name": "f4-runtime-binding-incident-20260715-162000",
+      "total_bytes": 1083556
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "d4f13b5d36219a6ae099183b89d3a9b5eb6ee4ca4c1ea847ae90015f78a50357",
+      "path": "E:\\3\\_training_backups\\f4-runtime-binding-incident-20260715-162000\\promoted-after-first-smoke",
+      "record_count": 187,
+      "source_stage_or_backup_name": "f4-runtime-binding-incident-20260715-162000",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7d88ab5bcd625959f39791df74977ded68cce5240342a85f218737cd798f5e1a",
+      "path": "E:\\3\\_training_backups\\f5-batch01-q3-reproduction-20260715-174824\\vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-batch01-q3-reproduction-20260715-174824",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0332b188fa18de4da4d47f51ae29144c44926dbf58bed7cdf9f6286ce3dc02e6",
+      "path": "E:\\3\\_training_backups\\f5-batch02-scope-selection-20260715-205747\\vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-batch02-scope-selection-20260715-205747",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f89680a3e306c0a18b37384d43c1dee401c0ee29b18c92c5bf7de45e47e80be1",
+      "path": "E:\\3\\_training_backups\\f5-batch02-uncovered-table-discovery-20260715-211002\\vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-batch02-uncovered-table-discovery-20260715-211002",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "fede045f41c2bd78ca71a8b8582361401a8bf870d2988dcc994f7cb0ebf06c13",
+      "path": "E:\\3\\_training_backups\\f5-batch03-meteorological-scope-20260716-094041\\review-copy\\vanna_data",
+      "record_count": 189,
+      "source_stage_or_backup_name": "f5-batch03-meteorological-scope-20260716-094041",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0ccd0316c29e5c08d20a0caa3bb3b52770563bac57d122160dad2553dac264e7",
+      "path": "E:\\3\\_training_backups\\f5-batch04-uncovered-table-discovery-20260716-102957\\review-copy\\vanna_data",
+      "record_count": 190,
+      "source_stage_or_backup_name": "f5-batch04-uncovered-table-discovery-20260716-102957",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a9698c192f90fe764a54501444e9134d3e41af8a9fc76299102548c4652f2ec9",
+      "path": "E:\\3\\_training_backups\\f5-batch04-uncovered-table-discovery-20260716-103156\\review-copy\\vanna_data",
+      "record_count": 190,
+      "source_stage_or_backup_name": "f5-batch04-uncovered-table-discovery-20260716-103156",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c5c2d89c2e575d1ba01aabfef84504221f8f4f27b0c0645f75d01b5da90fbcc6",
+      "path": "E:\\3\\_training_backups\\f5-batch05-candidate-comparison-20260716-112748\\review\\vanna_data",
+      "record_count": 191,
+      "source_stage_or_backup_name": "f5-batch05-candidate-comparison-20260716-112748",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "386f52288318239f422595d15864bb5664745cd8c7370051d1210a3c07c69821",
+      "path": "E:\\3\\_training_backups\\f5-batch06-control-zone-scope-20260716-123023\\review\\vanna_data",
+      "record_count": 192,
+      "source_stage_or_backup_name": "f5-batch06-control-zone-scope-20260716-123023",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c2f88799763efd1aa67a4b522730056552601127f7dce3e802e3ea46f00a76b7",
+      "path": "E:\\3\\_training_backups\\f5-batch07-fresh-candidate-discovery-20260716-141429\\review\\vanna_data",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-batch07-fresh-candidate-discovery-20260716-141429",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "5d6d1e5afb2704bed8a6ebe1b4d692e3558255afc3aebcae646366a9b690feae",
+      "path": "E:\\3\\_training_backups\\f5-batch07-remaining-candidate-discovery-20260716-135953\\review\\vanna_data",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-batch07-remaining-candidate-discovery-20260716-135953",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "fba6dff8cb1e5d43e125fdea156f7b24a0c30e6f4bd50ec484c458e3d242c8df",
+      "path": "E:\\3\\_training_backups\\f5-batch07-remaining-candidate-discovery-20260716-135953\\review\\vanna_data_rerun",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-batch07-remaining-candidate-discovery-20260716-135953",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ac61da79faf1aa5c4cc70f2b5182f8c989b26342111380533038f139458007da",
+      "path": "E:\\3\\_training_backups\\f5-batch07-targeted-discovery-20260716-125821\\review\\vanna_data",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-batch07-targeted-discovery-20260716-125821",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "e5606682965cb50a9f6210c80eb0b2e8cb51a41f1d059cfa328fd6ca0431fb9e",
+      "path": "E:\\3\\_training_backups\\f5-batch07-water-source-zone-recheck-20260716-134652\\review\\vanna_data",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-batch07-water-source-zone-recheck-20260716-134652",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "cfc099ec37640579af8b09549d6ed1521aa6d5b14ec92e0b3ba61d246490aed1",
+      "path": "E:\\3\\_training_backups\\f5-batch07-water-source-zone-recheck-20260716-134652\\review\\vanna_data_rerun",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-batch07-water-source-zone-recheck-20260716-134652",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a142e3ea64aeb131ad49deeb65553d340a61691db3604dc5edc0000be0be74d2",
+      "path": "E:\\3\\_training_backups\\f5-batch08-relation-dictionary-scope-20260716-145409\\formal-review-copy",
+      "record_count": 194,
+      "source_stage_or_backup_name": "f5-batch08-relation-dictionary-scope-20260716-145409",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "aa46025602d422897479d4cf1d1a576247e434be9765ab345451d9c0c458cb72",
+      "path": "E:\\3\\_training_backups\\f5-batch08-relation-dictionary-scope-20260716-150021\\formal-review-copy",
+      "record_count": 194,
+      "source_stage_or_backup_name": "f5-batch08-relation-dictionary-scope-20260716-150021",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "34eb08cacc5c4a8bd72b98331656ea85d8803a0a3ff07de9affe3a0f4a457d04",
+      "path": "E:\\3\\_training_backups\\f5-batch09-fresh-candidate-discovery-20260716-160352\\formal-review-copy",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-fresh-candidate-discovery-20260716-160352",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "857b6aa9d18fc02d0ef8f8a13fd5f52d58ab337638e3d8b7e70421506d1fc257",
+      "path": "E:\\3\\_training_backups\\f5-batch09-fresh-candidate-discovery-20260716-160352\\formal-review-copy-2",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-fresh-candidate-discovery-20260716-160352",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c19ce19355e6ebe3ee9ee6bbba02ed32713ca2ac6eec52b38da1374af5d6d0d9",
+      "path": "E:\\3\\_training_backups\\f5-batch09-fresh-candidate-discovery-20260716-160352\\formal-review-copy-3",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-fresh-candidate-discovery-20260716-160352",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a640421f608f75cc119c0df08b154d3e50557bac684102e86b63d73c751cca9f",
+      "path": "E:\\3\\_training_backups\\f5-batch09-fresh-candidate-discovery-20260716-160352\\formal-review-copy-4",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-fresh-candidate-discovery-20260716-160352",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "18c700e0de2e60920eb4d2180ca95f40bdfc7f1abce1cf4965357f54890a6477",
+      "path": "E:\\3\\_training_backups\\f5-batch09-fresh-candidate-discovery-20260716-160352\\formal-review-copy-5",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-fresh-candidate-discovery-20260716-160352",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "fbce6d520a8ad671a7a4cc121aa238a2544ff7b6c05b703b4a0fa4bcc5b2773a",
+      "path": "E:\\3\\_training_backups\\f5-batch09-fresh-candidate-discovery-20260716-160352\\formal-review-copy-6",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-fresh-candidate-discovery-20260716-160352",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "dbbf5d67cc7476a684cb04753f8d94cf2d624135d1db6077b9243d85b1b1f387",
+      "path": "E:\\3\\_training_backups\\f5-batch09-remaining-shortlist-scope-20260716-154113\\formal-review-copy",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-remaining-shortlist-scope-20260716-154113",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a35627b5723067091a63abca234d83b102c287306db6eb0947875dbb858fa327",
+      "path": "E:\\3\\_training_backups\\f5-batch09-remaining-shortlist-scope-20260716-155004\\formal-review-copy",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-batch09-remaining-shortlist-scope-20260716-155004",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "472ed58023c6ebecc259558a1f6df047ccf47aff6c2586d1bf613c4ebaffb95a",
+      "path": "E:\\3\\_training_backups\\f5-batch10-candidate-discovery-20260716-165805\\formal-review-copy",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-batch10-candidate-discovery-20260716-165805",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "55ef200beeb8290b3ac3fb341855d75c73d132d02e5ac61b35d4035e40aba67d",
+      "path": "E:\\3\\_training_backups\\f5-g1-contamination-forensics-20260717-121535\\formal-runtime-55ef200b",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-g1-contamination-forensics-20260717-121535",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "abdb91fc40dc9e99d293c3322351d4c45164c7567042d230f85fc5969cc43518",
+      "path": "E:\\3\\_training_backups\\f5-g1-contamination-forensics-20260717-121535\\validation-copy-abdb91fc",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-g1-contamination-forensics-20260717-121535",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "55ef200beeb8290b3ac3fb341855d75c73d132d02e5ac61b35d4035e40aba67d",
+      "path": "E:\\3\\_training_backups\\f5-g1-regression-baseline-20260717-115308\\post-validation-copy\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-g1-regression-baseline-20260717-115308",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "abdb91fc40dc9e99d293c3322351d4c45164c7567042d230f85fc5969cc43518",
+      "path": "E:\\3\\_training_backups\\f5-g1-regression-baseline-20260717-115308\\validation-copy\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-g1-regression-baseline-20260717-115308",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ca40e248118517fc2accba2161f04c12daf97ac1ab7183584eb1418577940e9f",
+      "path": "E:\\3\\_training_backups\\f5-g1-runner-isolation-retest-20260717-131622\\validation-copy\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-g1-runner-isolation-retest-20260717-131622",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c554d12b2fb5028cc83bedd2dac3b58f6f51607dd134f10f6140191e486b7be6",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch01-20260715-170056\\isolated\\vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-level2-batch01-20260715-170056",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "8309be244c8222328d71e8bd2e2053d30885a06401ecb8f44f535a79e97b09ec",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch01-prewrite-20260715-170056\\runtime-vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "f5-level2-batch01-prewrite-20260715-170056",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a6ee2bd13469ea823c4c66a37732de5afa2a714bf3539a350120beeb7ad7df03",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch01-r2-20260715-172325\\failed-formal-vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-level2-batch01-r2-20260715-172325",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c8a0d6cebf8440263751a08acf6b3497d3f2c78c6c15b19f4cc7faea46e2e752",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch01-r2-20260715-172325\\isolated\\vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-level2-batch01-r2-20260715-172325",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "8309be244c8222328d71e8bd2e2053d30885a06401ecb8f44f535a79e97b09ec",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch01-r2-prewrite-20260715-172325\\runtime-vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "f5-level2-batch01-r2-prewrite-20260715-172325",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "818aa93e41122ae7705b69af32f6606baf06908e963f9420748f57d0f3be67e5",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch01-r3b-20260715-203837\\isolated\\vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-level2-batch01-r3b-20260715-203837",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "8309be244c8222328d71e8bd2e2053d30885a06401ecb8f44f535a79e97b09ec",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch01-r3b-prewrite-20260715-203837\\runtime-vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "f5-level2-batch01-r3b-prewrite-20260715-203837",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "41c4e0e7154b0d21e419dc60605436d91c8853c4a532bf809438db90435d16d4",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch02-20260715-212606\\isolated\\vanna_data",
+      "record_count": 189,
+      "source_stage_or_backup_name": "f5-level2-batch02-20260715-212606",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f887c15aa0f35042400851a9b679c6c215a74e2af7191e0de7d36f0c7ec1b5c7",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch02-prewrite-20260715-212548\\runtime-vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-level2-batch02-prewrite-20260715-212548",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f887c15aa0f35042400851a9b679c6c215a74e2af7191e0de7d36f0c7ec1b5c7",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch02-prewrite-20260715-212606\\runtime-vanna_data",
+      "record_count": 188,
+      "source_stage_or_backup_name": "f5-level2-batch02-prewrite-20260715-212606",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a10acf2ef82573969401934c0271c506ec3f699b7cdf59ae905879a4e47f0857",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch03-20260716-095016\\isolated\\vanna_data",
+      "record_count": 190,
+      "source_stage_or_backup_name": "f5-level2-batch03-20260716-095016",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7f0f921478c48100ad4d0dcf4078bd78f89096f69e8214760830b8f2cbfe45cf",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch03-20260716-095430\\isolated\\vanna_data",
+      "record_count": 190,
+      "source_stage_or_backup_name": "f5-level2-batch03-20260716-095430",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ab6be2a4901466830531073aee61ae1d62361c57cf18245a39cf23300607b71c",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch03-prewrite-20260716-095016\\runtime-vanna_data",
+      "record_count": 189,
+      "source_stage_or_backup_name": "f5-level2-batch03-prewrite-20260716-095016",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ab6be2a4901466830531073aee61ae1d62361c57cf18245a39cf23300607b71c",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch03-prewrite-20260716-095430\\runtime-vanna_data",
+      "record_count": 189,
+      "source_stage_or_backup_name": "f5-level2-batch03-prewrite-20260716-095430",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "eec18fbf2ea738111155b6ad7f33adaed8f94cbe583116de0f697426c219e691",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch04-20260716-104717\\isolated\\vanna_data",
+      "record_count": 191,
+      "source_stage_or_backup_name": "f5-level2-batch04-20260716-104717",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a9698c192f90fe764a54501444e9134d3e41af8a9fc76299102548c4652f2ec9",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch04-prewrite-20260716-104717\\runtime-vanna_data",
+      "record_count": 190,
+      "source_stage_or_backup_name": "f5-level2-batch04-prewrite-20260716-104717",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "019fded3f854df8c7471c4b519920edc30b20eee80f770675239e9f5f274de6c",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch05-20260716-114611\\isolated\\vanna_data",
+      "record_count": 192,
+      "source_stage_or_backup_name": "f5-level2-batch05-20260716-114611",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b3cfa82b42e6ef552fe33d4876130646cb453bfff806bc2ce8dea079a54b7700",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch05-20260716-115130\\isolated\\vanna_data",
+      "record_count": 192,
+      "source_stage_or_backup_name": "f5-level2-batch05-20260716-115130",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7d10c7294b0e1404d67e714c0e86b857b145bf02300d6b585bdeafe4fc2d56ed",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch05-prewrite-20260716-114611\\runtime-vanna_data",
+      "record_count": 191,
+      "source_stage_or_backup_name": "f5-level2-batch05-prewrite-20260716-114611",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7d10c7294b0e1404d67e714c0e86b857b145bf02300d6b585bdeafe4fc2d56ed",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch05-prewrite-20260716-115130\\runtime-vanna_data",
+      "record_count": 191,
+      "source_stage_or_backup_name": "f5-level2-batch05-prewrite-20260716-115130",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "3dba1d51d60bbdaffd30ad8e1ef65888e12fd15042b3bb612e319885834cb524",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch06-20260716-124334\\isolated\\vanna_data",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-level2-batch06-20260716-124334",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "32324dd26bb48bb14e5cf376caa05131d6afe028f12783be4a17d48902ba57dc",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch06-prewrite-20260716-124334\\runtime-vanna_data",
+      "record_count": 192,
+      "source_stage_or_backup_name": "f5-level2-batch06-prewrite-20260716-124334",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7ab68dd9a0cb2548402961a3143529e75c9d99d739e630e84952f14a4da93650",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch07-20260716-143356\\isolated\\vanna_data",
+      "record_count": 194,
+      "source_stage_or_backup_name": "f5-level2-batch07-20260716-143356",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "3bce02fc83d429e4673e96c100f8a05b22fe061815a57f76bfc9c08626d888c0",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch07-prewrite-20260716-143356\\runtime-vanna_data",
+      "record_count": 193,
+      "source_stage_or_backup_name": "f5-level2-batch07-prewrite-20260716-143356",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b89f321247b86013a56989c248d4b8d4485e9794911980e961a19a71116d7350",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch08-20260716-151259\\isolated\\vanna_data",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-level2-batch08-20260716-151259",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "4dee1cde03e583ffd9b86b8b8700f9478c4d6403206b1e1e37cc40bad52136ac",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch08-20260716-151755\\isolated-retry\\vanna_data",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-level2-batch08-20260716-151755",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "e1794de2e6b706071acd84cd931621128b348d7df49960df4e1924c2abdcc712",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch08-20260716-151755\\isolated\\vanna_data",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-level2-batch08-20260716-151755",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b6bf851163c9b7fc86c9189597676bb4f9708a38e91647cd434aaf0cad01a010",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch08-prewrite-20260716-151259\\runtime-vanna_data",
+      "record_count": 194,
+      "source_stage_or_backup_name": "f5-level2-batch08-prewrite-20260716-151259",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b6bf851163c9b7fc86c9189597676bb4f9708a38e91647cd434aaf0cad01a010",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch08-prewrite-20260716-151755\\runtime-vanna_data",
+      "record_count": 194,
+      "source_stage_or_backup_name": "f5-level2-batch08-prewrite-20260716-151755",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ff0d3456f52825e5f7f121d473b53f5a81dad023c2cfae03d75dfa8634149a23",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch09-20260716-163048\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch09-20260716-163048",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f731523f4b7b26aed947538a50a2869739a835104283eae8e8e8c0ec45002efd",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch09-20260716-163245\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch09-20260716-163245",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "bb33c188ab5e33ed85045eee01ed0c7db949845dadd1271247274706dc24e3e5",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch09-20260716-163440\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch09-20260716-163440",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "9fe682c8a81f1e95ebbf4b1e994064c2ab3b4ba2d217135bd677c1e4359397a8",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch09-prewrite-20260716-163048\\runtime-vanna_data",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-level2-batch09-prewrite-20260716-163048",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "9fe682c8a81f1e95ebbf4b1e994064c2ab3b4ba2d217135bd677c1e4359397a8",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch09-prewrite-20260716-163245\\runtime-vanna_data",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-level2-batch09-prewrite-20260716-163245",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "9fe682c8a81f1e95ebbf4b1e994064c2ab3b4ba2d217135bd677c1e4359397a8",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch09-prewrite-20260716-163440\\runtime-vanna_data",
+      "record_count": 195,
+      "source_stage_or_backup_name": "f5-level2-batch09-prewrite-20260716-163440",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "cf3bcefa44993d171fcceb6e187c735483afd181e9592e820300f88f4191b524",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-20260717-103614\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-20260717-103614",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "de7a22acdd96f17fc12260bf9cc8e445f1394ba4de92c39366080283373a76b9",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-20260717-103633\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-20260717-103633",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "5768281c1226faeadc6ac6da7c01122e9cf3fd00a0c09da476dc9eafb9d3418d",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-20260717-103921\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-20260717-103921",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "d383532189fdf02409fd6207f2041dfc6fa748be9abfbc4d0209c7f0b22079c5",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-20260717-104340\\isolated\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level2-batch10-20260717-104340",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "9c96658b811c8687a62628d23bba03e04a77cabe227e9f9ac3988bd960e5325f",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-20260717-104609\\isolated-retry\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level2-batch10-20260717-104609",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "30c588dcfa4e5db65106aec4325d7557c7c9fe8069af240478e5bd5eb671ab3a",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-20260717-104609\\isolated\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level2-batch10-20260717-104609",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "1503cfd2a8ff8376de95e1c2cd6b050b5bb8997d20b3a887fa5d658b1f9f2bd5",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-20260717-105622\\isolated\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level2-batch10-20260717-105622",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68a9ba51bbd6357d53d4299aa73e277e213865a98f968794833cc4d774c83df2",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-debug-20260717-103821\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-debug-20260717-103821",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c8ed6ab938177b7cd9c9a739faf0481a05170704384f8c4731747967ca49799b",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-debug2-20260717-104011\\isolated\\vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-debug2-20260717-104011",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68a9ba51bbd6357d53d4299aa73e277e213865a98f968794833cc4d774c83df2",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-prewrite-20260717-103614\\runtime-vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-prewrite-20260717-103614",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68a9ba51bbd6357d53d4299aa73e277e213865a98f968794833cc4d774c83df2",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-prewrite-20260717-103633\\runtime-vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-prewrite-20260717-103633",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68a9ba51bbd6357d53d4299aa73e277e213865a98f968794833cc4d774c83df2",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-prewrite-20260717-103921\\runtime-vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-prewrite-20260717-103921",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68a9ba51bbd6357d53d4299aa73e277e213865a98f968794833cc4d774c83df2",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-prewrite-20260717-104340\\runtime-vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-prewrite-20260717-104340",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68a9ba51bbd6357d53d4299aa73e277e213865a98f968794833cc4d774c83df2",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-prewrite-20260717-104609\\runtime-vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-prewrite-20260717-104609",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68a9ba51bbd6357d53d4299aa73e277e213865a98f968794833cc4d774c83df2",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-prewrite-20260717-105622\\runtime-vanna_data",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-prewrite-20260717-105622",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "cbd5ff1a3a2cfbe1cb5a71220281a4ace646e70d80cf33c07f784087cd0a4537",
+      "path": "E:\\3\\_training_backups\\f5-level2-batch10-scope-freeze-20260717-095937\\formal-review-copy",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-batch10-scope-freeze-20260717-095937",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f52fb88a8225b339cbad3ff9dffff111ef6bf68a486d02063454846c689b2c81",
+      "path": "E:\\3\\_training_backups\\f5-level2-closure-audit-20260716-173305\\formal-review-copy",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-closure-audit-20260716-173305",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "59a7d57a087fe885547850d44ac20c917b4e1306fd5e743dcf94061f3d30dcd5",
+      "path": "E:\\3\\_training_backups\\f5-level2-closure-audit-20260716-173305\\formal-review-copy-final",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-closure-audit-20260716-173305",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "90f1a6a5b58d71f84afb5742832d517b73648d9ae43908eca23b84fd1303e694",
+      "path": "E:\\3\\_training_backups\\f5-level2-closure-audit-20260716-173305\\formal-review-copy-final2",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-closure-audit-20260716-173305",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level2-final-closure-audit-20260717-111827\\review-after\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level2-final-closure-audit-20260717-111827",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a2860e65c9116ada4e45f30b7b719e12882e74c36999f4ab0b121c966fd95def",
+      "path": "E:\\3\\_training_backups\\f5-level2-final-closure-audit-20260717-111827\\review-final\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level2-final-closure-audit-20260717-111827",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b70b94773ee2604c1cf4ddc0be6d8b7b5bffec97374934de94680f00548e6eb3",
+      "path": "E:\\3\\_training_backups\\f5-level2-final-closure-audit-20260717-111827\\review\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level2-final-closure-audit-20260717-111827",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "62cf6a0fca3bb16847e48cb33c9d6df8c9240004d8fd2f506cead37c12cee81b",
+      "path": "E:\\3\\_training_backups\\f5-level2-final-focused-discovery-r2-20260717-095048\\formal-review-copy",
+      "record_count": 196,
+      "source_stage_or_backup_name": "f5-level2-final-focused-discovery-r2-20260717-095048",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "aebf6be8bfc517c95344d0fc45fda1c13f2fdfa6380156280a0f6b922b90689d",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-150018\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-150018",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-150018\\prewrite-backup\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-150018",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ee004e60305bce0c5f6002eba329b60edf4a23fb9b63974e28f848b3ef00c2ec",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-150209\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-150209",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-150209\\prewrite-backup\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-150209",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "74abd2061aff6aca0db474e5ac67aef5382f7b0ab50fbe220f1d6088c8188141",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-150810\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-150810",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-150810\\prewrite-backup\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-150810",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "608be318b8449b243d651961d83ce06243f281bd7173d79ab33311eee803c889",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-151124\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-151124",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-20260717-151124\\prewrite-backup\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-20260717-151124",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "00699614c832845645836a3226c7543fc79e55a21e3099776b1585ec0b68ec85",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r2-20260717-171320\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-r2-20260717-171320",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r2-20260717-171320\\prewrite-backup\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-r2-20260717-171320",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "08e425415fc9a03edb42c79e7d5d75441ddedae2c87027bdfe836a2cbf0877f2",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-092954\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-r3-20260720-092954",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-092954\\prewrite-backup\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-r3-20260720-092954",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-r3-20260720-094809",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\prewrite-backup\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-batch01-delivery-r3-20260720-094809",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7532488c55e0d8b16f52b0124d82c081b714f6017c174e03d414d936337d99b8",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-fix2-validation-20260717-164653\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-fix2-validation-20260717-164653",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c79835dc01a2b89efedd4c739b4cee6b5c21e2150ae49253e0c05d5c9a1b0c38",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-fix2-validation-20260717-170252\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-fix2-validation-20260717-170252",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "62cc23bc19295e3aa00e2ab51a29ebd1a32d94342b6feff01f86a69e431ae434",
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-runtime-trace-20260717-154644\\isolated-validation\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-level3-batch01-runtime-trace-20260717-154644",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-gap-validation-20260717-140201\\memory-review-copy\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-gap-validation-20260717-140201",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26",
+      "path": "E:\\3\\_training_backups\\f5-level3-legacy-capability-inventory-20260717-134857\\review-copy\\vanna_data",
+      "record_count": 197,
+      "source_stage_or_backup_name": "f5-level3-legacy-capability-inventory-20260717-134857",
+      "total_bytes": 5261476
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "e97099e24fd0109e65c1772d04b04247219aa10f52ce358e1017567125152709",
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\validation-copy-attempt2\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-postgresql-final-acceptance-r2-20260720-103031",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "3611712e4d7812fbb37bcaa98ab1ebff19d260b4e7984a8b8a7fb211b591495e",
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\validation-copy\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f5-postgresql-final-acceptance-r2-20260720-103031",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "763314669dbd4a4e6884573ae49a3d6b76e37319152bb005af37a3aa73fc8038",
+      "path": "E:\\3\\_training_backups\\f6-1a-20260720-113114\\isolated_chroma",
+      "record_count": 50,
+      "source_stage_or_backup_name": "f6-1a-20260720-113114",
+      "total_bytes": 1968292
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0995793fc839c00bb01f4641f4fb74a18f485e849652d31c2d93a15de940e43d",
+      "path": "E:\\3\\_training_backups\\f6-1a-r1-20260720-124151\\isolated_chroma",
+      "record_count": 50,
+      "source_stage_or_backup_name": "f6-1a-r1-20260720-124151",
+      "total_bytes": 1972388
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ed3d64f96cbf393ba09f7d9d0a6989ebd0c4aa09033eddf44cb94e7d183473e6",
+      "path": "E:\\3\\_training_backups\\f6-1b-20260720-125411\\isolated_chroma",
+      "record_count": 50,
+      "source_stage_or_backup_name": "f6-1b-20260720-125411",
+      "total_bytes": 1968292
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "d2ebe577b7ed1a592a9cb3fe9c0332695c3317f950f264cda0a1548d3b358466",
+      "path": "E:\\3\\_training_backups\\f6-1d-20260720-141542\\isolated_chroma",
+      "record_count": 2,
+      "source_stage_or_backup_name": "f6-1d-20260720-141542",
+      "total_bytes": 420004
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "14fdfb73b4ba936e78dd7cd5321fddc082b62373b4740ff354434a71b69bee7c",
+      "path": "E:\\3\\_training_backups\\f6-1e-20260720-144046\\isolated_chroma",
+      "record_count": 5,
+      "source_stage_or_backup_name": "f6-1e-20260720-144046",
+      "total_bytes": 432292
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "d37bd8a7e4d3e31998bf6cc68e64de66891f14839eb5062eab077bcf58270e20",
+      "path": "E:\\3\\_training_backups\\f6-1f-20260720-150243\\isolated_chroma",
+      "record_count": 115,
+      "source_stage_or_backup_name": "f6-1f-20260720-150243",
+      "total_bytes": 3307684
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f37cdd2eb07856995ab05dd6bbccea17bfaeae1f60e2d848623f9810d8076e3e",
+      "path": "E:\\3\\_training_backups\\f6-1g-20260720-153450\\formal_snapshot",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1g-20260720-153450",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1h-20260720-161131\\formal_archive",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1h-20260720-161131",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c64aa7a7afdaffae075f39553e3cd75d0f10086744ec2ccb2cc25b74572566e0",
+      "path": "E:\\3\\_training_backups\\f6-1h-20260720-161131\\query_snapshot_run1",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1h-20260720-161131",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "d66922083125ee6474689368c709cf1fca7a098ac99924fac1677ba84141fedf",
+      "path": "E:\\3\\_training_backups\\f6-1h-20260720-161131\\query_snapshot_run2",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1h-20260720-161131",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260720-171235\\candidate_working_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260720-171235",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260720-171235\\immutable_source_archive",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260720-171235",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b0bdd344638719a5c88c9e0229603b106b2e74c96774b9c77a1452fa99f4b5d0",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260720-171235\\source_query_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260720-171235",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "818dd773d87435b24ca75c5131f57f98ae095057adbe14383182aa0ebe017640",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\candidate_query_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7ffe4edc23b379bf4e0ed0db278bc73c4e622ada313e05c37d8eae978b8bf661",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\candidate_working_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\immutable_source_archive",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f88639f844cc8b99a02179168bf35ca9454d389302a7cec6f75e04156153f0dd",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\forward\\live",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\forward\\pre_switch",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7ffe4edc23b379bf4e0ed0db278bc73c4e622ada313e05c37d8eae978b8bf661",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\live_acceptance_failure\\failed_candidate",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\live_acceptance_failure\\live",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "53564f71d04ab705b58e552ca41a180e277882c7f898d6891b6139f3e64a89cf",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\live_acceptance_failure\\rollback_validation_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7ffe4edc23b379bf4e0ed0db278bc73c4e622ada313e05c37d8eae978b8bf661",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\second_step_failure\\candidate",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\second_step_failure\\live",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "68b61ae2848252a691e0b2ed21bc411423f0f57f3031f0b0f916d22bbd75590f",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\sandbox\\second_step_failure\\rollback_validation_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "060c6c3dc7709cc3c55277d32de20e637638da3cdb1e6acfd7bd24049214b755",
+      "path": "E:\\3\\_training_backups\\f6-1i-b-20260721-091258\\source_query_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-b-20260721-091258",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f6740e99acc57803bad9f95218583f2b92c015c6ce721679f3d2fe4df1c4ef0e",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\candidate_query_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-20260721-094654",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "9439a775dafa40b937d3ee423fb6528b2c787c34419f3bb2ab242e5e695ffb25",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\candidate_working_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-20260721-094654",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": true,
+      "file_count": 5,
+      "manifest_content_sha256": "d8eb66906905a6da0ae6f9f6d56ce1f552ff3c3d54867203f01a912e24ebe992",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\immutable_source_archive",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-20260721-094654",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "2dbac2e6cef7a02c97629b6c94c079064af445e1320ea4782be174e710b6bfb8",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\post-switch_regression_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-20260721-094654",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7ec9ccc1e0291cc12c832e98f8ecdba067202243ddc5a768452f92871d69b347",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\post_switch_query_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-20260721-094654",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "38300a1b0c90e473004df1f18057a7ecfb5912646cba5aaacb47ce8ebcfdb0b8",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\pre-switch_regression_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-20260721-094654",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b849d92d5cb8224d24539bb32c2c5f58a04421dc79925cbbff329b918a134b63",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\source_query_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-20260721-094654",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "ce7b6060f4ac1f01c35d106ab280024a0d922149d24f121d0e5b70ddcf08499e",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-r2-20260721-102627\\current_live_diagnostic_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-r2-20260721-102627",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "61821eb285132ed9f3c774e5ebcf4feceda2f922b90576a99d6559b166d7bf90",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-r2-20260721-102627\\pre_switch_diagnostic_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-r2-20260721-102627",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0ccf1ce74be67c7a5a7e26fa1218ac87a9b4b35ee056df37b35c79e93b86471e",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-r3-20260721-105855\\current_live_acceptance_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-r3-20260721-105855",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "76c9c0fdf99507d6c1072e7f9354d676787c49deaa62029804985a8391eb7dfb",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-r3-20260721-105855\\current_live_regression_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-r3-20260721-105855",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f613d65f02d2ea5a5edff56af99af96e164e524fa2f1148ab5285e622f1cab0f",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-r3-20260721-105855\\current_live_topk_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-r3-20260721-105855",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "e4f5f033171f9840bb1985b32ad20102a6eb218cdc90d7ff768504169d5af873",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-r3-20260721-105855\\pre_switch_acceptance_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-r3-20260721-105855",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "cabed9f5d3283caff8319ec9f7e12f86ad89298eb918b190e3216e551066f403",
+      "path": "E:\\3\\_training_backups\\f6-1i-c-r3-20260721-105855\\pre_switch_topk_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-1i-c-r3-20260721-105855",
+      "total_bytes": 5273764
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "09f201d64b54909b30360c6b78464492fd43ad40603a71017517692baf94b146",
+      "path": "E:\\3\\_training_backups\\f6-2c-20260722-100422\\candidate_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-20260722-100422",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46",
+      "path": "E:\\3\\_training_backups\\f6-2c-20260722-100422\\candidate_chroma_failed_after_switch",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-20260722-100422",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "path": "E:\\3\\_training_backups\\f6-2c-20260722-100422\\formal_chroma_before",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-20260722-100422",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "8ff3bd99ce77bb18f3905fe73f7841f5ee983684d2b6b2c8c6012a6401d2a57b",
+      "path": "E:\\3\\_training_backups\\f6-2c-20260722-100422\\regression_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-20260722-100422",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "decbf251841ec75fe97a3121ad22e5bc780f5c313526ec888d797f442f4ce33f",
+      "path": "E:\\3\\_training_backups\\f6-2c-b1-20260722-111443\\formal_runtime_copy",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-b1-20260722-111443",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b4630ecc5219e55a1580bfb36abff59064f0ead0f8968ccdfdd43a4f2a8bfcf0",
+      "path": "E:\\3\\_training_backups\\f6-2c-b3-forensics-20260722-123533\\formal_chroma_changed",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-b3-forensics-20260722-123533",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b4630ecc5219e55a1580bfb36abff59064f0ead0f8968ccdfdd43a4f2a8bfcf0",
+      "path": "E:\\3\\_training_backups\\f6-2c-b3-forensics-20260722-123533\\formal_chroma_changed_original",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-b3-forensics-20260722-123533",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "b1f82a839e88c710c9c258a3b4bb844599922ca547dffc05b3a463652d117644",
+      "path": "E:\\3\\_training_backups\\f6-2c-b3r-20260722-124745\\validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-b3r-20260722-124745",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "09a575fec6aa2d25cec625dd68df62d7909a0326bc83c4d63d90aae6a148fa55",
+      "path": "E:\\3\\_training_backups\\f6-2c-b4-20260722-130105\\validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-b4-20260722-130105",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "path": "E:\\3\\_training_backups\\f6-2c-n1-20260722-133555\\backups\\formal_chroma_old",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-n1-20260722-133555",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "1761c550a5b256f284b6fa8a1150c19fb900b3c6abbd3287197163c88beff79d",
+      "path": "E:\\3\\_training_backups\\f6-2c-n1-20260722-133555\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-n1-20260722-133555",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "7d007db6a43f71c756d138e0ab39f08d263b657acd33615d18478635699714b0",
+      "path": "E:\\3\\_training_backups\\f6-2c-o2-20260722-142102\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o2-20260722-142102",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "fcafed11baca8ca98cd45f63c3208beb523ae0f952b28f66e70a6b63a74fcc6d",
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-20260722-145351\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o4-20260722-145351",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "d89b1ca7136ec97986f51cf0f10bfb07678697c92d631e8ddc65864d3f4f14c0",
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r1-20260722-152015\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o4-r1-20260722-152015",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f66b54d49173d98090564f4336c912ec196b5f2ca2938bf2cd7efdb42e4e1031",
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r2-20260722-160804\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o4-r2-20260722-160804",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "18ba8052b196c8a0e05affc35932bfe3d268129a07d2c22371f45b2f20e5bc8e",
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r3-20260722-165401\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o4-r3-20260722-165401",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f6718a0c84446528205df6de91f641341b8ad00c9f25b3e532c8c2277650b0bd",
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r4-20260723-091719\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o4-r4-20260723-091719",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "71149fb56446ed8a740a1ea80094b6677f0bb6875e703db55ce771ac3a1cfeb7",
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r5-20260723-094430\\candidate_validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o4-r5-20260723-094430",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0f163f373d1336e4c34522fb385d3355f1663a75d47184dbd395671f1026144c",
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-old-formal-20260723-102610\\validation_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-o5-c-old-formal-20260723-102610",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "efe64eddb3918bbe2bed2622498b9469de42ddce142260b2b1adc9126f264247",
+      "path": "E:\\3\\_training_backups\\f6-2c-r1-20260722-102721\\context_candidate_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-r1-20260722-102721",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "c460d221cce4382c2ab130f5fcab7f24cce217ecf096c266f06c299409b020c1",
+      "path": "E:\\3\\_training_backups\\f6-2c-r1-20260722-102721\\context_old_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-r1-20260722-102721",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "5e6343bf509185a6c1b0707fbdd8468e3a4cebc551e3b053c02e07af820fa311",
+      "path": "E:\\3\\_training_backups\\f6-2c-r1-20260722-102721\\targeted_candidate_chroma",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-r1-20260722-102721",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "72beaa5c0d84a4883eec64d97cacf8bb3d5d93f7451821a0dcd51e1d82850273",
+      "path": "E:\\3\\_training_backups\\f6-2c-r2-20260722-104536\\candidate_runtime",
+      "record_count": 198,
+      "source_stage_or_backup_name": "f6-2c-r2-20260722-104536",
+      "total_bytes": 5314724
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "420629b0214c3628dd90bec5438451e001bb74152405084697898c539aea87b6",
+      "path": "E:\\3\\_training_backups\\full-schema-functional-115-20260715-145936\\vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "full-schema-functional-115-20260715-145936",
+      "total_bytes": 3500196
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "d36198899213d2c67075bb901929c3142e437ed686078f58318dc575050dbf53",
+      "path": "E:\\3\\_training_backups\\full-schema-functional-115-20260715-150234\\vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "full-schema-functional-115-20260715-150234",
+      "total_bytes": 3586212
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "6b917860cb9e6fcc869c76bf29e5ebcfbdcf88792036b280f845ebb234fd8823",
+      "path": "E:\\3\\_training_backups\\full-schema-functional-115-20260715-150814\\vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "full-schema-functional-115-20260715-150814",
+      "total_bytes": 5306532
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "f93dd64964e43fec5691662645ef8fada98fd355a7d979a7017e79828ad80ef6",
+      "path": "E:\\3\\_training_backups\\full-schema-functional-115-20260715-151911\\vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "full-schema-functional-115-20260715-151911",
+      "total_bytes": 5236900
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "46b9661814de42097f492822946a5b6ea6b39440ef338f53befa4a5bb50bd9a6",
+      "path": "E:\\3\\_training_backups\\full-schema-functional-115-20260715-152328\\vanna_data",
+      "record_count": 187,
+      "source_stage_or_backup_name": "full-schema-functional-115-20260715-152328",
+      "total_bytes": 5249188
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "2bef298bfa63a59acd7852bd7e7e6cec0147249f4c57aa09b23334f8ee63761f",
+      "path": "E:\\3\\_training_backups\\level23-longterm-regression-20260721-154938\\vanna_data",
+      "record_count": 198,
+      "source_stage_or_backup_name": "level23-longterm-regression-20260721-154938",
+      "total_bytes": 5290148
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8",
+      "path": "E:\\3\\_training_backups\\project-vanna-data-before-formal-20260721-112727",
+      "record_count": 72,
+      "source_stage_or_backup_name": "project-vanna-data-before-formal-20260721-112727",
+      "total_bytes": 1083556
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "4fd753c4d4c0d22119b6349856f195fe4ed7e23466120f6786edb979606646d8",
+      "path": "E:\\3\\_training_backups\\project-vanna-data-displaced-20260721-112727",
+      "record_count": 72,
+      "source_stage_or_backup_name": "project-vanna-data-displaced-20260721-112727",
+      "total_bytes": 1083556
+    },
+    {
+      "exact_d8eb_match": false,
+      "file_count": 5,
+      "manifest_content_sha256": "0600a58b6312ed1a06425c28ab772aafaff5d7f09af95407121dc7fd6ac84e71",
+      "path": "E:\\3\\_training_backups\\zero-b4-tool-memory-rehearsal-20260715-164435\\success-attempt\\vanna_data",
+      "record_count": 189,
+      "source_stage_or_backup_name": "zero-b4-tool-memory-rehearsal-20260715-164435",
+      "total_bytes": 5249188
+    }
+  ],
+  "exact_d8eb_source_count": 9
+}

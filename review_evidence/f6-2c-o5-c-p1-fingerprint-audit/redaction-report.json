@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "chroma_binary_files_included": false,
+  "business_data_rows_included": false,
+  "full_embeddings_included": false,
+  "credentials_included": false,
+  "database_connection_strings_included": false,
+  "documents_in_logical_inventory": false,
+  "logical_inventory_content": "record identifiers plus document and normalized metadata SHA256 digests and non-sensitive classification fields",
+  "redacted_items": [],
+  "notes": "证据仅保留摘要、记录标识、分类字段、审计路径和文件级/逻辑级 SHA256；未提交两个验证副本或任何 Chroma 二进制文件。"
+}

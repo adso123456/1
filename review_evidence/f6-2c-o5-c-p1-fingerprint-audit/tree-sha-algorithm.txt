@@ -1,0 +1,20 @@
+Source: tools/refresh_metadata_index.py, function directory_tree_sha256
+
+def directory_tree_sha256(path: Path | str) -> str:
+    """按相对路径和文件内容计算确定性目录 SHA。"""
+    root = Path(path).resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"目录不存在: {root}")
+    digest = hashlib.sha256()
+    files = sorted(
+        (item for item in root.rglob("*") if item.is_file()),
+        key=lambda item: item.relative_to(root).as_posix(),
+    )
+    for item in files:
+        relative = item.relative_to(root).as_posix().encode("utf-8")
+        content = item.read_bytes()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()

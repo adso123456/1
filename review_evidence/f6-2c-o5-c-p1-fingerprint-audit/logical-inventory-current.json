@@ -1,0 +1,1990 @@
+{
+  "collection_counts": {
+    "tool_memories": 198
+  },
+  "embeddings_exported": false,
+  "logical_total_sha256": "366f661a741516dc029e37d42fc8db8a35cb9a977cf4c7ed39c7682b37f5a16f",
+  "record_count": 198,
+  "records": [
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "13a8152c5d34d5642a7a553c39eceae1556b28bc6e20e60c0cfd478c3a7fb6f4",
+      "metadata_sha256": "0c8626078f22bc6d845832ba36374daf29cca91a9c87ee9dccaa964838c97441",
+      "record_id": "013dd67c-16d4-40f9-afe8-e736bdb3312b",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "73ef99e072600055c813da532285206e5c54ae908d331e1bdca7b02ec8697878",
+      "metadata_sha256": "ba94bc4a69447a23c0e1f9dd6feeeb307294cb6f50a5b66c7925ee519e3a1bcd",
+      "record_id": "0372f63c-84ac-4435-b081-050af195a2c9",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "93f65d76fd25b20a1ec2de54b683ecebba2bcb8c5008cd0cd839cce302767182",
+      "metadata_sha256": "75847e73fff12226e340f8b89d22441e4294c5852e856d6b01b22f31132ca543",
+      "record_id": "0a566ee6-c34a-42a1-a98d-980871a74b4e",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "59b3b0dc3203f6bdb360b9588dba84b2f7a9d441e592c3bd53fc73051d80fdea",
+      "metadata_sha256": "ad16892bdc0fb54087c3e2f87e58e346c52a404ade9f373a466738e5017126c7",
+      "record_id": "0c54fdfa-3aa7-49f1-9f50-bfe69dfe5bc6",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "7a8282e9009686b590b0e7fbf054251f70116beab67dadad01ca13b2c6551e45",
+      "metadata_sha256": "11ce661c58b906c8f9197629e947e3c93519da070459cca64105a2dfd9f076c1",
+      "record_id": "0eb1b307-3788-4de3-b0d5-d2576227ce35",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "fb3e8c61721a81d458ab8c2bb0b71b432c5e2b2931de0ce3a8d6b4d22f61952a",
+      "metadata_sha256": "6b41aff4698e247efdc02fad27bab4a0270c8e4744bbb5b7a58e457d9b8ba5fa",
+      "record_id": "11e70856-07f3-4733-aa9e-e64ed6aa03f0",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "52221ba4a5ceb4055d9bbc9e63d4576dccd9d09add432799aa34f1e6cf316b62",
+      "metadata_sha256": "193e02840a2d5352743b2733c9ce022b3090627db7010a642ff40ab0975bfa43",
+      "record_id": "1226e438-2725-418d-909f-2189f3315f35",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "92dfa11afa5e5c71bc97a0d20a012712fbef617c315cc9c3c37968ade1db82f9",
+      "metadata_sha256": "bb47beee9a47e457dbdffe9321e55e8313ee5bca9ff3f1d3fc76e6beb297fc9b",
+      "record_id": "13935be4-e76d-4340-b1d5-c125d8e79828",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "a03144d4a8360de1825dcd3ba9173371b1bf888cbfcd7833deea6fd292947f1b",
+      "metadata_sha256": "dd865ea82e67c1f634b5a2f4fdf2d80bdcc93d6c87943a8d1f2274b3db2bc77f",
+      "record_id": "23ce53c0-e500-4acb-8928-37cefaf40280",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8431252f005218913cb294ece56d06203a640e1249d6032a29c91170d7da11a1",
+      "metadata_sha256": "49e9328cc8eaafaa4945dd57a82484e5d3e74ff2c2249e51e2b6ea741678ce85",
+      "record_id": "25af065d-4d92-4750-9f25-7824c4065e1e",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5052254524f0dec97acb15fe0a8d23a28bd14b867c44a845d0b180516b9638b6",
+      "metadata_sha256": "f2e10a83feb69d8f45e0cb8970e019805fced729942b43d40cb4625618b63017",
+      "record_id": "2655597b-761d-49f3-a1a6-ebe4e9fb28b8",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "63e0531e565a7afe5a67f4184022a0417cfeccd01fc3cfc0b6f02ac63091a2a4",
+      "metadata_sha256": "5996a018d7ae68047b4549152de14b729a7c0986c958279f8caa3b562045827c",
+      "record_id": "27dab3eb-74ff-406c-8ba9-86c671791b3c",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "359301c6e7877ea4b7af45f60b08567f8e86ba5b06162c92b31362ad0501b109",
+      "metadata_sha256": "fb7c221bce5e538da168e47229201809125cf9c0992800f86348f562e5acd7c0",
+      "record_id": "2eef2294-f3e4-49c2-ad51-494185ed6068",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c0263f478c221737fcd19767b32e97b558b6e1112b2f54f164ea1378981c5714",
+      "metadata_sha256": "3e51220b172aa197ade0f16e1742bee4284b1131323b41e63a072dfbf2e82613",
+      "record_id": "2fafb41b-4fd1-4a01-8884-4a36faa00993",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "a13de166bcdfddd7cd0299c5d34cdaad27964e1b8366e2c414662491e2b65b67",
+      "metadata_sha256": "e5d01aeb4ca0eaf436a67a8517ccb1d2acfc43d57ccb881a06f1329530afc79f",
+      "record_id": "318dc5c5-40d9-4f85-890c-a0d13a5739f4",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "283f56f9857abe06e19f2c7b5bba2b35f40ea3d02edb3e6aaadd03f36748d584",
+      "metadata_sha256": "801095ccbeae6a7e53d724fd9c503462c7215dd66ded0b28d44874f7d330fafd",
+      "record_id": "3b61e715-8086-41e4-aeee-deb74bce6caa",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "be1931422b558100576b3b7140cf7b703b63e7b938d5c739a013f37eca14b43f",
+      "metadata_sha256": "5b237fa2d5b50a17aedc848deedcc83e40dfa9d2034fccd59d74a3bc06d54633",
+      "record_id": "3c38cf92-a8b7-443e-a588-85b9411e5cfd",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0476337eaaea50cdffadf3218681a79ebbe4237e2ce995a3198fe91d992b24fa",
+      "metadata_sha256": "fda97d96bf239f0eef892b5caf938cb1d494a4c83f949d27fa0d71b5d7d62061",
+      "record_id": "3ce6dffc-94c0-46ed-a433-ade49a83c7b2",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "993ce17802046932c1191505a027fb32a548128d8b04650667f575fe9a755a31",
+      "metadata_sha256": "4ab07ef8dd93d9c54d0ee2e2bdd39e2fb2189f71d76f12e0d6b6423e748ed3bf",
+      "record_id": "412b7498-66bd-4a4e-84ca-316b3332dffb",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5f4c048faee4bb7e2ebb074743c8960db73687f6554cee8dc18b791f05456cb9",
+      "metadata_sha256": "20c72d0a030c225b26c598b822c0d69170da6fbc8190cbf0943c768e5f44780e",
+      "record_id": "42491fda-23ef-48e0-b961-f18c6b76167e",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "2b6d4dd66a7149306d1f17dc17d225f4aade44396894946e2bb10496ee5c1893",
+      "metadata_sha256": "781d70db7e92f4e2b298cf940a9bf1574335e2928b950fc61ff8c54fc89fae62",
+      "record_id": "440d3045-9413-4bce-aafd-984e874def4d",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "264b79696d11c147f0a0a8e6e28ceef1524e27de29edf66ca81b98f423981182",
+      "metadata_sha256": "1ea8c6741ffd6990c00ae5a36c67ae924f7720ccc7c783fec489259082cda02b",
+      "record_id": "4c293934-fdcb-4c82-ab1b-bedae1baf148",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c6969b8a1ce1ab76f40dc035572175db4006db9ebac8c1adbd6ea01a48d8233a",
+      "metadata_sha256": "b4e176453c438cac14ec4d578cc8758b3743ea7447e8b52cbbe350a530af5415",
+      "record_id": "4dcbb669-6b75-4684-932e-abed5ecf2289",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "611a3465b30e7a82f6c9defceeabd57a8535127736aa478aa784969facf7345c",
+      "metadata_sha256": "6512c224e67e5fa12f431cc05ef27b00632870f6dcd3661d83365ca8d093aa37",
+      "record_id": "5216efb0-3749-4784-aced-52d5ccda98e0",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "ab9bdd613e0c19dc776bdec442039ceb20455b0352691d6571f9d26eae6b8691",
+      "metadata_sha256": "9329d2f97bf3f3b371fc244231de62bee4d289e8ca1c11014ddf7d81e2510fa6",
+      "record_id": "54530089-67ac-4269-98b9-551009523106",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "2d35636d149373f28937dea3421d8b95569c3fb95c3e99d10e1ef0494425d5c1",
+      "metadata_sha256": "714e1025acada459d8ff60e7cdcd3d498f327a234e3c16b101447a9a984239a1",
+      "record_id": "55da1bbb-79dd-4020-9d42-22d457e85fce",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "e538bdd446e793540fbf6bf5e4270537060263c596e284dbedba2445559cb13e",
+      "metadata_sha256": "988ae007e1a98fb700fb0ffb069e4ad0c4d8504566a4b19173c030c60683bd78",
+      "record_id": "55f33ba8-2938-42a3-b566-ee0a37a06000",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "7faa4dad8b53b8378972a630b1082c36c8769fc4c4caab986d93ca9d9530c2a5",
+      "metadata_sha256": "334a909a9dc8b9773201ba430e584dde97e5124fd640fec63033a94799867141",
+      "record_id": "5a5f096a-5d01-4434-8966-f59d06e11b02",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5f6e662b67b775a71a7948182ae5081cb836b15d2696607c6b6624908eedf984",
+      "metadata_sha256": "b65af9e72c9ce065dcd4412f5ba15e480e0f23ad9667395608dc5f67aa82153e",
+      "record_id": "6330fbac-97f0-4f57-bc86-7fe7b6741dba",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "6939fb6aba65af2f5bc12590a018cdec1387648bd393d0f6a082980176677aaa",
+      "metadata_sha256": "187e2e39e1f7a381aee4aab581d1e047c7a685f9ac5c23535d45a5d5d861941a",
+      "record_id": "6477c037-016f-4343-a0e2-6cfd664c59ec",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "1522f169da44a0c9c24220789b35708fedaebc074d30898f63dd6f4319620221",
+      "metadata_sha256": "c18b312a58d2cc1cf76c00aeff635b16f81907c49750c4e7f7877383bd48baa8",
+      "record_id": "64bb23bb-559c-4956-84d9-d5c2c57d7333",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "a75dd66ab04774cdfa2293ab40bab566779db2ebfed362b2499eb2afa110d0a1",
+      "metadata_sha256": "bd19aabc20a94f359c01c8a6ed8f6d37fdea6f5ccdf20147e9a472796f6058bf",
+      "record_id": "6bd7ff47-57ed-4946-9eb1-b86c1ffbbef8",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "2baded1fc3416837370064a62f0632eeecf31251e3569ef7cacac7c8cd486b83",
+      "metadata_sha256": "0bcceea5e7629e407d4f6b5112ce6bf98cef8fcd99f42d0a246d4cc9422f9d06",
+      "record_id": "6d9e268a-34e7-42aa-aa01-ca1750ad2d92",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "eea4ff97ae172c9f990a3174f9c3e0a7f11ca4927f62e59b7f9b77cf91fc864d",
+      "metadata_sha256": "a5d480ee4adf4a0c32a473f7d11267618ae2ac538b2cbd2abb9fcc737e2dcacf",
+      "record_id": "7ad9860f-ef67-44d7-92b4-85020de6b181",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c452a9f9c6a970cadc3331596bd400c2351e407117c827d1bf55db6a32d6e331",
+      "metadata_sha256": "6e4b7a784b479133497dcb8621f697a0ab3e610d69ef4dccbd6436fefac75a15",
+      "record_id": "7dde701b-b0ff-4441-8fd8-25afec83b07f",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3c26002634b16cc08d73f2d079438a771757159048e4864eb3e1c653d135c21d",
+      "metadata_sha256": "de2d17ffec0bdb9840b140f388ab6856a42ac2ba98ad5c0e6c6d8f247c7d9be9",
+      "record_id": "7f1b2687-80ad-4c43-90dd-febe42bc3299",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "e3d19f9771304766f2dff27c39864349f48b00e23f59a445892df0d9b7dd466b",
+      "metadata_sha256": "69225936011eb25c3dd170c7a0ea61eca4be0f020fb2168789ebe0b0c424d78d",
+      "record_id": "8011c49a-83f9-4828-bfa7-8b0b3ed6b0e5",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "1a8303403ef88646bcf319fac2fb5025a2a483b05fff78ef185acfdca1bd380d",
+      "metadata_sha256": "b9055cf13152389e8ebf5b5c1dc26df9ea9ce8beb13d9e253c737fe33ad70b63",
+      "record_id": "86e6b5d5-8d55-4c84-946d-36ba799efb86",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "973748b45de9b16353399fdebe8dce52ef801136982718b856694ca114f38166",
+      "metadata_sha256": "00eebf6a1473349c64cb2007b428aa16a0cd521647949d31c161fcd13ad3c8c9",
+      "record_id": "87714dac-a5ce-4e35-b92c-a38dc62fd472",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "ed61ceb9d54a67fe071648364405da00d2098c1a6bc4149862825d6ac4a1781b",
+      "metadata_sha256": "619991c452f09bf0e1751052601b02b17f47ce3e959162b4b5b192d811d78fb9",
+      "record_id": "8ec91de2-eb06-4e10-894a-884115dc963f",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "855f1a703512cf2f55916e2ef0aea723bfa5c2876852183ccc892bfc9bbf51f2",
+      "metadata_sha256": "5227e188eb69f931b01f0b2cf24ef038d04e0860ea8dd9c76144b564d6613501",
+      "record_id": "8f209835-57a3-4d0e-a9f7-c53c3a460685",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "836752fd8f1acc62c1e4295f4863583210c3d4b90d08bad68e792567d2011723",
+      "metadata_sha256": "b676e91d63b4b27be0a00c8083b204a805b007ab3ff71d8262fab34c4386d22c",
+      "record_id": "94374c46-7be4-49d7-b102-76bdc27faa6e",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "a5506ca7492b1b2ae7ac51c58991a1f6ef3c97764d52a4c72c3b0f90d7c101e8",
+      "metadata_sha256": "180e7b6bf698f43da07a2d05ab9efa6bda88487a8262bed3ed442a8691fd9b7d",
+      "record_id": "998ea3da-14f3-4764-ad6a-e9e8694c66af",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "979675b0f76f1ed229c84e3c35da1212456807c9c5e94f34cb1b1f7e1af09000",
+      "metadata_sha256": "2f1484f149f5fa1b30ad23351e8640b7b5e20feebd3ba540f17537feafbc8556",
+      "record_id": "9beccdb3-0331-405e-a405-fd97bc754598",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4e1a67e6d055d2f35781571721a435ae771620ce2c5be46c2a231fee6fc5de6d",
+      "metadata_sha256": "4c6eff233c427e1204a702c57bc836c4d5b98744911793c3db64f73296f83218",
+      "record_id": "9db943c9-7a61-4cea-8e29-ffbd36bff176",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f9781366bcb391ba264bd813e80c6ad7bba517f3b2c33fafb099304d1bd05eda",
+      "metadata_sha256": "3489794ae770e86e8b7590f2a00a16c1a6b60c18437ee0217746a87481eaeadf",
+      "record_id": "a585ed16-d5fa-49fb-823d-3e592f4ca663",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "190ed29cc681abe6c38429359df5b0e4bf835e21548e5ccccd3ab59f95ae6f34",
+      "metadata_sha256": "9c81bbadd904572d715095151ebb261b47e7249e7598fc1e71e2e25ec77bfa4b",
+      "record_id": "a76b4684-4660-4ec0-90f7-6e354d5b09c5",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "27a7d0de3996b4f5ea23275b3b31cc39404cb760bc248e526b139014b2f0470b",
+      "metadata_sha256": "03d8c0352a490fc1b1a973797177b09e4eeaca5029f2d064a7d544bd45666e03",
+      "record_id": "a9169c7c-3fea-4e9a-b578-f703975227bb",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0d873843a295565ed24ce62266ae4d26feff1c28c9a5d2a2909510aa133c4dbc",
+      "metadata_sha256": "531ca4c818652014e1f4c1a2d524f6768742cc28372a6167e809f170680ace60",
+      "record_id": "ac934e49-0e35-41ea-83b7-f2f41cb19cdb",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c198afde8fa966bbe913b904328508dcf99162a7ef4765f0b8fec8f6ecd6e460",
+      "metadata_sha256": "b96187b0dc4cf00a82ec4729ca41c85245da0a3ccdf8682f7bc1a83f23409ac2",
+      "record_id": "b1e2c0e8-d075-4972-8e0e-800450d0d012",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "26e20aafd248c70c952e76c0cd853fffac4551929dfd03e1a4df533a65edfee1",
+      "metadata_sha256": "061841da492ef3695507a36b54a3799f802a29cfede85efa6748af018a805b31",
+      "record_id": "b2ac14d3-03d5-49f7-b6c6-34dc4c0658bd",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "aa1efa232761d4b04ef2e3145de8add855b22b08e9135912284798fb8c42bc9c",
+      "metadata_sha256": "61166c2268d4daef4a0d1a3fe467f0247d5afd94764d126196c4f5bfcfdd93a3",
+      "record_id": "b55cfce0-f4e4-4c7a-be3e-a80d7440e612",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c1395b35f09cdc797e8146ef3b7c392189c097839a38921a4e8b0661f89233bd",
+      "metadata_sha256": "7d94569e7dc14939371f89765b102d8f73550e57ac115719d4295c847578687d",
+      "record_id": "bba34839-1d5c-4f06-bc37-528001778eca",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3dc4613b30e92a3a7deb3624e8be8fdc5f5490800d392e23c1ffc3a712e6be28",
+      "metadata_sha256": "0bcab3f7ffca938582f5957bfc1ea2057b3ae9d6eee32d4f2dc2625aadcf771e",
+      "record_id": "c2c6df3c-0de4-4a5f-bc98-6dce22faaf13",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5c6b5347ef0c5757733ff4870294470a70046abd83503c338c0e4a7477b30794",
+      "metadata_sha256": "51c9325d60e1ec95078e44c724168ec7432c59c90728c63d799d23156755b772",
+      "record_id": "c66ee3ff-164c-4134-aed0-5d4472473967",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0e859a6bc4366176b648194a4412deb425cae69d8e33cfdf42074551fefc3fdb",
+      "metadata_sha256": "99b4da9d42825cd2dc1d5fde8d7315e047fa3df38c6695365228afff75e0d898",
+      "record_id": "ca73e865-fa6f-4f43-bda5-6a8644e82f52",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "b388a75541c9c205f06e1165959f3b28acdba6b664ebdc8980df1ba93d5bdcd6",
+      "metadata_sha256": "0728fc67d5cc17c4d63b7e3c3d2c5cf984360fda9ce651233c866b012582850d",
+      "record_id": "d3258c71-3d89-41ae-a825-e7375b871d74",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0d1f9a3bd7981345e548f822512a87c3cedb201028ba7b03914e669f95f895eb",
+      "metadata_sha256": "ba4576aa8aa4e63789ec883298a56ea4a766ebb94aeaebee5b028432b7397dc0",
+      "record_id": "d66d65a4-b03b-4eef-ac42-93e5042dc93b",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0341f0a63e7644063af1a369234400130940feb27794b21e64bbf8afa0fb3391",
+      "metadata_sha256": "b94a34e5cb22068256f6a937daa234357c89d78fa47900526487c18aabf46f80",
+      "record_id": "dace155a-b738-4d65-81bb-4803c785787b",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f2635d6e4fad6d028030f79dbbeaf5a6122a5f46963f20629fea4aaa99ce28a0",
+      "metadata_sha256": "dd4237430b7ca4c8260f03cbe22cc855680c772e998013ed002af756d6b7f387",
+      "record_id": "dcdf27e6-303d-42e0-ae76-c03831a9dbd9",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "bc7eae60879e201055215986f802b92fcc6d567e3ec8f9c5b5296caff71799b9",
+      "metadata_sha256": "9a915ddb00a5e672006378815dfd67843f65a919d30288a20db6046b08a6e10d",
+      "record_id": "ddlmem-v1-00bc107e6ef4d1cf07ad0894e56957464571c832c6762d91743c2d28c84e5241",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "eab9a9c300ac347ba8e64e3790bf1b008380d408768b6afaf685438ac3d70a8a",
+      "metadata_sha256": "10edd261b7a9e9d03a3393aef5755e0b86ba4585726cef12a87ae850ab6d9a00",
+      "record_id": "ddlmem-v1-01718a71be213489a8d60f9c34901b04244ba55a9420932bc6178042812ca2f5",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "65a3fef065f7834c148d9f114e73f9ea0b7dbaa3421520985307b48c120e64f8",
+      "metadata_sha256": "7cca2edb92c0b35f584d8ec7a9c963a699b7a4ef9fbf8abf99dda7e0929f24e5",
+      "record_id": "ddlmem-v1-04b253695362e280e19060dc609e5e9e0c6c218400ef25cbf3b37e919b513c0b",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "514aa3616fa98e67991b727621eeaebbc08fbf128a3a2be9c1404d31d6bed415",
+      "metadata_sha256": "05b3da52e4fc57c50e0cb1f5344bae10390e25ad4f9920a4c2ae52dbf649f0ad",
+      "record_id": "ddlmem-v1-06c54066c13781835af66eac5ad98399ce093b13113a5f4ab3aac17771cedaaa",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "b715ffdebc1a78a2a62fb81622e7cc833e2441d55bb7bb2086579f65b96bea13",
+      "metadata_sha256": "6fcd6133d8f0334c7f407f1ba7d58ccd5d2bce39d7df19fcbdb564125e1f6ea6",
+      "record_id": "ddlmem-v1-074f3b7c02b43570d4d29fd0841df6164866395557c202f6316c5c0842a295a3",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "07e5c0e1616725d02a90020710f902d348fd335a9c2cc79bce1d397c52c93e1b",
+      "metadata_sha256": "16ca5a8932b69d526ed3256035c509de074b581311a7f9884d3c417a3b677d2f",
+      "record_id": "ddlmem-v1-08c8770b0cae62fbf4b68a58bbe7e06eb353645a83868b288bf8bddc6d78faf7",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4d102c381bc311e2103389ceb0945172ec781214f8a96d16522e5bde7900d2a8",
+      "metadata_sha256": "127d093357f7f0c2d30ef8025276af5ae38883e24ad3479e7c5203f7089a618a",
+      "record_id": "ddlmem-v1-0c01f8fcb48ed2f8424395c7c6e604ab2f9b7c8493d4d68a823bbc4a3997b486",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4aeb0b270a008703698660206e473ac55e68b37ba5306f613014807c3e728532",
+      "metadata_sha256": "322674ffec5ffa014c86276e8048ad91e5384edbcd976abb3e8d8cbc32d9d274",
+      "record_id": "ddlmem-v1-170ddbd00232a6698143755b9a2a96f8e2c6ca7ae594bbc22b9bab5d1793ca2a",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8682ad96d7d19e0bb6624007cccbf06b4d0d00f382c63afae57a277d0781b24e",
+      "metadata_sha256": "97055f3b18534e715e02135631fbd6deb3c43fe1f1bd15a59fa1b4ed75982b34",
+      "record_id": "ddlmem-v1-1bdb364bfe54b12791934180fe5963b48cbcc7f56277b3cc1d352f453301e848",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "1de824ffc8a579262d13ff62bda2ef35fa734a1de0f6655f70198e3c3a6c3ce8",
+      "metadata_sha256": "57232f4ce8160378e6913a0de7e302119e33ab80aca1adc43dd82cdbdb6bc0e7",
+      "record_id": "ddlmem-v1-234feac923b4934ee2418013ab887ff0163ae2bfe897812c64515a04b0cfc9b4",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "49c44a7858c1eec57fc09c1a4cd849a19b7e693dba8e1d7983390ed4f88c047a",
+      "metadata_sha256": "4f530a197fda28c42738dc747d7a65b2219fa2aec2b695c9de658746cb0cf930",
+      "record_id": "ddlmem-v1-24b15efb5cb35c9b92b4ac7315e2c19e4c108784cf352c2b584260b7eb0ef940",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "a5f965869be1e91a6441226e3c11ae87cf7fa0ccb5ab0002471c68a9a8cc404a",
+      "metadata_sha256": "fdd6f2b51fd5002309e46c91ecd428cc717959bfbe79379a083b459678e6fb1c",
+      "record_id": "ddlmem-v1-2625b0b54bc22f3e659cc7490519664bcbcc837d12cd1bebb096334a69b161b0",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "86820521798a37938c2eddc22c3bfc45e5e8f89bc2150adbc30f4526768ddab6",
+      "metadata_sha256": "48fc5053a1a85753ae6dd62e6d5c8931d8bb4ff3a29eda29e92ac571b100e684",
+      "record_id": "ddlmem-v1-279f493ecf1f2b25b3a3fe11c0a08c8a4ed9d19a0963f949cb1c1b0257923a9d",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "fd1f4cade70aa0568a11d568e1be6dd01f29b254ad893cb2f3d2d9f1d106f7ff",
+      "metadata_sha256": "12c425eaa833f8d530aaa9b5452de75ec7f95a81114c2a1054d7487fab5d6cd3",
+      "record_id": "ddlmem-v1-2994cfabd2fc358013472f737699f4776b8fb39af3d9a74482673db18a274891",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f5072412e305f5045410bd21ada93fa381178079b6593ad115273967ef3c270c",
+      "metadata_sha256": "e2c2b66ab5bced8f2a5d3e0b0d165da6c1ac47aec94532226c9343d86332a2b6",
+      "record_id": "ddlmem-v1-29c84847816ffe7ba500198f6cb4437858d453fc8dc15b806e0f9e3b9d2edd8f",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3e530959f2afe9c6e5c2ec7fae60b5050acc0072fe715fabcff9d47463166dbd",
+      "metadata_sha256": "ab49f85c579915580c5cfedfee1e99abc801ded167d55cbfacbbe7a8ce63e156",
+      "record_id": "ddlmem-v1-2b3852ec9b500bdccd80732bdb315fbcadba03cf93bf64aa1c41455e67b5fb79",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "519b9dc2c4fe1af4c33ac648d07c7a9ee70505a215c02a7cd5dbd1da0c2667f6",
+      "metadata_sha256": "830b42b742757f50fedbef7ed4b96489b63b90e406524cc256df98cbdfaa20f4",
+      "record_id": "ddlmem-v1-2e75fb7f5b21fdb1ca43104a1017ba97261b8a2df6e00544a19bc55e0c355cab",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8a2966441c43c88968a671acc3affa379cfd5037f93cd5d2595366f547797443",
+      "metadata_sha256": "8a20a2c1aea0c818590dc0d4db372dc1cc891ebd205a27e175d88e047034bd2d",
+      "record_id": "ddlmem-v1-2f219fa48915b8a02d026a02bf7320021efec73e777fb6be0a8d754a2a9c6f27",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "20bdf23ff35932f4738d5ac425405616ac6863c8554f52ab5fbd6b32ea3529c0",
+      "metadata_sha256": "2e937287b30b388e679167489e5b5bd95756c581d869177a0eeba336afb773ce",
+      "record_id": "ddlmem-v1-2fc30a6b8976b95dd4c3287571397b1d641145c98e4ef527a23a49379985b3b3",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "224d648fadf1812d4b8824b3a4f611d5fd602cd7af998bcef49d3647f0f3fca6",
+      "metadata_sha256": "5de3274596730329a1fda4a983b967c124d973683130dd6c3ba3ab5f37760811",
+      "record_id": "ddlmem-v1-303d27c545b78bcc40db9e08198c63e4912032c8fa131bc3f7c90be0ec1c8a9d",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "82ed0b3e4c3f87391c339ecdfec44a2eec80721865e9d06cc5271b020e42f8b4",
+      "metadata_sha256": "84eec70f12058c1915d6a8b016c67be292f1cc1d005f7b8e891266593190e1bb",
+      "record_id": "ddlmem-v1-31263664a76a8bc41c1bdffad52db63fbe29f7d56eee8e26aabd4edaa7b91033",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "6b82c9082079365f22b733cf6031b1fbf212b75797feeba96c8d35b1b333340a",
+      "metadata_sha256": "6e2f0ba84e9ddacbe627c7752e702d061d7912f40946035d2927fa5f5053c398",
+      "record_id": "ddlmem-v1-314c83e60fe5c34c584ec29582601ef12fdd061961c9f9f80aa3ddaa729cbcc9",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5d88ce6ec8e4c5560dcaadc9a2a823fa6b48030dc5123cf90c2e3d859e97f6e4",
+      "metadata_sha256": "4a86d859fe7cd212335b785e34218b930966e8914021be2afbb219e3ec75d27b",
+      "record_id": "ddlmem-v1-31ad361445c16708732debeebfef77c844768ebd10f7fd5f783d5d59dacf9996",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "275fead61a59907837e74a52f002f8a0cf16609ef61852f91ed288d8f50def0f",
+      "metadata_sha256": "e30daefb7f26efa8d1372613134f618e8e3cec76a36e36d6edfee93a4b266269",
+      "record_id": "ddlmem-v1-3371973deb2f1389296ee6d9b1c8acb2914797ff32df384f5499bc742127f3a4",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "87f3b4d47865814aa3f9cba3493425126a94a3593a5add8eff52f8b052357f5b",
+      "metadata_sha256": "54678d32df085553f119e9a9cba1c4cedab2b96e736196186fc804f226c5537d",
+      "record_id": "ddlmem-v1-358f1a415e352ed084527f16a7bb5f6d90ee972d92a15d7606aa4cd7960e3893",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c3520ba499590259e3e368d0bd1dba5290ddde9cdc0f261a96695c68f1677955",
+      "metadata_sha256": "4ae7b5e7e4467c9c4640ac31220e4d69f23b014d20e2f76c6e967f246982b139",
+      "record_id": "ddlmem-v1-35ccb9af707fc0e2a8c3bcbaa44a147ad86a8316f9f9fb83e8f24a738b9982d4",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "31ae13f38fc6ed528c016a40900d9d598a499fb79ccf14eb83032ef5be1abeab",
+      "metadata_sha256": "9a5b52332fff6f8a05863428c9fe3c071a24cb2b349a88da197705e2c2d31566",
+      "record_id": "ddlmem-v1-36cc6477f66433153279b087e4c549bbdb74b9c7df99f158ac1eea1e9bc982f3",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "01e11164a454d4b8a5680c2d87ee52f14547311a744aa65babe62cc986bb5b3e",
+      "metadata_sha256": "3deac5c7de2a888d7ff02be34c57e20ba0b0f3df184a018104c5c3d87325b76d",
+      "record_id": "ddlmem-v1-3aecbba3da1527a3461508ca55b26acb5e654128800005e3d1699ecba0b72b68",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f2f12c2fe2b4da344d020c29cb55cf100338240083c94a2001afe571d49a2711",
+      "metadata_sha256": "9ebe09a45212a1e336f898cb54d573e2abe91d3f3a0f44b0a9f3278c06eb1aad",
+      "record_id": "ddlmem-v1-3cb4f8ced290171dcf60f44260b2788591aa240cced319b5590093501014ada2",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "aeeb0a836caa9a4f23ddaf8cf8cc1fe8896283453408896576d5c2a1b90d7564",
+      "metadata_sha256": "ebdf4a0610735094d1821b9bade5b87595e96b69e8adc338d588a3dc7d9e4457",
+      "record_id": "ddlmem-v1-403c1e2856a10edb984e4ee49b464767d3a905a0fc85efed1762a4ce0284ed3f",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8140b8888abcdb592d06244361f1d879bf599cf6dbfe958b26157ed074231df2",
+      "metadata_sha256": "d19a3e9d69723977ac406a3f0aa52049cd2c20dfec2c22c69235e18c5147398e",
+      "record_id": "ddlmem-v1-40fd6d416a1e770e40bc35dc26e4d7ea0a732cdfbd9ba677dfe332c3ab0c714f",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "b4aa0f7d44394827d133112476411fc742d7e87c01ab75328a2f512446133ead",
+      "metadata_sha256": "8e1ad0c59d8229308883167a49ae614753cea35a93a289024abcaa036051ed45",
+      "record_id": "ddlmem-v1-448dabca4efc73f9749b4c8c97f8eb769931378e714eb6028827ecda2e940ec0",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "53f36705ab79a31ae9d4d6d1241bdff2cd97869f94e96f616aa21c5a1ec4f64b",
+      "metadata_sha256": "7c9858527c73bf5c633150cb5dc7a98c1d3406711483fc2842e431f92b520df5",
+      "record_id": "ddlmem-v1-461d25d2451384300ce75aa2d2f57e347e0bc29b6a08577642f43a09da102873",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "bbebbbfa3a2c01a4d9a8536dbde4d678f821f407db72ff5ffeb67ce5f7c7f834",
+      "metadata_sha256": "9499d7142a5378dcf1cb25d320b21333a598162b77e8e23a329a91f1fec77bdc",
+      "record_id": "ddlmem-v1-49b370b25597962c84a320785fd031267477722e66c0c2cd716487e6b50e445e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "9390c422cbdc6d785bd8e15baf646e52ad0138aa3b19fc17d9f93520edf43907",
+      "metadata_sha256": "c5769c87ea9121fcaf3b623ed2c121411dfdf67c75bf863d989aae1cc32f1221",
+      "record_id": "ddlmem-v1-4bfa526995836b4e66976bb4fe416660cd049d56f090cf42ebcd1a3ec8c29c8e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "809950137fa132f0f26db00f0c99fede529f9d6d6196463575c5c5e32eda6a78",
+      "metadata_sha256": "7454f045f3e26144cbd9c48cc8d272da0af2f280ae23a24699574d6f0ed58358",
+      "record_id": "ddlmem-v1-4e57bdffce05a57dda8d24a67a47952a46e4b291ea4d15b525b2325e50672ca7",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "89bf5034f65a3dda36d4408a01463cd08ebac2323bafa82a98b03c56bbfe9400",
+      "metadata_sha256": "e942f629f99cf53b14a26d8b309d3f414cedfbeb2404c3fccfd25eda12c97d92",
+      "record_id": "ddlmem-v1-52803118ca95969f72980a509aca4de254befe2697ffd8d0aaff3a009c7e0b39",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "e723d0ee735fc935d8babf6c8a1752da9d063ab0cf127fe75ed5e5e83cf40783",
+      "metadata_sha256": "6526e77e902d4ad6f18aa455f9d77b6d6af90fff3b89b885da5a3059ab839345",
+      "record_id": "ddlmem-v1-559cc412fd73c8c23adb4fee1de680c12827a70e71ec4a04a51ca1c6b1e78c5e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "d85b3e367e8be561d4106ec7403653375403051178ad3ff6179c77577dcad18f",
+      "metadata_sha256": "a46d0025be5c0b7f17fe1e3de00889f0f38ed9b824afdec8ff30c8d5c5fe5fd6",
+      "record_id": "ddlmem-v1-561c0e0e4a47156cce500888fdbcf58df86bf89aef285629897f30f8b2bbc377",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "a6980c6116c514382c62bedda1dfeaec2f0e80ce64a6d29fb28937bd28fe2e23",
+      "metadata_sha256": "120bfb3e945a9c70c75ee286ab27766509d562b5b38801a4882f8128872e3a33",
+      "record_id": "ddlmem-v1-57c38c11b13f9b56296219b14721046efd105f40cf69ef62a241c8eee93a2efa",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4710a60634f3653b8286807160e14208c2757ad80a0849c72c722f0b111173d2",
+      "metadata_sha256": "712d0f6a58bd1d7969ef0fe7a5c90e3bc4a2e6fccdb61578ee52a20ad4813c30",
+      "record_id": "ddlmem-v1-59ef13259e8124e812d9ccab335ba843b463ecbc0f30dbfc89af5c7c43e7f01f",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "761d64e73532fc701505fdc452902bc0f8a35a2cd7aa4e324ec8ef1a5c5af017",
+      "metadata_sha256": "fe197481a36e63cfda1d86e34a33513ecfd460edc943a757c0b72018cd668dcc",
+      "record_id": "ddlmem-v1-5e68c9af1450b4d8e7633595abf0b9f60240209da799069589396948657ef793",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "83324c3321a692595924bdabb34d8c5d532d52b6feec1ed215aec9fc032e448e",
+      "metadata_sha256": "742ff164c16eb1ec50240be3c22c60f84f20db68b492db55b6ff0486f4b19696",
+      "record_id": "ddlmem-v1-5eab2c987581e7bf113456f057b70d5b9ceae8280d62c3517f4d9e0cc95cdac7",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "e2df0a001714371f2c6d444c07047149f1ce2be2a5192bab54145013040b8797",
+      "metadata_sha256": "d33fbf20d782330419352bbd6834c60714543b1104b3c09994dd1153c3462618",
+      "record_id": "ddlmem-v1-63fcbcfe859c590d275a4534f63e857417578e965b76ce4ee8743fa49b957c55",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "eb1e8f7a4a8c06650539bd75b8a09162b8ab329b60245c2986e5f52d63e866ec",
+      "metadata_sha256": "520e399083e883217c539c0eef0ba0e4077db837f42edac4a55f80933948021d",
+      "record_id": "ddlmem-v1-677795a832d0e152fc8daaf3800c388a7f9cd43b3cd2c40fbc258d006b1f8853",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "96d8799b40313d07347f0818ab0dd27eaf6cafcae9fec4a38b3ceb1f17947519",
+      "metadata_sha256": "45058ba30c53f61f73fe6fcc8dc8179457d953406817297117926c1040aaa84d",
+      "record_id": "ddlmem-v1-6826c66dd960141d5901786a92f12b77c64da742911045c68cdc3208a8a0d716",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "185a9fda3465d71096878ea6fc205dd2c26908ebd910afb44db82bd2b3ce02f4",
+      "metadata_sha256": "0a5facf80002d7a2e4b489b0815f01ef4c1e44aacc021c3926df3a6c491de9b7",
+      "record_id": "ddlmem-v1-6abf15faa0a59d1b75aaac8e74f0a0f3abfe49327ee600bcfa492a8ca62eef34",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4a432a6be35acd7e65838291bd9268c43561c518ac6297a21c026abcbd5d23de",
+      "metadata_sha256": "1facac4a8c0a1f804d7eedcdcdd2b06f0b3f359ddde834ae4bfb2af4a3a5d527",
+      "record_id": "ddlmem-v1-6b6d91b455bb9787abd47fd70ad9e3fa5a92a90138f604f90ff53583c8b2fc2a",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "10573a5b0846df9c8150f3c25ef049e7b0f045322b6f53511add172e0db44774",
+      "metadata_sha256": "cb2d1a58636d1db9501d42e08fd6d01f907ceaafa3078e21826615e5e43370a4",
+      "record_id": "ddlmem-v1-6bec033226b1596a7d06173a00a0fe24d884bc6b619cf47d7bac4731b293de28",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "6b93e9e071b1dfb308e0e3897812f3359768bfdf374bba41133482c9d2b4a03e",
+      "metadata_sha256": "29ac833d9b4895f2c2e751444425d0768264682b4dcc91cc170faa375a1106b1",
+      "record_id": "ddlmem-v1-6d288dbfd5d8d55939c080c2fadf52b6470a1403b4b4184efe1ed300404d383a",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5311093cea63c672f06959c668682da82cb1baf6436a81eb1b5d2baa6ae6d817",
+      "metadata_sha256": "dd2097703fb56ed1592182525a2cc7577a8238bb7c2499f1994051d4cb0efe4d",
+      "record_id": "ddlmem-v1-704de662927cf3541964ff120f51194794148e8281ef2cfa6ad29bd76e6d3bf5",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5e427c83ab08babe0a840bba9da7d40c6a3f953923bc9bf48f415fcbcc46a40c",
+      "metadata_sha256": "284d6407183c762cf5730953707c52949e9be1fa25b0c83b371750f18159142a",
+      "record_id": "ddlmem-v1-70d05fa650ff707d23d65f2b2e08e8d1b4beccdab911267d49dc33c7e8607ad4",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4177aeee059d66bd0ea3bfad8a9016f16d2bbc3e3cc2374240e53a54f515202c",
+      "metadata_sha256": "2cb8914c83b9d055e16a1a449a0066cd33a03ee6b128d7c20c4e258b0ccfc675",
+      "record_id": "ddlmem-v1-72158bcaf507d9704ea2277953aa320f80fa7e90cd0d78212468c352d9abb26c",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "75a71cdbdcf923144b0488c2e1644bcb526e97e33c7d085adfab521cb369bd0f",
+      "metadata_sha256": "70789761fabd00bd72eea24ec45df78d04da1fcec65daab4ebd8a3e42ec1df66",
+      "record_id": "ddlmem-v1-737c3750968bcf5ad8089231ada575b1ff98fc85706dd946c82cd54cc92f624c",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5fa0035917f28750404ae9e732adabeffe23c4d6812f9c4742b50427a34c0912",
+      "metadata_sha256": "b3c438ae5c39dce9470546dd888b89df679931f4f78e9ef9bbcb08576f87345f",
+      "record_id": "ddlmem-v1-7422b460d2e5c169c2d220ab59ecb9f88f4350ed9a897d9f141ca62eded65a24",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8daef8d05c15b64e77c975ed87f2b3882d849da15bc8ff0e5b3b80cceb24a1eb",
+      "metadata_sha256": "95b8eed8934667bd53d9467900134dfc8329c7534c2366f8f8cdc043bab2c5e0",
+      "record_id": "ddlmem-v1-74df00285f8cc00d47c042d0217e7f71026c14f915f4005ead2e91c261b1f1c6",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "d21661c35280e629529d61de1848f71f96cafd8307311712a5066546575c40f3",
+      "metadata_sha256": "600e41a19e8d1a411c1c2cfa996efa5ef68e0fddbd8a69c993a2a436c21da0f1",
+      "record_id": "ddlmem-v1-779510600a0b506bd61806e992b7ba1f98559aa39afd905a47ad36b126189c53",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5c624b96a84d137c6279ea13a72e93025c00f3b1d789ffe10e0984ac7db60ed0",
+      "metadata_sha256": "af9c294f3c52fdf1e1423ff3bf044133d7cac0d1b06052a5c0251d3f47102d50",
+      "record_id": "ddlmem-v1-7a83967d5e7394a7ffae4dafc23a568feaad01c35cf7cdd81f9c83d69d395502",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "7eebde3a5701ad2710741709ecb3a542cfa0777a6393443e98f7f827b33ee0a2",
+      "metadata_sha256": "10a5a0d73a340a3fc0be8d141d79b1150f898a03bd9e8cab8751e32f4a99985d",
+      "record_id": "ddlmem-v1-7ed0930f28433018bd809a8ffd67d5c733ef200128e65657245f132591581db2",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f3d00c8957f60eb28eb9e41496c9f6d3951e2ddd1091cf0ba9434cbbc7a10fdb",
+      "metadata_sha256": "e6e350b9733d677a1e0ac44694da59bab646700c7bc3cb67f3702524285efd59",
+      "record_id": "ddlmem-v1-7f0e4ad12f96396debfa99f2b9a33a88a293b6884c144bf860fca4c2215af15e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "efb485db8123c76d4594749accf021bb9901de48ed2e4d086876d6be34214d2c",
+      "metadata_sha256": "2777a131cffbf99190044ae93e8e6baf39e8a11706cea2f7a12b1cb25aca7b97",
+      "record_id": "ddlmem-v1-88bf640cee01e41445aa25be7bca0e15c239a390fa94674eaccf3a218593227d",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8a19b76e1ac45c4554c63c8764dfe968abc824b6324485e26fc31bc86fc63512",
+      "metadata_sha256": "11bf87d78e487b48a2203c196229bd1d7ccccc2107467581e4a67840a4572a97",
+      "record_id": "ddlmem-v1-896c1c9086ddfe3a19f0cbf67d56b5bd6e23331ce6313247fb4c4049948c9a29",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "2b8acdfcb4be40749418ae7d8bec447fee8c5bad0c50fa97d614540b2f788130",
+      "metadata_sha256": "2c523a75585167a35b4ddcfb2b0a89047b775a289ba4beb5c0f5c6f5dd912e30",
+      "record_id": "ddlmem-v1-8c24949c82a7ced36be4f8937cd4872f409a446459a68e3ee8c68f018f22c6f4",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4ac099ae0240127858762732d1e2e2e7ee847834c737a764f88c14ebf7bbd308",
+      "metadata_sha256": "9c1569664985990ce9fe81e8d9c89ba4eabbfc58571f5c483b3b6e43c58f9f6f",
+      "record_id": "ddlmem-v1-8f2e33a49eee1e813de4b0455679119b21f12cb7bae53743b20c2609ce029b9a",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f58930f24f70da12715f8abc7e15fdfc42377fd853ef7e158265a47f1dfb032e",
+      "metadata_sha256": "a122b8a8368ace8ba71aed5246e042c63c7abe9cf6ca3412cbed566b472a474d",
+      "record_id": "ddlmem-v1-8faaea65080a96f6697f3255b6b58f1555de852784b06c450ae117a286789858",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "7f0e359d4c054c0b15101fde62ab5518ff365899aa0f3c4166747da47a218600",
+      "metadata_sha256": "4494c209447ba5ab48c7d710572778079f2f9dbdaa77c21e7e008fae73280d91",
+      "record_id": "ddlmem-v1-928a48e54dcfb115bc8771d6bd9ee196bf0f5782a9223f1fcbb983b477224224",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4fae6f3bb899f46e0f166296e839bd71d50dee08d1eaa5606c63b46637ead523",
+      "metadata_sha256": "a9a195bd93364ed2c40c0cce4360e318d4567bfea64347e67d4f4647ad052a58",
+      "record_id": "ddlmem-v1-92f46db081fe82010d94c3177794208edd21343c9ca2ff7abf4792bb4be315f7",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5bf9dd5d932d85b8be629acd0968ab052bc0bbb98ac63339630add6bc5704f44",
+      "metadata_sha256": "b5ced8c724a0bf30918043a6136e16e2ee6c09b821ebc4f0687cdcaa0fd144d8",
+      "record_id": "ddlmem-v1-942c5d6a6ef3463e1cf8af7b8c8fbd996f4dece7058bcf587779dedc8a40873e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "315133718ac9a8b14df80efb1af8e2fc3b295193161dfa85927e18f2bd734503",
+      "metadata_sha256": "58556ff2ab7950018b5c267c0cab2f58efedb4abbd6aa56efc03feaec1f5a309",
+      "record_id": "ddlmem-v1-951b1a5bda4da7fa195097b052931cd96a8269756d2868530c88c79cab573f32",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "9a5d4d229c7312ff6e9277e378c20a0a2e28c4cb3cdde77c13b45b1678a3060f",
+      "metadata_sha256": "d4175ccfe7c00d8df71a899e6d6947a4aaaef2bf80026d3233652a1024ecfb54",
+      "record_id": "ddlmem-v1-96ff130a3dd1ad23eef46db874a41ee8c246aad12e63595163b871cef467d217",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f45b5b64c71b80a64757e7a998e895290775b5787c6cd80dc7465f099c71abcf",
+      "metadata_sha256": "c0d5d6e48131835c6dff894bf31e474fed0c69b351aff1b90f074669ae4efdca",
+      "record_id": "ddlmem-v1-98b34f16edce987ae60e98f1af7635fee84ef74fed21113a79dfe19d7bb30932",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f12f62b29154d265925cc3b73a0b54c9f05802d793cf0ed68455d9df739d3248",
+      "metadata_sha256": "b646d99ce39b626c6bf27851b8de6487dd7034c390f55c19137dd3b5dd3ed18f",
+      "record_id": "ddlmem-v1-9dff38c77d5a4a051e10be649973a8d00fa8dcad2741b4b7a1dbb9655bd16822",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "df1ab875cec14482001313c0efa0aa8f816cad2c2f3d94c268cfa24a03004f8d",
+      "metadata_sha256": "54d60db8b3e5a1011ec51515d20a9337825ddbaff1a0048467491c2bbd3f1c27",
+      "record_id": "ddlmem-v1-a026661e05e8b165259baad9aa7bc2abc6d1ffe068981de596fde326377fe02f",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "fe23ebc1eea88a1e7fe00837b1f476b35298500e185fedb222951640111c65b6",
+      "metadata_sha256": "71bc5e37f5526a2b8076c9bb6d1d2a4cb04b438dee58e5e9e8693107362ed99f",
+      "record_id": "ddlmem-v1-a3fbfdedb78a0991d231df1b46c75101869fe31f5ebe446559f0c994ccc2cb0f",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "723d0224afdae7aa354e341bd808be71a9dc03051806300bb041cdb8e6271144",
+      "metadata_sha256": "009d3ada8efed1ad50a5f74125f824ebc4de796da794409bedd75496bf5c6e9e",
+      "record_id": "ddlmem-v1-a456a8d98b98218173137dc03292108c56d4412c0912a754c89713b54c4049cd",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "ab13daf0b2fbe28cefca97d891c351e59a1bb29dc891f29df8e33061ab6d1654",
+      "metadata_sha256": "fa3272f9474e5d5afbeab076003ab42665b71fa28da1d0c1dfcd29921813d488",
+      "record_id": "ddlmem-v1-a5d7426403c4afc31d212b91d02efa6d2a8f1a0ca6b7f8d372462d4cdc1d2481",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "1777a5953533d9281f97963a709bc94c802fb7d5cab74f255f10a4a4d2da66dd",
+      "metadata_sha256": "68b80735e07084c7a1fe86cfbe14980211ecbc08f40b617c96592fb9aaca0294",
+      "record_id": "ddlmem-v1-a7ac007a944f294e6580310a49ad3e74705a7da1939faee3556bd2b1b392ec82",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "6e01555bb443843816005cd30353e8cd44ecd41bc13251f11c6ee4be3686e463",
+      "metadata_sha256": "c883d2ff030e0b5b1666d343898532fdb678d3900bcf39396054eac23677fc2b",
+      "record_id": "ddlmem-v1-af6a4c277af0867d5b9c6a5dbf395f5bfb2976718a6db96db13a11af6980d8d5",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "af77d4e9f0da2dc3e98be74fab66362c7f42704f8c1a3c9690e6a1441965bceb",
+      "metadata_sha256": "ed017a64336bbf1ec540d1d55ea08b89a5a51deca43cab36ed4d818f81e9ccb1",
+      "record_id": "ddlmem-v1-b02c1b1e57466e984f762136739cf9ad07c76b29160ee80da7a9872970e1312b",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3f01a61e1214b4c2f1543847e7e1b3e7544197e6a814753b71730b97a79f2fda",
+      "metadata_sha256": "c0b7555a4b435649e8adc9d216b80f84814ffcc02c45410e81cdce569f99abad",
+      "record_id": "ddlmem-v1-b775dac91cb054710c4eb28314db50f77120b77004794951614a1ae3e52be734",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "b46b941a8101e4d28331bd878d8d9abee1c41c5239805b43e837eef80c06868e",
+      "metadata_sha256": "68e6ea27f63e955700187545e41a1e4bc3903c617399840f89ba10a9953b1870",
+      "record_id": "ddlmem-v1-b7a1f412c1474dd9efc883da72a23bf46545a3cbb6aba4690406ec44a299a51f",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c1b1d8ae0ebe6d80762da58fca682563a9a59827a80d161694002da19dfd5e4f",
+      "metadata_sha256": "1dfc3811ca85e2994dca5fdc3d69b8a6d85b0e0ebdddd2d246e19bf2620c09c2",
+      "record_id": "ddlmem-v1-b96ae85e0c9a49e8217c9263e45c5ac318d1e4311535134ae3fd470942004a63",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "ca340e5dec842d42b0a9df4ad0d4db4e5644595219c4cf60efa0aa4ca480cd79",
+      "metadata_sha256": "ab2fb447f6e88ec3b0d5aa52e31c6e6d18749f2c857025e97fd58fd9c88eccc9",
+      "record_id": "ddlmem-v1-be8c8cb9cfa27a43e36f9f91be059d89837fdd0f663b3290de9168fe693548b1",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "7241f07b67a3968d0733fecb183522375779d1d4139ce8aaa80fa77c403e2d8a",
+      "metadata_sha256": "87b90a53d791fa91b0d9900d6f5a01ba756d32ecb9f611b51137d67eb32630bc",
+      "record_id": "ddlmem-v1-c20cf6c4aa82362b18c9df9e6fa10c9886eae14635a28d2ca20f17b0e5f46afb",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3198a5bbf43052d015cc64107a4aca3e40a48dc36ce70f8c814c2dc72113233f",
+      "metadata_sha256": "163766e2bba59dc48ad284531e5ccdb551a0f8e54f2d1f13e57dedc5923a9aec",
+      "record_id": "ddlmem-v1-c62c0e7155ae63e57caa22b05e9698e345720a0d0003382a87c37e661690a523",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "272f6277256d9a31e69497eafb8cadc54b46767e3eb637c7c29bf8b8ad6166f0",
+      "metadata_sha256": "ec2c45de861b7aefc616bdbb530d1e4a8bf1abecbe02f1c6f7582e907655847e",
+      "record_id": "ddlmem-v1-cbebc9f954449e0c5149208af4ba8566960267295969d89ed597e63ebae1e1d7",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3efab7bdd2756798683e2c01b62e7ab34252aa6df2e5e79adbf225c695b42338",
+      "metadata_sha256": "9f71089e4bcf1fa7d00569247510caab70497b21074f0dbe673b3a5f3189df3f",
+      "record_id": "ddlmem-v1-cf7b7d86a7c539fbec045ea904f307c2a58fbfc15770e5d3a5553604fbcf0438",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "d3a860d688f3bb886e593b044c3d1c9d16fad6a43a5c101248d33d55386d49df",
+      "metadata_sha256": "8b33ba148b6a275af682d5ed6e17b0ebfd8377f6b7ef362a0f299621635a6840",
+      "record_id": "ddlmem-v1-d10a5124d151c83a2631235415d6f63049e4945e03d55e8048e5a7cb78b21b97",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3fece9e6f230e94a9b442ce3119015c0e976a929b8e8d4d56bfa4dc4f9fa6a78",
+      "metadata_sha256": "2fe65409a6c6ae2b2643b29e6b8eb800619013f8b4a506bc01c070294f1c14a3",
+      "record_id": "ddlmem-v1-d3ecf67c30c4f89fb53c10952cc678bed944c2958a9c908f55e776bbd159de47",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "e1f9253adccb3bf4a249be5e67e79f57d1ed28423670d4b32f909866be43a424",
+      "metadata_sha256": "8a1f9a1b78942724808a1796d76cc9aff13bb25285acca834f9d0bc1e178ce43",
+      "record_id": "ddlmem-v1-d62ffa442a369b49c0ddde45d083e56dd2848693491e5c30e0be46ac1490bed9",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "35b915b91ee30a1403447d66f38b5f0da26e0c145f6db2bbb36952591e6b44fd",
+      "metadata_sha256": "8ccfe10e9e051c308de40c0dd92bbed280fcd75d0eda3b59ef977143da60011d",
+      "record_id": "ddlmem-v1-d7fe56371c2a4212759781d7d87a3817108f1882c1f4894fcf7f647a0a9c3891",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "abb56b81f5f716ffeb99cf9b7f47018a94691b81177c8832c052689ab03f78a2",
+      "metadata_sha256": "d33300fdbcea65c3aaaf678976685cd1e0c8147e6b4f62281d7bcbcee20bf756",
+      "record_id": "ddlmem-v1-d8e062033b6f8143ddaa714777f3eba3bf19d967da42f562228424e12219dd09",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "e50df103e31a0cd11b37fc373279d969a78eb8c38e490213c097f3677ec81051",
+      "metadata_sha256": "eea063b8b8f28e3f122f255bda34eb09ca6d88f3fdb126214e80b3409b11cf1e",
+      "record_id": "ddlmem-v1-da6cf95cf4570f1bf78a0ed84184d042c49b82696153479d7eefadfab4c14129",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "1f8f3b34c7ca5d530cd7e4c3469bb06d7d0a767bc921b02281d4b0b07729ab63",
+      "metadata_sha256": "123a71d759840ed8a5b997bea77b8b2908a50d79a083d252829c9b0cf8a3138d",
+      "record_id": "ddlmem-v1-db61006f2a591366b5da4d4afb4be8efadafd9554fac768a7e745df8767c7945",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "1018ddc4779dbad4cf773384853304c1071873707e98ea5d07ff27d35e3abaca",
+      "metadata_sha256": "0e4b02ba8385f362420559c9509ef05754c74f482fc085caddeb5372239a18ff",
+      "record_id": "ddlmem-v1-dcaca4c2556c5bd46d99726485ad7cd6fedac220b9f84921cd507f5b577cd8a1",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "728176f76eefbf0dcbe585569a63c6c1224a139e8f071bb357b16859dd4e7055",
+      "metadata_sha256": "112ffe9a00bc94dd6304ae19bf5f1abbfe66166ee8f6a9261322b15ebca39d23",
+      "record_id": "ddlmem-v1-de17da2921ec73a68a554dbf97755f217f7d0fe5a6d58402c39d0ce3a8e59187",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "03b0f2efaf10cc41e6f0539249605ee8c691abdf0d01ea2c8680cc8100218de8",
+      "metadata_sha256": "e849c96418209b50e82dccbec074ab67a77afdfc66cbbcb08220da3b3617a01a",
+      "record_id": "ddlmem-v1-debec59b6214a021c02cdca6a6a4cbd098695cfc3fac7500b912dc636ca55312",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8070ba0c755bc16d1b4e22631802fa653f67b2f87d544c1db346e098f267d970",
+      "metadata_sha256": "f2ff10a5eca54f7501e43a4a2f25058bb0a63fcbbb3f858aeaf48a0c18dd63bb",
+      "record_id": "ddlmem-v1-dee2ad5288c081b98c8b639e9ceb0124fe04275a8dfdb5dc0f7793d920f7de0e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "d8a0fa910b8ed2bb7489fc30661e79835edf26deaf39e772a99f99cbff65c058",
+      "metadata_sha256": "e5e8bb857630e24160992ea5e2b27d0372fb2ce7cbbe53ec5f61166f7420460c",
+      "record_id": "ddlmem-v1-e0316ee267fb49f60d617b02d28060242460c2fd6ac97b8222f456f0ddd57a5e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "dd47641ba40cfd9355deb701470f4b7a518d78906976003494e9ca2934e9166e",
+      "metadata_sha256": "a8bde84bf7bc7588737f7af6bd50b775466392210b8d4413c201f50964f6a9d1",
+      "record_id": "ddlmem-v1-e470a3d45b63c6d0e2dab4b010cee6f311ac58b50df54dbf60063041c01ebbb0",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4f6e027c63dd04e4644895130f3579bb542846b9b08249bfc0018ea655f70135",
+      "metadata_sha256": "cdcfb266570a1a742c9d06ed280737194e44310ea5dc7d9b13b52d99a4706062",
+      "record_id": "ddlmem-v1-e6e14097c0e01c8db1d033d4fcccc09f03066a34b9efdc0b3e69cdf7740eca1b",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c34e0c0ae1b221fbe4008552c87d40ac56d25c4208e05afe238bf5611382d63f",
+      "metadata_sha256": "d9b730b026b7adfa2865b442432b8eb46fb248d3a71446b2baf8db3738598b5b",
+      "record_id": "ddlmem-v1-e811c15e3b1d142c3be2c3a5fcd6bd0121b00c4c174a5ca181d8ce8969258d42",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "01d05a8d225018a51f679c39c3ac208fc3b76d86323b923a1f8ef435706cfa8c",
+      "metadata_sha256": "7d411d0e2b5183fa038579dd798111262304bc55f35324eb8a43cb895a04db0c",
+      "record_id": "ddlmem-v1-eb292924c23b531a871596ee0ee49a1175153c88ca1acf2bac97bd51d58d8e31",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c7e8ff7bd555d4fc36aeab197a494ed78885a981cd872650396e93e9c91deae6",
+      "metadata_sha256": "08b24bbd0ccea53dd0e0fd8b90ed0b3b08916729844fd1cee72fe6c9a5e2b813",
+      "record_id": "ddlmem-v1-ecb896b823b2277bda180380778e69012178297401552d0263317bc7ae40014e",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0db016dadc452460353ce8594157ace857aed96a6fb7b71cd9afa436c695fe4e",
+      "metadata_sha256": "4e1b2f5f3bbf5b1e4659a435d812e00d2e4cbbe630ea066485fe52f59aaa7261",
+      "record_id": "ddlmem-v1-eeb497950d8e25d024976df268cb8188fabeedb90d70ab364bb4f78f989c4c35",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "02546b8bcb7016ac9f515852f215ea24860dba2c5d98b1d7437a9a5eba2b6911",
+      "metadata_sha256": "c8f54ab0fb248b19276baa4a3b6542e0f49468c1e64407fff9b24a32c3e3970c",
+      "record_id": "ddlmem-v1-ef1f598472dc3a028a5915b70155b93110d74147e43f77700518b7192d5a2a34",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "afcaac76b208dbce3c2758e53db0d3871d9e4df5a1cb2f588bdd07fabc8184d5",
+      "metadata_sha256": "e00eb3008a58ba1e743f09c80fb594647e900322ac50d0e95ad21ee0c46bbcd3",
+      "record_id": "ddlmem-v1-ef607c54c3e2653dbbbaf36001cffd24b2e729f46c5e4346457f63a8bb984e82",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "75493d2bc3cb245820417fc895f9f4470402fa3d0705cd652dda8c236d99fc63",
+      "metadata_sha256": "9197507668a01bea5317fb5ea25b56de19e6b3e436f868543cc08bd76552afff",
+      "record_id": "ddlmem-v1-efd08c123847b06f13bf5889836fc9d0e78b57f1a7861bc03e7523412d67c7ef",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4b728178b07b0aa021ce79ad405d0ba5904be3b2623a1431657f537ca0480f1f",
+      "metadata_sha256": "de48dace6d0f0a220a4953b59fd6322016f99c05427d69ca24cfd20d594d749d",
+      "record_id": "ddlmem-v1-f04aadef9d5ac5607175bd5eb28bca7867cef7c17e4c80e5269f3189b3ac7239",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0e8ad26e2d4c2242bd95a5dbe5a44083c9e95f80d8386ad32a240b6b99581507",
+      "metadata_sha256": "2173744503017fbfc5e7ed9b01d953fa5db3616021f9cf495a4522ac59c4d192",
+      "record_id": "ddlmem-v1-f6bf77172cad1a9f78ec55a0cc7a857ed24cc87507831c9caec653824e6ef9a2",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "868b1a22179bae3ad9f01f8da837e98ed0eaf41dde1f6440f68b092439cc4ce0",
+      "metadata_sha256": "4b0d0f9633efe8bde705776dcf95c1ab40239fb5f8ce7d46529ca4dfc4084770",
+      "record_id": "ddlmem-v1-f6fe4f52f5d8e3d123d863d19aef168244d2f46d94984ac71bb0b724b08df7cb",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "16a6c6d60c5daecbc7470a95f2de225289d12635be6c8d6a1917f38bffcb1a50",
+      "metadata_sha256": "993d644bb144eb992e344902d83c1824caa275653fc7df474b9bcb312dbab1cb",
+      "record_id": "ddlmem-v1-f7513f0ffeadaf42ad93aa24c78f5b93720c7bf26ab7a510d3c0cfb6a217cd2a",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5ea705122ed802fddb279dc5f3fc2ae6df0ed14c9260ac748f2ec0e492d00ccc",
+      "metadata_sha256": "8219a5f6163014bd216cdc7d17d633ca92c0c2b29590402745c6ef12e9071d78",
+      "record_id": "ddlmem-v1-f85ac78b4cc5ea6926badf056ae931b56e17e5436560e0f15f48d01bced52e3b",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "84b548d626dc292795e49e063225276dfe032d26e9ce721352c09221404b2013",
+      "metadata_sha256": "71b3ae801f75490d8eaa2c58ef74215131f59b9f308ab8deda046802734be23c",
+      "record_id": "ddlmem-v1-fad6768ad99f67f4eb53a3f40460751575d03693f866f1f06dad60d15b951d72",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "153c1d00dd9d070ba68b505a523ec0f71e0e5f3605951782d71bbe5d3836015c",
+      "metadata_sha256": "57878b8ce2f6b96d37dac98056682e3d62dbd606f05ba6c7cfa5aa9fbdfe77a7",
+      "record_id": "ddlmem-v1-feabc6076db275ba8e2edbf22f3fd05930ca13ef179881d866c60e6f62a4c385",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "849502f96e23bb4d69ce2fd42557fe0a8a7896476041108366db218939b05d89",
+      "metadata_sha256": "19a0241b0cb978c642eff88dd231031b0de5f9b02768e1bba81fc68fee823f32",
+      "record_id": "e096de1d-1ed0-46cc-afee-b1147e794901",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "69a51767df3ca656e5eb6a2d94f6a1a77a4b0764941f923eabd2398efa5adfe3",
+      "metadata_sha256": "a2ca5090552cc55e90bf223bad7a41a077a755b5623534c4f49c301220df9bea",
+      "record_id": "e27a9f9a-cbff-49d7-b4c0-c6ce24006072",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "ed1c207f81fcdf56b89673647a8c331d3381a922b7f4d757a642e0043ddabc71",
+      "metadata_sha256": "c79c9a3a2e8f1b6ca39c0260f0ec1a10d3c81d5d6b79ba4e7d8bd2d55e631d5c",
+      "record_id": "e4a559c4-8644-480f-bc67-5ee46e11d101",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "5e52127c5b9fc1af15a49c360589ec1221188883ebc6e68154038e4d760f0520",
+      "metadata_sha256": "94af098093cbd49b52f4a40b2cef929a52d3e7f414fa3ad0cbcdf78c3d09d630",
+      "record_id": "e8e727c9-8570-4dbb-9a03-c13805c69a74",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "d6be1ce7db9967e8489d959957e97b8491ae388589ece4808832be9f56a0f251",
+      "metadata_sha256": "5d11a9b0d29dc076e565940ba29982e18f516777325773642c9af0e7a185b908",
+      "record_id": "e9d54b9f-574d-4c6e-b788-5175d4ff9cd8",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "ea8fdfea37a241643ef35f1fc5276bd1c3bd31fd05d5dcc843167b981aee9cfc",
+      "metadata_sha256": "3e7c7fbeab0aefeed7bf9bfbdee7cca856181c2f19b88b401a0b7e2c87939614",
+      "record_id": "ee47c1e5-3a6a-48d9-827a-500d17d93508",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "c0da605cf2fb8f750b6e9d1da8eb6bebed347ebed5473ebbc5d2277059b8e24d",
+      "metadata_sha256": "699d0d3d37cba8a1013f35ef54b234afa3cb727ba2047eabd407d6e760d3559b",
+      "record_id": "eeb6d4b3-bcd8-4ed1-a080-e13472bffc44",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "099368d97d36ccd66572176d17fb5b8419dbd5243717f466c5caa68bfb4d401f",
+      "metadata_sha256": "5ab720a66a741bc31c4326966a22a5a85f0ccf92a2abbd26eb86a513b0b61166",
+      "record_id": "f37566a8-98d2-4b94-9dc7-1bef4bd75341",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "d48b653d69d7b96b6ecc678aafe420380cc4df34e3f7e38d660e18f37be78e55",
+      "metadata_sha256": "b16da5c6ac2b3c773bdf78b50cc815f36897c9174191cfa8d54c344b49cdb209",
+      "record_id": "f6c46e73-e188-43b7-92fa-1da72754d955",
+      "sample_id": null,
+      "tool_name": null,
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0c6106fa8ddf8c6a92342513b297b03810ae3c0c813c2a64a1e659194783a7db",
+      "metadata_sha256": "ce284504d223919bc866401c913da617b72aca852b3601344d71f36ede896483",
+      "record_id": "f8358cd9-6960-4b53-8eed-9772955245d7",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "4c8fa38e605b15e055c48e30587cae2be3d3a72aa364410df974280b3fd13c23",
+      "metadata_sha256": "c87411d6186ca5bdbe0b7546c5c9de0dfc0fcbd8b28eae7b72bc9624496881e3",
+      "record_id": "f95779df-3513-46ef-b347-2c8251e19be2",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "cb4086ec385a5ae8b16cc5db7a8b61bbcd0f185472055fd463a19cc49673df7f",
+      "metadata_sha256": "fdbdebfb87699473d76cea2877cea32d7f9142ec906b3e28710d844886ebc8b9",
+      "record_id": "fe848313-435e-47a5-8877-44e372d75039",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": null
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "df8c975474739a9a9fe1e6a65b620156e7988181b89aef82c8cbd5c0326ce8bf",
+      "metadata_sha256": "a03b14217fc7cd6f7ab6ab042c207457dca128ef65f8a5f3801539d7c92232a5",
+      "record_id": "toolmem-v1-1ede1c839114367719624c0d51c2cc3a1df54ac38c23baf4a8dbfd97c038ed4b",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "f9303aa486aca2edc77b55cc1ab942a4f75383e1b0394ea4a743f5a2ea0b9562",
+      "metadata_sha256": "f0f1001e122b37a7788b83122f240ed77800fbd87bd81f9a4284d162a0f93d0a",
+      "record_id": "toolmem-v1-3e401d037f3cc3459f649b53a9014ec818d48b85681751a184864b614dae378c",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "8ae6fdef7b4f66c00bac607b134f4d885410e8ce526bca59794b2d5224a41a8b",
+      "metadata_sha256": "9bc47559cb1c0367715db6ed64394f33f5d19b9d04d8de389cea795d35a8adbd",
+      "record_id": "toolmem-v1-40450ebe8c29650973fc0961f7ff5bd0423052ae7c5b4dc281998d8ef868ee5a",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "d33a3b4410aade50519cae61c36792dd8b259a4734efdaff08544f6b11f74b68",
+      "metadata_sha256": "7633d2615006a97adb88c7cd8dfa15f6efe96795618c4ff81f9b8bac9d26921a",
+      "record_id": "toolmem-v1-6639916ea0a57d4e3bdcddc60896568893b5504c34e2ec4743b4e0914411f33d",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "a1ee2297788abf8da1a45500fcfb4e29d4906d761d2cc25e00f4d6c609634461",
+      "metadata_sha256": "25497f36d924c886bcaf10328eb4f95c4c1766f85d48513855813d5d3ef7cbc3",
+      "record_id": "toolmem-v1-b2faf19c1e5f25a74fece6922e40c8a932727ff933ebf208a74479f78ff493e1",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "23543684379aed2a10b40c74a4e0a00db30ab725e12ffd5f4baab6208abc9b80",
+      "metadata_sha256": "760ecfdb0526559974a2f240284ee2ef0775dbeaa5ba08cc1905755f22b72f15",
+      "record_id": "toolmem-v1-bdb2d829a8a13d8a4d8259462341776ebae26b45096a681404d8a21cd16a9ccb",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "000727b217ddabbea82b10b56061a801e84c2e52b31a119640112f3c1ac79981",
+      "metadata_sha256": "04cd63417b80a03c08a3c54d9b6517711a8536f97b56903c45295d3591a31c4c",
+      "record_id": "toolmem-v1-c812e0183e4eab3a9d6489e44fcc2996128afb4f4f6bb0b42160c8df849a0721",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "9047d955c4997e0e0b95c3f913ac7bac515faa8dba3a0e89eb8275c8b947f38d",
+      "metadata_sha256": "880cb6a79fdde0acd1f7a1282dcae8ec19718c5ecb8e2e98c7340eff9ceb0336",
+      "record_id": "toolmem-v1-cb50ce03b93443d4d6a7d261196258cd869aa23cb41f687e71b44fd88b3fccf3",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "3277f5d041141849ae710f6b705057d829ca4a149731514c2ef2ff2af0df7f6e",
+      "metadata_sha256": "cd666a2a15b8172c7765d00afb96679eae9dea57ea609943a81595dd867fc3a3",
+      "record_id": "toolmem-v1-d189009c2ce4ccdfc0b92fbcb8a57cc9e81109b9a14b155d576d430aae4389fb",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "9e7e578b6dc154a4fcdc884c71b69b649dd7411033f5375fb782dc57b36571b5",
+      "metadata_sha256": "ad809a52d6173399a1da51a54fde5280a7f07acbb38d435438586d1b2e5d28cc",
+      "record_id": "toolmem-v1-d7bd8ebc76a246817b20f5619ca3a0324f8401ed8c19d24691ce45d4681c38b6",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level3_sql_examples"
+    },
+    {
+      "classification": null,
+      "collection": "tool_memories",
+      "document_sha256": "0120e7d597e406e6aedfa93eccfad0addf306a9dae76bf1448f8def41d3d88c2",
+      "metadata_sha256": "ee080d6594e61dbbeb5e0d90bffb2e136c11ad45e0aa1d97931f06ffebbe58ba",
+      "record_id": "toolmem-v1-f512881898a6eede3c0dbede74e2283ddd70493760b00b0cfc8788fc5e8c0659",
+      "sample_id": null,
+      "tool_name": "run_sql",
+      "training_level": "level2_sql_examples"
+    }
+  ]
+}

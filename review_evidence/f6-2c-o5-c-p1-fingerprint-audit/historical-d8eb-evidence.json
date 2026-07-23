@@ -1,0 +1,780 @@
+{
+  "evidence": [
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r1-20260722-154737\\self-test-result.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r2-20260722-164234\\self-test-result.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-p1-20260723-104248\\audit-script.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-p1-20260723-104248\\backup-candidate-inventory.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-final-runner-baseline-fix-20260720-102138\\evidence\\runner-baseline-fix-summary.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-final-runner-baseline-fix-20260720-102138\\evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-final-runner-baseline-fix-20260720-102138\\evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\evidence\\delivery-r3-summary.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\evidence\\directory-switch.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\evidence\\formal-after-verification-1.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\evidence\\formal-after-verification-2.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\evidence\\pre-switch-gate.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-level3-batch01-delivery-r3-20260720-094809\\evidence\\switch-staging-validation.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-level3-close-20260720-100552\\evidence\\route-update-summary.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\diagnostic-tools\\final_gate.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\diagnostic-tools\\prepare_retry_copy.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\diagnostic-tools\\prepare_validation.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\diagnostic-tools\\target_once.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\final-acceptance-summary.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\final-runtime-gate.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\formal-after-verification-1.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\formal-after-verification-2.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\formal-before.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\formal-monitor-checkpoints.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\target-e2e-result.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\validation-copy-attempt2.json"
+    },
+    {
+      "direct_manifest_evidence": true,
+      "manifest_file_count": 5,
+      "manifest_total_bytes": 5273764,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\validation-copy.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\regression-attempt1\\formal-monitor-checkpoints.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f5-postgresql-final-acceptance-r2-20260720-103031\\evidence\\regression-attempt2\\formal-monitor-checkpoints.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\evidence\\post-switch-full-regression\\formal-monitor-checkpoints.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-1i-c-20260721-094654\\evidence\\pre-switch-full-regression\\formal-monitor-checkpoints.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-b1-20260722-111443\\evidence\\self-test\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-b1-20260722-111443\\evidence\\self-test\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-b2-20260722-121417\\evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-b2-20260722-121417\\evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-b4-20260722-130105\\evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-b4-20260722-130105\\evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r1-20260722-154737\\self-test-evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r1-20260722-154737\\self-test-evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r2-20260722-164234\\self-test-evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r2-20260722-164234\\self-test-evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r3-20260722-172348\\evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r3-20260722-172348\\evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r3-20260722-172348\\evidence\\source\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r4-20260723-093455\\evidence\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r4-20260723-093455\\evidence\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o3-r4-20260723-093455\\evidence\\source\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-20260722-145351\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r1-20260722-152015\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r2-20260722-160804\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o4-r3-20260722-165401\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-old-formal-20260723-102610\\runner_evidence\\formal-asset-preflight.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-old-formal-20260723-102610\\runner_evidence\\run-summary.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-old-formal-20260723-102610\\validation_worktree\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-old-formal-20260723-102610\\validation_worktree\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-old-formal-20260723-102610\\validation_worktree\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_training_backups\\f6-2c-o5-c-old-formal-20260723-102610\\validation_worktree\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-b1\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-b1\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-b1\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-b1\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-b1\\review_evidence\\f6-2c-b1\\evidence\\self-test\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-n1\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-n1\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-n1\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-n1\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r1\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r1\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r1\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r1\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r1\\review_evidence\\f6-2c-o3-r1\\self-test-result.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r1\\review_evidence\\f6-2c-o3-r1\\source\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r2\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r2\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r2\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r2\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r2\\review_evidence\\f6-2c-o3-r2\\self-test-result.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r2\\review_evidence\\f6-2c-o3-r2\\source\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r3\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r3\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r3\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r3\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r3\\review_evidence\\f6-2c-o3-r3\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r3\\review_evidence\\f6-2c-o3-r3\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r3\\review_evidence\\f6-2c-o3-r3\\source\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r4\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r4\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r4\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r4\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r4\\review_evidence\\f6-2c-o3-r4\\runner-self-test.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r4\\review_evidence\\f6-2c-o3-r4\\runner-static-guard.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o3-r4\\review_evidence\\f6-2c-o3-r4\\source\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r1\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r1\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r1\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r1\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r1\\review_evidence\\f6-2c-o4-r1\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r2\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r2\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r2\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r2\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r2\\review_evidence\\f6-2c-o4-r2\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r3\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r3\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r3\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r3\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r3\\review_evidence\\f6-2c-o4-r3\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r4\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r4\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r4\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r4\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r5\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r5\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r5\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r5\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o4-r5\\review_evidence\\f6-2c-o4-r5\\evidence\\precheck-self-test.txt"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o5-c-old-formal-baseline\\docs\\project_master_roadmap.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o5-c-old-formal-baseline\\docs\\regression_baseline.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o5-c-old-formal-baseline\\docs\\training_master_route.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o5-c-old-formal-baseline\\tools\\run_postgresql_f5_regression.py"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o5-c-old-formal-baseline\\review_evidence\\f6-2c-o5-c-old-formal-baseline\\MANIFEST.md"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o5-c-old-formal-baseline\\review_evidence\\f6-2c-o5-c-old-formal-baseline\\runner_evidence\\formal-asset-preflight.json"
+    },
+    {
+      "direct_manifest_evidence": false,
+      "manifest_file_count": null,
+      "manifest_total_bytes": null,
+      "path": "E:\\3\\_evidence_worktrees\\f6-2c-o5-c-old-formal-baseline\\review_evidence\\f6-2c-o5-c-old-formal-baseline\\runner_evidence\\run-summary.json"
+    }
+  ],
+  "evidence_file_count": 129,
+  "exact_manifest_evidence_found": true
+}

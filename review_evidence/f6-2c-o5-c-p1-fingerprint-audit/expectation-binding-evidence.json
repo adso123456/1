@@ -1,0 +1,34 @@
+{
+  "classification": "D8EB_EXPECTATION_MISBOUND",
+  "direct_historical_evidence": {
+    "path": "E:\\3\\_training_backups\\f6-1i-c-r3-20260721-105855\\evidence\\formal-current-live-acceptance-summary.json",
+    "stage": "F6-1I-C-R3-B",
+    "assessment_status": "CURRENT_LIVE_FORMALLY_ACCEPTED",
+    "formal_acceptance": "PASS",
+    "retain_current_live": true,
+    "current_live": {
+      "total_count": 198,
+      "managed_v1_ddl_count": 115,
+      "legacy_expected_ddl_count": 0,
+      "non_ddl_count": 83
+    },
+    "pre_switch": {
+      "total_count": 198,
+      "managed_v1_ddl_count": 0,
+      "legacy_expected_ddl_count": 115,
+      "non_ddl_count": 83
+    }
+  },
+  "binding_reason": "精确 d8eb 副本属于旧的 legacy/pre-switch 阶段；当前 0f163 正式资产是随后明确验收并要求保留的 managed-v1 live 阶段。两者记录数均为 198，但 115 条 DDL 记录的身份和 Metadata 契约不同。",
+  "logical_evidence": {
+    "record_ids_equal": false,
+    "shared_record_count": 83,
+    "missing_from_current_count": 115,
+    "added_in_current_count": 115,
+    "document_sha256_multiset_equal": true,
+    "metadata_sha256_multiset_equal": false,
+    "shared_record_document_difference_count": 0,
+    "shared_record_metadata_difference_count": 0
+  },
+  "raw_audit_result_note": "初始脚本按 ID/Metadata 不同机械归类为 LOGICAL_CONTENT_DIFFERENT；本文件依据允许使用 D8EB_EXPECTATION_MISBOUND 的直接历史阶段证据给出最终分类。"
+}

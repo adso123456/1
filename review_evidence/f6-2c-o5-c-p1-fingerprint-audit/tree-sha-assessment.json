@@ -1,0 +1,15 @@
+{
+  "tree_sha_algorithm_identified": true,
+  "source": "tools/refresh_metadata_index.py:directory_tree_sha256",
+  "includes_file_content": true,
+  "includes_file_size": true,
+  "includes_relative_path": true,
+  "includes_directory_structure": "indirectly_through_file_relative_paths",
+  "includes_empty_directories": false,
+  "includes_timestamps": false,
+  "tree_sha_hashes_file_content": true,
+  "tree_sha_can_override_manifest": false,
+  "d8eb_source_tree_sha256": "932689903d52067b0d47bff6c57d33d987e2e6810857cb345beea74f0edf553d",
+  "current_tree_sha256": "1a55902ef0f9e42e7a0d20cfb8e0d83991f614f7a3ded1639ed477d0bc838471",
+  "assessment": "Tree SHA 覆盖所有文件的相对路径、字节长度和完整字节内容，但它不是 storage_snapshot Manifest 的替代证据，不能覆盖 Manifest 不匹配。"
+}
