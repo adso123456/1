@@ -78,7 +78,7 @@ P1 指纹溯源结论：
 当前阶段：
 
 ```text
-F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交；下一步在旧正式资产隔离副本上重新执行 20 个 HTTP + 6 个 Memory 完整基线。候选资产尚未切换。
+F6-2C managed-v1 旧正式资产隔离完整基线已通过 20/20 HTTP + 6/6 Memory；下一步执行候选 Metadata 和候选 Chroma 的切换前完整验收。候选资产尚未切换。
 ```
 
 当前禁止越界进入：
@@ -1056,11 +1056,13 @@ F6-2C 当前进展（尚未完成）：
 - Answer-only 续轮移除 `tools`、`tool_choice` 和 `reasoning_effort`；
 - 首次成功工具结果包含实际 SQL、行数和列名；
 - O4-R5 功能门禁通过：2 次 LLM、1 次 SQL、1 个 DataFrame、无重试；
+- approved SQL 示例与当前问题精确匹配时原样执行，防止模型删减冻结输出字段；语义近似问题仍只把示例作为参考；
+- managed-v1 旧正式资产隔离完整基线已通过：HTTP `20/20`、Memory `6/6`；
 - 已知非阻断偏差：零行最终回答可能附带未经验证的原因推测或后续查询建议；
 - 该偏差记录为回答质量技术债，不阻断当前 F6-2C 资产切换流程；
 - F6-2C 候选 Metadata 和候选 Chroma 尚未切换。
 
-下一允许步骤固定为旧正式资产隔离完整基线：HTTP `20/20`、Memory `6/6`。
+下一允许步骤固定为候选 Metadata 和候选 Chroma 的切换前完整验收：HTTP `20/20`、Memory `6/6`。
 
 ---
 
@@ -1658,7 +1660,7 @@ M vanna_data/chroma.sqlite3
 | PostgreSQL Level 3 | 已正式收口 | Batch 01已交付，其余候选登记为延期能力 |
 | PostgreSQL F5 总验收 | 已完成 | F1—F5最终验收通过，PostgreSQL训练板块关闭 |
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
-| F6-2 Metadata 更新机制 | 进行中 | F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交；下一步执行旧正式资产隔离完整基线（20/20 HTTP、6/6 Memory），候选资产尚未切换 |
+| F6-2 Metadata 更新机制 | 进行中 | managed-v1 旧正式资产隔离完整基线已通过（20/20 HTTP、6/6 Memory）；下一步执行候选 Metadata 和候选 Chroma 的切换前完整验收 |
 | Vanna 源码移除 + 全项目瘦身 + 目录规范化 | 等待盘点指令 | 下一主板块，尚未开始 |
 | 多数据源架构 | 已排期 | Vanna 解耦后 |
 | MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
@@ -1671,7 +1673,7 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-旧正式资产隔离完整基线：20/20 HTTP、6/6 Memory。
+候选 Metadata 和候选 Chroma 切换前完整验收：20/20 HTTP、6/6 Memory。
 ```
 
-F6-1 已正式完成，F6-2C 确定性 SQL 执行、请求级诊断及 DeepSeek Provider 兼容修复已正式提交。F6-2 与 F6-2C 均尚未完成；F6-2C 候选 Metadata 和候选 Chroma 均未切换。下一步仅允许在旧正式资产隔离副本上执行 20 个 HTTP + 6 个 Memory 完整基线，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。
+F6-1 已正式完成，managed-v1 旧正式资产隔离完整基线已通过。F6-2 与 F6-2C 均尚未完成；F6-2C 候选 Metadata 和候选 Chroma 均未切换。下一步仅允许在候选资产隔离副本上执行 20 个 HTTP + 6 个 Memory 完整验收，不提前进入 Vanna 解耦、多数据源、安全改造或网站集成。

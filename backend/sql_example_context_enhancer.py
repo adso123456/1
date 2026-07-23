@@ -73,6 +73,9 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
                     "sql": sql,
                     "sql_sha256": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
                     "tables": list(example.get("tables") or []),
+                    "exact_question_match": bool(
+                        example.get("exact_question_match")
+                    ),
                 }
             )
         write_trace_json(
@@ -152,6 +155,10 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
             "question": question,
             "sql": sql,
             "tables": [],
+            "exact_question_match": (
+                self._normalize_question(question)
+                == self._normalize_question(user_message)
+            ),
         }
 
         if tool_name != "run_sql":
@@ -202,12 +209,26 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
         return bool(re.search(r"\bselect\s+\*", sql, flags=re.I | re.S))
 
     @staticmethod
+    def _normalize_question(question: str) -> str:
+        return re.sub(r"[\s\u3000]+", "", question).rstrip("。！？?!")
+
+    @staticmethod
     def _build_examples_section(examples: list[dict[str, Any]]) -> str:
         lines = [
             "",
             "## Retrieved Approved SQL Examples",
             "Use these approved SQL examples as table and field selection references. Do not copy literal filter values unless the user asks for them.",
         ]
+        if any(example.get("exact_question_match") for example in examples):
+            lines.extend(
+                [
+                    "",
+                    "### EXACT QUESTION MATCH CONTRACT",
+                    "When an example is marked EXACT QUESTION MATCH, call run_sql with that approved SQL exactly as written.",
+                    "Do not remove, add, rename, or reorder its SELECT output columns, and do not alter its JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT clauses.",
+                    "This exact-match rule overrides the general reference-only guidance above.",
+                ]
+            )
         for index, example in enumerate(examples, start=1):
             tables = ", ".join(example["tables"]) if example["tables"] else "unknown"
             lines.extend(
@@ -216,6 +237,11 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
                     f"Example {index}:",
                     f"- sample_id: {example['sample_id']}",
                     f"- question: {example['question']}",
+                    (
+                        "- match: EXACT QUESTION MATCH"
+                        if example.get("exact_question_match")
+                        else "- match: semantic reference"
+                    ),
                     f"- tables: {tables}",
                     "- sql:",
                     example["sql"].strip(),

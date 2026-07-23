@@ -14,11 +14,12 @@ PROJECT_ROOT = CURRENT_DIR.parent
 REPORT_PATH = CURRENT_DIR / "sql_example_context_enhancer_test_result.md"
 BASE_COMMIT = "ca12e77ba24b3d12df0aeb0421094500caff3d3d"
 ALLOWED_STATUS_PATHS = {
-    "tools/sql_example_context_enhancer.py",
+    "backend/sql_example_context_enhancer.py",
     "tools/test_sql_example_context_enhancer.py",
     "tools/sql_example_context_enhancer_test_result.md",
 }
 ALLOWED_PREEXISTING_STATUS_PATHS = {
+    "docs/codex_master_execution_plan.md",
     "vanna_data/68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
     "vanna_data/68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
     "vanna_data/chroma.sqlite3",
@@ -453,6 +454,42 @@ async def test_top_k_limit() -> TestResult:
     return TestResult("top_k 限制生效", passed, f"last_limit={memory.last_limit}, injected_count={enhancer.last_stats.injected_count}, injected_ids={injected_ids}")
 
 
+async def test_exact_question_match_uses_approved_sql_contract() -> TestResult:
+    sql = (
+        "SELECT name, region_name, city, county, water_type, code "
+        "FROM wm_water_intake ORDER BY name LIMIT 50"
+    )
+    sample = memory_item(
+        sample_id="L2_SQL_018",
+        question="查询取水口名称和水源类型",
+        sql=sql,
+        expected_tables=["wm_water_intake"],
+    )
+    exact_prompt, _, _, _ = await build_prompt(
+        "查询取水口名称和水源类型？", [sample]
+    )
+    semantic_prompt, _, _, _ = await build_prompt(
+        "查询取水口基础信息", [sample]
+    )
+    exact_requirements = [
+        "EXACT QUESTION MATCH CONTRACT",
+        "- match: EXACT QUESTION MATCH",
+        "call run_sql with that approved SQL exactly as written",
+        "Do not remove, add, rename, or reorder its SELECT output columns",
+        sql,
+    ]
+    passed = (
+        all(item in exact_prompt for item in exact_requirements)
+        and "EXACT QUESTION MATCH CONTRACT" not in semantic_prompt
+        and "- match: semantic reference" in semantic_prompt
+    )
+    return TestResult(
+        "精确同题必须原样执行 approved SQL，语义近似仍只作参考",
+        passed,
+        "精确匹配契约与非精确回退均正确" if passed else "Prompt 精确匹配契约不完整",
+    )
+
+
 async def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
     tests = [
         test_base_called,
@@ -476,6 +513,7 @@ async def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
         test_no_limit_filtered,
         test_empty_recall_keeps_prompt,
         test_top_k_limit,
+        test_exact_question_match_uses_approved_sql_contract,
     ]
     results = [await test() for test in tests]
     passed = sum(1 for result in results if result.passed)
