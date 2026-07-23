@@ -7,7 +7,6 @@ from vanna import Agent, AgentConfig
 from vanna.core.enhancer.default import DefaultLlmContextEnhancer
 from vanna.core.registry import ToolRegistry
 from vanna.core.user import RequestContext, User, UserResolver
-from vanna.integrations.openai import OpenAILlmService
 from vanna.tools import LocalFileSystem
 
 from backend.guarded_run_sql_tool import GuardedRunSqlTool
@@ -23,8 +22,10 @@ from backend.schema_preserving_sql import (
     SchemaPreservingPostgresRunner,
     SchemaPreservingRunSqlTool,
 )
+from backend.request_diagnostics import write_trace_json
 from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
 from backend.sql_guard import SQLGuard
+from backend.tracing_llm_service import TracingOpenAILlmService
 from config.settings import AGENT_DATA_DIR, DB_KWARGS, validate_db_config
 
 
@@ -49,10 +50,27 @@ class SimpleUserResolver(UserResolver):
         )
 
 
+class DiagnosticMetadataRetriever(DeterministicMetadataRetriever):
+    """旁路记录实际确定性 Metadata 检索，不改变检索结果。"""
+
+    def retrieve(self, question: str, top_n: int = 10):
+        results = super().retrieve(question, top_n=top_n)
+        write_trace_json(
+            "metadata-retrieval.json",
+            {
+                "question": question,
+                "top_n": top_n,
+                "result_count": len(results),
+                "results": results,
+            },
+        )
+        return results
+
+
 def create_agent():
     """创建 Agent — 与 train_step3 共享 embedding function 和阈值"""
     print("初始化 LLM 服务 (deepseek-v4-pro via DeepSeek official API)...")
-    llm = OpenAILlmService(
+    llm = TracingOpenAILlmService(
         model=DEEPSEEK_MODEL,
         api_key=DEEPSEEK_API_KEY,
         base_url=DEEPSEEK_BASE_URL,
@@ -89,7 +107,7 @@ def create_agent():
     # 第2层：确定性元数据 context enhancer（P0 候选表+字段）
     deterministic_enhancer = DeterministicMetadataContextEnhancer(
         base_enhancer=default_enhancer,
-        metadata_retriever=DeterministicMetadataRetriever(),
+        metadata_retriever=DiagnosticMetadataRetriever(),
     )
 
     # 第3层：SQL 示例 context enhancer（L2 approved SQL 示例注入到 system prompt）

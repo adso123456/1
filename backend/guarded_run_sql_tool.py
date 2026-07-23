@@ -12,6 +12,53 @@ from vanna.components import ComponentType, NotificationComponent, SimpleTextCom
 from vanna.core.tool import Tool, ToolContext, ToolResult
 
 from backend.sql_guard import SQLGuard, SQLGuardResult
+from backend.run_sql_requirement import record_successful_run_sql_result
+
+
+def append_authoritative_sql_execution_result(
+    result: ToolResult,
+    *,
+    sql: str,
+    tool_phase_closed_now: bool,
+) -> bool:
+    """仅在首次成功关闭工具阶段时，向 LLM 结果追加权威执行事实。"""
+    if tool_phase_closed_now is not True:
+        return False
+
+    metadata = dict(result.metadata or {})
+    columns = json.dumps(list(metadata.get("columns") or []), ensure_ascii=False)
+    authoritative_result = "\n".join(
+        (
+            "AUTHORITATIVE SQL EXECUTION RESULT",
+            "",
+            "The following SQL was already executed exactly as written:",
+            "",
+            "```sql",
+            sql,
+            "```",
+            "",
+            "execution_success: true",
+            f"row_count: {int(metadata.get('row_count') or 0)}",
+            f"columns: {columns}",
+            "tool_phase_closed: true",
+            "",
+            "FINALIZATION RULES:",
+            "",
+            "- The SQL above has already completed successfully.",
+            "- Do not claim or imply that another SQL query will be executed.",
+            "- Do not infer filters or conditions that are not present in the executed SQL.",
+            "- Base the final answer only on this executed SQL and its result.",
+            "- If row_count is 0, state that the query succeeded but returned no matching rows.",
+            "- Do not fabricate rankings, values, or chart data for an empty result.",
+        )
+    )
+    original_result = str(result.result_for_llm or "").rstrip()
+    result.result_for_llm = (
+        f"{original_result}\n\n{authoritative_result}"
+        if original_result
+        else authoritative_result
+    )
+    return True
 
 
 class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
@@ -84,6 +131,12 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
             return self._blocked_result(guard_result, query_source=query_source)
 
         result = await self.inner_tool.execute(context, args)
+        tool_phase_closed_now = record_successful_run_sql_result(result)
+        append_authoritative_sql_execution_result(
+            result,
+            sql=args.sql,
+            tool_phase_closed_now=tool_phase_closed_now,
+        )
         result.metadata = dict(result.metadata or {})
         result.metadata["sql_guard"] = guard_result.to_dict()
         result.metadata["blocked_by_sql_guard"] = False

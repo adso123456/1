@@ -812,6 +812,1307 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             )
         except FormalRuntimeChanged:
             dynamic_change_detected = checkpoints[-1]["passed"] is False
+
+    from backend.prompts import OptimizedSystemPromptBuilder
+    from backend.guarded_run_sql_tool import (
+        append_authoritative_sql_execution_result,
+    )
+    from backend.query_context import (
+        OriginalQuestionLifecycleHook,
+        get_original_question,
+    )
+    from backend.request_diagnostics import (
+        clear_request_diagnostics,
+        get_request_diagnostics,
+        initialize_request_diagnostics,
+        write_trace_json,
+    )
+    from backend.run_sql_requirement import (
+        FORCED_RUN_SQL_TOOL_CHOICE,
+        REQUIREMENT_REASON,
+        RunSqlRequirementError,
+        clear_run_sql_requirement,
+        get_run_sql_requirement,
+        initialize_run_sql_requirement,
+        record_injected_sql_examples,
+        record_successful_run_sql_result,
+    )
+    from backend.sql_example_context_enhancer import (
+        SqlExampleContextEnhancer,
+        SqlExampleContextStats,
+    )
+    from backend.tracing_llm_service import TracingOpenAILlmService
+    import backend.tracing_llm_service as tracing_models
+    import tools.regression_service_harness as service_harness
+
+    original_trace_enabled = os.environ.get("VANNA_REQUEST_TRACE_ENABLED")
+    original_trace_dir = os.environ.get("VANNA_REQUEST_TRACE_DIR")
+    with tempfile.TemporaryDirectory(prefix="request-trace-self-test-") as trace_name:
+        trace_root = Path(trace_name).resolve()
+        os.environ["VANNA_REQUEST_TRACE_ENABLED"] = "1"
+        os.environ["VANNA_REQUEST_TRACE_DIR"] = str(trace_root)
+
+        async def trace_worker(question: str) -> tuple[str, bool]:
+            hook = OriginalQuestionLifecycleHook()
+            await hook.before_message(None, question)
+            context = get_request_diagnostics()
+            assert context is not None
+            trace_id = context.trace_id
+            await asyncio.sleep(0)
+            write_trace_json("worker.json", {"question": question})
+            isolated = (
+                get_request_diagnostics() is not None
+                and get_request_diagnostics().trace_id == trace_id
+            )
+            await hook.after_message(None)
+            return trace_id, isolated and get_request_diagnostics() is None
+
+        async def run_trace_workers() -> list[tuple[str, bool]]:
+            return list(
+                await asyncio.gather(
+                    trace_worker("并发问题一"), trace_worker("并发问题二")
+                )
+            )
+
+        trace_workers = asyncio.run(run_trace_workers())
+        trace_ids = [item[0] for item in trace_workers]
+        request_trace_context_test = (
+            len(set(trace_ids)) == 2
+            and all((trace_root / trace_id / "worker.json").is_file() for trace_id in trace_ids)
+        )
+        trace_context_cleanup_test = all(item[1] for item in trace_workers)
+
+        existing_directories = set(trace_root.iterdir())
+        os.environ["VANNA_REQUEST_TRACE_ENABLED"] = "0"
+
+        async def run_disabled_trace() -> tuple[bool, bool]:
+            disabled_hook = OriginalQuestionLifecycleHook()
+            await disabled_hook.before_message(None, "诊断关闭")
+            disabled_context = get_request_diagnostics()
+            disabled_without_directory = (
+                disabled_context is not None
+                and disabled_context.trace_directory is None
+            )
+            await disabled_hook.after_message(None)
+            return disabled_without_directory, get_request_diagnostics() is None
+
+        disabled_without_directory, disabled_cleaned = asyncio.run(
+            run_disabled_trace()
+        )
+        trace_disabled_no_write_test = (
+            disabled_without_directory
+            and disabled_cleaned
+            and set(trace_root.iterdir()) == existing_directories
+        )
+
+        os.environ["VANNA_REQUEST_TRACE_ENABLED"] = "1"
+        capture_context = initialize_request_diagnostics("查询诊断样例")
+        assert capture_context is not None and capture_context.trace_directory is not None
+        capture_dir = capture_context.trace_directory
+        initialize_run_sql_requirement()
+
+        class FakeBaseEnhancer:
+            async def enhance_system_prompt(self, prompt: str, _message: str, _user: Any) -> str:
+                return prompt + "\nBASE_CONTEXT"
+
+            async def enhance_user_messages(self, messages: list[Any], _user: Any) -> list[Any]:
+                return messages
+
+        class FakeSqlExampleEnhancer(SqlExampleContextEnhancer):
+            async def _retrieve_examples(self, _message: str) -> list[dict[str, Any]]:
+                self.last_stats = SqlExampleContextStats(
+                    search_similar_usage_called=True,
+                    tool_name_filter="run_sql",
+                    top_k=2,
+                    returned_count=3,
+                    injected_count=2,
+                    filtered=[{"sample_id": "DROP", "reason": "synthetic"}],
+                )
+                return [
+                    {
+                        "sample_id": "SAMPLE_001",
+                        "question": "问题一",
+                        "sql": "SELECT id FROM table_one LIMIT 1",
+                        "tables": ["table_one"],
+                    },
+                    {
+                        "sample_id": "SAMPLE_002",
+                        "question": "问题二",
+                        "sql": "SELECT id FROM table_two LIMIT 1",
+                        "tables": ["table_two"],
+                    },
+                ]
+
+        sql_enhancer = FakeSqlExampleEnhancer(base_enhancer=FakeBaseEnhancer(), top_k=2)
+        final_prompt = asyncio.run(
+            sql_enhancer.enhance_system_prompt("BASE_PROMPT", "查询诊断样例", None)
+        )
+        context_capture = json.loads(
+            (capture_dir / "context-enhancer.json").read_text(encoding="utf-8")
+        )
+        final_system_prompt_capture_test = (
+            (capture_dir / "final-system-prompt.txt").read_text(encoding="utf-8")
+            == final_prompt
+            and final_prompt.endswith("SELECT id FROM table_two LIMIT 1")
+        )
+        injected_sql_examples_capture_test = [
+            item["sample_id"] for item in context_capture["injected_examples"]
+        ] == ["SAMPLE_001", "SAMPLE_002"]
+        requirement_state = get_run_sql_requirement()
+        sql_example_injected_requires_run_sql_test = (
+            requirement_state is not None
+            and requirement_state.requires_run_sql
+            and requirement_state.sql_example_injected_count == 2
+            and REQUIREMENT_REASON in requirement_state.requirement_reasons
+        )
+
+        class FakeToolSchema:
+            name = "run_sql"
+            description = "Execute a synthetic SELECT"
+            parameters = {
+                "title": "RunSqlToolArgs",
+                "type": "object",
+                "properties": {"sql": {"type": "string"}},
+            }
+
+        asyncio.run(
+            OptimizedSystemPromptBuilder().build_system_prompt(
+                object(), [FakeToolSchema()]
+            )
+        )
+        captured_tools = json.loads(
+            (capture_dir / "tool-definitions.json").read_text(encoding="utf-8")
+        )
+        tool_schema_capture_test = (
+            captured_tools[0]["name"] == "run_sql"
+            and captured_tools[0]["parameter_model_name"] == "RunSqlToolArgs"
+            and captured_tools[0]["parameters"]["properties"]["sql"]["type"]
+            == "string"
+        )
+
+        class FakeClient:
+            base_url = "https://example.invalid/v1"
+
+        class FakeTracingService(TracingOpenAILlmService):
+            async def _send_parent_request(self, request: Any) -> Any:
+                self.parent_call_count += 1
+                self.parent_payloads.append(self._build_payload(request))
+                return tracing_models.LlmResponse(
+                    content="synthetic response", finish_reason="stop"
+                )
+
+        fake_service = FakeTracingService.__new__(FakeTracingService)
+        fake_service.model = "synthetic-model"
+        fake_service._client = FakeClient()
+        fake_service.parent_call_count = 0
+        fake_service.parent_payloads = []
+        user_class = tracing_models.LlmRequest.model_fields["user"].annotation
+        fake_request = tracing_models.LlmRequest(
+            messages=[
+                tracing_models.LlmMessage(
+                    role="user", content="Authorization: Bearer synthetic-secret"
+                )
+            ],
+            tools=[FakeToolSchema()],
+            user=user_class(id="self-test", username="self-test"),
+            system_prompt="Synthetic system prompt",
+            metadata={"api_key": "synthetic-secret"},
+        )
+        original_request_dump = fake_request.model_dump(mode="python")
+        asyncio.run(fake_service.send_request(fake_request))
+        asyncio.run(fake_service.send_request(fake_request))
+        first_llm_call_forces_run_sql_test = (
+            fake_service.parent_payloads[0].get("tool_choice")
+            == FORCED_RUN_SQL_TOOL_CHOICE
+        )
+        second_llm_call_returns_to_auto_test = (
+            fake_service.parent_payloads[1].get("tool_choice") == "auto"
+        )
+        non_streaming_force_test = first_llm_call_forces_run_sql_test
+        request_object_not_mutated_test = (
+            fake_request.model_dump(mode="python") == original_request_dump
+        )
+        multi_llm_call_capture_test = all(
+            (capture_dir / name).is_file()
+            for name in (
+                "llm-call-001-request.json",
+                "llm-call-001-response.json",
+                "llm-call-002-request.json",
+                "llm-call-002-response.json",
+            )
+        )
+        trace_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in capture_dir.iterdir()
+            if path.is_file()
+        )
+        secret_redaction_test = "synthetic-secret" not in trace_text
+        requirement_trace = json.loads(
+            (capture_dir / "run-sql-requirement.json").read_text(encoding="utf-8")
+        )
+        first_request_trace = json.loads(
+            (capture_dir / "llm-call-001-request.json").read_text(encoding="utf-8")
+        )
+        second_request_trace = json.loads(
+            (capture_dir / "llm-call-002-request.json").read_text(encoding="utf-8")
+        )
+        trace_records_effective_tool_choice_test = (
+            requirement_trace["calls"][0]["original_tool_choice"] == "auto"
+            and requirement_trace["calls"][0]["effective_tool_choice"]
+            == FORCED_RUN_SQL_TOOL_CHOICE
+            and requirement_trace["calls"][1]["effective_tool_choice"] == "auto"
+            and first_request_trace["original_tool_choice"] == "auto"
+            and first_request_trace["effective_tool_choice"]
+            == FORCED_RUN_SQL_TOOL_CHOICE
+            and second_request_trace["effective_tool_choice"] == "auto"
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        initialize_request_diagnostics("no SQL example")
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(0)
+        no_example_service = FakeTracingService.__new__(FakeTracingService)
+        no_example_service.model = "synthetic-model"
+        no_example_service._client = FakeClient()
+        no_example_service.parent_call_count = 0
+        no_example_service.parent_payloads = []
+        asyncio.run(no_example_service.send_request(fake_request))
+        no_example_state = get_run_sql_requirement()
+        no_sql_example_no_force_test = (
+            no_example_service.parent_payloads[0].get("tool_choice") == "auto"
+            and no_example_state is not None
+            and not no_example_state.requires_run_sql
+            and not no_example_state.forced_tool_choice_applied
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        class AllFilteredEnhancer(SqlExampleContextEnhancer):
+            async def _retrieve_examples(self, _message: str) -> list[dict[str, Any]]:
+                self.last_stats = SqlExampleContextStats(
+                    search_similar_usage_called=True,
+                    tool_name_filter="run_sql",
+                    top_k=1,
+                    returned_count=1,
+                    injected_count=0,
+                    filtered=[{"sample_id": "FILTERED", "reason": "synthetic"}],
+                )
+                return []
+
+        initialize_request_diagnostics("filtered SQL example")
+        initialize_run_sql_requirement()
+        filtered_enhancer = AllFilteredEnhancer(
+            base_enhancer=FakeBaseEnhancer(), top_k=1
+        )
+        asyncio.run(
+            filtered_enhancer.enhance_system_prompt(
+                "BASE_PROMPT", "filtered SQL example", None
+            )
+        )
+        filtered_state = get_run_sql_requirement()
+        filtered_examples_do_not_force_test = (
+            filtered_state is not None
+            and not filtered_state.requires_run_sql
+            and filtered_state.sql_example_injected_count == 0
+            and filtered_state.requirement_reasons == []
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        class FakeStreamingService(TracingOpenAILlmService):
+            async def _stream_parent_request(self, request: Any) -> Any:
+                self.parent_payloads.append(self._build_payload(request))
+                yield tracing_models.LlmStreamChunk(
+                    content="synthetic stream", finish_reason="stop"
+                )
+
+        initialize_request_diagnostics("streaming force")
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        streaming_service = FakeStreamingService.__new__(FakeStreamingService)
+        streaming_service.model = "synthetic-model"
+        streaming_service._client = FakeClient()
+        streaming_service.parent_payloads = []
+
+        async def consume_stream() -> list[Any]:
+            return [chunk async for chunk in streaming_service.stream_request(fake_request)]
+
+        asyncio.run(consume_stream())
+        streaming_force_test = (
+            streaming_service.parent_payloads[0].get("tool_choice")
+            == FORCED_RUN_SQL_TOOL_CHOICE
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        class MissingToolSchema:
+            name = "other_tool"
+            description = "Synthetic non-SQL tool"
+            parameters = {"type": "object", "properties": {}}
+
+        missing_tool_request = fake_request.model_copy(
+            deep=True, update={"tools": [MissingToolSchema()]}
+        )
+        missing_context = initialize_request_diagnostics("missing run_sql")
+        assert missing_context is not None and missing_context.trace_directory is not None
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        missing_service = FakeTracingService.__new__(FakeTracingService)
+        missing_service.model = "synthetic-model"
+        missing_service._client = FakeClient()
+        missing_service.parent_call_count = 0
+        missing_service.parent_payloads = []
+        missing_error = None
+        try:
+            asyncio.run(missing_service.send_request(missing_tool_request))
+        except RunSqlRequirementError as error:
+            missing_error = error
+        missing_trace = json.loads(
+            (missing_context.trace_directory / "run-sql-requirement.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        missing_run_sql_schema_fails_closed_test = (
+            missing_error is not None
+            and missing_service.parent_call_count == 0
+            and missing_trace["error_type"] == "RunSqlRequirementError"
+            and not missing_trace["run_sql_schema_present"]
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        async def requirement_worker(
+            question: str, injected_count: int
+        ) -> tuple[Any, bool]:
+            hook = OriginalQuestionLifecycleHook()
+            await hook.before_message(None, question)
+            record_injected_sql_examples(injected_count)
+            await asyncio.sleep(0)
+            worker_service = FakeTracingService.__new__(FakeTracingService)
+            worker_service.model = "synthetic-model"
+            worker_service._client = FakeClient()
+            worker_service.parent_call_count = 0
+            worker_service.parent_payloads = []
+            await worker_service.send_request(fake_request)
+            tool_choice = worker_service.parent_payloads[0].get("tool_choice")
+            await hook.after_message(None)
+            cleaned = (
+                get_run_sql_requirement() is None
+                and get_request_diagnostics() is None
+            )
+            return tool_choice, cleaned
+
+        async def run_requirement_workers() -> list[tuple[Any, bool]]:
+            return list(
+                await asyncio.gather(
+                    requirement_worker("requires run_sql", 1),
+                    requirement_worker("does not require run_sql", 0),
+                )
+            )
+
+        requirement_workers = asyncio.run(run_requirement_workers())
+        concurrent_requirement_isolation_test = (
+            requirement_workers[0][0] == FORCED_RUN_SQL_TOOL_CHOICE
+            and requirement_workers[1][0] == "auto"
+            and all(item[1] for item in requirement_workers)
+        )
+
+        async def lifecycle_requirement_check() -> tuple[bool, bool]:
+            hook = OriginalQuestionLifecycleHook()
+            await hook.before_message(None, "lifecycle requirement")
+            record_injected_sql_examples(1)
+            present_before_cleanup = get_run_sql_requirement() is not None
+            await hook.after_message(None)
+            cleaned_after = (
+                get_run_sql_requirement() is None
+                and get_request_diagnostics() is None
+            )
+            return present_before_cleanup, cleaned_after
+
+        lifecycle_present, lifecycle_cleaned = asyncio.run(
+            lifecycle_requirement_check()
+        )
+        lifecycle_requirement_cleanup_test = lifecycle_present and lifecycle_cleaned
+
+        class DeepSeekClient:
+            base_url = "https://api.deepseek.com/v1"
+
+        class DeepSeekPolicyService(TracingOpenAILlmService):
+            def _build_original_payload(self, request: Any) -> dict[str, Any]:
+                payload = super()._build_original_payload(request)
+                payload["extra_body"] = {
+                    "vendor_flag": "preserved",
+                    "thinking": {"type": "enabled"},
+                }
+                payload["reasoning_effort"] = "high"
+                return payload
+
+            async def _send_parent_request(self, request: Any) -> Any:
+                self.parent_call_count += 1
+                self.parent_payloads.append(self._build_payload(request))
+                return tracing_models.LlmResponse(
+                    content="deepseek synthetic response", finish_reason="stop"
+                )
+
+        deep_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+        deep_service.model = "deepseek-v4-pro"
+        deep_service._client = DeepSeekClient()
+        deep_service.parent_call_count = 0
+        deep_service.parent_payloads = []
+        deep_request_before = fake_request.model_dump(mode="python")
+
+        async def run_deepseek_turn_and_next_request() -> tuple[bool, Any, Any]:
+            hook = OriginalQuestionLifecycleHook()
+            await hook.before_message(None, "deepseek policy")
+            record_injected_sql_examples(1)
+            await deep_service.send_request(fake_request)
+            await deep_service.send_request(fake_request)
+            await deep_service.send_request(fake_request)
+            active_state = get_run_sql_requirement()
+            active_before_cleanup = bool(
+                active_state
+                and active_state.deepseek_non_thinking_tool_turn_active
+            )
+            turn_decisions = list(active_state.decisions)
+            await hook.after_message(None)
+            success_cleaned = (
+                get_run_sql_requirement() is None
+                and get_request_diagnostics() is None
+                and get_original_question() is None
+            )
+
+            await hook.before_message(None, "next deepseek request")
+            next_state_before_call = get_run_sql_requirement()
+            await deep_service.send_request(fake_request)
+            next_decision = get_run_sql_requirement().decisions[-1]
+            await hook.after_message(None)
+            return (
+                active_before_cleanup and success_cleaned,
+                (next_state_before_call, next_decision),
+                turn_decisions,
+            )
+
+        (
+            success_cleanup_resets_non_thinking_turn_test,
+            (next_state_before_call, next_decision),
+            turn_decisions,
+        ) = asyncio.run(run_deepseek_turn_and_next_request())
+        (
+            deep_first_payload,
+            deep_second_payload,
+            deep_third_payload,
+            deep_next_request_payload,
+        ) = deep_service.parent_payloads
+        deepseek_first_call_named_run_sql_non_thinking_test = (
+            deep_first_payload.get("tool_choice") == FORCED_RUN_SQL_TOOL_CHOICE
+            and deep_first_payload.get("extra_body", {}).get("thinking")
+            == {"type": "disabled"}
+            and "reasoning_effort" not in deep_first_payload
+        )
+        deepseek_second_call_auto_non_thinking_test = (
+            deep_second_payload.get("tool_choice") == "auto"
+            and deep_second_payload.get("extra_body", {}).get("thinking")
+            == {"type": "disabled"}
+            and turn_decisions[1]["provider_strategy"]
+            == "deepseek_non_thinking_tool_continuation"
+            and turn_decisions[1]["non_thinking_continuation_applied"]
+            and not turn_decisions[1]["forced_tool_choice_applied"]
+            and turn_decisions[1]["forced_tool_name"] == ""
+        )
+        deepseek_third_call_auto_non_thinking_test = (
+            deep_third_payload.get("tool_choice") == "auto"
+            and deep_third_payload.get("extra_body", {}).get("thinking")
+            == {"type": "disabled"}
+            and turn_decisions[2]["provider_strategy"]
+            == "deepseek_non_thinking_tool_continuation"
+            and turn_decisions[2]["non_thinking_turn_started_on_call"] == 1
+            and not turn_decisions[2]["synthetic_reasoning_content_injected"]
+        )
+        deepseek_continuation_reasoning_effort_removed_test = (
+            "reasoning_effort" not in deep_second_payload
+            and "reasoning_effort" not in deep_third_payload
+        )
+        deepseek_continuation_extra_body_preserved_test = all(
+            payload.get("extra_body", {}).get("vendor_flag") == "preserved"
+            for payload in (
+                deep_first_payload,
+                deep_second_payload,
+                deep_third_payload,
+            )
+        )
+        deepseek_next_user_request_thinking_restored_test = (
+            deep_next_request_payload.get("extra_body", {}).get("thinking")
+            == {"type": "enabled"}
+            and next_state_before_call is not None
+            and not next_state_before_call.deepseek_non_thinking_tool_turn_active
+            and next_decision["provider_strategy"] == "original_request"
+        )
+        deepseek_next_user_request_auto_restored_test = (
+            deep_next_request_payload.get("tool_choice") == "auto"
+        )
+
+        def contains_reasoning_content(value: Any) -> bool:
+            if isinstance(value, dict):
+                return "reasoning_content" in value or any(
+                    contains_reasoning_content(item) for item in value.values()
+                )
+            if isinstance(value, list):
+                return any(contains_reasoning_content(item) for item in value)
+            return False
+
+        no_synthetic_reasoning_content_test = not any(
+            contains_reasoning_content(payload)
+            for payload in deep_service.parent_payloads
+        )
+        deepseek_thinking_first_call_disabled_test = (
+            deep_first_payload.get("extra_body", {}).get("thinking")
+            == {"type": "disabled"}
+        )
+        deepseek_first_call_named_run_sql_test = (
+            deep_first_payload.get("tool_choice") == FORCED_RUN_SQL_TOOL_CHOICE
+        )
+        deepseek_first_call_reasoning_effort_removed_test = (
+            "reasoning_effort" not in deep_first_payload
+        )
+        deepseek_extra_body_fields_preserved_test = (
+            deep_first_payload.get("extra_body", {}).get("vendor_flag")
+            == "preserved"
+            and deep_second_payload.get("extra_body", {}).get("vendor_flag")
+            == "preserved"
+        )
+        request_object_not_mutated_test = (
+            request_object_not_mutated_test
+            and fake_request.model_dump(mode="python") == deep_request_before
+        )
+        non_streaming_policy_test = (
+            deep_service.parent_call_count == 4
+            and deepseek_thinking_first_call_disabled_test
+            and deepseek_first_call_named_run_sql_test
+            and deepseek_second_call_auto_non_thinking_test
+            and deepseek_third_call_auto_non_thinking_test
+        )
+
+        non_deep_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+        non_deep_service.model = "synthetic-model"
+        non_deep_service._client = FakeClient()
+        non_deep_service.parent_call_count = 0
+        non_deep_service.parent_payloads = []
+        initialize_request_diagnostics("non-deepseek policy")
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        asyncio.run(non_deep_service.send_request(fake_request))
+        non_deep_payload = non_deep_service.parent_payloads[0]
+        non_deepseek_policy_unchanged_test = (
+            non_deep_payload.get("tool_choice") == FORCED_RUN_SQL_TOOL_CHOICE
+            and non_deep_payload.get("extra_body", {}).get("thinking")
+            == {"type": "enabled"}
+            and non_deep_payload.get("reasoning_effort") == "high"
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        class InvalidExtraBodyService(DeepSeekPolicyService):
+            def _build_original_payload(self, request: Any) -> dict[str, Any]:
+                payload = super(DeepSeekPolicyService, self)._build_original_payload(
+                    request
+                )
+                payload["extra_body"] = "invalid"
+                return payload
+
+        invalid_service = InvalidExtraBodyService.__new__(InvalidExtraBodyService)
+        invalid_service.model = "deepseek-v4-pro"
+        invalid_service._client = DeepSeekClient()
+        invalid_service.parent_call_count = 0
+        invalid_service.parent_payloads = []
+        initialize_request_diagnostics("invalid thinking override")
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        invalid_error = None
+        try:
+            asyncio.run(invalid_service.send_request(fake_request))
+        except RunSqlRequirementError as error:
+            invalid_error = error
+        thinking_override_failure_fails_closed_test = (
+            invalid_error is not None and invalid_service.parent_call_count == 0
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        class InvalidContinuationExtraBodyService(DeepSeekPolicyService):
+            def _build_original_payload(self, request: Any) -> dict[str, Any]:
+                payload = super()._build_original_payload(request)
+                state = get_run_sql_requirement()
+                if state and state.deepseek_non_thinking_tool_turn_active:
+                    payload["extra_body"] = "invalid"
+                return payload
+
+        invalid_continuation_service = InvalidContinuationExtraBodyService.__new__(
+            InvalidContinuationExtraBodyService
+        )
+        invalid_continuation_service.model = "deepseek-v4-pro"
+        invalid_continuation_service._client = DeepSeekClient()
+        invalid_continuation_service.parent_call_count = 0
+        invalid_continuation_service.parent_payloads = []
+        initialize_request_diagnostics("invalid continuation thinking override")
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        asyncio.run(invalid_continuation_service.send_request(fake_request))
+        invalid_continuation_error = None
+        try:
+            asyncio.run(invalid_continuation_service.send_request(fake_request))
+        except RunSqlRequirementError as error:
+            invalid_continuation_error = error
+        thinking_override_failure_fails_closed_test = (
+            thinking_override_failure_fails_closed_test
+            and invalid_continuation_error is not None
+            and invalid_continuation_service.parent_call_count == 1
+        )
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        class DeepSeekStreamingPolicyService(DeepSeekPolicyService):
+            async def _stream_parent_request(self, request: Any) -> Any:
+                self.parent_call_count += 1
+                self.parent_payloads.append(self._build_payload(request))
+                yield tracing_models.LlmStreamChunk(
+                    content="deepseek stream", finish_reason="stop"
+                )
+
+        stream_policy_service = DeepSeekStreamingPolicyService.__new__(
+            DeepSeekStreamingPolicyService
+        )
+        stream_policy_service.model = "deepseek-v4-pro"
+        stream_policy_service._client = DeepSeekClient()
+        stream_policy_service.parent_call_count = 0
+        stream_policy_service.parent_payloads = []
+        initialize_request_diagnostics("deepseek streaming policy")
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+
+        async def consume_policy_stream() -> list[Any]:
+            chunks = [
+                chunk
+                async for chunk in stream_policy_service.stream_request(fake_request)
+            ]
+            chunks.extend(
+                [
+                    chunk
+                    async for chunk in stream_policy_service.stream_request(
+                        fake_request
+                    )
+                ]
+            )
+            return chunks
+
+        asyncio.run(consume_policy_stream())
+        streaming_policy_test = (
+            stream_policy_service.parent_call_count == 2
+            and stream_policy_service.parent_payloads[0].get("tool_choice")
+            == FORCED_RUN_SQL_TOOL_CHOICE
+            and stream_policy_service.parent_payloads[0]
+            .get("extra_body", {})
+            .get("thinking")
+            == {"type": "disabled"}
+            and "reasoning_effort" not in stream_policy_service.parent_payloads[0]
+            and stream_policy_service.parent_payloads[1].get("tool_choice") == "auto"
+            and stream_policy_service.parent_payloads[1]
+            .get("extra_body", {})
+            .get("thinking")
+            == {"type": "disabled"}
+            and "reasoning_effort" not in stream_policy_service.parent_payloads[1]
+        )
+        streaming_continuation_policy_test = streaming_policy_test
+        non_streaming_continuation_policy_test = non_streaming_policy_test
+        clear_run_sql_requirement()
+        clear_request_diagnostics()
+
+        async def non_thinking_isolation_worker(
+            question: str, injected_count: int, call_count: int
+        ) -> tuple[list[dict[str, Any]], bool]:
+            hook = OriginalQuestionLifecycleHook()
+            await hook.before_message(None, question)
+            record_injected_sql_examples(injected_count)
+            worker_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+            worker_service.model = "deepseek-v4-pro"
+            worker_service._client = DeepSeekClient()
+            worker_service.parent_call_count = 0
+            worker_service.parent_payloads = []
+            for _ in range(call_count):
+                await worker_service.send_request(fake_request)
+                await asyncio.sleep(0)
+            await hook.after_message(None)
+            cleaned = (
+                get_run_sql_requirement() is None
+                and get_request_diagnostics() is None
+                and get_original_question() is None
+            )
+            return worker_service.parent_payloads, cleaned
+
+        async def run_non_thinking_isolation_workers():
+            return await asyncio.gather(
+                non_thinking_isolation_worker("non-thinking A", 1, 2),
+                non_thinking_isolation_worker("original B", 0, 1),
+            )
+
+        isolation_a, isolation_b = asyncio.run(
+            run_non_thinking_isolation_workers()
+        )
+        concurrent_non_thinking_turn_isolation_test = (
+            isolation_a[0][1].get("tool_choice") == "auto"
+            and isolation_a[0][1].get("extra_body", {}).get("thinking")
+            == {"type": "disabled"}
+            and isolation_b[0][0].get("tool_choice") == "auto"
+            and isolation_b[0][0].get("extra_body", {}).get("thinking")
+            == {"type": "enabled"}
+            and isolation_a[1]
+            and isolation_b[1]
+        )
+
+        successful_columns = [
+            "station_id",
+            "monitor_year",
+            "avg_ph",
+            "water_quality_level",
+        ]
+        authoritative_sql = """SELECT station_id, monitor_year, AVG(m2_value) AS avg_ph, water_quality_level
+FROM wm_waterquality_year_records
+WHERE m2_value IS NOT NULL
+GROUP BY station_id, monitor_year, water_quality_level
+ORDER BY AVG(m2_value) DESC
+LIMIT 20"""
+
+        class SyntheticToolResult:
+            def __init__(
+                self, *, success: bool, result_for_llm: str, metadata: dict[str, Any]
+            ) -> None:
+                self.success = success
+                self.result_for_llm = result_for_llm
+                self.metadata = metadata
+
+        def synthetic_sql_result(
+            *, success: bool, row_count: int = 0, query_type: str = "SELECT"
+        ) -> SyntheticToolResult:
+            return SyntheticToolResult(
+                success=success,
+                result_for_llm="synthetic SQL result",
+                metadata={
+                    "query_type": query_type,
+                    "row_count": row_count,
+                    "columns": successful_columns,
+                },
+            )
+
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        zero_row_recorded = record_successful_run_sql_result(
+            zero_row_result := synthetic_sql_result(success=True)
+        )
+        zero_row_result.ui_component = object()
+        zero_row_ui = zero_row_result.ui_component
+        zero_row_metadata = {
+            **zero_row_result.metadata,
+            "columns": list(zero_row_result.metadata["columns"]),
+        }
+        zero_row_authoritative_applied = append_authoritative_sql_execution_result(
+            zero_row_result,
+            sql=authoritative_sql,
+            tool_phase_closed_now=zero_row_recorded,
+        )
+        zero_row_state = get_run_sql_requirement()
+        approved_example_zero_row_success_closes_tool_phase_test = bool(
+            zero_row_recorded
+            and zero_row_state
+            and zero_row_state.successful_run_sql_completed
+            and zero_row_state.successful_run_sql_count == 1
+            and zero_row_state.successful_run_sql_row_count == 0
+            and zero_row_state.successful_run_sql_columns == successful_columns
+            and zero_row_state.tool_phase_closed
+            and zero_row_state.tool_phase_close_reason
+            == "first_successful_run_sql_for_approved_example"
+        )
+        zero_row_authoritative_result_includes_executed_sql_test = (
+            zero_row_authoritative_applied
+            and authoritative_sql in zero_row_result.result_for_llm
+            and "monitor_year = 2025" not in zero_row_result.result_for_llm
+            and "execution_success: true" in zero_row_result.result_for_llm
+        )
+        authoritative_result_includes_row_count_and_columns_test = (
+            "row_count: 0" in zero_row_result.result_for_llm
+            and 'columns: ["station_id", "monitor_year", "avg_ph", "water_quality_level"]'
+            in zero_row_result.result_for_llm
+        )
+        authoritative_result_forbids_future_query_claim_test = (
+            "Do not claim or imply that another SQL query will be executed."
+            in zero_row_result.result_for_llm
+            and "tool_phase_closed: true" in zero_row_result.result_for_llm
+        )
+        authoritative_result_forbids_nonexistent_filter_inference_test = (
+            "Do not infer filters or conditions that are not present in the executed SQL."
+            in zero_row_result.result_for_llm
+        )
+        ui_component_unchanged_test = zero_row_result.ui_component is zero_row_ui
+        result_metadata_unchanged_test = zero_row_result.metadata == zero_row_metadata
+        clear_run_sql_requirement()
+
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        nonempty_recorded = record_successful_run_sql_result(
+            nonempty_result := synthetic_sql_result(success=True, row_count=3)
+        )
+        nonempty_authoritative_applied = append_authoritative_sql_execution_result(
+            nonempty_result,
+            sql=authoritative_sql,
+            tool_phase_closed_now=nonempty_recorded,
+        )
+        nonempty_state = get_run_sql_requirement()
+        approved_example_nonempty_success_closes_tool_phase_test = bool(
+            nonempty_recorded
+            and nonempty_state
+            and nonempty_state.tool_phase_closed
+            and nonempty_state.successful_run_sql_row_count == 3
+        )
+        nonempty_authoritative_result_includes_executed_sql_test = (
+            nonempty_authoritative_applied
+            and authoritative_sql in nonempty_result.result_for_llm
+            and "row_count: 3" in nonempty_result.result_for_llm
+        )
+        first_success_evidence = (
+            nonempty_state.successful_run_sql_row_count,
+            list(nonempty_state.successful_run_sql_columns),
+            nonempty_state.tool_phase_close_reason,
+        )
+        record_successful_run_sql_result(
+            SyntheticToolResult(
+                success=True,
+                result_for_llm="repeat",
+                metadata={
+                    "query_type": "SELECT",
+                    "row_count": 9,
+                    "columns": ["changed"],
+                },
+            )
+        )
+        approved_example_nonempty_success_closes_tool_phase_test = (
+            approved_example_nonempty_success_closes_tool_phase_test
+            and first_success_evidence
+            == (
+                nonempty_state.successful_run_sql_row_count,
+                nonempty_state.successful_run_sql_columns,
+                nonempty_state.tool_phase_close_reason,
+            )
+        )
+        clear_run_sql_requirement()
+
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        failed_result = synthetic_sql_result(success=False)
+        failed_original = failed_result.result_for_llm
+        failed_recorded = record_successful_run_sql_result(failed_result)
+        failed_applied = append_authoritative_sql_execution_result(
+            failed_result,
+            sql=authoritative_sql,
+            tool_phase_closed_now=failed_recorded,
+        )
+        failed_state = get_run_sql_requirement()
+        failed_sql_does_not_close_tool_phase_test = bool(
+            not failed_recorded and failed_state and not failed_state.tool_phase_closed
+        )
+        failed_sql_result_unchanged_test = (
+            not failed_applied and failed_result.result_for_llm == failed_original
+        )
+        guard_blocked_result = SyntheticToolResult(
+                success=False,
+                result_for_llm="blocked",
+                metadata={
+                    "query_type": "SELECT",
+                    "blocked_by_sql_guard": True,
+                    "row_count": 0,
+                    "columns": successful_columns,
+                },
+        )
+        guard_blocked_original = guard_blocked_result.result_for_llm
+        guard_blocked_recorded = record_successful_run_sql_result(
+            guard_blocked_result
+        )
+        guard_blocked_applied = append_authoritative_sql_execution_result(
+            guard_blocked_result,
+            sql=authoritative_sql,
+            tool_phase_closed_now=guard_blocked_recorded,
+        )
+        sql_guard_block_does_not_close_tool_phase_test = bool(
+            not guard_blocked_recorded
+            and failed_state
+            and not failed_state.tool_phase_closed
+            and failed_state.successful_run_sql_count == 0
+        )
+        sql_guard_block_result_unchanged_test = (
+            not guard_blocked_applied
+            and guard_blocked_result.result_for_llm == guard_blocked_original
+        )
+        clear_run_sql_requirement()
+
+        initialize_run_sql_requirement()
+        non_approved_result = synthetic_sql_result(success=True)
+        non_approved_original = non_approved_result.result_for_llm
+        non_approved_recorded = record_successful_run_sql_result(non_approved_result)
+        non_approved_applied = append_authoritative_sql_execution_result(
+            non_approved_result,
+            sql=authoritative_sql,
+            tool_phase_closed_now=non_approved_recorded,
+        )
+        request_without_approved_example_unchanged_test = (
+            not non_approved_recorded
+            and not non_approved_applied
+            and non_approved_result.result_for_llm == non_approved_original
+            and not get_run_sql_requirement().tool_phase_closed
+        )
+        clear_run_sql_requirement()
+
+        answer_only_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+        answer_only_service.model = "deepseek-v4-pro"
+        answer_only_service._client = DeepSeekClient()
+        answer_only_service.parent_call_count = 0
+        answer_only_service.parent_payloads = []
+        answer_only_request_before = fake_request.model_dump(mode="python")
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        first_answer_response = asyncio.run(answer_only_service.send_request(fake_request))
+        record_successful_run_sql_result(synthetic_sql_result(success=True))
+        second_answer_response = asyncio.run(answer_only_service.send_request(fake_request))
+        answer_only_state = get_run_sql_requirement()
+        first_answer_payload, second_answer_payload = answer_only_service.parent_payloads
+        second_call_tools_removed_test = "tools" not in second_answer_payload
+        second_call_tool_choice_removed_test = "tool_choice" not in second_answer_payload
+        second_call_thinking_disabled_test = (
+            second_answer_payload.get("extra_body", {}).get("thinking")
+            == {"type": "disabled"}
+        )
+        second_call_reasoning_effort_removed_test = (
+            "reasoning_effort" not in second_answer_payload
+        )
+        second_call_final_text_only_test = (
+            second_answer_response.content == "deepseek synthetic response"
+            and not second_answer_response.tool_calls
+            and second_answer_response.finish_reason == "stop"
+        )
+        non_streaming_answer_only_policy_test = all(
+            (
+                first_answer_payload.get("tool_choice")
+                == FORCED_RUN_SQL_TOOL_CHOICE,
+                second_call_tools_removed_test,
+                second_call_tool_choice_removed_test,
+                second_call_thinking_disabled_test,
+                second_call_reasoning_effort_removed_test,
+                answer_only_service.parent_call_count == 2,
+                bool(answer_only_state and answer_only_state.tool_phase_closed),
+            )
+        )
+        request_object_not_mutated_test = (
+            request_object_not_mutated_test
+            and fake_request.model_dump(mode="python") == answer_only_request_before
+        )
+        clear_run_sql_requirement()
+
+        third_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+        third_service.model = "deepseek-v4-pro"
+        third_service._client = DeepSeekClient()
+        third_service.parent_call_count = 0
+        third_service.parent_payloads = []
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        asyncio.run(third_service.send_request(fake_request))
+        record_successful_run_sql_result(synthetic_sql_result(success=True))
+        asyncio.run(third_service.send_request(fake_request))
+        asyncio.run(third_service.send_request(fake_request))
+        third_call_remains_answer_only_test = all(
+            "tools" not in payload and "tool_choice" not in payload
+            for payload in third_service.parent_payloads[1:]
+        )
+        clear_run_sql_requirement()
+
+        initialize_run_sql_requirement()
+        next_request_state = get_run_sql_requirement()
+        next_request_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+        next_request_service.model = "deepseek-v4-pro"
+        next_request_service._client = DeepSeekClient()
+        next_request_service.parent_call_count = 0
+        next_request_service.parent_payloads = []
+        asyncio.run(next_request_service.send_request(fake_request))
+        next_payload = next_request_service.parent_payloads[0]
+        next_user_request_tools_restored_test = "tools" in next_payload
+        next_user_request_thinking_restored_test = (
+            next_payload.get("extra_body", {}).get("thinking")
+            == {"type": "enabled"}
+            and not next_request_state.tool_phase_closed
+        )
+        clear_run_sql_requirement()
+
+        stream_answer_service = DeepSeekStreamingPolicyService.__new__(
+            DeepSeekStreamingPolicyService
+        )
+        stream_answer_service.model = "deepseek-v4-pro"
+        stream_answer_service._client = DeepSeekClient()
+        stream_answer_service.parent_call_count = 0
+        stream_answer_service.parent_payloads = []
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+
+        async def consume_answer_only_stream() -> None:
+            async for _ in stream_answer_service.stream_request(fake_request):
+                pass
+            record_successful_run_sql_result(synthetic_sql_result(success=True))
+            async for _ in stream_answer_service.stream_request(fake_request):
+                pass
+
+        asyncio.run(consume_answer_only_stream())
+        streaming_answer_only_policy_test = (
+            stream_answer_service.parent_call_count == 2
+            and "tools" not in stream_answer_service.parent_payloads[1]
+            and "tool_choice" not in stream_answer_service.parent_payloads[1]
+        )
+        clear_run_sql_requirement()
+
+        async def tool_phase_isolation_worker(
+            approved: bool,
+        ) -> tuple[list[dict[str, Any]], bool]:
+            initialize_run_sql_requirement()
+            record_injected_sql_examples(1 if approved else 0)
+            service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+            service.model = "deepseek-v4-pro"
+            service._client = DeepSeekClient()
+            service.parent_call_count = 0
+            service.parent_payloads = []
+            await service.send_request(fake_request)
+            if approved:
+                record_successful_run_sql_result(synthetic_sql_result(success=True))
+                await service.send_request(fake_request)
+            await asyncio.sleep(0)
+            closed = bool(get_run_sql_requirement().tool_phase_closed)
+            clear_run_sql_requirement()
+            return service.parent_payloads, closed
+
+        async def run_tool_phase_isolation_workers():
+            return await asyncio.gather(
+                tool_phase_isolation_worker(True),
+                tool_phase_isolation_worker(False),
+            )
+
+        tool_phase_a, tool_phase_b = asyncio.run(run_tool_phase_isolation_workers())
+        concurrent_tool_phase_isolation_test = (
+            "tools" not in tool_phase_a[0][1]
+            and tool_phase_a[1]
+            and "tools" in tool_phase_b[0][0]
+            and not tool_phase_b[1]
+        )
+        success_cleanup_resets_tool_phase_test = (
+            get_run_sql_requirement() is None
+        )
+        initialize_run_sql_requirement()
+        record_injected_sql_examples(1)
+        record_successful_run_sql_result(synthetic_sql_result(success=True))
+        clear_run_sql_requirement()
+        error_cleanup_resets_tool_phase_test = get_run_sql_requirement() is None
+        no_synthetic_reasoning_content_test = (
+            no_synthetic_reasoning_content_test
+            and not any(
+                contains_reasoning_content(payload)
+                for payload in answer_only_service.parent_payloads
+            )
+        )
+
+        class SyntheticBadRequestError(RuntimeError):
+            pass
+
+        class FailingDeepSeekService(DeepSeekPolicyService):
+            async def _send_parent_request(self, request: Any) -> Any:
+                self.parent_call_count += 1
+                self.parent_payloads.append(self._build_payload(request))
+                if self.parent_call_count == 2:
+                    raise SyntheticBadRequestError(
+                        "synthetic second-call provider failure"
+                    )
+                return tracing_models.LlmResponse(
+                    content="synthetic first-call response",
+                    finish_reason="stop",
+                )
+
+        failing_hook = OriginalQuestionLifecycleHook()
+        failing_service = FailingDeepSeekService.__new__(FailingDeepSeekService)
+        failing_service.model = "deepseek-v4-pro"
+        failing_service._client = DeepSeekClient()
+        failing_service.parent_call_count = 0
+        failing_service.parent_payloads = []
+
+        async def run_provider_exception() -> tuple[bool, bool, bool, bool, bool]:
+            await failing_hook.before_message(None, "provider exception")
+            record_injected_sql_examples(1)
+            context = get_request_diagnostics()
+            assert context is not None and context.trace_directory is not None
+            request_end_path = context.trace_directory / "request-end.json"
+            await failing_service.send_request(fake_request)
+            propagated = False
+            try:
+                await failing_service.send_request(fake_request)
+            except SyntheticBadRequestError:
+                propagated = True
+            request_end = json.loads(request_end_path.read_text(encoding="utf-8"))
+            cleaned = (
+                get_request_diagnostics() is None
+                and get_run_sql_requirement() is None
+                and get_original_question() is None
+            )
+            before_double_finalize = request_end_path.read_bytes()
+            await failing_hook.after_message(None)
+            double_safe = (
+                request_end_path.read_bytes() == before_double_finalize
+                and get_request_diagnostics() is None
+                and get_run_sql_requirement() is None
+                and get_original_question() is None
+            )
+            recovery_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
+            recovery_service.model = "deepseek-v4-pro"
+            recovery_service._client = DeepSeekClient()
+            recovery_service.parent_call_count = 0
+            recovery_service.parent_payloads = []
+            await failing_hook.before_message(None, "request after provider exception")
+            await recovery_service.send_request(fake_request)
+            recovery_payload = recovery_service.parent_payloads[0]
+            recovery_decision = get_run_sql_requirement().decisions[-1]
+            error_cleanup_reset = (
+                recovery_payload.get("tool_choice") == "auto"
+                and recovery_payload.get("extra_body", {}).get("thinking")
+                == {"type": "enabled"}
+                and recovery_decision["provider_strategy"] == "original_request"
+                and not get_run_sql_requirement().deepseek_non_thinking_tool_turn_active
+            )
+            await failing_hook.after_message(None)
+            request_end_valid = (
+                request_end.get("status") == "error"
+                and request_end.get("exception_type")
+                == "SyntheticBadRequestError"
+                and request_end.get("context_cleanup_completed") is True
+            )
+            return (
+                propagated,
+                request_end_valid,
+                cleaned,
+                double_safe,
+                error_cleanup_reset,
+            )
+
+        (
+            exception_propagated,
+            provider_exception_request_end_written_test,
+            provider_exception_context_cleanup_test,
+            double_finalization_idempotent_test,
+            error_cleanup_resets_non_thinking_turn_test,
+        ) = asyncio.run(run_provider_exception())
+        no_provider_retry_on_bad_request_test = (
+            exception_propagated and failing_service.parent_call_count == 2
+        )
+        no_provider_retry_test = no_provider_retry_on_bad_request_test
+
+        sse_dir = trace_root / "synthetic-sse"
+        synthetic_events = [
+            {
+                "conversation_id": "conv-self-test",
+                "request_id": "req-self-test",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "rich": {"type": "status_bar_update", "data": {"status": "working"}},
+                "simple": None,
+            },
+            {
+                "conversation_id": "conv-self-test",
+                "request_id": "req-self-test",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "rich": {
+                    "type": "dataframe",
+                    "data": {
+                        "sql": "SELECT 1 AS value",
+                        "columns": ["value"],
+                        "data": [{"value": 1}],
+                        "row_count": 1,
+                        "execution_success": True,
+                    },
+                },
+                "simple": {"type": "text", "text": "Query executed"},
+            },
+            {
+                "conversation_id": "conv-self-test",
+                "request_id": "req-self-test",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "rich": {"type": "text", "data": {"content": "最终离线回答"}},
+                "simple": {"type": "text", "text": "最终离线回答"},
+            },
+        ]
+        synthetic_sse = "".join(
+            "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+            for event in synthetic_events
+        ) + "data: [DONE]\n\n"
+
+        class FakeSseResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args: Any) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return synthetic_sse.encode("utf-8")
+
+        original_urlopen = service_harness.urllib.request.urlopen
+        original_parse_sse = service_harness.parse_sse_text
+        raw_written_before_parse = False
+
+        def fake_urlopen(*_args: Any, **_kwargs: Any) -> FakeSseResponse:
+            return FakeSseResponse()
+
+        def checked_parse_sse(raw_text: str):
+            nonlocal raw_written_before_parse
+            raw_written_before_parse = (sse_dir / "response.sse").is_file()
+            return original_parse_sse(raw_text)
+
+        service_harness.urllib.request.urlopen = fake_urlopen
+        service_harness.parse_sse_text = checked_parse_sse
+        try:
+            synthetic_result = service_harness.post_sse(
+                "离线请求", raw_evidence_dir=sse_dir
+            )
+        finally:
+            service_harness.urllib.request.urlopen = original_urlopen
+            service_harness.parse_sse_text = original_parse_sse
+        sse_summary = json.loads(
+            (sse_dir / "request-summary.json").read_text(encoding="utf-8")
+        )
+        raw_sse_persistence_test = (
+            raw_written_before_parse
+            and (sse_dir / "response.sse").read_text(encoding="utf-8")
+            == synthetic_sse
+            and len(json.loads((sse_dir / "events.json").read_text(encoding="utf-8")))
+            == 3
+        )
+        final_text_capture_test = (
+            (sse_dir / "final-text.txt").read_text(encoding="utf-8")
+            == "最终离线回答"
+            and bool(synthetic_result["answer"])
+        )
+        request_ids_capture_test = (
+            sse_summary["conversation_id"] == "conv-self-test"
+            and sse_summary["request_id"] == "req-self-test"
+        )
+
+    if original_trace_enabled is None:
+        os.environ.pop("VANNA_REQUEST_TRACE_ENABLED", None)
+    else:
+        os.environ["VANNA_REQUEST_TRACE_ENABLED"] = original_trace_enabled
+    if original_trace_dir is None:
+        os.environ.pop("VANNA_REQUEST_TRACE_DIR", None)
+    else:
+        os.environ["VANNA_REQUEST_TRACE_DIR"] = original_trace_dir
+
     runner_self_test_pass = all(
         (
             accepted,
@@ -838,6 +2139,75 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             invalid_dynamic_sha_rejected,
             dynamic_baseline_passed,
             dynamic_change_detected,
+            request_trace_context_test,
+            trace_context_cleanup_test,
+            trace_disabled_no_write_test,
+            final_system_prompt_capture_test,
+            injected_sql_examples_capture_test,
+            tool_schema_capture_test,
+            multi_llm_call_capture_test,
+            secret_redaction_test,
+            raw_sse_persistence_test,
+            final_text_capture_test,
+            request_ids_capture_test,
+            no_sql_example_no_force_test,
+            sql_example_injected_requires_run_sql_test,
+            filtered_examples_do_not_force_test,
+            first_llm_call_forces_run_sql_test,
+            second_llm_call_returns_to_auto_test,
+            streaming_force_test,
+            non_streaming_force_test,
+            missing_run_sql_schema_fails_closed_test,
+            request_object_not_mutated_test,
+            concurrent_requirement_isolation_test,
+            lifecycle_requirement_cleanup_test,
+            trace_records_effective_tool_choice_test,
+            deepseek_first_call_named_run_sql_non_thinking_test,
+            deepseek_second_call_auto_non_thinking_test,
+            deepseek_third_call_auto_non_thinking_test,
+            deepseek_continuation_reasoning_effort_removed_test,
+            deepseek_continuation_extra_body_preserved_test,
+            deepseek_next_user_request_thinking_restored_test,
+            deepseek_next_user_request_auto_restored_test,
+            no_synthetic_reasoning_content_test,
+            non_deepseek_policy_unchanged_test,
+            thinking_override_failure_fails_closed_test,
+            streaming_continuation_policy_test,
+            non_streaming_continuation_policy_test,
+            concurrent_non_thinking_turn_isolation_test,
+            success_cleanup_resets_non_thinking_turn_test,
+            error_cleanup_resets_non_thinking_turn_test,
+            no_provider_retry_test,
+            provider_exception_request_end_written_test,
+            provider_exception_context_cleanup_test,
+            double_finalization_idempotent_test,
+            approved_example_zero_row_success_closes_tool_phase_test,
+            approved_example_nonempty_success_closes_tool_phase_test,
+            failed_sql_does_not_close_tool_phase_test,
+            sql_guard_block_does_not_close_tool_phase_test,
+            request_without_approved_example_unchanged_test,
+            second_call_tools_removed_test,
+            second_call_tool_choice_removed_test,
+            second_call_thinking_disabled_test,
+            second_call_reasoning_effort_removed_test,
+            second_call_final_text_only_test,
+            third_call_remains_answer_only_test,
+            next_user_request_tools_restored_test,
+            next_user_request_thinking_restored_test,
+            streaming_answer_only_policy_test,
+            non_streaming_answer_only_policy_test,
+            concurrent_tool_phase_isolation_test,
+            success_cleanup_resets_tool_phase_test,
+            error_cleanup_resets_tool_phase_test,
+            zero_row_authoritative_result_includes_executed_sql_test,
+            nonempty_authoritative_result_includes_executed_sql_test,
+            authoritative_result_includes_row_count_and_columns_test,
+            authoritative_result_forbids_future_query_claim_test,
+            authoritative_result_forbids_nonexistent_filter_inference_test,
+            failed_sql_result_unchanged_test,
+            sql_guard_block_result_unchanged_test,
+            ui_component_unchanged_test,
+            result_metadata_unchanged_test,
         )
     )
     payload = {
@@ -899,12 +2269,171 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         "invalid_dynamic_sha_rejected": invalid_dynamic_sha_rejected,
         "dynamic_baseline_before_service_start_passed": dynamic_baseline_passed,
         "dynamic_formal_change_fail_fast_triggered": dynamic_change_detected,
+        "REQUEST_TRACE_CONTEXT_TEST": "PASS" if request_trace_context_test else "FAIL",
+        "TRACE_CONTEXT_CLEANUP_TEST": "PASS" if trace_context_cleanup_test else "FAIL",
+        "TRACE_DISABLED_NO_WRITE_TEST": "PASS" if trace_disabled_no_write_test else "FAIL",
+        "FINAL_SYSTEM_PROMPT_CAPTURE_TEST": "PASS" if final_system_prompt_capture_test else "FAIL",
+        "INJECTED_SQL_EXAMPLES_CAPTURE_TEST": "PASS" if injected_sql_examples_capture_test else "FAIL",
+        "TOOL_SCHEMA_CAPTURE_TEST": "PASS" if tool_schema_capture_test else "FAIL",
+        "MULTI_LLM_CALL_CAPTURE_TEST": "PASS" if multi_llm_call_capture_test else "FAIL",
+        "SECRET_REDACTION_TEST": "PASS" if secret_redaction_test else "FAIL",
+        "RAW_SSE_PERSISTENCE_TEST": "PASS" if raw_sse_persistence_test else "FAIL",
+        "FINAL_TEXT_CAPTURE_TEST": "PASS" if final_text_capture_test else "FAIL",
+        "REQUEST_IDS_CAPTURE_TEST": "PASS" if request_ids_capture_test else "FAIL",
+        "NO_SQL_EXAMPLE_NO_FORCE_TEST": "PASS" if no_sql_example_no_force_test else "FAIL",
+        "SQL_EXAMPLE_INJECTED_REQUIRES_RUN_SQL_TEST": "PASS" if sql_example_injected_requires_run_sql_test else "FAIL",
+        "FILTERED_EXAMPLES_DO_NOT_FORCE_TEST": "PASS" if filtered_examples_do_not_force_test else "FAIL",
+        "FIRST_LLM_CALL_FORCES_RUN_SQL_TEST": "PASS" if first_llm_call_forces_run_sql_test else "FAIL",
+        "SECOND_LLM_CALL_RETURNS_TO_AUTO_TEST": "PASS" if second_llm_call_returns_to_auto_test else "FAIL",
+        "STREAMING_FORCE_TEST": "PASS" if streaming_force_test else "FAIL",
+        "NON_STREAMING_FORCE_TEST": "PASS" if non_streaming_force_test else "FAIL",
+        "MISSING_RUN_SQL_SCHEMA_FAILS_CLOSED_TEST": "PASS" if missing_run_sql_schema_fails_closed_test else "FAIL",
+        "REQUEST_OBJECT_NOT_MUTATED_TEST": "PASS" if request_object_not_mutated_test else "FAIL",
+        "CONCURRENT_REQUIREMENT_ISOLATION_TEST": "PASS" if concurrent_requirement_isolation_test else "FAIL",
+        "LIFECYCLE_REQUIREMENT_CLEANUP_TEST": "PASS" if lifecycle_requirement_cleanup_test else "FAIL",
+        "TRACE_RECORDS_EFFECTIVE_TOOL_CHOICE_TEST": "PASS" if trace_records_effective_tool_choice_test else "FAIL",
+        "DEEPSEEK_FIRST_CALL_NAMED_RUN_SQL_NON_THINKING_TEST": "PASS" if deepseek_first_call_named_run_sql_non_thinking_test else "FAIL",
+        "DEEPSEEK_SECOND_CALL_AUTO_NON_THINKING_TEST": "PASS" if deepseek_second_call_auto_non_thinking_test else "FAIL",
+        "DEEPSEEK_THIRD_CALL_AUTO_NON_THINKING_TEST": "PASS" if deepseek_third_call_auto_non_thinking_test else "FAIL",
+        "DEEPSEEK_CONTINUATION_REASONING_EFFORT_REMOVED_TEST": "PASS" if deepseek_continuation_reasoning_effort_removed_test else "FAIL",
+        "DEEPSEEK_CONTINUATION_EXTRA_BODY_PRESERVED_TEST": "PASS" if deepseek_continuation_extra_body_preserved_test else "FAIL",
+        "DEEPSEEK_NEXT_USER_REQUEST_THINKING_RESTORED_TEST": "PASS" if deepseek_next_user_request_thinking_restored_test else "FAIL",
+        "DEEPSEEK_NEXT_USER_REQUEST_AUTO_RESTORED_TEST": "PASS" if deepseek_next_user_request_auto_restored_test else "FAIL",
+        "NO_SYNTHETIC_REASONING_CONTENT_TEST": "PASS" if no_synthetic_reasoning_content_test else "FAIL",
+        "NON_DEEPSEEK_POLICY_UNCHANGED_TEST": "PASS" if non_deepseek_policy_unchanged_test else "FAIL",
+        "THINKING_OVERRIDE_FAILURE_FAILS_CLOSED_TEST": "PASS" if thinking_override_failure_fails_closed_test else "FAIL",
+        "STREAMING_CONTINUATION_POLICY_TEST": "PASS" if streaming_continuation_policy_test else "FAIL",
+        "NON_STREAMING_CONTINUATION_POLICY_TEST": "PASS" if non_streaming_continuation_policy_test else "FAIL",
+        "CONCURRENT_NON_THINKING_TURN_ISOLATION_TEST": "PASS" if concurrent_non_thinking_turn_isolation_test else "FAIL",
+        "SUCCESS_CLEANUP_RESETS_NON_THINKING_TURN_TEST": "PASS" if success_cleanup_resets_non_thinking_turn_test else "FAIL",
+        "ERROR_CLEANUP_RESETS_NON_THINKING_TURN_TEST": "PASS" if error_cleanup_resets_non_thinking_turn_test else "FAIL",
+        "NO_PROVIDER_RETRY_TEST": "PASS" if no_provider_retry_test else "FAIL",
+        "PROVIDER_EXCEPTION_REQUEST_END_WRITTEN_TEST": "PASS" if provider_exception_request_end_written_test else "FAIL",
+        "PROVIDER_EXCEPTION_CONTEXT_CLEANUP_TEST": "PASS" if provider_exception_context_cleanup_test else "FAIL",
+        "DOUBLE_FINALIZATION_IDEMPOTENT_TEST": "PASS" if double_finalization_idempotent_test else "FAIL",
+        "APPROVED_EXAMPLE_ZERO_ROW_SUCCESS_CLOSES_TOOL_PHASE_TEST": "PASS" if approved_example_zero_row_success_closes_tool_phase_test else "FAIL",
+        "APPROVED_EXAMPLE_NONEMPTY_SUCCESS_CLOSES_TOOL_PHASE_TEST": "PASS" if approved_example_nonempty_success_closes_tool_phase_test else "FAIL",
+        "FAILED_SQL_DOES_NOT_CLOSE_TOOL_PHASE_TEST": "PASS" if failed_sql_does_not_close_tool_phase_test else "FAIL",
+        "SQL_GUARD_BLOCK_DOES_NOT_CLOSE_TOOL_PHASE_TEST": "PASS" if sql_guard_block_does_not_close_tool_phase_test else "FAIL",
+        "REQUEST_WITHOUT_APPROVED_EXAMPLE_UNCHANGED_TEST": "PASS" if request_without_approved_example_unchanged_test else "FAIL",
+        "SECOND_CALL_TOOLS_REMOVED_TEST": "PASS" if second_call_tools_removed_test else "FAIL",
+        "SECOND_CALL_TOOL_CHOICE_REMOVED_TEST": "PASS" if second_call_tool_choice_removed_test else "FAIL",
+        "SECOND_CALL_THINKING_DISABLED_TEST": "PASS" if second_call_thinking_disabled_test else "FAIL",
+        "SECOND_CALL_REASONING_EFFORT_REMOVED_TEST": "PASS" if second_call_reasoning_effort_removed_test else "FAIL",
+        "SECOND_CALL_FINAL_TEXT_ONLY_TEST": "PASS" if second_call_final_text_only_test else "FAIL",
+        "THIRD_CALL_REMAINS_ANSWER_ONLY_TEST": "PASS" if third_call_remains_answer_only_test else "FAIL",
+        "NEXT_USER_REQUEST_TOOLS_RESTORED_TEST": "PASS" if next_user_request_tools_restored_test else "FAIL",
+        "NEXT_USER_REQUEST_THINKING_RESTORED_TEST": "PASS" if next_user_request_thinking_restored_test else "FAIL",
+        "STREAMING_ANSWER_ONLY_POLICY_TEST": "PASS" if streaming_answer_only_policy_test else "FAIL",
+        "NON_STREAMING_ANSWER_ONLY_POLICY_TEST": "PASS" if non_streaming_answer_only_policy_test else "FAIL",
+        "CONCURRENT_TOOL_PHASE_ISOLATION_TEST": "PASS" if concurrent_tool_phase_isolation_test else "FAIL",
+        "SUCCESS_CLEANUP_RESETS_TOOL_PHASE_TEST": "PASS" if success_cleanup_resets_tool_phase_test else "FAIL",
+        "ERROR_CLEANUP_RESETS_TOOL_PHASE_TEST": "PASS" if error_cleanup_resets_tool_phase_test else "FAIL",
+        "ZERO_ROW_AUTHORITATIVE_RESULT_INCLUDES_EXECUTED_SQL_TEST": "PASS" if zero_row_authoritative_result_includes_executed_sql_test else "FAIL",
+        "NONEMPTY_AUTHORITATIVE_RESULT_INCLUDES_EXECUTED_SQL_TEST": "PASS" if nonempty_authoritative_result_includes_executed_sql_test else "FAIL",
+        "AUTHORITATIVE_RESULT_INCLUDES_ROW_COUNT_AND_COLUMNS_TEST": "PASS" if authoritative_result_includes_row_count_and_columns_test else "FAIL",
+        "AUTHORITATIVE_RESULT_FORBIDS_FUTURE_QUERY_CLAIM_TEST": "PASS" if authoritative_result_forbids_future_query_claim_test else "FAIL",
+        "AUTHORITATIVE_RESULT_FORBIDS_NONEXISTENT_FILTER_INFERENCE_TEST": "PASS" if authoritative_result_forbids_nonexistent_filter_inference_test else "FAIL",
+        "FAILED_SQL_RESULT_UNCHANGED_TEST": "PASS" if failed_sql_result_unchanged_test else "FAIL",
+        "SQL_GUARD_BLOCK_RESULT_UNCHANGED_TEST": "PASS" if sql_guard_block_result_unchanged_test else "FAIL",
+        "REQUEST_WITHOUT_APPROVED_EXAMPLE_RESULT_UNCHANGED_TEST": "PASS" if request_without_approved_example_unchanged_test else "FAIL",
+        "UI_COMPONENT_UNCHANGED_TEST": "PASS" if ui_component_unchanged_test else "FAIL",
+        "RESULT_METADATA_UNCHANGED_TEST": "PASS" if result_metadata_unchanged_test else "FAIL",
         "expected_formal_record_count": EXPECTED_FORMAL_RECORD_COUNT,
         "expected_formal_sha256": EXPECTED_FORMAL_SHA256,
         "runner_self_test_pass": runner_self_test_pass,
     }
     if evidence_dir:
         write_json(evidence_dir / "runner-self-test.json", payload)
+        write_json(
+            evidence_dir / "non-thinking-turn-test-results.json",
+            {
+                key: payload[key]
+                for key in (
+                    "DEEPSEEK_FIRST_CALL_NAMED_RUN_SQL_NON_THINKING_TEST",
+                    "DEEPSEEK_SECOND_CALL_AUTO_NON_THINKING_TEST",
+                    "DEEPSEEK_THIRD_CALL_AUTO_NON_THINKING_TEST",
+                    "DEEPSEEK_CONTINUATION_REASONING_EFFORT_REMOVED_TEST",
+                    "DEEPSEEK_CONTINUATION_EXTRA_BODY_PRESERVED_TEST",
+                    "DEEPSEEK_NEXT_USER_REQUEST_THINKING_RESTORED_TEST",
+                    "DEEPSEEK_NEXT_USER_REQUEST_AUTO_RESTORED_TEST",
+                    "NO_SYNTHETIC_REASONING_CONTENT_TEST",
+                    "NON_DEEPSEEK_POLICY_UNCHANGED_TEST",
+                    "THINKING_OVERRIDE_FAILURE_FAILS_CLOSED_TEST",
+                    "REQUEST_OBJECT_NOT_MUTATED_TEST",
+                    "STREAMING_CONTINUATION_POLICY_TEST",
+                    "NON_STREAMING_CONTINUATION_POLICY_TEST",
+                    "CONCURRENT_NON_THINKING_TURN_ISOLATION_TEST",
+                    "NO_PROVIDER_RETRY_TEST",
+                )
+            },
+        )
+        write_json(
+            evidence_dir / "context-cleanup-test-results.json",
+            {
+                key: payload[key]
+                for key in (
+                    "SUCCESS_CLEANUP_RESETS_NON_THINKING_TURN_TEST",
+                    "ERROR_CLEANUP_RESETS_NON_THINKING_TURN_TEST",
+                    "PROVIDER_EXCEPTION_REQUEST_END_WRITTEN_TEST",
+                    "PROVIDER_EXCEPTION_CONTEXT_CLEANUP_TEST",
+                    "DOUBLE_FINALIZATION_IDEMPOTENT_TEST",
+                    "NO_PROVIDER_RETRY_TEST",
+                    "SUCCESS_CLEANUP_RESETS_TOOL_PHASE_TEST",
+                    "ERROR_CLEANUP_RESETS_TOOL_PHASE_TEST",
+                )
+            },
+        )
+        write_json(
+            evidence_dir / "tool-phase-closure-test-results.json",
+            {
+                key: payload[key]
+                for key in (
+                    "APPROVED_EXAMPLE_ZERO_ROW_SUCCESS_CLOSES_TOOL_PHASE_TEST",
+                    "APPROVED_EXAMPLE_NONEMPTY_SUCCESS_CLOSES_TOOL_PHASE_TEST",
+                    "FAILED_SQL_DOES_NOT_CLOSE_TOOL_PHASE_TEST",
+                    "SQL_GUARD_BLOCK_DOES_NOT_CLOSE_TOOL_PHASE_TEST",
+                    "REQUEST_WITHOUT_APPROVED_EXAMPLE_UNCHANGED_TEST",
+                    "SECOND_CALL_TOOLS_REMOVED_TEST",
+                    "SECOND_CALL_TOOL_CHOICE_REMOVED_TEST",
+                    "SECOND_CALL_THINKING_DISABLED_TEST",
+                    "SECOND_CALL_REASONING_EFFORT_REMOVED_TEST",
+                    "SECOND_CALL_FINAL_TEXT_ONLY_TEST",
+                    "THIRD_CALL_REMAINS_ANSWER_ONLY_TEST",
+                    "NEXT_USER_REQUEST_TOOLS_RESTORED_TEST",
+                    "NEXT_USER_REQUEST_THINKING_RESTORED_TEST",
+                    "STREAMING_ANSWER_ONLY_POLICY_TEST",
+                    "NON_STREAMING_ANSWER_ONLY_POLICY_TEST",
+                    "CONCURRENT_TOOL_PHASE_ISOLATION_TEST",
+                    "REQUEST_OBJECT_NOT_MUTATED_TEST",
+                    "NO_SYNTHETIC_REASONING_CONTENT_TEST",
+                    "NO_PROVIDER_RETRY_TEST",
+                )
+            },
+        )
+        write_json(
+            evidence_dir / "authoritative-tool-result-tests.json",
+            {
+                key: payload[key]
+                for key in (
+                    "ZERO_ROW_AUTHORITATIVE_RESULT_INCLUDES_EXECUTED_SQL_TEST",
+                    "NONEMPTY_AUTHORITATIVE_RESULT_INCLUDES_EXECUTED_SQL_TEST",
+                    "AUTHORITATIVE_RESULT_INCLUDES_ROW_COUNT_AND_COLUMNS_TEST",
+                    "AUTHORITATIVE_RESULT_FORBIDS_FUTURE_QUERY_CLAIM_TEST",
+                    "AUTHORITATIVE_RESULT_FORBIDS_NONEXISTENT_FILTER_INFERENCE_TEST",
+                    "FAILED_SQL_RESULT_UNCHANGED_TEST",
+                    "SQL_GUARD_BLOCK_RESULT_UNCHANGED_TEST",
+                    "REQUEST_WITHOUT_APPROVED_EXAMPLE_RESULT_UNCHANGED_TEST",
+                    "UI_COMPONENT_UNCHANGED_TEST",
+                    "RESULT_METADATA_UNCHANGED_TEST",
+                    "SECOND_CALL_TOOLS_REMOVED_TEST",
+                    "SECOND_CALL_TOOL_CHOICE_REMOVED_TEST",
+                    "SECOND_CALL_THINKING_DISABLED_TEST",
+                    "REQUEST_OBJECT_NOT_MUTATED_TEST",
+                    "NO_PROVIDER_RETRY_TEST",
+                )
+            },
+        )
         write_json(
             evidence_dir / "runner-static-guard.json",
             {

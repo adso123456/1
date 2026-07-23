@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -7,6 +8,8 @@ from typing import Any
 
 from vanna.core.enhancer import LlmContextEnhancer
 
+from backend.request_diagnostics import write_trace_json, write_trace_text
+from backend.run_sql_requirement import record_injected_sql_examples
 from backend.sql_guard import SQLGuard
 
 ALLOWED_TRAINING_LEVELS = {
@@ -55,10 +58,44 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
             )
 
         examples = await self._retrieve_examples(user_message)
-        if not examples:
-            return enhanced_prompt
+        record_injected_sql_examples(len(examples))
+        final_prompt = enhanced_prompt
+        if examples:
+            final_prompt = enhanced_prompt + self._build_examples_section(examples)
 
-        return enhanced_prompt + self._build_examples_section(examples)
+        captured_examples = []
+        for example in examples:
+            sql = str(example.get("sql") or "")
+            captured_examples.append(
+                {
+                    "sample_id": str(example.get("sample_id") or ""),
+                    "question": str(example.get("question") or ""),
+                    "sql": sql,
+                    "sql_sha256": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
+                    "tables": list(example.get("tables") or []),
+                }
+            )
+        write_trace_json(
+            "context-enhancer.json",
+            {
+                "user_question": user_message,
+                "input_system_prompt_sha256": hashlib.sha256(
+                    system_prompt.encode("utf-8")
+                ).hexdigest(),
+                "base_enhanced_prompt_sha256": hashlib.sha256(
+                    enhanced_prompt.encode("utf-8")
+                ).hexdigest(),
+                "final_enhanced_prompt_sha256": hashlib.sha256(
+                    final_prompt.encode("utf-8")
+                ).hexdigest(),
+                "retrieved_count": self.last_stats.returned_count,
+                "injected_count": self.last_stats.injected_count,
+                "filtered_examples": self.last_stats.filtered,
+                "injected_examples": captured_examples,
+            },
+        )
+        write_trace_text("final-system-prompt.txt", final_prompt)
+        return final_prompt
 
     async def enhance_user_messages(self, messages: list[Any], user: Any) -> list[Any]:
         if self.base_enhancer:

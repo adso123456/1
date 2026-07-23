@@ -185,7 +185,94 @@ def parse_dataframe_event(
     }
 
 
-def post_sse(query: str, timeout: int = 240) -> dict[str, Any]:
+def parse_sse_text(raw_text: str) -> tuple[list[dict[str, Any]], list[str]]:
+    events: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for line in raw_text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("data:"):
+            continue
+        data = stripped[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError as error:
+            errors.append(f"JSONDecodeError: {error}")
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events, errors
+
+
+def extract_final_text(events: list[dict[str, Any]]) -> str:
+    """提取最后一个 rich text 事件，避免把 DataFrame 简述当最终回答。"""
+    for event in reversed(events):
+        rich = event.get("rich")
+        if not isinstance(rich, dict) or rich.get("type") != "text":
+            continue
+        data = rich.get("data")
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+        if isinstance(data, dict):
+            for key in ("content", "text", "value"):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        simple = event.get("simple")
+        if isinstance(simple, dict):
+            value = simple.get("text") or simple.get("content")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def persist_sse_evidence(
+    raw_evidence_dir: Path,
+    *,
+    raw_text: str,
+    http_status: int | None,
+    events: list[dict[str, Any]],
+    errors: list[str],
+) -> None:
+    """保存已收到的原始 SSE 与解析结果。调用方须先写 response.sse。"""
+    raw_evidence_dir.mkdir(parents=True, exist_ok=True)
+    (raw_evidence_dir / "events.json").write_text(
+        json.dumps(events, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    final_text = extract_final_text(events)
+    (raw_evidence_dir / "final-text.txt").write_text(final_text, encoding="utf-8")
+    dataframe_count = sum(
+        1
+        for event in events
+        if isinstance(event.get("rich"), dict)
+        and event["rich"].get("type") == "dataframe"
+    )
+    conversation_id = next(
+        (str(event["conversation_id"]) for event in events if event.get("conversation_id")),
+        "",
+    )
+    request_id = next(
+        (str(event["request_id"]) for event in events if event.get("request_id")),
+        "",
+    )
+    summary = {
+        "http_status": http_status,
+        "sse_errors": errors,
+        "event_count": len(events),
+        "dataframe_event_count": dataframe_count,
+        "final_text_present": bool(final_text),
+        "conversation_id": conversation_id,
+        "request_id": request_id,
+    }
+    (raw_evidence_dir / "request-summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def post_sse(
+    query: str, timeout: int = 240, raw_evidence_dir: Path | None = None
+) -> dict[str, Any]:
     payload = json.dumps(
         {
             "message": query,
@@ -213,50 +300,72 @@ def post_sse(query: str, timeout: int = 240) -> dict[str, Any]:
         "dataframe_events": [],
     }
     answer_parts: list[str] = []
+    raw_text = ""
+    events: list[dict[str, Any]] = []
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             result["http_status"] = response.status
-            while True:
-                raw = response.readline()
-                if not raw:
-                    break
-                line = raw.decode("utf-8", errors="replace").strip()
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    event = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                result["event_count"] += 1
-                if event.get("type") == "error":
-                    result["errors"].append(str(event.get("data") or event))
-                dataframe_event = parse_dataframe_event(
-                    event, len(result["dataframe_events"]) + 1
-                )
-                if dataframe_event is not None:
-                    result["dataframe_events"].append(dataframe_event)
-                for path, value in walk_json(event):
-                    key = path[-1].lower() if path else ""
-                    if key == "sql" and isinstance(value, str) and value.strip():
-                        result["sql"] = value.strip()
-                    elif key in {"type", "component_type"} and isinstance(value, str):
-                        if "rich" in "/".join(path).lower() or value in {"dataframe", "chart", "plotly"}:
-                            result["rich_types"].append(value)
-                    elif key == "rows" and isinstance(value, list) and value:
-                        result["event_rows"] = value
-                    elif key == "columns" and isinstance(value, list) and value:
-                        result["event_columns"] = value
-                    elif key in {"text", "content"} and isinstance(value, str) and value.strip():
-                        if not any(marker in "/".join(path).lower() for marker in ("memory", "prompt")):
-                            answer_parts.append(value)
+            raw_text = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         result["http_status"] = exc.code
-        result["errors"].append(exc.read(2000).decode("utf-8", errors="replace"))
+        raw_text = exc.read().decode("utf-8", errors="replace")
+        result["errors"].append(raw_text[:2000])
     except Exception as exc:
         result["errors"].append(f"{type(exc).__name__}: {exc}")
+    finally:
+        if raw_evidence_dir is not None:
+            try:
+                raw_evidence_dir.mkdir(parents=True, exist_ok=True)
+                (raw_evidence_dir / "response.sse").write_text(
+                    raw_text, encoding="utf-8"
+                )
+            except Exception:
+                pass
+
+    events, parse_errors = parse_sse_text(raw_text)
+    result["errors"].extend(parse_errors)
+    for event in events:
+        result["event_count"] += 1
+        if event.get("type") == "error":
+            result["errors"].append(str(event.get("data") or event))
+        dataframe_event = parse_dataframe_event(
+            event, len(result["dataframe_events"]) + 1
+        )
+        if dataframe_event is not None:
+            result["dataframe_events"].append(dataframe_event)
+        for path, value in walk_json(event):
+            key = path[-1].lower() if path else ""
+            if key == "sql" and isinstance(value, str) and value.strip():
+                result["sql"] = value.strip()
+            elif key in {"type", "component_type"} and isinstance(value, str):
+                if "rich" in "/".join(path).lower() or value in {
+                    "dataframe",
+                    "chart",
+                    "plotly",
+                }:
+                    result["rich_types"].append(value)
+            elif key == "rows" and isinstance(value, list) and value:
+                result["event_rows"] = value
+            elif key == "columns" and isinstance(value, list) and value:
+                result["event_columns"] = value
+            elif key in {"text", "content"} and isinstance(value, str) and value.strip():
+                if not any(
+                    marker in "/".join(path).lower()
+                    for marker in ("memory", "prompt")
+                ):
+                    answer_parts.append(value)
+
+    if raw_evidence_dir is not None:
+        try:
+            persist_sse_evidence(
+                raw_evidence_dir,
+                raw_text=raw_text,
+                http_status=result["http_status"],
+                events=events,
+                errors=result["errors"],
+            )
+        except Exception:
+            pass
     result["rich_types"] = sorted(set(result["rich_types"]))
     result["answer"] = "\n".join(dict.fromkeys(answer_parts))[-12000:]
     if result["dataframe_events"]:

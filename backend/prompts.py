@@ -1,6 +1,10 @@
 """项目 System Prompt。"""
 
+import hashlib
+
 from vanna.core.system_prompt.default import DefaultSystemPromptBuilder
+
+from backend.request_diagnostics import write_trace_json
 
 
 class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
@@ -78,4 +82,43 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
    - Charts must not duplicate each other in type AND data perspective.
    - Example of valid multi-chart: bar chart for regional distribution + pie chart for proportion + line chart for time trend.
 """
-        return base + extra
+        final_prompt = base + extra
+        serialized_tools = []
+        serialization_errors = []
+        for tool in tools:
+            try:
+                parameters = tool.parameters
+                serialized_tools.append(
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameter_model_name": (
+                            parameters.get("title", "JSONSchema")
+                            if isinstance(parameters, dict)
+                            else type(parameters).__name__
+                        ),
+                        "parameters": parameters,
+                    }
+                )
+            except Exception as error:
+                serialization_errors.append(
+                    {
+                        "tool_type": type(tool).__name__,
+                        "error_type": type(error).__name__,
+                    }
+                )
+        write_trace_json(
+            "system-prompt-builder.json",
+            {
+                "base_prompt_sha256": hashlib.sha256(
+                    base.encode("utf-8")
+                ).hexdigest(),
+                "final_prompt_sha256": hashlib.sha256(
+                    final_prompt.encode("utf-8")
+                ).hexdigest(),
+                "tool_count": len(tools),
+                "tool_serialization_errors": serialization_errors,
+            },
+        )
+        write_trace_json("tool-definitions.json", serialized_tools)
+        return final_prompt
