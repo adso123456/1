@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { SSEEvent, ChatMessage, SessionMeta, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
+import type { SSEEvent, ChatMessage, SessionMeta, DataSourceSummary, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
 import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability } from '../chartRegistry';
 import { prepareChartV2All } from '../chartPipelineV2';
 import type { Row } from '../datasetProfilerV2';
@@ -187,6 +187,66 @@ function getSessionTitle(msgs: ChatMessage[]): string {
 function initSessionId(): string {
   const id = loadCurrentId();
   return id || `s_${Date.now()}`;
+}
+
+function initSourceId(): string {
+  const id = loadCurrentId();
+  if (!id) return '';
+  return loadAllMeta()[id]?.sourceId || '';
+}
+
+function initSourceBound(): boolean {
+  const id = loadCurrentId();
+  if (!id) return false;
+  const metadata = loadAllMeta()[id];
+  if (metadata?.sourceBound !== undefined) return metadata.sourceBound;
+  return (loadAllSessions()[id]?.length || 0) > 0;
+}
+
+export function normalizeDataSources(payload: unknown): DataSourceSummary[] {
+  if (!Array.isArray(payload)) return [];
+  return payload.filter((item): item is DataSourceSummary => (
+    typeof item === 'object'
+    && item !== null
+    && typeof (item as DataSourceSummary).source_id === 'string'
+    && Boolean((item as DataSourceSummary).source_id.trim())
+    && typeof (item as DataSourceSummary).database_type === 'string'
+    && Boolean((item as DataSourceSummary).database_type.trim())
+  ));
+}
+
+export function resolveSessionSourceId(
+  savedSourceId: string | undefined,
+  sources: DataSourceSummary[],
+): string {
+  if (
+    savedSourceId
+    && sources.some(source => source.source_id === savedSourceId)
+  ) {
+    return savedSourceId;
+  }
+  return sources.length === 1 ? sources[0].source_id : '';
+}
+
+export function buildChatRequestBody(
+  message: string,
+  conversationId: string,
+  sourceId: string,
+) {
+  return {
+    message,
+    conversation_id: conversationId,
+    request_id: undefined,
+    metadata: { source_id: sourceId },
+  };
+}
+
+export function canChangeSessionSource(
+  sourceBound: boolean,
+  currentSourceId: string,
+  nextSourceId: string,
+): boolean {
+  return !sourceBound || currentSourceId === nextSourceId;
 }
 
 /** 全局正则：提取所有完整的 <!-- chart_spec: {...} --> 标记 */
@@ -522,6 +582,10 @@ export function refreshChartsFromDataframe(
 
 export function useSSE() {
   const [currentSessionId, setCurrentSessionId] = useState<string>(initSessionId);
+  const [currentSourceId, setCurrentSourceId] = useState<string>(initSourceId);
+  const [sourceBound, setSourceBound] = useState<boolean>(initSourceBound);
+  const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
+  const [dataSourceError, setDataSourceError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const id = loadCurrentId();
     if (!id) return [];
@@ -541,6 +605,39 @@ export function useSSE() {
   const [storageError, setStorageError] = useState<string | null>(() => consumeStorageReadError());
   const clearStorageError = useCallback(() => setStorageError(null), []);
 
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/data-sources')
+      .then(async response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return normalizeDataSources(await response.json());
+      })
+      .then(sources => {
+        if (!active) return;
+        setDataSources(sources);
+        if (sources.length === 0) {
+          setDataSourceError('当前没有可用数据源。');
+          return;
+        }
+        setDataSourceError(null);
+        setCurrentSourceId(current => {
+          if (sources.some(source => source.source_id === current)) {
+            return current;
+          }
+          const saved = loadAllMeta()[loadCurrentId()]?.sourceId;
+          return resolveSessionSourceId(saved, sources);
+        });
+      })
+      .catch(() => {
+        if (active) setDataSourceError('数据源列表加载失败，请稍后重试。');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   /** 流式结束后自动保存当前会话到 localStorage */
   useEffect(() => {
     if (loading) return;
@@ -557,6 +654,8 @@ export function useSSE() {
       title: getSessionTitle(messages),
       createdAt: existing?.createdAt || Date.now(),
       updatedAt: Date.now(),
+      sourceId: currentSourceId || existing?.sourceId,
+      sourceBound: sourceBound || existing?.sourceBound || false,
     };
     const metaOk = saveAllMeta(allMeta);
     saveCurrentId(currentSessionId);
@@ -570,7 +669,7 @@ export function useSSE() {
     }
 
     setSessionList(Object.values(allMeta).sort((a, b) => b.updatedAt - a.updatedAt));
-  }, [messages, loading, currentSessionId]);
+  }, [messages, loading, currentSessionId, currentSourceId, sourceBound]);
 
   /** 创建新会话并切换 */
   const createNewSession = useCallback(() => {
@@ -588,6 +687,8 @@ export function useSSE() {
         title: getSessionTitle(messages),
         createdAt: allMeta[currentSessionId]?.createdAt || Date.now(),
         updatedAt: Date.now(),
+        sourceId: currentSourceId || allMeta[currentSessionId]?.sourceId,
+        sourceBound: sourceBound || allMeta[currentSessionId]?.sourceBound || false,
       };
     }
     const metaOk = saveAllMeta(allMeta);
@@ -600,12 +701,13 @@ export function useSSE() {
     const newId = `s_${Date.now()}`;
     setMessages([]);
     setCurrentSessionId(newId);
+    setSourceBound(false);
     saveCurrentId(newId);
     lastDataRef.current = null;
     lastConvIdRef.current = '';
 
     setSessionList(Object.values(loadAllMeta()).sort((a, b) => b.updatedAt - a.updatedAt));
-  }, [currentSessionId, messages, loading]);
+  }, [currentSessionId, currentSourceId, messages, loading, sourceBound]);
 
   /** 切换到指定历史会话（立即保存当前会话，不触发 SSE） */
   const switchToSession = useCallback((id: string) => {
@@ -623,6 +725,8 @@ export function useSSE() {
         title: getSessionTitle(messages),
         createdAt: allMeta[currentSessionId]?.createdAt || Date.now(),
         updatedAt: Date.now(),
+        sourceId: currentSourceId || allMeta[currentSessionId]?.sourceId,
+        sourceBound: sourceBound || allMeta[currentSessionId]?.sourceBound || false,
       };
     }
     const metaOk = saveAllMeta(allMeta);
@@ -635,12 +739,17 @@ export function useSSE() {
     const target = all[id] || [];
     setMessages(target);
     setCurrentSessionId(id);
+    setCurrentSourceId(resolveSessionSourceId(
+      allMeta[id]?.sourceId,
+      dataSources,
+    ));
+    setSourceBound(allMeta[id]?.sourceBound ?? target.length > 0);
     saveCurrentId(id);
     lastDataRef.current = null;
     lastConvIdRef.current = '';
 
     setSessionList(Object.values(loadAllMeta()).sort((a, b) => b.updatedAt - a.updatedAt));
-  }, [currentSessionId, messages, loading]);
+  }, [currentSessionId, currentSourceId, dataSources, messages, loading, sourceBound]);
 
   /** 删除指定会话（同步清除 localStorage + 必要时切换当前会话） */
   const deleteSession = useCallback((id: string) => {
@@ -669,20 +778,47 @@ export function useSSE() {
         const target = all[nextId] || [];
         setMessages(target);
         setCurrentSessionId(nextId);
+        setCurrentSourceId(resolveSessionSourceId(
+          allMeta[nextId]?.sourceId,
+          dataSources,
+        ));
+        setSourceBound(
+          allMeta[nextId]?.sourceBound ?? target.length > 0
+        );
         saveCurrentId(nextId);
       } else {
         // 无剩余会话 → 进入新空白会话
         const newId = `s_${Date.now()}`;
         setMessages([]);
         setCurrentSessionId(newId);
+        setCurrentSourceId(resolveSessionSourceId(undefined, dataSources));
+        setSourceBound(false);
         saveCurrentId(newId);
       }
       lastDataRef.current = null;
       lastConvIdRef.current = '';
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, dataSources]);
+
+  const selectDataSource = useCallback((sourceId: string): boolean => {
+    if (
+      loading
+      || !dataSources.some(source => source.source_id === sourceId)
+      || !canChangeSessionSource(sourceBound, currentSourceId, sourceId)
+    ) {
+      return false;
+    }
+    setCurrentSourceId(sourceId);
+    setDataSourceError(null);
+    return true;
+  }, [currentSourceId, dataSources, loading, sourceBound]);
 
   const sendMessage = useCallback(async (userText: string) => {
+    if (!currentSourceId) {
+      setDataSourceError('请先选择数据源。');
+      return;
+    }
+    setSourceBound(true);
     const switchType = isPureChartSwitch(userText);
 
     // 纯图表切换：仅对单图消息生效
@@ -782,11 +918,13 @@ export function useSSE() {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
         },
-        body: JSON.stringify({
-          message: userText,
-          conversation_id: lastConvIdRef.current || undefined,
-          request_id: undefined,
-        }),
+        body: JSON.stringify(
+          buildChatRequestBody(
+            userText,
+            currentSessionId,
+            currentSourceId,
+          )
+        ),
         signal: controller.signal,
       });
 
@@ -1016,7 +1154,7 @@ export function useSSE() {
     } finally {
       setLoading(false);
     }
-  }, [messages]);
+  }, [currentSessionId, currentSourceId, messages]);
 
   const cancelRequest = useCallback(() => {
     abortRef.current?.abort();
@@ -1055,5 +1193,24 @@ export function useSSE() {
     [],
   );
 
-  return { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession, storageError, clearStorageError };
+  return {
+    messages,
+    loading,
+    sendMessage,
+    cancelRequest,
+    clearMessages,
+    replaceMessageChart,
+    sessionList,
+    currentSessionId,
+    createNewSession,
+    switchToSession,
+    deleteSession,
+    storageError,
+    clearStorageError,
+    dataSources,
+    currentSourceId,
+    selectDataSource,
+    dataSourceError,
+    sourceBound,
+  };
 }

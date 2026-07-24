@@ -1,4 +1,4 @@
-import type { SessionMeta } from '../types';
+import type { DataSourceSummary, SessionMeta } from '../types';
 
 interface Props {
   sessions: SessionMeta[];
@@ -9,6 +9,11 @@ interface Props {
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
+  dataSources: DataSourceSummary[];
+  currentSourceId: string;
+  sourceLocked: boolean;
+  dataSourceError: string | null;
+  onSelectDataSource: (sourceId: string) => boolean;
 }
 
 /* ---- 内联 SVG 图标 ---- */
@@ -70,7 +75,7 @@ const TEXT_MUTED = '#9ca3af';
 const ACTIVE_BG = '#eef2ff';
 const ACTIVE_TEXT = '#2563eb';
 
-export function Sidebar({ sessions, currentSessionId, loading, currentView, onViewChange, onNewSession, onSwitchSession, onDeleteSession }: Props) {
+export function Sidebar({ sessions, currentSessionId, loading, currentView, onViewChange, onNewSession, onSwitchSession, onDeleteSession, dataSources, currentSourceId, sourceLocked, dataSourceError, onSelectDataSource }: Props) {
   const disabled = loading;
 
   return (
@@ -116,6 +121,49 @@ export function Sidebar({ sessions, currentSessionId, loading, currentView, onVi
           </span>
           水利智能问答
         </div>
+      </div>
+
+      {/* ---- 当前会话数据源 ---- */}
+      <div style={{ padding: '12px 12px 0' }}>
+        <label
+          htmlFor="data-source-select"
+          style={{ display: 'block', fontSize: 11, color: TEXT_MUTED, marginBottom: 5 }}
+        >
+          数据源
+        </label>
+        <select
+          id="data-source-select"
+          value={currentSourceId}
+          disabled={disabled || sourceLocked || dataSources.length === 0}
+          onChange={event => onSelectDataSource(event.target.value)}
+          title={sourceLocked ? '已有消息的会话不能切换数据源，请先新建会话。' : '选择当前会话的数据源'}
+          style={{
+            width: '100%',
+            padding: '7px 8px',
+            border: `1px solid ${BORDER}`,
+            borderRadius: 6,
+            backgroundColor: disabled || sourceLocked ? '#f3f4f6' : '#fff',
+            color: TEXT_PRIMARY,
+            fontSize: 12,
+          }}
+        >
+          {dataSources.length !== 1 && <option value="">请选择数据源</option>}
+          {dataSources.map(source => (
+            <option key={source.source_id} value={source.source_id}>
+              {source.source_id} ({source.database_type})
+            </option>
+          ))}
+        </select>
+        {sourceLocked && (
+          <div style={{ color: TEXT_MUTED, fontSize: 10, marginTop: 4 }}>
+            已绑定；切换数据源请新建会话
+          </div>
+        )}
+        {dataSourceError && (
+          <div style={{ color: '#b91c1c', fontSize: 10, marginTop: 4 }}>
+            {dataSourceError}
+          </div>
+        )}
       </div>
 
       {/* ---- 新对话按钮 ---- */}

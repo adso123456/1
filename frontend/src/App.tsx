@@ -27,7 +27,26 @@ interface ToastState {
 }
 
 function App() {
-  const { messages, loading, sendMessage, cancelRequest, clearMessages, replaceMessageChart, sessionList, currentSessionId, createNewSession, switchToSession, deleteSession, storageError, clearStorageError } = useSSE();
+  const {
+    messages,
+    loading,
+    sendMessage,
+    cancelRequest,
+    clearMessages,
+    replaceMessageChart,
+    sessionList,
+    currentSessionId,
+    createNewSession,
+    switchToSession,
+    deleteSession,
+    storageError,
+    clearStorageError,
+    dataSources,
+    currentSourceId,
+    selectDataSource,
+    dataSourceError,
+    sourceBound,
+  } = useSSE();
   const {
     currentItems: dashboardItems,
     currentDashboardName,
@@ -179,6 +198,11 @@ function App() {
         onNewSession={handleNewSession}
         onSwitchSession={handleSwitchSession}
         onDeleteSession={deleteSession}
+        dataSources={dataSources}
+        currentSourceId={currentSourceId}
+        sourceLocked={sourceBound}
+        dataSourceError={dataSourceError}
+        onSelectDataSource={selectDataSource}
       />
       {currentView === 'dashboard' && (
         <DashboardListPanel

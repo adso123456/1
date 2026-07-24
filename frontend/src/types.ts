@@ -135,6 +135,16 @@ export interface SessionMeta {
   title: string;
   createdAt: number;
   updatedAt: number;
+  /** 会话绑定的数据源；可选用于兼容升级前的本地数据。 */
+  sourceId?: string;
+  /** 首次发送后保持为 true；清空消息不会解除后端会话绑定。 */
+  sourceBound?: boolean;
+}
+
+/** 后端公开的安全数据源摘要。 */
+export interface DataSourceSummary {
+  source_id: string;
+  database_type: string;
 }
 
 /** 仪表板布局信息（拖拽和缩放后的位置和尺寸） */
