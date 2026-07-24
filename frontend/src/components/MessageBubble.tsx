@@ -14,6 +14,7 @@ interface Props {
   onV2ChartSwitch?: (messageId: string, chartIndex: number, newChart: ChartData) => void;
   /** 点击"添加到仪表板"时回调，携带当前 activeSpec 图表快照、消息 ID、消息 SQL（会话 ID 由 App 补充） */
   onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
+  compact?: boolean;
 }
 
 /** 去除图表注释标记及流式未闭合残片，避免显示在正文中 */
@@ -25,7 +26,7 @@ function cleanMarkdown(text: string): string {
     .trimEnd();
 }
 
-export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onAddToDashboard }: Props) {
+export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false }: Props) {
   const isUser = message.role === 'user';
   const hasSql = !!(message.sql && message.sql.trim());
   const [showSql, setShowSql] = useState(false);
@@ -67,8 +68,10 @@ export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onA
       <div
         style={{
           width: isUser ? undefined : '100%',
-          maxWidth: '85%',
-          padding: isUser ? '10px 16px' : '16px 20px',
+          maxWidth: compact ? (isUser ? '90%' : '100%') : '85%',
+          padding: compact
+            ? (isUser ? '8px 12px' : '12px')
+            : (isUser ? '10px 16px' : '16px 20px'),
           borderRadius: 12,
           backgroundColor: isUser ? '#2563eb' : '#ffffff',
           color: isUser ? '#ffffff' : '#1f2937',

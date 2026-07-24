@@ -13,6 +13,10 @@ interface Props {
   onV2ChartSwitch?: (messageId: string, chartIndex: number, newChart: ChartData) => void;
   /** 透传给 MessageBubble：点击"添加到仪表板" */
   onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
+  /** 浮窗中的紧凑布局。 */
+  compact?: boolean;
+  /** 由浮窗外层提供顶栏时隐藏默认顶栏。 */
+  hideHeader?: boolean;
 }
 
 const SUGGESTIONS = [
@@ -21,7 +25,7 @@ const SUGGESTIONS = [
   '查询2025年1月的监测数据，只取pH值有记录的前5条',
 ];
 
-export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onV2ChartSwitch, onAddToDashboard }: Props) {
+export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false, hideHeader = false }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -48,12 +52,13 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '100vh',
+      height: compact ? '100%' : '100vh',
+      minHeight: 0,
       backgroundColor: '#f5f5f5',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    }}>
+    }} className={compact ? 'chat-area chat-area--compact' : 'chat-area'}>
       {/* 顶部栏 */}
-      <header style={{
+      {!hideHeader && <header style={{
         padding: '12px 20px',
         backgroundColor: '#fff',
         borderBottom: '1px solid #e5e7eb',
@@ -84,12 +89,12 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
         >
           清空对话
         </button>
-      </header>
+      </header>}
 
       {/* 消息列表 */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: compact ? '12px' : '20px 24px' }}>
         {messages.length === 0 && (
-          <div style={{ textAlign: 'center', paddingTop: 80 }}>
+          <div style={{ textAlign: 'center', paddingTop: compact ? 28 : 80 }}>
             <h2 style={{ fontSize: 18, color: '#374151', fontWeight: 500, marginBottom: 8 }}>
               有什么可以帮助你的？
             </h2>
@@ -128,6 +133,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
             onChangeChartType={onChangeChartType}
             onV2ChartSwitch={onV2ChartSwitch}
             onAddToDashboard={onAddToDashboard}
+            compact={compact}
           />
         ))}
         <div ref={messagesEndRef} />
@@ -135,7 +141,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
 
       {/* 输入区 */}
       <div style={{
-        padding: '16px 24px',
+        padding: compact ? 10 : '16px 24px',
         backgroundColor: '#fff',
         borderTop: '1px solid #e5e7eb',
         flexShrink: 0,
@@ -154,7 +160,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
             onKeyDown={handleKeyDown}
             placeholder="输入问题... (Enter 发送，Shift+Enter 换行)"
             disabled={loading}
-            rows={2}
+            rows={compact ? 1 : 2}
             style={{
               flex: 1,
               padding: '10px 14px',
