@@ -175,6 +175,18 @@ const widgetAppSource = fs.readFileSync(
   path.join(frontendRoot, 'src', 'WidgetApp.tsx'),
   'utf8',
 );
+const messageBubbleSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'components', 'MessageBubble.tsx'),
+  'utf8',
+);
+const addDialogSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'components', 'AddToDashboardDialog.tsx'),
+  'utf8',
+);
+const fullAppSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'App.tsx'),
+  'utf8',
+);
 
 test('浮窗复用 useSSE 与 ChatArea 且不加载仪表盘编辑区', () => {
   assert(widgetAppSource.includes('useSSE()'), '未复用 useSSE');
@@ -189,6 +201,32 @@ test('窄屏时浮窗切换为近全屏布局', () => {
     loaderSource.includes('inset:8px 8px 78px'),
     '窄屏浮窗未设置视口内边距',
   );
+});
+
+test('浮窗透传 compact 并恢复添加到仪表板回调', () => {
+  assert(
+    messageBubbleSource.includes('compact={compact}'),
+    'compact 未传递到 ChartView',
+  );
+  assert(
+    widgetAppSource.includes('onAddToDashboard={handleRequestAddToDashboard}'),
+    'ChatArea 未收到 onAddToDashboard',
+  );
+  assert(widgetAppSource.includes('<AddToDashboardDialog'), '未复用添加弹窗');
+});
+
+test('浮窗支持已有、新建仪表板并明确提示写入结果', () => {
+  assert(addDialogSource.includes("mode === 'existing'"), '缺少已有模式');
+  assert(addDialogSource.includes("mode === 'new'"), '缺少新建模式');
+  assert(widgetAppSource.includes('addItemsToDashboard('), '缺少已有仪表板写入');
+  assert(widgetAppSource.includes('createDashboardWithItems('), '缺少新建仪表板写入');
+  assert(widgetAppSource.includes('添加失败，localStorage'), '写入失败未提示');
+  assert(widgetAppSource.includes('已添加到仪表板'), '写入成功未提示');
+});
+
+test('浮窗与完整工作台复用同一 useDashboard 存储', () => {
+  assert(widgetAppSource.includes("from './hooks/useDashboard'"), '浮窗未使用共享 Hook');
+  assert(fullAppSource.includes("from './hooks/useDashboard'"), '完整工作台未使用共享 Hook');
 });
 
 console.log(`total=${passed + failed} passed=${passed} failed=${failed}`);

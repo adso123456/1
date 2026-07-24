@@ -1,6 +1,17 @@
+import { useCallback, useState } from 'react';
+import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { ChatArea } from './components/ChatArea';
 import { buildWorkspaceUrl } from './appMode';
+import { useDashboard } from './hooks/useDashboard';
 import { useSSE } from './hooks/useSSE';
+import {
+  createWidgetDashboardChartItem,
+  type WidgetDashboardPayload,
+} from './widgetDashboardSnapshot';
+
+type DashboardTarget =
+  | { mode: 'existing'; dashboardId: string }
+  | { mode: 'new'; name: string };
 
 function requestWidgetClose() {
   window.parent.postMessage(
@@ -28,12 +39,59 @@ export function WidgetApp() {
     dataSourceError,
     sourceBound,
   } = useSSE();
+  const {
+    dashboards,
+    currentDashboardId,
+    addItemsToDashboard,
+    createDashboardWithItems,
+  } = useDashboard();
+  const [pendingAdd, setPendingAdd] = useState<WidgetDashboardPayload | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
 
   const currentSessionExists = sessionList.some(
     session => session.id === currentSessionId,
   );
 
   const workspaceUrl = buildWorkspaceUrl(window.location.origin);
+
+  const handleRequestAddToDashboard = useCallback(
+    (payload: WidgetDashboardPayload) => {
+      setNotice(null);
+      setPendingAdd(payload);
+    },
+    [],
+  );
+
+  const handleConfirmAddToDashboard = useCallback(
+    (target: DashboardTarget) => {
+      if (!pendingAdd) return;
+      const item = createWidgetDashboardChartItem(
+        pendingAdd,
+        currentSessionId,
+      );
+      const targetId = target.mode === 'existing'
+        ? (
+            addItemsToDashboard(target.dashboardId, [item])
+              ? target.dashboardId
+              : null
+          )
+        : createDashboardWithItems(target.name, [item]);
+
+      setPendingAdd(null);
+      setNotice(targetId
+        ? { ok: true, message: '已添加到仪表板' }
+        : {
+            ok: false,
+            message: '添加失败，localStorage 可能已满或仪表板不存在，请重试。',
+          });
+    },
+    [
+      addItemsToDashboard,
+      createDashboardWithItems,
+      currentSessionId,
+      pendingAdd,
+    ],
+  );
 
   return (
     <div className="widget-shell">
@@ -133,10 +191,36 @@ export function WidgetApp() {
           onClear={clearMessages}
           onChangeChartType={() => {}}
           onV2ChartSwitch={replaceMessageChart}
+          onAddToDashboard={handleRequestAddToDashboard}
           compact
           hideHeader
         />
       </div>
+
+      {pendingAdd && (
+        <AddToDashboardDialog
+          dashboards={dashboards}
+          currentDashboardId={currentDashboardId}
+          onConfirm={handleConfirmAddToDashboard}
+          onClose={() => setPendingAdd(null)}
+        />
+      )}
+
+      {notice && (
+        <div
+          className={`widget-toast ${notice.ok ? 'widget-toast--success' : 'widget-toast--error'}`}
+          role={notice.ok ? 'status' : 'alert'}
+        >
+          <span>{notice.message}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="关闭提示"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }

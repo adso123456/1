@@ -259,6 +259,7 @@ export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onA
                       onChangeType={onChangeChartType}
                       onV2ChartSwitch={onV2ChartSwitch}
                       showExport
+                      compact={compact}
                       onAddToDashboard={onAddToDashboard
                         ? (chart) => onAddToDashboard({
                             chart,

@@ -163,6 +163,40 @@ body {
   font-size: 11px;
 }
 
+.widget-toast {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  max-width: calc(100% - 28px);
+  padding: 9px 12px;
+  border-radius: 8px;
+  box-shadow: 0 5px 18px rgba(15, 23, 42, .2);
+  color: #fff;
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+
+.widget-toast--success {
+  background: #16a34a;
+}
+
+.widget-toast--error {
+  background: #dc2626;
+}
+
+.widget-toast button {
+  margin-left: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+}
+
 .widget-chat {
   flex: 1;
   min-height: 0;

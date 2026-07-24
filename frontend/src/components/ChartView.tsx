@@ -13,6 +13,7 @@ import {
   getChartTypeAvailabilityV2,
   prepareChartV2All,
 } from '../chartPipelineV2';
+import { applyCompactChartLayout } from '../compactChartLayout';
 
 interface Props {
   chart: ChartData;
@@ -40,11 +41,13 @@ interface Props {
   showExport?: boolean;
   /** 点击"添加到仪表板"时回调，传出当前 activeSpec 图表快照（含 explicitType=true） */
   onAddToDashboard?: (chart: ChartData) => void;
+  /** 浮窗紧凑布局，仅覆盖 ECharts 展示参数。 */
+  compact?: boolean;
 }
 
 type ViewMode = 'chart' | 'table';
 
-export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2ChartSwitch, messageId, chartIndex, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard }: Props) {
+export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2ChartSwitch, messageId, chartIndex, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard, compact = false }: Props) {
   const isChartOnly = !!chart.chartOnly;
 
   const [viewMode, setViewMode] = useState<ViewMode>('chart');
@@ -154,7 +157,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     return item?.spec ?? null;
   }, [allTypes, localType, chart.explicitType, chart.spec]);
 
-  // 图表实例就绪后：初始 resize + fillHeight 模式下建立 ECharts 实际 DOM 的 ResizeObserver
+  // 图表实例就绪后：初始 resize + 仪表板/浮窗模式下监听实际尺寸变化
   const handleChartReady = () => {
     const instance = echartsRef.current?.getEchartsInstance();
     if (!instance) return;
@@ -169,8 +172,8 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
       }
     });
 
-    // 非 fillHeight 模式不需要自定义 observer（由 echarts-for-react 内置 autoResize 处理）
-    if (!fillHeight) return;
+    // 普通工作台继续使用 echarts-for-react 内置 autoResize。
+    if (!fillHeight && !compact) return;
 
     const dom = instance.getDom();
     if (!dom) return;
@@ -325,13 +328,15 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     if (!activeSpec) return null;
     // 所有类型切换均为用户显式操作（包括自动选择），避免 buildAxisChart 的 explicitType 守卫误判
     const opt = buildChartOption({ ...chart, spec: activeSpec, explicitType: true });
+    if (!opt) return null;
+    const displayOption = applyCompactChartLayout(opt, compact);
     if (opt && hideTitle) {
-      const stripped = { ...opt };
+      const stripped = { ...displayOption };
       delete (stripped as Record<string, unknown>).title;
       return stripped;
     }
-    return opt;
-  }, [chart, activeSpec, hideTitle]);
+    return displayOption;
+  }, [chart, activeSpec, hideTitle, compact]);
 
   // 图表说明（基于当前实际渲染类型与 Spec，与 ECharts 渲染使用同一份 activeSpec）
   const effectiveType = localType;
@@ -351,6 +356,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
       ref={containerRef}
       style={{
         ...(fillHeight ? { height: '100%', minHeight: 0, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' } : {}),
+        ...(compact ? { width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' } : {}),
         marginTop: isChartOnly ? 0 : (fillHeight ? 0 : 12),
       }}
     >
@@ -557,7 +563,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
           ref={echartsRef}
           option={option}
           notMerge={true}
-          autoResize={!fillHeight}
+          autoResize={!fillHeight && !compact}
           onChartReady={handleChartReady}
           style={fillHeight ? { flex: 1, minHeight: 0, minWidth: 0, width: '100%' } : { height: 350 }}
         />
