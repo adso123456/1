@@ -1,6 +1,7 @@
 """中文 Embedding 与 Chroma Memory 组装。"""
 
 import os
+from pathlib import Path
 
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
@@ -29,9 +30,11 @@ class ChineseChromaAgentMemory(ChromaAgentMemory):
         )
 
 
-def create_memory():
+def create_memory(persist_directory: str | Path | None = None):
     """创建共享的 ChromaAgentMemory 实例。"""
     return ChineseChromaAgentMemory(
-        persist_directory=CHROMA_DIR,
+        persist_directory=str(
+            CHROMA_DIR if persist_directory is None else persist_directory
+        ),
         embedding_function=EMBEDDING_FUNCTION,
     )

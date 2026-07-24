@@ -12,9 +12,16 @@ from typing import Any
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 REPORT_PATH = CURRENT_DIR / "sql_example_context_enhancer_test_result.md"
-BASE_COMMIT = "ca12e77ba24b3d12df0aeb0421094500caff3d3d"
+BASE_COMMIT = "7aece6fda0504c40d1a92bd3fe498eebd4482aa3"
 ALLOWED_STATUS_PATHS = {
-    "backend/sql_example_context_enhancer.py",
+    "backend/agent_factory.py",
+    "backend/memory.py",
+    "backend/diagnostic_metadata_retriever.py",
+    "backend/postgresql_runtime_factory.py",
+    "tools/test_agent_factory_delegation.py",
+    "tools/test_postgresql_runtime_factory.py",
+    "tools/test_postgresql_runtime_live_smoke.py",
+    "tools/test_sql_example_context_integration.py",
     "tools/test_sql_example_context_enhancer.py",
     "tools/sql_example_context_enhancer_test_result.md",
 }
@@ -121,6 +128,7 @@ SAMPLES = {
             "SELECT station_code, station_name, region_code, region_name, station_type "
             "FROM wm_station_info_v2 ORDER BY station_name LIMIT 50"
         ),
+        expected_tables=["wm_station_info_v2"],
     ),
     "L3_P0_SQL_004": memory_item(
         sample_id="L3_P0_SQL_004",
@@ -445,6 +453,7 @@ async def test_top_k_limit() -> TestResult:
             sample_id=f"L2_SQL_TOP_{index}",
             question="查询站点名称和所属区域",
             sql="SELECT station_code, station_name, region_code, region_name FROM wm_station_info_v2 ORDER BY station_name LIMIT 50",
+            expected_tables=["wm_station_info_v2"],
         )
         for index in range(10)
     ]

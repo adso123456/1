@@ -1,8 +1,9 @@
+"""PostgreSQL Runtime 中 SQL Example Enhancer 的离线集成测试。"""
+
 from __future__ import annotations
 
-import re
-import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,17 @@ REPORT_PATH = CURRENT_DIR / "sql_example_context_integration_test_result.md"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from vanna.core.enhancer.default import DefaultLlmContextEnhancer
+
+from backend.guarded_run_sql_tool import GuardedRunSqlTool
+from backend.metadata_context_enhancer import (
+    DeterministicMetadataContextEnhancer,
+)
+from backend.postgresql_runtime_factory import _create_postgresql_agent
+from backend.schema_preserving_sql import SchemaPreservingRunSqlTool
+from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
+from config.data_source_config import DataSourceConfig
+
 
 @dataclass
 class TestResult:
@@ -22,330 +34,197 @@ class TestResult:
     reason: str
 
 
-def run_command(args: list[str]) -> str:
-    completed = subprocess.run(
-        args,
-        cwd=PROJECT_ROOT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
+class FakeRetriever:
+    def retrieve(self, question: str, top_n: int = 10) -> list[dict[str, Any]]:
+        return []
+
+
+class FakeSqlGuard:
+    pass
+
+
+def build_agent(*, disable_legacy_sql_examples: bool):
+    root = Path(tempfile.gettempdir()).resolve()
+    config = DataSourceConfig(
+        source_id="postgresql-test",
+        database_type="postgresql",
+        sql_dialect="postgresql",
+        connection_settings={
+            "host": "offline.invalid",
+            "port": 5433,
+            "database": "offline",
+            "user": "offline",
+            "password": "offline-secret",
+            "connect_timeout": 1,
+        },
+        metadata_path=(root / "stage4-metadata-not-opened.json").resolve(),
+        memory_path=(root / "stage4-memory-not-opened").resolve(),
+        read_only=True,
     )
-    return completed.stdout.strip()
+    runner = object()
+    memory = object()
+    retriever = FakeRetriever()
+    sql_guard = FakeSqlGuard()
+    agent = _create_postgresql_agent(
+        config,
+        runner,
+        memory,
+        retriever,
+        sql_guard,
+        {
+            "DEEPSEEK_API_KEY": "offline-test-key",
+            "VANNA_DISABLE_LEGACY_SQL_EXAMPLES": (
+                "1" if disable_legacy_sql_examples else "0"
+            ),
+        },
+    )
+    return agent, runner, memory, retriever, sql_guard
 
 
-def test_import_sql_example_enhancer() -> TestResult:
-    """验证 backend/agent_factory.py 导入了 SqlExampleContextEnhancer（源码文本检查）"""
-    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
-
-    if "from backend.sql_example_context_enhancer import SqlExampleContextEnhancer" not in source:
-        return TestResult(
-            "backend/agent_factory.py 已导入 SqlExampleContextEnhancer",
-            False,
-            "backend/agent_factory.py 中未找到 SqlExampleContextEnhancer 的导入语句",
-        )
-
-    # 确认没有被注释掉
-    for line in source.splitlines():
-        stripped = line.strip()
-        if "from backend.sql_example_context_enhancer import SqlExampleContextEnhancer" in stripped:
-            if stripped.startswith("#"):
-                return TestResult(
-                    "backend/agent_factory.py 已导入 SqlExampleContextEnhancer",
-                    False,
-                    "SqlExampleContextEnhancer 导入语句被注释",
-                )
-            break
-
+def test_sql_example_enhancer_used() -> TestResult:
+    agent, _, _, _, _ = build_agent(disable_legacy_sql_examples=False)
+    enhancer = agent.llm_context_enhancer
     return TestResult(
-        "backend/agent_factory.py 已导入 SqlExampleContextEnhancer",
-        True,
-        "源码中正确导入了 SqlExampleContextEnhancer",
+        "PostgreSQL Agent 使用 SqlExampleContextEnhancer",
+        isinstance(enhancer, SqlExampleContextEnhancer),
+        type(enhancer).__name__,
     )
-
-
-def test_create_agent_uses_sql_example_enhancer() -> TestResult:
-    """验证 create_agent() 中 llm_context_enhancer 是 SqlExampleContextEnhancer"""
-    try:
-        from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
-
-        # 通过直接导入 module 做静态检查
-        source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
-
-        # 检查 create_agent 函数中 llm_context_enhancer 的赋值
-        if "SqlExampleContextEnhancer(" not in source:
-            return TestResult(
-                "create_agent() 中最终 llm_context_enhancer 是 SqlExampleContextEnhancer",
-                False,
-                "backend/agent_factory.py 中未找到 SqlExampleContextEnhancer( 实例化代码",
-            )
-
-        # 检查传给 Agent 的是 llm_context_enhancer 变量
-        if "llm_context_enhancer=llm_context_enhancer" not in source:
-            return TestResult(
-                "create_agent() 中最终 llm_context_enhancer 是 SqlExampleContextEnhancer",
-                False,
-                "Agent() 中未使用 llm_context_enhancer 变量",
-            )
-
-        return TestResult(
-            "create_agent() 中最终 llm_context_enhancer 是 SqlExampleContextEnhancer",
-            True,
-            "create_agent() 中 SqlExampleContextEnhancer 实例化并传给 Agent",
-        )
-    except Exception as exc:
-        return TestResult(
-            "create_agent() 中最终 llm_context_enhancer 是 SqlExampleContextEnhancer",
-            False,
-            f"检查失败: {exc}",
-        )
 
 
 def test_enhancer_chain_order() -> TestResult:
-    """验证 enhancer 链顺序: SqlExample → Deterministic → Default"""
-    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
-
-    default_match = re.search(
-        r"DefaultLlmContextEnhancer\s*\(\s*memory\s*\)",
-        source,
+    agent, _, memory, retriever, _ = build_agent(
+        disable_legacy_sql_examples=False
     )
-    deterministic_match = re.search(
-        r"DeterministicMetadataContextEnhancer\s*\(\s*"
-        r"base_enhancer\s*=\s*default_enhancer\b",
-        source,
-        flags=re.S,
+    sql_example = agent.llm_context_enhancer
+    deterministic = getattr(sql_example, "base_enhancer", None)
+    default = getattr(deterministic, "base_enhancer", None)
+    passed = (
+        isinstance(sql_example, SqlExampleContextEnhancer)
+        and isinstance(deterministic, DeterministicMetadataContextEnhancer)
+        and isinstance(default, DefaultLlmContextEnhancer)
+        and deterministic.metadata_retriever is retriever
+        and sql_example.memory is memory
     )
-    sql_example_match = re.search(
-        r"SqlExampleContextEnhancer\s*\(\s*"
-        r"base_enhancer\s*=\s*deterministic_enhancer\b",
-        source,
-        flags=re.S,
-    )
-
-    if default_match is None:
-        return TestResult(
-            "enhancer 链顺序正确: SqlExample → Deterministic → Default",
-            False,
-            "未找到 DefaultLlmContextEnhancer(memory)",
-        )
-    if deterministic_match is None:
-        return TestResult(
-            "enhancer 链顺序正确: SqlExample → Deterministic → Default",
-            False,
-            "未找到 DeterministicMetadataContextEnhancer 包装 base_enhancer=default_enhancer",
-        )
-    if sql_example_match is None:
-        return TestResult(
-            "enhancer 链顺序正确: SqlExample → Deterministic → Default",
-            False,
-            "未找到 SqlExampleContextEnhancer 包装 base_enhancer=deterministic_enhancer",
-        )
-
-    default_pos = default_match.start()
-    deterministic_pos = deterministic_match.start()
-    sql_example_pos = sql_example_match.start()
-    if not (default_pos < deterministic_pos < sql_example_pos):
-        return TestResult(
-            "enhancer 链顺序正确: SqlExample → Deterministic → Default",
-            False,
-            f"链顺序异常: Default@{default_pos}, Deterministic@{deterministic_pos}, SqlExample@{sql_example_pos}",
-        )
-
     return TestResult(
-        "enhancer 链顺序正确: SqlExample → Deterministic → Default",
-        True,
-        "Default → Deterministic → SqlExample 三层链顺序正确",
+        "Enhancer 链顺序为 Default → Deterministic → SqlExample",
+        passed,
+        (
+            f"{type(default).__name__} → {type(deterministic).__name__} "
+            f"→ {type(sql_example).__name__}"
+        ),
     )
 
 
-def test_guarded_run_sql_still_registered() -> TestResult:
-    """验证 GuardedRunSqlTool 仍然注册"""
-    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
-
-    if "GuardedRunSqlTool(" not in source:
-        return TestResult(
-            "GuardedRunSqlTool 仍然注册",
-            False,
-            "未找到 GuardedRunSqlTool 实例化代码",
-        )
-    if "tool_registry.register_local_tool(" not in source:
-        return TestResult(
-            "GuardedRunSqlTool 仍然注册",
-            False,
-            "未找到 register_local_tool 调用",
-        )
-    if "inner_tool=raw_run_sql_tool" not in source:
-        return TestResult(
-            "GuardedRunSqlTool 仍然注册",
-            False,
-            "GuardedRunSqlTool 未包装 raw_run_sql_tool",
-        )
-
+def test_guarded_run_sql_registered() -> TestResult:
+    agent, runner, _, _, _ = build_agent(
+        disable_legacy_sql_examples=False
+    )
+    registered = agent.tool_registry._tools
+    tool = registered.get("run_sql")
+    passed = (
+        tuple(registered) == ("run_sql",)
+        and isinstance(tool, GuardedRunSqlTool)
+        and isinstance(tool.inner_tool, SchemaPreservingRunSqlTool)
+        and tool.inner_tool.sql_runner is runner
+    )
     return TestResult(
-        "GuardedRunSqlTool 仍然注册",
-        True,
-        "GuardedRunSqlTool 正常注册，包装 raw_run_sql_tool",
+        "ToolRegistry 仅注册 GuardedRunSqlTool",
+        passed,
+        f"registered={tuple(registered)}, tool={type(tool).__name__}",
     )
 
 
 def test_no_raw_run_sql_bypass() -> TestResult:
-    """验证裸 RunSqlTool 没有绕过 GuardedRunSqlTool"""
-    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
-
-    # raw_run_sql_tool 应该只出现在 GuardedRunSqlTool 的参数中
-    raw_positions = []
-    for idx in range(len(source)):
-        if source[idx:].startswith("raw_run_sql_tool"):
-            raw_positions.append(idx)
-
-    if len(raw_positions) > 2:
-        return TestResult(
-            "裸 RunSqlTool 没有绕过 GuardedRunSqlTool",
-            False,
-            f"raw_run_sql_tool 出现了 {len(raw_positions)} 次，可能被独立注册",
-        )
-
-    # 确认 register_local_tool 只注册了 GuardedRunSqlTool
-    register_start = source.find("tool_registry.register_local_tool(")
-    if register_start == -1:
-        return TestResult(
-            "裸 RunSqlTool 没有绕过 GuardedRunSqlTool",
-            False,
-            "未找到 register_local_tool 调用",
-        )
-    register_end = source.find(")", register_start)
-    register_block = source[register_start:register_end + 1] if register_end != -1 else ""
-
-    if "GuardedRunSqlTool" not in register_block:
-        return TestResult(
-            "裸 RunSqlTool 没有绕过 GuardedRunSqlTool",
-            False,
-            "register_local_tool 未注册 GuardedRunSqlTool",
-        )
-
+    agent, _, _, _, _ = build_agent(disable_legacy_sql_examples=False)
+    registered = tuple(agent.tool_registry._tools.values())
+    passed = all(
+        not isinstance(tool, SchemaPreservingRunSqlTool)
+        for tool in registered
+    ) and any(isinstance(tool, GuardedRunSqlTool) for tool in registered)
     return TestResult(
-        "裸 RunSqlTool 没有绕过 GuardedRunSqlTool",
-        True,
-        "RunSqlTool 仅作为 GuardedRunSqlTool 的内部工具，没有独立注册",
+        "裸 SchemaPreservingRunSqlTool 未独立注册",
+        passed,
+        ", ".join(type(tool).__name__ for tool in registered),
     )
 
 
 def test_shared_sql_guard() -> TestResult:
-    """验证 GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用 SQLGuard 实例"""
-    source = (PROJECT_ROOT / "backend" / "agent_factory.py").read_text(encoding="utf-8")
-
-    sql_guard_assignment = "sql_guard = SQLGuard()"
-    if sql_guard_assignment not in source:
-        return TestResult(
-            "GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用 SQLGuard 实例",
-            False,
-            "未找到 sql_guard = SQLGuard() 提取的共用实例",
-        )
-
-    # 检查 GuardedRunSqlTool 使用 sql_guard 变量
-    guard_in_guarded = "sql_guard=sql_guard" in source
-    # 检查 SqlExampleContextEnhancer 使用 sql_guard 变量
-    guard_in_enhancer = any(
-        line.strip().startswith("sql_guard=sql_guard")
-        for line in source.split("\n")
-        if "sql_guard=sql_guard" in line
+    agent, _, _, _, sql_guard = build_agent(
+        disable_legacy_sql_examples=False
+    )
+    guarded_tool = agent.tool_registry._tools["run_sql"]
+    enhancer = agent.llm_context_enhancer
+    passed = (
+        guarded_tool.sql_guard is sql_guard
+        and enhancer.sql_guard is sql_guard
+    )
+    return TestResult(
+        "GuardedRunSqlTool 与 SqlExampleContextEnhancer 共用 SQLGuard",
+        passed,
+        (
+            f"guarded={guarded_tool.sql_guard is sql_guard}, "
+            f"enhancer={enhancer.sql_guard is sql_guard}"
+        ),
     )
 
-    if not guard_in_guarded:
-        return TestResult(
-            "GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用 SQLGuard 实例",
-            False,
-            "GuardedRunSqlTool 未共用 sql_guard 变量",
-        )
-    if not guard_in_enhancer:
-        return TestResult(
-            "GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用 SQLGuard 实例",
-            False,
-            "SqlExampleContextEnhancer 未共用 sql_guard 变量",
-        )
 
+def test_legacy_disabled_falls_back_to_deterministic() -> TestResult:
+    agent, _, _, retriever, _ = build_agent(
+        disable_legacy_sql_examples=True
+    )
+    enhancer = agent.llm_context_enhancer
+    passed = (
+        isinstance(enhancer, DeterministicMetadataContextEnhancer)
+        and not isinstance(enhancer, SqlExampleContextEnhancer)
+        and enhancer.metadata_retriever is retriever
+        and isinstance(enhancer.base_enhancer, DefaultLlmContextEnhancer)
+    )
     return TestResult(
-        "GuardedRunSqlTool 和 SqlExampleContextEnhancer 共用 SQLGuard 实例",
-        True,
-        "两者共用同一个 SQLGuard 实例",
+        "关闭 legacy SQL examples 时回退 deterministic enhancer",
+        passed,
+        type(enhancer).__name__,
     )
 
 
 def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
     tests = [
-        test_import_sql_example_enhancer,
-        test_create_agent_uses_sql_example_enhancer,
+        test_sql_example_enhancer_used,
         test_enhancer_chain_order,
-        test_guarded_run_sql_still_registered,
+        test_guarded_run_sql_registered,
         test_no_raw_run_sql_bypass,
         test_shared_sql_guard,
+        test_legacy_disabled_falls_back_to_deterministic,
     ]
     results = [test() for test in tests]
-    passed = sum(1 for result in results if result.passed)
-
-    current_status = run_command(["git", "status", "--short"])
-    commit = run_command(["git", "rev-parse", "HEAD"])
-
-    summary = {
-        "cwd": str(PROJECT_ROOT),
-        "remote": run_command(["git", "remote", "-v"]),
-        "commit": commit,
-        "initial_status": current_status or "clean",
+    passed = sum(result.passed for result in results)
+    return results, {
         "total": len(results),
         "passed": passed,
         "failed": len(results) - passed,
-        "failed_cases": [result.name for result in results if not result.passed],
+        "failed_cases": [
+            result.name for result in results if not result.passed
+        ],
     }
-    return results, summary
-
-
-def bool_cn(value: bool) -> str:
-    return "是" if value else "否"
 
 
 def write_report(results: list[TestResult], summary: dict[str, Any]) -> None:
     lines = [
-        "# SQL Example Context Enhancer 接入静态集成测试结果",
+        "# SQL Example Context Enhancer Runtime 集成测试",
         "",
-        "## 汇总",
-        "",
-        f"- 当前工作目录：{summary['cwd']}",
-        "- git remote -v：",
-        "```text",
-        summary["remote"],
-        "```",
-        f"- 当前 commit：{summary['commit']}",
-        "- 初始 git status --short：",
-        "```text",
-        summary["initial_status"],
-        "```",
-        f"- 测试总数：{summary['total']}",
-        f"- 通过数量：{summary['passed']}",
-        f"- 失败数量：{summary['failed']}",
-        f"- 失败用例列表：{', '.join(summary['failed_cases']) if summary['failed_cases'] else '无'}",
-        f"- 接入链路静态验证是否通过：{bool_cn(summary['failed'] == 0)}",
-        "- 是否启动真实主服务：否",
-        "- 是否连接数据库：否",
-        "- 是否执行真实 SQL：否",
-        "- 是否调用 DeepSeek：否",
-        "- 是否训练 Vanna：否",
-        "- 是否调用 vn.train()：否",
-        "- 是否写入正式 ChromaDB：否",
-        "- 是否修改正式 vanna_data：否",
-        "- 是否进入第 3/4 级：否",
-        "",
-        "## 明细",
+        f"- 总数：{summary['total']}",
+        f"- 通过：{summary['passed']}",
+        f"- 失败：{summary['failed']}",
+        "- 执行 SQL：否",
+        "- 调用 LLM：否",
         "",
     ]
-    for index, result in enumerate(results, start=1):
+    for result in results:
         lines.extend(
             [
-                f"### {index}. {result.name}",
+                f"## {result.name}",
                 "",
-                f"- pass/fail：{'pass' if result.passed else 'fail'}",
-                f"- reason：{result.reason}",
+                f"- 结果：{'PASS' if result.passed else 'FAIL'}",
+                f"- 证据：{result.reason}",
                 "",
             ]
         )
@@ -355,12 +234,16 @@ def write_report(results: list[TestResult], summary: dict[str, Any]) -> None:
 def main() -> int:
     results, summary = run_tests()
     write_report(results, summary)
-    print(f"测试总数: {summary['total']}")
-    print(f"通过数量: {summary['passed']}")
-    print(f"失败数量: {summary['failed']}")
-    print(f"失败用例列表: {', '.join(summary['failed_cases']) if summary['failed_cases'] else '无'}")
-    print(f"报告: {REPORT_PATH}")
-    return 0 if summary["failed"] == 0 else 1
+    for result in results:
+        print(
+            f"[{'PASS' if result.passed else 'FAIL'}] "
+            f"{result.name}: {result.reason}"
+        )
+    print(
+        f"total={summary['total']} passed={summary['passed']} "
+        f"failed={summary['failed']}"
+    )
+    return 1 if summary["failed"] else 0
 
 
 if __name__ == "__main__":
