@@ -17,6 +17,7 @@ body {
 
 /* 嵌入式浮窗页 */
 .widget-shell {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -164,10 +165,10 @@ body {
 }
 
 .widget-toast {
-  position: fixed;
-  top: 72px;
-  left: 50%;
-  z-index: 1100;
+  position: absolute;
+  top: 108px;
+  right: 12px;
+  z-index: 1200;
   display: flex;
   align-items: center;
   max-width: calc(100% - 28px);
@@ -176,7 +177,6 @@ body {
   box-shadow: 0 5px 18px rgba(15, 23, 42, .2);
   color: #fff;
   font-size: 12px;
-  transform: translateX(-50%);
 }
 
 .widget-toast--success {

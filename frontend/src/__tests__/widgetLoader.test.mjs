@@ -187,6 +187,14 @@ const fullAppSource = fs.readFileSync(
   path.join(frontendRoot, 'src', 'App.tsx'),
   'utf8',
 );
+const chartViewSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'components', 'ChartView.tsx'),
+  'utf8',
+);
+const indexCssSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'index.css'),
+  'utf8',
+);
 
 test('浮窗复用 useSSE 与 ChatArea 且不加载仪表盘编辑区', () => {
   assert(widgetAppSource.includes('useSSE()'), '未复用 useSSE');
@@ -227,6 +235,30 @@ test('浮窗支持已有、新建仪表板并明确提示写入结果', () => {
 test('浮窗与完整工作台复用同一 useDashboard 存储', () => {
   assert(widgetAppSource.includes("from './hooks/useDashboard'"), '浮窗未使用共享 Hook');
   assert(fullAppSource.includes("from './hooks/useDashboard'"), '完整工作台未使用共享 Hook');
+});
+
+test('compact 图表使用独立高度且说明紧跟图表，普通图表仍为 350px', () => {
+  assert(
+    chartViewSource.includes('height: compact ? compactChartHeight : 350'),
+    'compact 与普通图表高度未分离',
+  );
+  assert(
+    chartViewSource.includes('marginTop: 10'),
+    '图表说明没有紧跟 ECharts 容器',
+  );
+});
+
+test('Toast 脱离 flex 流并定位在浮窗可见区域', () => {
+  assert(indexCssSource.includes('.widget-shell {\n  position: relative;'), '浮窗根容器未建立定位上下文');
+  assert(indexCssSource.includes('.widget-toast {\n  position: absolute;'), 'Toast 仍参与正常 flex 布局');
+  assert(indexCssSource.includes('top: 108px;'), 'Toast 未位于会话栏下方');
+  assert(indexCssSource.includes('z-index: 1200;'), 'Toast 层级不足');
+});
+
+test('成功 Toast 2.5 秒自动关闭，失败 Toast 保持到手动关闭', () => {
+  assert(widgetAppSource.includes('if (!notice?.ok) return;'), '失败 Toast 被错误设置为自动关闭');
+  assert(widgetAppSource.includes('window.setTimeout(() => setNotice(null), 2500)'), '成功 Toast 缺少 2.5 秒自动关闭');
+  assert(widgetAppSource.includes('window.clearTimeout(timer)'), '成功 Toast 定时器未清理');
 });
 
 console.log(`total=${passed + failed} passed=${passed} failed=${failed}`);

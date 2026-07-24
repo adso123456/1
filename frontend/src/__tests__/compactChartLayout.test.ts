@@ -1,4 +1,8 @@
-import { applyCompactChartLayout } from '../compactChartLayout';
+import {
+  applyCompactChartLayout,
+  COMPACT_CHART_HEIGHT,
+  getCompactChartHeight,
+} from '../compactChartLayout';
 import type { EChartsOption } from 'echarts';
 
 function assert(condition: unknown, message: string) {
@@ -50,7 +54,7 @@ test('compact 分类横轴启用旋转、截断和防重叠', () => {
   assert(axis.axisLabel?.hideOverlap === true, '未启用 hideOverlap');
 });
 
-test('compact 分类横轴增加底部空间且不修改原 option', () => {
+test('compact 分类横轴避免重复留白且不修改原 option', () => {
   const before = JSON.stringify(baseOption);
   const result = applyCompactChartLayout(baseOption, true);
   const grid = result.grid as {
@@ -58,10 +62,18 @@ test('compact 分类横轴增加底部空间且不修改原 option', () => {
     containLabel?: boolean;
     top?: number;
   };
-  assert((grid.bottom ?? 0) >= 118, '底部空间不足');
-  assert((grid.top ?? 0) >= 64, '标题与绘图区间距不足');
+  assert((grid.bottom ?? 0) === 42, 'compact 底部仍存在重复留白');
+  assert((grid.top ?? 0) === 48, 'compact 顶部空间不合理');
   assert(grid.containLabel === true, '未约束标签到图表容器');
   assert(JSON.stringify(baseOption) === before, 'compact 覆盖污染了原 option');
+});
+
+test('compact 使用独立画布高度，横向柱图高度受上下限约束', () => {
+  assert(COMPACT_CHART_HEIGHT === 292, '纵向 compact 画布高度错误');
+  assert(getCompactChartHeight() === 292, '默认 compact 高度错误');
+  assert(getCompactChartHeight(5) === 280, '少量横向类目高度错误');
+  assert(getCompactChartHeight(14) === 322, '横向类目高度未按数量调整');
+  assert(getCompactChartHeight(30) === 330, '横向图缺少合理高度上限');
 });
 
 test('compact 隐藏轴名称避免与图表标题重叠', () => {

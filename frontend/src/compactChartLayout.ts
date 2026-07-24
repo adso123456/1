@@ -50,6 +50,13 @@ function numericSpace(value: number | string | undefined, minimum: number) {
   return typeof value === 'number' ? Math.max(value, minimum) : minimum;
 }
 
+export const COMPACT_CHART_HEIGHT = 292;
+
+export function getCompactChartHeight(categoryCount?: number) {
+  if (categoryCount === undefined) return COMPACT_CHART_HEIGHT;
+  return Math.min(330, Math.max(280, categoryCount * 18 + 70));
+}
+
 /**
  * 仅为浮窗压缩 ECharts 布局。保留原始类目数据和 tooltip，
  * 只覆盖轴标签、图例和 grid，不修改图表 spec 或计算结果。
@@ -72,12 +79,12 @@ export function applyCompactChartLayout(
       axisLabel: {
         ...item.axisLabel,
         interval: 0,
-        rotate: 52,
+        rotate: 42,
         hideOverlap: true,
         overflow: 'truncate',
-        width: 58,
-        fontSize: 9,
-        margin: 10,
+        width: 64,
+        fontSize: 10,
+        margin: 8,
       },
     };
   });
@@ -102,13 +109,13 @@ export function applyCompactChartLayout(
     ...item,
     containLabel: true,
     bottom: hasCategoryX
-      ? numericSpace(item.bottom, 118)
+      ? numericSpace(item.bottom, 42)
       : item.bottom,
     left: hasCategoryY
       ? numericSpace(item.left, 108)
       : item.left,
     right: numericSpace(item.right, 18),
-    top: numericSpace(item.top, 64),
+    top: numericSpace(item.top, 48),
   }));
 
   return {

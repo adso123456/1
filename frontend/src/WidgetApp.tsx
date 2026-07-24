@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { ChatArea } from './components/ChatArea';
 import { buildWorkspaceUrl } from './appMode';
@@ -47,6 +47,12 @@ export function WidgetApp() {
   } = useDashboard();
   const [pendingAdd, setPendingAdd] = useState<WidgetDashboardPayload | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!notice?.ok) return;
+    const timer = window.setTimeout(() => setNotice(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const currentSessionExists = sessionList.some(
     session => session.id === currentSessionId,

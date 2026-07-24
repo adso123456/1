@@ -13,7 +13,10 @@ import {
   getChartTypeAvailabilityV2,
   prepareChartV2All,
 } from '../chartPipelineV2';
-import { applyCompactChartLayout } from '../compactChartLayout';
+import {
+  applyCompactChartLayout,
+  getCompactChartHeight,
+} from '../compactChartLayout';
 
 interface Props {
   chart: ChartData;
@@ -127,6 +130,9 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
   }
 
   const [localType, setLocalType] = useState<RenderableChartType>(() => pickDefault());
+  const compactChartHeight = getCompactChartHeight(
+    localType === 'horizontal_bar' ? chart.rows.length : undefined,
+  );
 
   // 跟踪上次 dataVersion 和 spec.type，用于判断数据/推荐类型是否真正变化
   const prevDataVersionRef = useRef(chart.dataVersion);
@@ -565,7 +571,9 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
           notMerge={true}
           autoResize={!fillHeight && !compact}
           onChartReady={handleChartReady}
-          style={fillHeight ? { flex: 1, minHeight: 0, minWidth: 0, width: '100%' } : { height: 350 }}
+          style={fillHeight
+            ? { flex: 1, minHeight: 0, minWidth: 0, width: '100%' }
+            : { height: compact ? compactChartHeight : 350 }}
         />
       ) : !isChartOnly && effectiveViewMode === 'chart' && !option ? (
         <div
