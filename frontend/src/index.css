@@ -224,6 +224,11 @@ body {
   white-space: nowrap;
 }
 
+.compact-chart-content {
+  width: 100%;
+  min-width: 0;
+}
+
 .compact-chart-unavailable {
   padding: 18px 16px;
   border: 1px solid #dbeafe;

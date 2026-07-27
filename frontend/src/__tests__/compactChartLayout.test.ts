@@ -82,6 +82,11 @@ test('超过 6 个分类启用 inside + slider，默认显示约 6～8 个', () 
   assert(dataZoom[1].type === 'slider', '缺少 slider dataZoom');
   assert(dataZoom[1].endValue === 6, 'slider 默认窗口不是 7 个类目');
   assert(Number(dataZoom[1].height) <= 14, 'slider 不够紧凑');
+  const grid = result.grid as Record<string, unknown>;
+  assert(grid.left === grid.right, '纵向图未使用对称左右边界');
+  assert(grid.containLabel === false, '纵向图仍由 containLabel 二次改变绘图区');
+  assert(dataZoom[1].left === grid.left, 'slider 起点未与绘图区对齐');
+  assert(dataZoom[1].right === grid.right, 'slider 终点未与绘图区对齐');
   assert(JSON.stringify(option) === before, 'dataZoom 污染了原 option 或原始数据');
   assert(result.tooltip === tooltip, 'tooltip 被覆盖');
 });
@@ -140,10 +145,18 @@ test('横向柱图少量分类按约 30px 行高，多分类不被压缩', () =>
     chartType: 'horizontal_bar',
   });
   const axis = result.yAxis as { axisLabel?: Record<string, unknown> };
+  const grid = result.grid as Record<string, unknown>;
   assert(smallHeight >= 230 && smallHeight <= 260, '少量横向柱图高度不合理');
   assert(manyHeight >= 500 && manyHeight <= 520, '14 类横向柱图仍被压缩');
   assert(axis.axisLabel?.interval === 0, '横向柱图未保留全部类目');
   assert(axis.axisLabel?.hideOverlap === false, '动态增高后仍隐藏行标签');
+  assert(grid.left === grid.right, '横向柱图外边界未保持对称');
+  assert(grid.containLabel === true, '横向柱图未使用单一 containLabel 标签策略');
+  assert(Number(grid.left) < 40, '横向柱图仍叠加了大 grid.left');
+  assert(
+    Number(axis.axisLabel?.width) > Number(grid.left),
+    '测试数据未覆盖标签宽度与外边界独立计算',
+  );
 });
 
 test('横向柱图长名称截断但 Tooltip 保持完整', () => {
@@ -217,7 +230,7 @@ test('超过 6 个分类的饼图在 compact 标记为不适合且不修改数�
   );
   assert(strategy.compactAvailable === false, '多分类饼图仍标记为可用');
   assert(
-    strategy.compactUnavailableReason?.includes('饼图不适合当前浮窗'),
+    strategy.compactUnavailableReason?.includes('浮窗中不适合饼图'),
     '缺少明确替代提示',
   );
   assert(resultData.length === 14, '饼图数据被 TopN、聚合或删除');

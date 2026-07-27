@@ -38,7 +38,9 @@ export type CompactChartStrategy = {
   xAxisRotation: number;
   xAxisLabelWidth: number;
   yAxisLabelWidth: number;
-  horizontalGridLeft: number;
+  gridLeft: number;
+  gridRight: number;
+  containLabel: boolean;
   gridBottom: number;
   gridTop: number;
   legendWidth: string;
@@ -166,6 +168,8 @@ function buildDataZoom(
       zoomLock: true,
       bottom: 8,
       height: 14,
+      left: strategy.gridLeft,
+      right: strategy.gridRight,
       showDetail: false,
       brushSelect: false,
       handleSize: '70%',
@@ -261,12 +265,16 @@ export function getCompactChartStrategy(
     48,
     72,
   );
-  const horizontalGridLeft = clamp(
-    summary.maxCategoryNameLength * 9 + 24,
-    92,
-    Math.floor(width * 0.36),
+  const outerInset = width < 340 ? 22 : 26;
+  const verticalInset = width < 340 ? 40 : 44;
+  const gridLeft = isHorizontal ? outerInset : verticalInset;
+  const gridRight = isHorizontal ? outerInset : verticalInset;
+  const containLabel = isHorizontal;
+  const yAxisLabelWidth = clamp(
+    summary.maxCategoryNameLength * 8 + 12,
+    72,
+    Math.floor(width * 0.3),
   );
-  const yAxisLabelWidth = Math.max(64, horizontalGridLeft - 20);
   const showPieLabels = isPie
     && compactAvailable
     && summary.categoryCount <= (width < 380 ? 5 : 6)
@@ -319,7 +327,9 @@ export function getCompactChartStrategy(
     xAxisRotation,
     xAxisLabelWidth,
     yAxisLabelWidth,
-    horizontalGridLeft,
+    gridLeft,
+    gridRight,
+    containLabel,
     gridBottom,
     gridTop,
     legendWidth: width < 380 ? '82%' : '88%',
@@ -329,7 +339,7 @@ export function getCompactChartStrategy(
     compactAvailable,
     compactUnavailableReason: compactAvailable
       ? null
-      : '分类较多，饼图不适合当前浮窗，请使用横向柱状图或在完整工作台查看',
+      : '分类较多，浮窗中不适合饼图，可在完整工作台查看',
   };
 }
 
@@ -352,7 +362,6 @@ export function applyCompactChartLayout(
   if (!compact) return option;
 
   const strategy = getCompactChartStrategy(option, context);
-  let hasCategoryY = false;
 
   const xAxis = mapAxis(option.xAxis, item => {
     if (item.type !== 'category') return { ...item, name: '' };
@@ -374,7 +383,6 @@ export function applyCompactChartLayout(
 
   const yAxis = mapAxis(option.yAxis, item => {
     if (item.type !== 'category') return { ...item, name: '' };
-    hasCategoryY = true;
     return {
       ...item,
       name: '',
@@ -391,10 +399,10 @@ export function applyCompactChartLayout(
 
   const grid = mapGrid(option.grid, item => ({
     ...item,
-    containLabel: true,
+    containLabel: strategy.containLabel,
     bottom: strategy.gridBottom,
-    left: hasCategoryY ? strategy.horizontalGridLeft : 42,
-    right: 18,
+    left: strategy.gridLeft,
+    right: strategy.gridRight,
     top: strategy.gridTop,
   }));
 

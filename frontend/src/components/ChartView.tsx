@@ -18,6 +18,7 @@ import {
   getCompactChartHeight,
   getCompactChartStrategy,
 } from '../compactChartLayout';
+import { getCompactChartTypeAvailability } from '../compactChartAvailability';
 
 interface Props {
   chart: ChartData;
@@ -63,6 +64,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
 
   const echartsRef = useRef<ReactECharts>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const chartContentRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [compactWidth, setCompactWidth] = useState(0);
 
@@ -99,6 +101,15 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
   const allTypes = useMemo<ChartTypeAvailability[]>(
     () => getChartTypeAvailabilityV2(chart),
     [chart],
+  );
+  const menuTypes = useMemo(
+    () => getCompactChartTypeAvailability(
+      chart,
+      allTypes,
+      compact,
+      compactWidth || 400,
+    ),
+    [chart, allTypes, compact, compactWidth],
   );
 
   /** 从 allTypes 中按优先级选取默认类型 */
@@ -202,7 +213,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
   // 浮窗单独监听 ChartView 外层容器，处理初次渲染、窗口变化及 display:none 恢复。
   useEffect(() => {
     if (!compact) return;
-    const container = containerRef.current;
+    const container = chartContentRef.current ?? containerRef.current;
     if (!container) return;
 
     let frame: number | null = null;
@@ -233,27 +244,11 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     };
   }, [compact]);
 
-  const handleTypeChange = (type: RenderableChartType) => {
-    // 仅在目标类型可用（supported 且 spec 非空）时才切换，避免切到不支持的类型
-    const target = allTypes.find(t => t.type === type);
-    if (!target?.supported || !target.spec) return;
-
-    if (compact && (type === 'pie' || type === 'donut')) {
-      const targetOption = buildChartOption({
-        ...chart,
-        spec: target.spec,
-        explicitType: true,
-      });
-      if (targetOption) {
-        const targetStrategy = getCompactChartStrategy(targetOption, {
-          width: compactWidth || 400,
-          chartType: type,
-        });
-        if (!targetStrategy.compactAvailable) {
-          showToast(targetStrategy.compactUnavailableReason ?? '该图表不适合当前浮窗');
-          return;
-        }
-      }
+  const handleTypeChange = (type: RenderableChartType): boolean => {
+    const target = menuTypes.find(item => item.type === type);
+    if (!target?.selectable || !target.spec) {
+      showToast(target?.menuReason || '该数据类型暂不支持该图表');
+      return false;
     }
 
     // ── V2 路径：chart 有 source 数据时，基于 source 重新 plan+transform ──
@@ -287,12 +282,12 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
           onChangeType?.(type);
           onChangeSpec?.(newChart.spec);
         }
-        return;
+        return true;
       }
 
       // V2 失败 → 不切换，仅提示（避免 spec 切换但 columns/rows/v2Meta 不一致）
       showToast('该数据类型暂不支持该图表');
-      return;
+      return false;
     }
 
     // ── 旧路径：无 source 数据 → 完全走旧逻辑 ──
@@ -301,6 +296,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     onChangeType?.(type);
     // 回传 availability 返回的完整 Spec（含 xField/yFields/sizeField/valueField 等），供仪表板持久化
     onChangeSpec?.(target.spec);
+    return true;
   };
 
   /** 清理文件名中的 Windows 非法字符 */
@@ -550,40 +546,41 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
                 borderRadius: 8,
                 boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
                 zIndex: 100,
-                minWidth: 150,
+                minWidth: compact ? 250 : 150,
+                maxWidth: compact ? 'calc(100vw - 32px)' : undefined,
                 maxHeight: 360,
                 overflowY: 'auto',
                 padding: '4px 0',
               }}>
-                {allTypes.map(t => {
+                {menuTypes.map(t => {
                   const isCurrent = t.type === localType;
                   return (
                     <button
                       key={t.type}
                       onClick={() => {
-                        if (t.supported && t.spec) {
-                          handleTypeChange(t.type);
+                        if (handleTypeChange(t.type)) {
                           setDropdownOpen(false);
-                        } else {
-                          showToast('该数据类型暂不支持该图表');
                         }
                       }}
-                      aria-disabled={!t.supported || undefined}
+                      aria-disabled={!t.selectable || undefined}
+                      title={t.menuReason || undefined}
                       style={{
-                        display: 'block',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
                         width: '100%',
                         textAlign: 'left',
                         padding: '6px 14px',
                         border: 'none',
-                        cursor: t.supported ? 'pointer' : 'not-allowed',
+                        cursor: t.selectable ? 'pointer' : 'not-allowed',
                         fontSize: 12,
                         backgroundColor: isCurrent ? '#eff6ff' : 'transparent',
-                        color: t.supported ? '#374151' : '#d1d5db',
+                        color: t.selectable ? '#374151' : '#9ca3af',
                         fontWeight: isCurrent ? 500 : 400,
                         transition: 'background-color .1s',
                       }}
                       onMouseEnter={e => {
-                        if (t.supported) {
+                        if (t.selectable) {
                           e.currentTarget.style.backgroundColor = isCurrent ? '#dbeafe' : '#f3f4f6';
                         }
                       }}
@@ -591,7 +588,12 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
                         e.currentTarget.style.backgroundColor = isCurrent ? '#eff6ff' : 'transparent';
                       }}
                     >
-                      {t.label}
+                      <span>{t.label}</span>
+                      {!t.selectable && t.dataSupported && (
+                        <span style={{ fontSize: 10, lineHeight: 1.35, color: '#9ca3af', fontWeight: 400 }}>
+                          {t.menuReason}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -667,6 +669,11 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
       </div>
       )}
 
+      <div
+        ref={chartContentRef}
+        className={compact ? 'compact-chart-content' : undefined}
+        style={compact ? undefined : { display: 'contents' }}
+      >
       {compact && (isChartOnly || effectiveViewMode === 'chart') && chart.title && (
         <div className="compact-chart-title" title={chart.title}>
           {chart.title}
@@ -730,6 +737,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
           {description}
         </div>
       )}
+      </div>
 
       {!isChartOnly && (effectiveViewMode === 'table' || !option) && (
         <div style={{ overflowX: 'auto' }}>
