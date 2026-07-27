@@ -10,6 +10,10 @@
     iframe: null,
     loading: null,
     widgetOrigin: '',
+    parentOrigin: '',
+    instanceId: '',
+    ready: false,
+    loadTimer: null,
     triggerHandler: null,
     messageHandler: null,
   };
@@ -31,10 +35,36 @@
     );
     if (open && state.iframe && state.iframe.contentWindow) {
       state.iframe.contentWindow.postMessage(
-        { type: 'water-agent-widget:opened' },
+        {
+          type: 'water-agent-widget:opened',
+          instanceId: state.instanceId,
+        },
         state.widgetOrigin,
       );
     }
+  }
+
+  function clearLoadTimer() {
+    if (state.loadTimer && typeof global.clearTimeout === 'function') {
+      global.clearTimeout(state.loadTimer);
+    }
+    state.loadTimer = null;
+  }
+
+  function showLoadError(message) {
+    clearLoadTimer();
+    if (!state.loading) return;
+    state.loading.hidden = false;
+    state.loading.textContent = message;
+    state.loading.setAttribute('role', 'alert');
+  }
+
+  function createInstanceId() {
+    return [
+      'water-agent',
+      Date.now().toString(36),
+      Math.random().toString(36).slice(2, 10),
+    ].join('-');
   }
 
   function init(options) {
@@ -49,7 +79,12 @@
       options.widgetPath || '/?mode=widget',
       agentUrl,
     );
+    state.parentOrigin = global.location.origin;
     state.widgetOrigin = widgetUrl.origin;
+    state.instanceId = createInstanceId();
+    state.ready = false;
+    widgetUrl.searchParams.set('parentOrigin', state.parentOrigin);
+    widgetUrl.searchParams.set('instanceId', state.instanceId);
 
     var root = createElement('div');
     root.id = 'water-agent-widget-root';
@@ -91,10 +126,9 @@
     );
     var iframe = createElement('iframe', 'water-agent-frame');
     iframe.title = '智能问数';
-    iframe.src = widgetUrl.toString();
     iframe.setAttribute('allow', 'clipboard-write');
-    iframe.addEventListener('load', function () {
-      loading.hidden = true;
+    iframe.addEventListener('error', function () {
+      showLoadError('智能助手加载失败，请确认 Agent 前端已启动。');
     });
 
     panel.appendChild(loading);
@@ -110,22 +144,43 @@
     state.panel = panel;
     state.iframe = iframe;
     state.loading = loading;
+    if (typeof global.setTimeout === 'function') {
+      state.loadTimer = global.setTimeout(function () {
+        if (!state.ready) {
+          showLoadError('智能助手加载超时，请确认 Agent 前端已启动。');
+        }
+      }, 10000);
+    }
     state.triggerHandler = function () {
       setOpen(panel.hidden);
     };
     state.messageHandler = function (event) {
       if (
-        event.origin === state.widgetOrigin
-        && state.iframe
-        && event.source === state.iframe.contentWindow
-        && event.data
-        && event.data.type === 'water-agent-widget:close'
+        event.origin !== state.widgetOrigin
+        || !state.iframe
+        || event.source !== state.iframe.contentWindow
+        || !event.data
+        || event.data.instanceId !== state.instanceId
+      ) {
+        return;
+      }
+      if (event.data.type === 'water-agent-widget:ready') {
+        state.ready = true;
+        clearLoadTimer();
+        loading.hidden = true;
+        if (!panel.hidden) setOpen(true);
+        return;
+      }
+      if (
+        event.data.type === 'water-agent-widget:close'
+        || event.data.type === 'water-agent-widget:minimize'
       ) {
         setOpen(false);
       }
     };
     trigger.addEventListener('click', state.triggerHandler);
     global.addEventListener('message', state.messageHandler);
+    iframe.src = widgetUrl.toString();
     return api;
   }
 
@@ -138,6 +193,7 @@
   }
 
   function destroy() {
+    clearLoadTimer();
     if (state.trigger && state.triggerHandler) {
       state.trigger.removeEventListener('click', state.triggerHandler);
     }
@@ -150,6 +206,9 @@
     state.panel = null;
     state.iframe = null;
     state.loading = null;
+    state.parentOrigin = '';
+    state.instanceId = '';
+    state.ready = false;
     state.triggerHandler = null;
     state.messageHandler = null;
     state.widgetOrigin = '';

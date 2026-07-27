@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { ChatArea } from './components/ChatArea';
 import { buildWorkspaceUrl } from './appMode';
@@ -8,17 +8,15 @@ import {
   createWidgetDashboardChartItem,
   type WidgetDashboardPayload,
 } from './widgetDashboardSnapshot';
+import {
+  isWidgetMessage,
+  postWidgetMessage,
+  readWidgetEmbedContext,
+} from './widgetMessageProtocol';
 
 type DashboardTarget =
   | { mode: 'existing'; dashboardId: string }
   | { mode: 'new'; name: string };
-
-function requestWidgetClose() {
-  window.parent.postMessage(
-    { type: 'water-agent-widget:close' },
-    window.location.origin,
-  );
-}
 
 export function WidgetApp() {
   const {
@@ -47,6 +45,10 @@ export function WidgetApp() {
   } = useDashboard();
   const [pendingAdd, setPendingAdd] = useState<WidgetDashboardPayload | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
+  const embedContext = useMemo(
+    () => readWidgetEmbedContext(window.location.href),
+    [],
+  );
 
   useEffect(() => {
     if (!notice?.ok) return;
@@ -55,26 +57,44 @@ export function WidgetApp() {
   }, [notice]);
 
   useEffect(() => {
+    if (!embedContext) return;
     const handleWidgetOpened = (event: MessageEvent) => {
       if (
-        event.source !== window.parent
-        || event.origin !== window.location.origin
-        || !event.data
-        || event.data.type !== 'water-agent-widget:opened'
+        !isWidgetMessage(
+          event,
+          embedContext,
+          'water-agent-widget:opened',
+          window.parent,
+        )
       ) {
         return;
       }
       window.dispatchEvent(new Event('water-agent-widget:opened'));
     };
     window.addEventListener('message', handleWidgetOpened);
-    return () => window.removeEventListener('message', handleWidgetOpened);
-  }, []);
+    postWidgetMessage(window.parent, embedContext, 'water-agent-widget:ready');
+    return () => {
+      window.removeEventListener('message', handleWidgetOpened);
+    };
+  }, [embedContext]);
 
   const currentSessionExists = sessionList.some(
     session => session.id === currentSessionId,
   );
 
-  const workspaceUrl = buildWorkspaceUrl(window.location.origin);
+  const workspaceUrl = buildWorkspaceUrl(
+    window.location.origin,
+    currentSessionId,
+  );
+
+  const requestWidgetClose = useCallback(() => {
+    if (!embedContext) return;
+    postWidgetMessage(
+      window.parent,
+      embedContext,
+      'water-agent-widget:minimize',
+    );
+  }, [embedContext]);
 
   const handleRequestAddToDashboard = useCallback(
     (payload: WidgetDashboardPayload) => {

@@ -152,9 +152,19 @@ test('初始化只创建一个机器人实例', () => {
 
 test('iframe 指向正确浮窗入口', () => {
   const iframe = findByClass(body, 'water-agent-frame');
+  const iframeUrl = new URL(iframe.src);
   assert(
-    iframe.src === 'http://localhost:5173/?mode=widget',
+    iframeUrl.origin === 'http://localhost:5173'
+      && iframeUrl.searchParams.get('mode') === 'widget',
     `iframe URL 错误: ${iframe.src}`,
+  );
+  assert(
+    iframeUrl.searchParams.get('parentOrigin') === 'http://localhost:5173',
+    'iframe 未收到受控父页面 Origin',
+  );
+  assert(
+    /^water-agent-/.test(iframeUrl.searchParams.get('instanceId') || ''),
+    'iframe 未收到实例 ID',
   );
 });
 
@@ -174,8 +184,67 @@ test('每次打开向 iframe 发送受目标来源约束的 resize 消息', () =
   assert(postedMessages.length >= 2, '打开浮窗未发送 opened 消息');
   const latest = postedMessages.at(-1);
   assert(latest.message.type === 'water-agent-widget:opened', 'opened 消息类型错误');
+  assert(latest.message.instanceId, 'opened 消息缺少实例 ID');
   assert(latest.targetOrigin === 'http://localhost:5173', 'opened 消息使用了非限定来源');
   assert(!loaderSource.includes("postMessage(\n        { type: 'water-agent-widget:opened' },\n        '*'"), 'opened 消息使用了 *');
+});
+
+test('loader 只接受匹配 Origin、source 和实例 ID 的 iframe 消息', () => {
+  const iframe = findByClass(body, 'water-agent-frame');
+  const panel = findByClass(body, 'water-agent-panel');
+  const loading = findByClass(body, 'water-agent-loading');
+  const iframeUrl = new URL(iframe.src);
+  const instanceId = iframeUrl.searchParams.get('instanceId');
+  const messageHandler = windowListeners.get('message');
+
+  loading.hidden = false;
+  messageHandler({
+    origin: 'http://wrong.example',
+    source: iframe.contentWindow,
+    data: { type: 'water-agent-widget:ready', instanceId },
+  });
+  assert(loading.hidden === false, '错误 Origin 消息被接受');
+
+  messageHandler({
+    origin: 'http://localhost:5173',
+    source: {},
+    data: { type: 'water-agent-widget:ready', instanceId },
+  });
+  assert(loading.hidden === false, '错误 source 消息被接受');
+
+  messageHandler({
+    origin: 'http://localhost:5173',
+    source: iframe.contentWindow,
+    data: { type: 'water-agent-widget:ready', instanceId: 'wrong-instance' },
+  });
+  assert(loading.hidden === false, '错误实例 ID 消息被接受');
+
+  messageHandler({
+    origin: 'http://localhost:5173',
+    source: iframe.contentWindow,
+    data: { type: 'water-agent-widget:ready', instanceId },
+  });
+  assert(loading.hidden === true, '合法 ready 消息未生效');
+
+  panel.hidden = false;
+  messageHandler({
+    origin: 'http://localhost:5173',
+    source: iframe.contentWindow,
+    data: { type: 'water-agent-widget:minimize', instanceId },
+  });
+  assert(panel.hidden === true, '合法 minimize 消息未收起浮窗');
+});
+
+test('iframe 加载失败时显示可理解提示', () => {
+  const iframe = findByClass(body, 'water-agent-frame');
+  const loading = findByClass(body, 'water-agent-loading');
+  iframe.dispatch('error');
+  assert(loading.hidden === false, '加载失败提示仍被隐藏');
+  assert(
+    loading.textContent.includes('Agent 前端已启动'),
+    '加载失败提示不可理解',
+  );
+  assert(loading.getAttribute('role') === 'alert', '加载失败提示缺少 alert 语义');
 });
 
 test('重复初始化不会重复注册 message 监听器', () => {
@@ -188,8 +257,26 @@ test('destroy 清理按钮、iframe 和消息事件', () => {
   assert(!windowListeners.has('message'), '消息事件未清理');
 });
 
+test('agentUrl 尾部有无斜杠均生成正确绝对 iframe 地址', () => {
+  window.WaterAgentWidget.init({ agentUrl: 'http://agent.example:5173/' });
+  const iframe = findByClass(body, 'water-agent-frame');
+  assert(
+    new URL(iframe.src).origin === 'http://agent.example:5173',
+    `尾部斜杠处理错误: ${iframe.src}`,
+  );
+  window.WaterAgentWidget.destroy();
+});
+
 const widgetAppSource = fs.readFileSync(
   path.join(frontendRoot, 'src', 'WidgetApp.tsx'),
+  'utf8',
+);
+const widgetProtocolSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'widgetMessageProtocol.ts'),
+  'utf8',
+);
+const hostDemoSource = fs.readFileSync(
+  path.join(frontendRoot, 'embed-host-demo', 'index.html'),
   'utf8',
 );
 const messageBubbleSource = fs.readFileSync(
@@ -288,11 +375,31 @@ test('compact 图表监听真实宽度并在浮窗重新打开或变宽后刷新
   );
 });
 
-test('WidgetApp 校验 opened 消息来源且只注册一次监听器', () => {
-  assert(widgetAppSource.includes('event.source !== window.parent'), '未校验 opened 消息 source');
-  assert(widgetAppSource.includes('event.origin !== window.location.origin'), '未校验 opened 消息 origin');
-  assert(widgetAppSource.includes("event.data.type !== 'water-agent-widget:opened'"), '未校验 opened 消息类型');
+test('WidgetApp 校验 opened 消息来源、实例 ID 且只注册一次监听器', () => {
+  assert(widgetAppSource.includes('isWidgetMessage('), 'WidgetApp 未使用受控消息校验');
+  assert(widgetProtocolSource.includes('event.source === expectedSource'), '未校验 opened 消息 source');
+  assert(widgetProtocolSource.includes('event.origin === context.parentOrigin'), '未校验 opened 消息 origin');
+  assert(widgetProtocolSource.includes('data.instanceId === context.instanceId'), '未校验 opened 实例 ID');
   assert(widgetAppSource.includes("removeEventListener('message', handleWidgetOpened)"), 'opened 监听器未清理');
+});
+
+test('5174 静态宿主页只跨域加载脚本，不直接访问 API 或 Agent 存储', () => {
+  assert(
+    hostDemoSource.includes('src="http://127.0.0.1:5173/water-agent-widget.js"'),
+    '宿主页未通过绝对地址加载 5173 脚本',
+  );
+  assert(
+    hostDemoSource.includes("agentUrl: 'http://127.0.0.1:5173'"),
+    '宿主页未配置 Agent 地址',
+  );
+  assert(!hostDemoSource.includes('/api/'), '宿主页不应直接访问 Agent API');
+  assert(!hostDemoSource.includes('localStorage'), '宿主页不应读取 Agent localStorage');
+});
+
+test('本板块消息全部使用明确 targetOrigin，不使用通配符', () => {
+  assert(!loaderSource.includes("postMessage(message, '*')"), 'loader 使用了通配符 Origin');
+  assert(!widgetProtocolSource.includes("postMessage(\n    { type, instanceId: context.instanceId },\n    '*'"), 'iframe 使用了通配符 Origin');
+  assert(widgetProtocolSource.includes('context.parentOrigin'), 'iframe 未使用父页面明确 Origin');
 });
 
 test('compact 提供紧凑标题、饼图替代状态和完整查看入口', () => {
@@ -307,8 +414,8 @@ test('compact 提供紧凑标题、饼图替代状态和完整查看入口', () 
 });
 
 test('Toast 脱离 flex 流并定位在浮窗可见区域', () => {
-  assert(indexCssSource.includes('.widget-shell {\n  position: relative;'), '浮窗根容器未建立定位上下文');
-  assert(indexCssSource.includes('.widget-toast {\n  position: absolute;'), 'Toast 仍参与正常 flex 布局');
+  assert(/\.widget-shell \{\r?\n  position: relative;/.test(indexCssSource), '浮窗根容器未建立定位上下文');
+  assert(/\.widget-toast \{\r?\n  position: absolute;/.test(indexCssSource), 'Toast 仍参与正常 flex 布局');
   assert(indexCssSource.includes('top: 108px;'), 'Toast 未位于会话栏下方');
   assert(indexCssSource.includes('z-index: 1200;'), 'Toast 层级不足');
 });

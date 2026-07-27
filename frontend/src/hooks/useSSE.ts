@@ -189,18 +189,47 @@ function initSessionId(): string {
   return id || `s_${Date.now()}`;
 }
 
-function initSourceId(): string {
-  const id = loadCurrentId();
+function initSourceId(id = loadCurrentId()): string {
   if (!id) return '';
   return loadAllMeta()[id]?.sourceId || '';
 }
 
-function initSourceBound(): boolean {
-  const id = loadCurrentId();
+function initSourceBound(id = loadCurrentId()): boolean {
   if (!id) return false;
   const metadata = loadAllMeta()[id];
   if (metadata?.sourceBound !== undefined) return metadata.sourceBound;
   return (loadAllSessions()[id]?.length || 0) > 0;
+}
+
+interface InitialSessionState {
+  id: string;
+  sourceId: string;
+  sourceBound: boolean;
+  messages: ChatMessage[];
+}
+
+export function resolveInitialSessionState(
+  requestedSessionId?: string,
+): InitialSessionState {
+  const sessions = loadAllSessions();
+  const metadata = loadAllMeta();
+  const requestedExists = Boolean(
+    requestedSessionId
+    && (
+      Object.prototype.hasOwnProperty.call(sessions, requestedSessionId)
+      || Object.prototype.hasOwnProperty.call(metadata, requestedSessionId)
+    )
+  );
+  const id = requestedExists
+    ? requestedSessionId!
+    : initSessionId();
+  return {
+    id,
+    sourceId: metadata[id]?.sourceId || initSourceId(id),
+    sourceBound: metadata[id]?.sourceBound
+      ?? initSourceBound(id),
+    messages: sessions[id] || [],
+  };
 }
 
 export function normalizeDataSources(payload: unknown): DataSourceSummary[] {
@@ -580,18 +609,26 @@ export function refreshChartsFromDataframe(
   });
 }
 
-export function useSSE() {
-  const [currentSessionId, setCurrentSessionId] = useState<string>(initSessionId);
-  const [currentSourceId, setCurrentSourceId] = useState<string>(initSourceId);
-  const [sourceBound, setSourceBound] = useState<boolean>(initSourceBound);
+export function useSSE(requestedSessionId?: string) {
+  const initialSessionRef = useRef<InitialSessionState | null>(null);
+  if (!initialSessionRef.current) {
+    initialSessionRef.current = resolveInitialSessionState(requestedSessionId);
+  }
+  const initialSession = initialSessionRef.current;
+  const [currentSessionId, setCurrentSessionId] = useState<string>(
+    initialSession.id,
+  );
+  const [currentSourceId, setCurrentSourceId] = useState<string>(
+    initialSession.sourceId,
+  );
+  const [sourceBound, setSourceBound] = useState<boolean>(
+    initialSession.sourceBound,
+  );
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
   const [dataSourceError, setDataSourceError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const id = loadCurrentId();
-    if (!id) return [];
-    const sessions = loadAllSessions();
-    return sessions[id] || [];
-  });
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initialSession.messages,
+  );
   const [loading, setLoading] = useState(false);
   const [sessionList, setSessionList] = useState<SessionMeta[]>(() =>
     Object.values(loadAllMeta()).sort((a, b) => b.updatedAt - a.updatedAt),

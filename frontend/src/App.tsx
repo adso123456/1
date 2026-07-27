@@ -8,6 +8,10 @@ import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
 import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec } from './types';
+import {
+  clearWorkspaceSessionParam,
+  readWorkspaceSessionId,
+} from './appMode';
 
 type View = 'chat' | 'dashboard';
 
@@ -27,6 +31,10 @@ interface ToastState {
 }
 
 function App() {
+  const requestedSessionId = useMemo(
+    () => readWorkspaceSessionId(window.location.href),
+    [],
+  );
   const {
     messages,
     loading,
@@ -46,7 +54,7 @@ function App() {
     selectDataSource,
     dataSourceError,
     sourceBound,
-  } = useSSE();
+  } = useSSE(requestedSessionId);
   const {
     currentItems: dashboardItems,
     currentDashboardName,
@@ -69,6 +77,15 @@ function App() {
   const [pendingAdd, setPendingAdd] = useState<PendingAdd | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!requestedSessionId || currentSessionId !== requestedSessionId) return;
+    window.history.replaceState(
+      null,
+      '',
+      clearWorkspaceSessionParam(window.location.href),
+    );
+  }, [currentSessionId, requestedSessionId]);
 
   // 已加入仪表板的项目 ID 集合（用于对话框去重展示）
   const existingIds = useMemo(
