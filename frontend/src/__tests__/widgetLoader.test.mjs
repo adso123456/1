@@ -321,7 +321,7 @@ test('浮窗透传 compact 并恢复添加到仪表板回调', () => {
     'compact 未传递到 ChartView',
   );
   assert(
-    widgetAppSource.includes('onAddToDashboard={handleRequestAddToDashboard}'),
+    widgetAppSource.includes('dashboard ? handleRequestAddToDashboard : undefined'),
     'ChatArea 未收到 onAddToDashboard',
   );
   assert(widgetAppSource.includes('<AddToDashboardDialog'), '未复用添加弹窗');

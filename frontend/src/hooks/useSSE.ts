@@ -10,6 +10,16 @@ const SESSIONS_KEY = 'water_qa_sessions';
 const META_KEY = 'water_qa_session_meta';
 const CURRENT_ID_KEY = 'water_qa_current_id';
 
+export interface SessionStorageAdapter {
+  loadSessions: () => Record<string, ChatMessage[]>;
+  saveSessions: (data: Record<string, ChatMessage[]>) => boolean;
+  loadMeta: () => Record<string, SessionMeta>;
+  saveMeta: (data: Record<string, SessionMeta>) => boolean;
+  loadCurrentId: () => string;
+  saveCurrentId: (id: string) => void;
+  consumeReadError: () => string | null;
+}
+
 /** 写入失败统一文案（与读取失败文案不同，便于分类处理） */
 const STORAGE_WRITE_ERROR = '本地存储写入失败，新消息可能无法保存。请清理部分历史会话后刷新页面。';
 
@@ -175,6 +185,39 @@ function saveCurrentId(id: string) {
   try { localStorage.setItem(CURRENT_ID_KEY, id); } catch { /* quota exceeded */ }
 }
 
+const localSessionStorageAdapter: SessionStorageAdapter = {
+  loadSessions: loadAllSessions,
+  saveSessions: saveAllSessions,
+  loadMeta: loadAllMeta,
+  saveMeta: saveAllMeta,
+  loadCurrentId,
+  saveCurrentId,
+  consumeReadError: consumeStorageReadError,
+};
+
+export function createMemorySessionStorage(): SessionStorageAdapter {
+  let sessions: Record<string, ChatMessage[]> = {};
+  let metadata: Record<string, SessionMeta> = {};
+  let currentId = '';
+  return {
+    loadSessions: () => sessions,
+    saveSessions: data => {
+      sessions = data;
+      return true;
+    },
+    loadMeta: () => metadata,
+    saveMeta: data => {
+      metadata = data;
+      return true;
+    },
+    loadCurrentId: () => currentId,
+    saveCurrentId: id => {
+      currentId = id;
+    },
+    consumeReadError: () => null,
+  };
+}
+
 /** 从消息列表提取会话标题：第一条用户消息，截断 24 字 */
 function getSessionTitle(msgs: ChatMessage[]): string {
   const firstUser = msgs.find(m => m.role === 'user');
@@ -184,21 +227,27 @@ function getSessionTitle(msgs: ChatMessage[]): string {
 }
 
 /** 初始 sessionId：优先读 localStorage，否则生成新 ID */
-function initSessionId(): string {
-  const id = loadCurrentId();
+function initSessionId(storage: SessionStorageAdapter): string {
+  const id = storage.loadCurrentId();
   return id || `s_${Date.now()}`;
 }
 
-function initSourceId(id = loadCurrentId()): string {
+function initSourceId(
+  storage: SessionStorageAdapter,
+  id = storage.loadCurrentId(),
+): string {
   if (!id) return '';
-  return loadAllMeta()[id]?.sourceId || '';
+  return storage.loadMeta()[id]?.sourceId || '';
 }
 
-function initSourceBound(id = loadCurrentId()): boolean {
+function initSourceBound(
+  storage: SessionStorageAdapter,
+  id = storage.loadCurrentId(),
+): boolean {
   if (!id) return false;
-  const metadata = loadAllMeta()[id];
+  const metadata = storage.loadMeta()[id];
   if (metadata?.sourceBound !== undefined) return metadata.sourceBound;
-  return (loadAllSessions()[id]?.length || 0) > 0;
+  return (storage.loadSessions()[id]?.length || 0) > 0;
 }
 
 interface InitialSessionState {
@@ -210,9 +259,10 @@ interface InitialSessionState {
 
 export function resolveInitialSessionState(
   requestedSessionId?: string,
+  storage: SessionStorageAdapter = localSessionStorageAdapter,
 ): InitialSessionState {
-  const sessions = loadAllSessions();
-  const metadata = loadAllMeta();
+  const sessions = storage.loadSessions();
+  const metadata = storage.loadMeta();
   const requestedExists = Boolean(
     requestedSessionId
     && (
@@ -222,12 +272,12 @@ export function resolveInitialSessionState(
   );
   const id = requestedExists
     ? requestedSessionId!
-    : initSessionId();
+    : initSessionId(storage);
   return {
     id,
-    sourceId: metadata[id]?.sourceId || initSourceId(id),
+    sourceId: metadata[id]?.sourceId || initSourceId(storage, id),
     sourceBound: metadata[id]?.sourceBound
-      ?? initSourceBound(id),
+      ?? initSourceBound(storage, id),
     messages: sessions[id] || [],
   };
 }
@@ -615,6 +665,7 @@ export interface UseSSERequestOptions {
   chatEndpoint?: string;
   headersProvider?: () => Record<string, string>;
   onAuthorizationError?: () => void;
+  persistenceMode?: 'local' | 'memory';
 }
 
 export function useSSE(
@@ -630,9 +681,20 @@ export function useSSE(
   );
   const headersProvider = requestOptions?.headersProvider;
   const onAuthorizationError = requestOptions?.onAuthorizationError;
+  const persistenceMode = requestOptions?.persistenceMode ?? 'local';
+  const storageRef = useRef<SessionStorageAdapter | null>(null);
+  if (!storageRef.current) {
+    storageRef.current = persistenceMode === 'memory'
+      ? createMemorySessionStorage()
+      : localSessionStorageAdapter;
+  }
+  const storage = storageRef.current;
   const initialSessionRef = useRef<InitialSessionState | null>(null);
   if (!initialSessionRef.current) {
-    initialSessionRef.current = resolveInitialSessionState(requestedSessionId);
+    initialSessionRef.current = resolveInitialSessionState(
+      requestedSessionId,
+      storage,
+    );
   }
   const initialSession = initialSessionRef.current;
   const [currentSessionId, setCurrentSessionId] = useState<string>(
@@ -651,7 +713,7 @@ export function useSSE(
   );
   const [loading, setLoading] = useState(false);
   const [sessionList, setSessionList] = useState<SessionMeta[]>(() =>
-    Object.values(loadAllMeta()).sort((a, b) => b.updatedAt - a.updatedAt),
+    Object.values(storage.loadMeta()).sort((a, b) => b.updatedAt - a.updatedAt),
   );
   const abortRef = useRef<AbortController | null>(null);
   const lastDataRef = useRef<{ columns: string[]; rows: Array<Record<string, unknown>> } | null>(null);
@@ -659,7 +721,9 @@ export function useSSE(
   const dataVersionRef = useRef<number>(0);
 
   // localStorage 读写错误提示状态
-  const [storageError, setStorageError] = useState<string | null>(() => consumeStorageReadError());
+  const [storageError, setStorageError] = useState<string | null>(
+    () => storage.consumeReadError(),
+  );
   const clearStorageError = useCallback(() => setStorageError(null), []);
 
   useEffect(() => {
@@ -689,7 +753,7 @@ export function useSSE(
           if (sources.some(source => source.source_id === current)) {
             return current;
           }
-          const saved = loadAllMeta()[loadCurrentId()]?.sourceId;
+          const saved = storage.loadMeta()[storage.loadCurrentId()]?.sourceId;
           return resolveSessionSourceId(saved, sources);
         });
       })
@@ -704,18 +768,19 @@ export function useSSE(
     headersProvider,
     onAuthorizationError,
     requestsEnabled,
+    storage,
   ]);
 
-  /** 流式结束后自动保存当前会话到 localStorage */
+  /** 流式结束后通过当前存储适配器保存会话 */
   useEffect(() => {
     if (loading) return;
     if (!currentSessionId) return;
 
-    const all = loadAllSessions();
+    const all = storage.loadSessions();
     all[currentSessionId] = messages;
-    const sessionsOk = saveAllSessions(all);
+    const sessionsOk = storage.saveSessions(all);
 
-    const allMeta = loadAllMeta();
+    const allMeta = storage.loadMeta();
     const existing = allMeta[currentSessionId];
     allMeta[currentSessionId] = {
       id: currentSessionId,
@@ -725,8 +790,8 @@ export function useSSE(
       sourceId: currentSourceId || existing?.sourceId,
       sourceBound: sourceBound || existing?.sourceBound || false,
     };
-    const metaOk = saveAllMeta(allMeta);
-    saveCurrentId(currentSessionId);
+    const metaOk = storage.saveMeta(allMeta);
+    storage.saveCurrentId(currentSessionId);
 
     // 任一写入失败 → 提示用户
     // 全部成功 → 仅清除写入失败错误，不清除读取失败错误
@@ -737,18 +802,25 @@ export function useSSE(
     }
 
     setSessionList(Object.values(allMeta).sort((a, b) => b.updatedAt - a.updatedAt));
-  }, [messages, loading, currentSessionId, currentSourceId, sourceBound]);
+  }, [
+    messages,
+    loading,
+    currentSessionId,
+    currentSourceId,
+    sourceBound,
+    storage,
+  ]);
 
   /** 创建新会话并切换 */
   const createNewSession = useCallback(() => {
     if (loading) return;
 
     // 保存当前会话
-    const all = loadAllSessions();
+    const all = storage.loadSessions();
     all[currentSessionId] = messages;
-    const sessionsOk = saveAllSessions(all);
+    const sessionsOk = storage.saveSessions(all);
 
-    const allMeta = loadAllMeta();
+    const allMeta = storage.loadMeta();
     if (messages.length > 0) {
       allMeta[currentSessionId] = {
         id: currentSessionId,
@@ -759,7 +831,7 @@ export function useSSE(
         sourceBound: sourceBound || allMeta[currentSessionId]?.sourceBound || false,
       };
     }
-    const metaOk = saveAllMeta(allMeta);
+    const metaOk = storage.saveMeta(allMeta);
 
     if (!sessionsOk || !metaOk) {
       setStorageError(STORAGE_WRITE_ERROR);
@@ -770,23 +842,32 @@ export function useSSE(
     setMessages([]);
     setCurrentSessionId(newId);
     setSourceBound(false);
-    saveCurrentId(newId);
+    storage.saveCurrentId(newId);
     lastDataRef.current = null;
     lastConvIdRef.current = '';
 
-    setSessionList(Object.values(loadAllMeta()).sort((a, b) => b.updatedAt - a.updatedAt));
-  }, [currentSessionId, currentSourceId, messages, loading, sourceBound]);
+    setSessionList(
+      Object.values(storage.loadMeta()).sort((a, b) => b.updatedAt - a.updatedAt),
+    );
+  }, [
+    currentSessionId,
+    currentSourceId,
+    messages,
+    loading,
+    sourceBound,
+    storage,
+  ]);
 
   /** 切换到指定历史会话（立即保存当前会话，不触发 SSE） */
   const switchToSession = useCallback((id: string) => {
     if (loading || id === currentSessionId) return;
 
     // 保存当前会话
-    const all = loadAllSessions();
+    const all = storage.loadSessions();
     all[currentSessionId] = messages;
-    const sessionsOk = saveAllSessions(all);
+    const sessionsOk = storage.saveSessions(all);
 
-    const allMeta = loadAllMeta();
+    const allMeta = storage.loadMeta();
     if (messages.length > 0) {
       allMeta[currentSessionId] = {
         id: currentSessionId,
@@ -797,7 +878,7 @@ export function useSSE(
         sourceBound: sourceBound || allMeta[currentSessionId]?.sourceBound || false,
       };
     }
-    const metaOk = saveAllMeta(allMeta);
+    const metaOk = storage.saveMeta(allMeta);
 
     if (!sessionsOk || !metaOk) {
       setStorageError(STORAGE_WRITE_ERROR);
@@ -812,23 +893,33 @@ export function useSSE(
       dataSources,
     ));
     setSourceBound(allMeta[id]?.sourceBound ?? target.length > 0);
-    saveCurrentId(id);
+    storage.saveCurrentId(id);
     lastDataRef.current = null;
     lastConvIdRef.current = '';
 
-    setSessionList(Object.values(loadAllMeta()).sort((a, b) => b.updatedAt - a.updatedAt));
-  }, [currentSessionId, currentSourceId, dataSources, messages, loading, sourceBound]);
+    setSessionList(
+      Object.values(storage.loadMeta()).sort((a, b) => b.updatedAt - a.updatedAt),
+    );
+  }, [
+    currentSessionId,
+    currentSourceId,
+    dataSources,
+    messages,
+    loading,
+    sourceBound,
+    storage,
+  ]);
 
-  /** 删除指定会话（同步清除 localStorage + 必要时切换当前会话） */
+  /** 删除指定会话（同步清除当前存储 + 必要时切换当前会话） */
   const deleteSession = useCallback((id: string) => {
-    // 从 localStorage 移除消息和元数据
-    const all = loadAllSessions();
+    // 从当前存储移除消息和元数据
+    const all = storage.loadSessions();
     delete all[id];
-    const sessionsOk = saveAllSessions(all);
+    const sessionsOk = storage.saveSessions(all);
 
-    const allMeta = loadAllMeta();
+    const allMeta = storage.loadMeta();
     delete allMeta[id];
-    const metaOk = saveAllMeta(allMeta);
+    const metaOk = storage.saveMeta(allMeta);
 
     if (!sessionsOk || !metaOk) {
       setStorageError(STORAGE_WRITE_ERROR);
@@ -853,7 +944,7 @@ export function useSSE(
         setSourceBound(
           allMeta[nextId]?.sourceBound ?? target.length > 0
         );
-        saveCurrentId(nextId);
+        storage.saveCurrentId(nextId);
       } else {
         // 无剩余会话 → 进入新空白会话
         const newId = `s_${Date.now()}`;
@@ -861,12 +952,12 @@ export function useSSE(
         setCurrentSessionId(newId);
         setCurrentSourceId(resolveSessionSourceId(undefined, dataSources));
         setSourceBound(false);
-        saveCurrentId(newId);
+        storage.saveCurrentId(newId);
       }
       lastDataRef.current = null;
       lastConvIdRef.current = '';
     }
-  }, [currentSessionId, dataSources]);
+  }, [currentSessionId, dataSources, storage]);
 
   const selectDataSource = useCallback((sourceId: string): boolean => {
     if (

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { ChatArea } from './components/ChatArea';
 import {
@@ -6,7 +12,10 @@ import {
   resolveWidgetAccessMode,
 } from './appMode';
 import { useDashboard } from './hooks/useDashboard';
-import { useSSE } from './hooks/useSSE';
+import {
+  useSSE,
+  type UseSSERequestOptions,
+} from './hooks/useSSE';
 import {
   createWidgetDashboardChartItem,
   type WidgetDashboardPayload,
@@ -16,70 +25,119 @@ import {
   postWidgetMessage,
   readWidgetAuthMessage,
   readWidgetEmbedContext,
+  type WidgetEmbedContext,
 } from './widgetMessageProtocol';
 
 type DashboardTarget =
   | { mode: 'existing'; dashboardId: string }
   | { mode: 'new'; name: string };
 
-export function WidgetApp() {
-  const embedContext = useMemo(
-    () => readWidgetEmbedContext(window.location.href),
-    [],
+type DashboardActions = ReturnType<typeof useDashboard>;
+
+interface WidgetChatProps {
+  embedContext: WidgetEmbedContext;
+  requestOptions?: UseSSERequestOptions;
+  dashboard?: DashboardActions;
+  workspaceEnabled: boolean;
+}
+
+function requestWidgetMinimize(context: WidgetEmbedContext | null): void {
+  if (!context) return;
+  postWidgetMessage(
+    window.parent,
+    context,
+    'water-agent-widget:minimize',
   );
-  const widgetAccessMode = useMemo(
-    () => resolveWidgetAccessMode(
-      window.location.href,
-      window.location.origin,
-      import.meta.env.DEV,
-    ),
-    [],
+}
+
+function WidgetHeader({
+  onNewSession,
+  newSessionDisabled,
+  workspaceUrl,
+  embedContext,
+}: {
+  onNewSession?: () => void;
+  newSessionDisabled?: boolean;
+  workspaceUrl?: string;
+  embedContext: WidgetEmbedContext | null;
+}) {
+  return (
+    <header className="widget-header">
+      <div className="widget-title-block">
+        <span className="widget-status-dot" aria-hidden="true" />
+        <div>
+          <strong>智能问数</strong>
+          <span>水利数据助手</span>
+        </div>
+      </div>
+      <div className="widget-header-actions">
+        {onNewSession && (
+          <button
+            type="button"
+            onClick={onNewSession}
+            disabled={newSessionDisabled}
+            title="新建会话"
+          >
+            新建
+          </button>
+        )}
+        {workspaceUrl && (
+          <a
+            href={workspaceUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="在新标签页打开完整工作台"
+          >
+            完整工作台
+          </a>
+        )}
+        {embedContext && (
+          <button
+            type="button"
+            className="widget-icon-button"
+            onClick={() => requestWidgetMinimize(embedContext)}
+            title="最小化"
+            aria-label="最小化智能问数"
+          >
+            —
+          </button>
+        )}
+      </div>
+    </header>
   );
-  const localDevelopmentMode = widgetAccessMode === 'local-development';
-  const protectedMode = widgetAccessMode === 'protected';
-  const [embedAuth, setEmbedAuth] = useState<{
-    status: 'waiting' | 'authorized' | 'error';
-    token: string;
-    expiresAt: number;
-  }>(() => ({
-    status: localDevelopmentMode
-      ? 'authorized'
-      : protectedMode
-        ? 'waiting'
-        : 'error',
-    token: '',
-    expiresAt: 0,
-  }));
-  const handleAuthorizationError = useCallback(() => {
-    setEmbedAuth(current => ({ ...current, status: 'error', token: '' }));
-    if (embedContext) {
-      postWidgetMessage(
-        window.parent,
-        embedContext,
-        'water-agent-widget:auth-required',
-      );
-    }
-  }, [embedContext]);
-  const requestOptions = useMemo(() => {
-    if (localDevelopmentMode) return undefined;
-    return {
-      enabled: protectedMode && embedAuth.status === 'authorized',
-      dataSourcesEndpoint: '/api/embed/data-sources',
-      chatEndpoint: '/api/embed/vanna/v2/chat_sse',
-      headersProvider: () => ({
-        Authorization: `Bearer ${embedAuth.token}`,
-        'X-Water-Agent-Parent-Origin': embedContext?.parentOrigin || '',
-      }),
-      onAuthorizationError: handleAuthorizationError,
-    };
-  }, [
-    localDevelopmentMode,
-    protectedMode,
-    embedAuth.status,
-    embedAuth.token,
-    embedContext,
-    handleAuthorizationError,
-  ]);
+}
+
+export function WidgetAccessView({
+  embedContext,
+  status,
+}: {
+  embedContext: WidgetEmbedContext | null;
+  status: 'invalid' | 'waiting' | 'error';
+}) {
+  const message = status === 'invalid'
+    ? '无效的嵌入访问入口'
+    : status === 'error'
+      ? '嵌入访问验证失败，请联系系统管理员。'
+      : '正在验证嵌入访问权限';
+  return (
+    <div className="widget-shell">
+      <WidgetHeader embedContext={embedContext} />
+      <div
+        className="widget-error"
+        role={status === 'waiting' ? 'status' : 'alert'}
+      >
+        {message}
+      </div>
+    </div>
+  );
+}
+
+export function WidgetChat({
+  embedContext,
+  requestOptions,
+  dashboard,
+  workspaceEnabled,
+}: WidgetChatProps) {
   const {
     messages,
     loading,
@@ -98,14 +156,10 @@ export function WidgetApp() {
     dataSourceError,
     sourceBound,
   } = useSSE(undefined, requestOptions);
-  const {
-    dashboards,
-    currentDashboardId,
-    addItemsToDashboard,
-    createDashboardWithItems,
-  } = useDashboard();
-  const [pendingAdd, setPendingAdd] = useState<WidgetDashboardPayload | null>(null);
-  const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
+  const [pendingAdd, setPendingAdd] =
+    useState<WidgetDashboardPayload | null>(null);
+  const [notice, setNotice] =
+    useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (!notice?.ok) return;
@@ -113,85 +167,36 @@ export function WidgetApp() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  useEffect(() => {
-    if (!embedContext || widgetAccessMode === 'invalid') return;
-    const handleWidgetMessage = (event: MessageEvent) => {
-      const auth = readWidgetAuthMessage(
-        event,
-        embedContext,
-        window.parent,
-      );
-      if (auth) {
-        if (auth.expiresAt <= Math.floor(Date.now() / 1000)) {
-          setEmbedAuth({ status: 'error', token: '', expiresAt: 0 });
-        } else {
-          setEmbedAuth({
-            status: 'authorized',
-            token: auth.token,
-            expiresAt: auth.expiresAt,
-          });
-        }
-        return;
-      }
-      if (
-        !isWidgetMessage(
-          event,
-          embedContext,
-          'water-agent-widget:opened',
-          window.parent,
-        )
-      ) {
-        return;
-      }
-      window.dispatchEvent(new Event('water-agent-widget:opened'));
-    };
-    window.addEventListener('message', handleWidgetMessage);
-    postWidgetMessage(window.parent, embedContext, 'water-agent-widget:ready');
-    return () => {
-      window.removeEventListener('message', handleWidgetMessage);
-    };
-  }, [embedContext, widgetAccessMode]);
-
   const currentSessionExists = sessionList.some(
     session => session.id === currentSessionId,
   );
-
-  const workspaceUrl = localDevelopmentMode
+  const workspaceUrl = workspaceEnabled
     ? buildWorkspaceUrl(window.location.origin, currentSessionId)
     : undefined;
-  const interactionEnabled = embedAuth.status === 'authorized';
-
-  const requestWidgetClose = useCallback(() => {
-    if (!embedContext) return;
-    postWidgetMessage(
-      window.parent,
-      embedContext,
-      'water-agent-widget:minimize',
-    );
-  }, [embedContext]);
 
   const handleRequestAddToDashboard = useCallback(
     (payload: WidgetDashboardPayload) => {
+      if (!dashboard) return;
       setNotice(null);
       setPendingAdd(payload);
     },
-    [],
+    [dashboard],
   );
 
   const handleConfirmAddToDashboard = useCallback(
     (target: DashboardTarget) => {
-      if (!pendingAdd) return;
+      if (!pendingAdd || !dashboard) return;
       const item = createWidgetDashboardChartItem(
         pendingAdd,
         currentSessionId,
       );
       const targetId = target.mode === 'existing'
         ? (
-            addItemsToDashboard(target.dashboardId, [item])
+            dashboard.addItemsToDashboard(target.dashboardId, [item])
               ? target.dashboardId
               : null
           )
-        : createDashboardWithItems(target.name, [item]);
+        : dashboard.createDashboardWithItems(target.name, [item]);
 
       setPendingAdd(null);
       setNotice(targetId
@@ -201,54 +206,17 @@ export function WidgetApp() {
             message: '添加失败，localStorage 可能已满或仪表板不存在，请重试。',
           });
     },
-    [
-      addItemsToDashboard,
-      createDashboardWithItems,
-      currentSessionId,
-      pendingAdd,
-    ],
+    [currentSessionId, dashboard, pendingAdd],
   );
 
   return (
     <div className="widget-shell">
-      <header className="widget-header">
-        <div className="widget-title-block">
-          <span className="widget-status-dot" aria-hidden="true" />
-          <div>
-            <strong>智能问数</strong>
-            <span>水利数据助手</span>
-          </div>
-        </div>
-        <div className="widget-header-actions">
-          <button
-            type="button"
-            onClick={createNewSession}
-            disabled={loading || !interactionEnabled}
-            title="新建会话"
-          >
-            新建
-          </button>
-          {workspaceUrl && (
-            <a
-              href={workspaceUrl}
-              target="_blank"
-              rel="noreferrer"
-              title="在新标签页打开完整工作台"
-            >
-              完整工作台
-            </a>
-          )}
-          <button
-            type="button"
-            className="widget-icon-button"
-            onClick={requestWidgetClose}
-            title="最小化"
-            aria-label="最小化智能问数"
-          >
-            —
-          </button>
-        </div>
-      </header>
+      <WidgetHeader
+        embedContext={embedContext}
+        onNewSession={createNewSession}
+        newSessionDisabled={loading}
+        workspaceUrl={workspaceUrl}
+      />
 
       <div className="widget-session-bar">
         <label>
@@ -256,7 +224,7 @@ export function WidgetApp() {
           <select
             aria-label="选择会话"
             value={currentSessionId}
-            disabled={loading || !interactionEnabled}
+            disabled={loading}
             onChange={event => switchToSession(event.target.value)}
           >
             {!currentSessionExists && (
@@ -276,7 +244,7 @@ export function WidgetApp() {
             <select
               aria-label="选择数据源"
               value={currentSourceId}
-              disabled={loading || sourceBound || !interactionEnabled}
+              disabled={loading || sourceBound}
               onChange={event => selectDataSource(event.target.value)}
             >
               <option value="">请选择</option>
@@ -294,19 +262,6 @@ export function WidgetApp() {
         </label>
       </div>
 
-      {!localDevelopmentMode && embedAuth.status !== 'authorized' && (
-        <div
-          className="widget-error"
-          role={embedAuth.status === 'error' ? 'alert' : 'status'}
-        >
-          {widgetAccessMode === 'invalid'
-            ? '无效的嵌入访问入口'
-            : embedAuth.status === 'error'
-              ? '嵌入访问验证失败，请联系系统管理员。'
-            : '正在验证嵌入访问权限'}
-        </div>
-      )}
-
       {(dataSourceError || storageError) && (
         <div className="widget-error" role="alert">
           {dataSourceError || storageError}
@@ -322,18 +277,19 @@ export function WidgetApp() {
           onClear={clearMessages}
           onChangeChartType={() => {}}
           onV2ChartSwitch={replaceMessageChart}
-          onAddToDashboard={handleRequestAddToDashboard}
+          onAddToDashboard={
+            dashboard ? handleRequestAddToDashboard : undefined
+          }
           compact
           workspaceUrl={workspaceUrl}
           hideHeader
-          disabled={!interactionEnabled}
         />
       </div>
 
-      {pendingAdd && (
+      {pendingAdd && dashboard && (
         <AddToDashboardDialog
-          dashboards={dashboards}
-          currentDashboardId={currentDashboardId}
+          dashboards={dashboard.dashboards}
+          currentDashboardId={dashboard.currentDashboardId}
           onConfirm={handleConfirmAddToDashboard}
           onClose={() => setPendingAdd(null)}
         />
@@ -356,4 +312,181 @@ export function WidgetApp() {
       )}
     </div>
   );
+}
+
+function DevelopmentWidgetChat({
+  embedContext,
+}: {
+  embedContext: WidgetEmbedContext;
+}) {
+  const dashboard = useDashboard();
+
+  useEffect(() => {
+    const handleWidgetMessage = (event: MessageEvent) => {
+      if (
+        isWidgetMessage(
+          event,
+          embedContext,
+          'water-agent-widget:opened',
+          window.parent,
+        )
+      ) {
+        window.dispatchEvent(new Event('water-agent-widget:opened'));
+      }
+    };
+    window.addEventListener('message', handleWidgetMessage);
+    postWidgetMessage(window.parent, embedContext, 'water-agent-widget:ready');
+    return () => {
+      window.removeEventListener('message', handleWidgetMessage);
+    };
+  }, [embedContext]);
+
+  return (
+    <WidgetChat
+      embedContext={embedContext}
+      dashboard={dashboard}
+      workspaceEnabled
+    />
+  );
+}
+
+function ProtectedWidgetGate({
+  embedContext,
+}: {
+  embedContext: WidgetEmbedContext;
+}) {
+  const [embedAuth, setEmbedAuth] = useState<{
+    status: 'waiting' | 'authorized' | 'error';
+    token: string;
+    expiresAt: number;
+  }>({
+    status: 'waiting',
+    token: '',
+    expiresAt: 0,
+  });
+  const [authGeneration, setAuthGeneration] = useState(0);
+  const authRequiredSentRef = useRef(false);
+
+  const handleAuthorizationError = useCallback(() => {
+    setEmbedAuth({ status: 'error', token: '', expiresAt: 0 });
+    if (authRequiredSentRef.current) return;
+    authRequiredSentRef.current = true;
+    postWidgetMessage(
+      window.parent,
+      embedContext,
+      'water-agent-widget:auth-required',
+    );
+  }, [embedContext]);
+
+  useEffect(() => {
+    const handleWidgetMessage = (event: MessageEvent) => {
+      const auth = readWidgetAuthMessage(
+        event,
+        embedContext,
+        window.parent,
+      );
+      if (auth) {
+        if (auth.expiresAt <= Math.floor(Date.now() / 1000)) {
+          handleAuthorizationError();
+        } else {
+          authRequiredSentRef.current = false;
+          setAuthGeneration(current => current + 1);
+          setEmbedAuth({
+            status: 'authorized',
+            token: auth.token,
+            expiresAt: auth.expiresAt,
+          });
+        }
+        return;
+      }
+      if (
+        isWidgetMessage(
+          event,
+          embedContext,
+          'water-agent-widget:opened',
+          window.parent,
+        )
+      ) {
+        window.dispatchEvent(new Event('water-agent-widget:opened'));
+      }
+    };
+    window.addEventListener('message', handleWidgetMessage);
+    postWidgetMessage(window.parent, embedContext, 'water-agent-widget:ready');
+    return () => {
+      window.removeEventListener('message', handleWidgetMessage);
+    };
+  }, [embedContext, handleAuthorizationError]);
+
+  useEffect(() => {
+    if (embedAuth.status !== 'authorized') return;
+    const delay = Math.max(0, embedAuth.expiresAt * 1000 - Date.now());
+    const timer = window.setTimeout(handleAuthorizationError, delay);
+    return () => window.clearTimeout(timer);
+  }, [
+    embedAuth.expiresAt,
+    embedAuth.status,
+    handleAuthorizationError,
+  ]);
+
+  const requestOptions = useMemo<UseSSERequestOptions>(() => ({
+    enabled: true,
+    dataSourcesEndpoint: '/api/embed/data-sources',
+    chatEndpoint: '/api/embed/vanna/v2/chat_sse',
+    headersProvider: () => ({
+      Authorization: `Bearer ${embedAuth.token}`,
+      'X-Water-Agent-Parent-Origin': embedContext.parentOrigin,
+    }),
+    onAuthorizationError: handleAuthorizationError,
+    persistenceMode: 'memory',
+  }), [
+    embedAuth.token,
+    embedContext.parentOrigin,
+    handleAuthorizationError,
+  ]);
+
+  if (embedAuth.status !== 'authorized') {
+    return (
+      <WidgetAccessView
+        embedContext={embedContext}
+        status={embedAuth.status}
+      />
+    );
+  }
+
+  return (
+    <WidgetChat
+      key={authGeneration}
+      embedContext={embedContext}
+      requestOptions={requestOptions}
+      workspaceEnabled={false}
+    />
+  );
+}
+
+export function WidgetApp() {
+  const embedContext = useMemo(
+    () => readWidgetEmbedContext(window.location.href),
+    [],
+  );
+  const widgetAccessMode = useMemo(
+    () => resolveWidgetAccessMode(
+      window.location.href,
+      window.location.origin,
+      import.meta.env.DEV,
+    ),
+    [],
+  );
+
+  if (widgetAccessMode === 'invalid' || !embedContext) {
+    return (
+      <WidgetAccessView
+        embedContext={embedContext}
+        status="invalid"
+      />
+    );
+  }
+  if (widgetAccessMode === 'local-development') {
+    return <DevelopmentWidgetChat embedContext={embedContext} />;
+  }
+  return <ProtectedWidgetGate embedContext={embedContext} />;
 }

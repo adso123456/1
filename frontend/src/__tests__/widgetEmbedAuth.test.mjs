@@ -225,11 +225,15 @@ await test('Token 获取失败显示明确错误且不会发送鉴权消息', as
 
 await test('嵌入请求在鉴权前禁用，鉴权后使用独立端点和请求头', () => {
   assert(widgetAppSource.includes("status: 'waiting'"), '缺少鉴权等待状态');
-  assert(widgetAppSource.includes("enabled: protectedMode && embedAuth.status === 'authorized'"), '鉴权前未阻止请求');
+  assert(
+    widgetAppSource.includes("if (embedAuth.status !== 'authorized')"),
+    '鉴权前未隔离聊天组件',
+  );
   assert(widgetAppSource.includes("dataSourcesEndpoint: '/api/embed/data-sources'"), '未使用嵌入数据源端点');
   assert(widgetAppSource.includes("chatEndpoint: '/api/embed/vanna/v2/chat_sse'"), '未使用嵌入聊天端点');
   assert(widgetAppSource.includes('Authorization: `Bearer ${embedAuth.token}`'), '未发送 Bearer Token');
-  assert(widgetAppSource.includes("'X-Water-Agent-Parent-Origin': embedContext?.parentOrigin || ''"), '未发送宿主 Origin');
+  assert(widgetAppSource.includes("'X-Water-Agent-Parent-Origin': embedContext.parentOrigin"), '未发送宿主 Origin');
+  assert(widgetAppSource.includes("persistenceMode: 'memory'"), '受保护会话未使用内存存储');
   assert(useSseSource.includes('if (!requestsEnabled) return;'), 'useSSE 未在鉴权前停止请求');
 });
 
@@ -239,11 +243,12 @@ await test('无效 Widget 失败关闭且受保护模式不生成普通工作台
     '缺少无效入口状态',
   );
   assert(
-    widgetAppSource.includes("enabled: protectedMode && embedAuth.status === 'authorized'"),
-    '无效或未鉴权 Widget 仍可能请求 API',
+    widgetAppSource.includes('<WidgetAccessView')
+      && widgetAppSource.includes('<ProtectedWidgetGate'),
+    '无效或未鉴权 Widget 未与聊天组件分离',
   );
   assert(
-    widgetAppSource.includes("const workspaceUrl = localDevelopmentMode"),
+    widgetAppSource.includes('workspaceEnabled={false}'),
     '工作台 URL 未限制到本地开发模式',
   );
   assert(
