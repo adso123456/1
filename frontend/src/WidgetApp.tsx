@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { ChatArea } from './components/ChatArea';
-import { buildWorkspaceUrl } from './appMode';
+import {
+  buildWorkspaceUrl,
+  resolveWidgetAccessMode,
+} from './appMode';
 import { useDashboard } from './hooks/useDashboard';
 import { useSSE } from './hooks/useSSE';
 import {
@@ -24,16 +27,26 @@ export function WidgetApp() {
     () => readWidgetEmbedContext(window.location.href),
     [],
   );
-  const developmentMode = (
-    !embedContext
-    || embedContext.parentOrigin === window.location.origin
+  const widgetAccessMode = useMemo(
+    () => resolveWidgetAccessMode(
+      window.location.href,
+      window.location.origin,
+      import.meta.env.DEV,
+    ),
+    [],
   );
+  const localDevelopmentMode = widgetAccessMode === 'local-development';
+  const protectedMode = widgetAccessMode === 'protected';
   const [embedAuth, setEmbedAuth] = useState<{
     status: 'waiting' | 'authorized' | 'error';
     token: string;
     expiresAt: number;
   }>(() => ({
-    status: developmentMode ? 'authorized' : 'waiting',
+    status: localDevelopmentMode
+      ? 'authorized'
+      : protectedMode
+        ? 'waiting'
+        : 'error',
     token: '',
     expiresAt: 0,
   }));
@@ -48,19 +61,20 @@ export function WidgetApp() {
     }
   }, [embedContext]);
   const requestOptions = useMemo(() => {
-    if (developmentMode) return undefined;
+    if (localDevelopmentMode) return undefined;
     return {
-      enabled: embedAuth.status === 'authorized',
+      enabled: protectedMode && embedAuth.status === 'authorized',
       dataSourcesEndpoint: '/api/embed/data-sources',
       chatEndpoint: '/api/embed/vanna/v2/chat_sse',
       headersProvider: () => ({
         Authorization: `Bearer ${embedAuth.token}`,
-        'X-Water-Agent-Parent-Origin': embedContext!.parentOrigin,
+        'X-Water-Agent-Parent-Origin': embedContext?.parentOrigin || '',
       }),
       onAuthorizationError: handleAuthorizationError,
     };
   }, [
-    developmentMode,
+    localDevelopmentMode,
+    protectedMode,
     embedAuth.status,
     embedAuth.token,
     embedContext,
@@ -100,7 +114,7 @@ export function WidgetApp() {
   }, [notice]);
 
   useEffect(() => {
-    if (!embedContext) return;
+    if (!embedContext || widgetAccessMode === 'invalid') return;
     const handleWidgetMessage = (event: MessageEvent) => {
       const auth = readWidgetAuthMessage(
         event,
@@ -136,16 +150,16 @@ export function WidgetApp() {
     return () => {
       window.removeEventListener('message', handleWidgetMessage);
     };
-  }, [embedContext]);
+  }, [embedContext, widgetAccessMode]);
 
   const currentSessionExists = sessionList.some(
     session => session.id === currentSessionId,
   );
 
-  const workspaceUrl = buildWorkspaceUrl(
-    window.location.origin,
-    currentSessionId,
-  );
+  const workspaceUrl = localDevelopmentMode
+    ? buildWorkspaceUrl(window.location.origin, currentSessionId)
+    : undefined;
+  const interactionEnabled = embedAuth.status === 'authorized';
 
   const requestWidgetClose = useCallback(() => {
     if (!embedContext) return;
@@ -209,19 +223,21 @@ export function WidgetApp() {
           <button
             type="button"
             onClick={createNewSession}
-            disabled={loading || embedAuth.status !== 'authorized'}
+            disabled={loading || !interactionEnabled}
             title="新建会话"
           >
             新建
           </button>
-          <a
-            href={workspaceUrl}
-            target="_blank"
-            rel="noreferrer"
-            title="在新标签页打开完整工作台"
-          >
-            完整工作台
-          </a>
+          {workspaceUrl && (
+            <a
+              href={workspaceUrl}
+              target="_blank"
+              rel="noreferrer"
+              title="在新标签页打开完整工作台"
+            >
+              完整工作台
+            </a>
+          )}
           <button
             type="button"
             className="widget-icon-button"
@@ -240,7 +256,7 @@ export function WidgetApp() {
           <select
             aria-label="选择会话"
             value={currentSessionId}
-            disabled={loading}
+            disabled={loading || !interactionEnabled}
             onChange={event => switchToSession(event.target.value)}
           >
             {!currentSessionExists && (
@@ -260,7 +276,7 @@ export function WidgetApp() {
             <select
               aria-label="选择数据源"
               value={currentSourceId}
-              disabled={loading || sourceBound}
+              disabled={loading || sourceBound || !interactionEnabled}
               onChange={event => selectDataSource(event.target.value)}
             >
               <option value="">请选择</option>
@@ -278,13 +294,15 @@ export function WidgetApp() {
         </label>
       </div>
 
-      {!developmentMode && embedAuth.status !== 'authorized' && (
+      {!localDevelopmentMode && embedAuth.status !== 'authorized' && (
         <div
           className="widget-error"
           role={embedAuth.status === 'error' ? 'alert' : 'status'}
         >
-          {embedAuth.status === 'error'
-            ? '嵌入访问验证失败，请联系系统管理员。'
+          {widgetAccessMode === 'invalid'
+            ? '无效的嵌入访问入口'
+            : embedAuth.status === 'error'
+              ? '嵌入访问验证失败，请联系系统管理员。'
             : '正在验证嵌入访问权限'}
         </div>
       )}
@@ -308,7 +326,7 @@ export function WidgetApp() {
           compact
           workspaceUrl={workspaceUrl}
           hideHeader
-          disabled={embedAuth.status !== 'authorized'}
+          disabled={!interactionEnabled}
         />
       </div>
 

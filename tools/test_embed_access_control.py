@@ -8,6 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import jwt
 from fastapi.testclient import TestClient
@@ -51,6 +52,8 @@ class FakeComponent:
 class FakeAgent:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.request_contexts: list[Any] = []
+        self.failure_message: str | None = None
 
     async def send_message(
         self,
@@ -60,6 +63,9 @@ class FakeAgent:
         conversation_id: str,
     ):
         self.calls.append((conversation_id, message))
+        self.request_contexts.append(request_context)
+        if self.failure_message:
+            raise RuntimeError(self.failure_message)
         yield FakeComponent()
 
 
@@ -310,10 +316,25 @@ def main() -> int:
             "metadata": {"source_id": SOURCE_ID},
         }
         with TestClient(app) as client:
+            missing_source_body = {
+                "message": "missing source",
+                "conversation_id": "missing-source",
+                "metadata": {},
+            }
+            unknown_source_body = {
+                "message": "unknown source",
+                "conversation_id": "unknown-source",
+                "metadata": {"source_id": "unknown-source"},
+            }
             negative_responses = [
-                client.get(
-                    "/api/embed/data-sources",
+                client.post(
+                    "/api/embed/vanna/v2/chat_sse",
+                    json=missing_source_body,
+                ),
+                client.post(
+                    "/api/embed/vanna/v2/chat_sse",
                     headers={"X-Water-Agent-Parent-Origin": ORIGIN},
+                    json=missing_source_body,
                 ),
                 client.post(
                     "/api/embed/vanna/v2/chat_sse",
@@ -321,7 +342,7 @@ def main() -> int:
                         **headers,
                         "Authorization": f"Bearer {tamper_token(valid_token)}",
                     },
-                    json=body,
+                    json=unknown_source_body,
                 ),
                 client.post(
                     "/api/embed/vanna/v2/chat_sse",
@@ -342,18 +363,19 @@ def main() -> int:
                 client.post(
                     "/api/embed/vanna/v2/chat_sse",
                     headers=headers,
-                    json={
-                        "message": "missing source",
-                        "conversation_id": "missing-source",
-                        "metadata": {},
-                    },
+                    json=missing_source_body,
+                ),
+                client.post(
+                    "/api/embed/vanna/v2/chat_sse",
+                    headers=headers,
+                    json=unknown_source_body,
                 ),
             ]
             results.append(
                 (
                     "无 Token、无效 Token、错误 Origin、禁止或缺失数据源均在 Agent 前拒绝",
                     [response.status_code for response in negative_responses]
-                    == [401, 401, 403, 403, 400]
+                    == [401, 401, 401, 403, 403, 400, 400]
                     and factory_calls["count"] == 0
                     and agent.calls == [],
                     repr(
@@ -382,10 +404,24 @@ def main() -> int:
                 )
             )
 
+            context_headers = {
+                **headers,
+                "Proxy-Authorization": "Bearer proxy-secret",
+                "User-Agent": "embed-test-agent",
+                "Accept-Language": "zh-CN",
+                "Cookie": "embed_session=sensitive-cookie",
+            }
             response = client.post(
                 "/api/embed/vanna/v2/chat_sse",
-                headers=headers,
-                json=body,
+                headers=context_headers,
+                json={
+                    **body,
+                    "metadata": {
+                        "source_id": SOURCE_ID,
+                        "token": valid_token,
+                        "app_secret": SECRET,
+                    },
+                },
             )
             sse_lines = [
                 line[6:]
@@ -406,9 +442,68 @@ def main() -> int:
                     response.text,
                 )
             )
+            embed_context = agent.request_contexts[-1]
+            results.append(
+                (
+                    "Embed Agent 上下文只保留安全 Header 且清空 Cookie 和敏感 metadata",
+                    embed_context.headers
+                    == {
+                        "user-agent": "embed-test-agent",
+                        "accept-language": "zh-CN",
+                    }
+                    and embed_context.cookies == {}
+                    and embed_context.query_params == {}
+                    and embed_context.metadata == {"source_id": SOURCE_ID}
+                    and valid_token not in repr(embed_context),
+                    repr(embed_context),
+                )
+            )
+
+            internal_error = (
+                "database=127.0.0.1:5433 "
+                "SQL=SELECT secret FROM private "
+                "path=E:/private/metadata.json "
+                f"token={valid_token}"
+            )
+            agent.failure_message = internal_error
+            with patch("step4_server.logger.exception") as log_exception:
+                failed_response = client.post(
+                    "/api/embed/vanna/v2/chat_sse",
+                    headers=headers,
+                    json={
+                        "message": "trigger controlled failure",
+                        "conversation_id": "embed-failure",
+                        "metadata": {"source_id": SOURCE_ID},
+                    },
+                )
+            agent.failure_message = None
+            failed_events = [
+                line[6:]
+                for line in failed_response.text.splitlines()
+                if line.startswith("data: ")
+            ]
+            safe_error_event = json.loads(failed_events[0])
+            results.append(
+                (
+                    "Embed SSE 内部异常脱敏、服务端记录且仍以 DONE 结束",
+                    failed_response.status_code == 200
+                    and safe_error_event["data"]["message"]
+                    == "嵌入问数执行失败，请稍后重试。"
+                    and internal_error not in failed_response.text
+                    and valid_token not in failed_response.text
+                    and failed_events[-1] == "[DONE]"
+                    and log_exception.call_count == 1
+                    and valid_token not in repr(log_exception.call_args),
+                    failed_response.text,
+                )
+            )
 
             ordinary = client.post(
                 "/api/vanna/v2/chat_sse",
+                headers={
+                    "Authorization": "Bearer ordinary-visible",
+                    "Cookie": "ordinary_session=unchanged",
+                },
                 json={
                     "message": "ordinary",
                     "conversation_id": "ordinary-conversation",
@@ -421,6 +516,17 @@ def main() -> int:
                     ordinary.status_code == 200
                     and "embed-agent-ok" in ordinary.text,
                     ordinary.text,
+                )
+            )
+            ordinary_context = agent.request_contexts[-1]
+            results.append(
+                (
+                    "普通 API RequestContext 行为未被 Embed 脱敏修改",
+                    ordinary_context.headers.get("authorization")
+                    == "Bearer ordinary-visible"
+                    and ordinary_context.cookies.get("ordinary_session")
+                    == "unchanged",
+                    repr(ordinary_context),
                 )
             )
 

@@ -21,6 +21,10 @@ const protocolSource = fs.readFileSync(
   path.join(frontendRoot, 'src', 'widgetMessageProtocol.ts'),
   'utf8',
 );
+const embedDemoSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'EmbedDemoPage.tsx'),
+  'utf8',
+);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -221,12 +225,43 @@ await test('Token 获取失败显示明确错误且不会发送鉴权消息', as
 
 await test('嵌入请求在鉴权前禁用，鉴权后使用独立端点和请求头', () => {
   assert(widgetAppSource.includes("status: 'waiting'"), '缺少鉴权等待状态');
-  assert(widgetAppSource.includes('enabled: embedAuth.status === \'authorized\''), '鉴权前未阻止请求');
+  assert(widgetAppSource.includes("enabled: protectedMode && embedAuth.status === 'authorized'"), '鉴权前未阻止请求');
   assert(widgetAppSource.includes("dataSourcesEndpoint: '/api/embed/data-sources'"), '未使用嵌入数据源端点');
   assert(widgetAppSource.includes("chatEndpoint: '/api/embed/vanna/v2/chat_sse'"), '未使用嵌入聊天端点');
   assert(widgetAppSource.includes('Authorization: `Bearer ${embedAuth.token}`'), '未发送 Bearer Token');
-  assert(widgetAppSource.includes("'X-Water-Agent-Parent-Origin': embedContext!.parentOrigin"), '未发送宿主 Origin');
+  assert(widgetAppSource.includes("'X-Water-Agent-Parent-Origin': embedContext?.parentOrigin || ''"), '未发送宿主 Origin');
   assert(useSseSource.includes('if (!requestsEnabled) return;'), 'useSSE 未在鉴权前停止请求');
+});
+
+await test('无效 Widget 失败关闭且受保护模式不生成普通工作台入口', () => {
+  assert(
+    widgetAppSource.includes("widgetAccessMode === 'invalid'"),
+    '缺少无效入口状态',
+  );
+  assert(
+    widgetAppSource.includes("enabled: protectedMode && embedAuth.status === 'authorized'"),
+    '无效或未鉴权 Widget 仍可能请求 API',
+  );
+  assert(
+    widgetAppSource.includes("const workspaceUrl = localDevelopmentMode"),
+    '工作台 URL 未限制到本地开发模式',
+  );
+  assert(
+    widgetAppSource.includes('{workspaceUrl && ('),
+    '受保护 Widget DOM 仍无条件生成完整工作台链接',
+  );
+  assert(
+    widgetAppSource.includes('workspaceUrl={workspaceUrl}'),
+    '本地开发模式未保留完整查看传递',
+  );
+  assert(
+    embedDemoSource.includes('/?mode=widget&devWidget=project-embed-demo'),
+    '项目 embed-demo 未显式启用开发 Widget',
+  );
+  assert(
+    widgetAppSource.includes('import.meta.env.DEV'),
+    '开发免鉴权未绑定 Vite DEV 构建',
+  );
 });
 
 await test('鉴权消息校验 source、Origin、实例 ID 且 Token 不持久化或输出', () => {

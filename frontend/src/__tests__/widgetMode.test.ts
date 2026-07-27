@@ -1,6 +1,7 @@
 import {
   buildWidgetUrl,
   buildWorkspaceUrl,
+  resolveWidgetAccessMode,
   resolveApplicationMode,
 } from '../appMode.js';
 
@@ -52,6 +53,70 @@ test('浮窗与完整工作台 URL 保持同源', () => {
   assert(
     buildWorkspaceUrl(agentUrl) === 'http://localhost:5173/',
     '完整工作台 URL 不正确',
+  );
+});
+
+test('缺少或伪造嵌入上下文时 Widget 失败关闭', () => {
+  const origin = 'http://127.0.0.1:5173';
+  assert(
+    resolveWidgetAccessMode(
+      `${origin}/?mode=widget`,
+      origin,
+      true,
+    ) === 'invalid',
+    '直接 mode=widget 不应进入开发模式',
+  );
+  assert(
+    resolveWidgetAccessMode(
+      `${origin}/?mode=widget&parentOrigin=http://127.0.0.1:5174`,
+      origin,
+      true,
+    ) === 'invalid',
+    '缺少 instanceId 不应启用 Widget',
+  );
+  assert(
+    resolveWidgetAccessMode(
+      `${origin}/?mode=widget&instanceId=forged`,
+      origin,
+      true,
+    ) === 'invalid',
+    '缺少 parentOrigin 不应启用 Widget',
+  );
+});
+
+test('跨域上下文始终受保护，同源开发入口必须显式且仅 DEV 生效', () => {
+  const origin = 'http://127.0.0.1:5173';
+  const protectedUrl = (
+    `${origin}/?mode=widget`
+    + '&parentOrigin=http://127.0.0.1:5174'
+    + '&instanceId=water-agent-protected'
+  );
+  assert(
+    resolveWidgetAccessMode(protectedUrl, origin, true) === 'protected',
+    '合法跨域上下文未进入受保护模式',
+  );
+  const localUrl = buildWidgetUrl(
+    origin,
+    origin,
+    'water-agent-local',
+    true,
+  );
+  assert(
+    resolveWidgetAccessMode(localUrl, origin, true)
+    === 'local-development',
+    '显式 DEV 同源入口未启用',
+  );
+  assert(
+    resolveWidgetAccessMode(localUrl, origin, false) === 'invalid',
+    '生产构建不应接受开发入口',
+  );
+  assert(
+    resolveWidgetAccessMode(
+      buildWidgetUrl(origin, origin, 'water-agent-forged'),
+      origin,
+      true,
+    ) === 'invalid',
+    '同源查询参数缺少项目标记时不应免鉴权',
   );
 });
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
@@ -27,6 +28,10 @@ from fastapi.responses import StreamingResponse
 from vanna.core.user.request_context import RequestContext
 from vanna.servers.fastapi.app import VannaFastAPIServer
 from vanna.servers.base import ChatRequest
+
+logger = logging.getLogger(__name__)
+EMBED_SAFE_ERROR_MESSAGE = "嵌入问数执行失败，请稍后重试。"
+EMBED_SAFE_CONTEXT_HEADERS = ("user-agent", "accept-language")
 
 
 @dataclass(frozen=True)
@@ -78,14 +83,15 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             *,
             source_id: str | None = None,
         ):
-            if not parent_origin:
-                raise HTTPException(
-                    status_code=403,
-                    detail="嵌入父页面 Origin 未提供",
-                )
             try:
+                token = bearer_token(authorization)
+                if not parent_origin:
+                    raise EmbedAccessError(
+                        403,
+                        "嵌入父页面 Origin 未提供",
+                    )
                 return verify_embed_token(
-                    bearer_token(authorization),
+                    token,
                     parent_origin=parent_origin,
                     config=self.embed_config,
                     source_id=source_id,
@@ -126,6 +132,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 alias="X-Water-Agent-Parent-Origin",
             ),
         ) -> StreamingResponse:
+            principal = authorize_embed(authorization, parent_origin)
             metadata = chat_request.metadata
             source_id = (
                 metadata.get("source_id")
@@ -137,26 +144,32 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     status_code=400,
                     detail="source_id 必须显式提供",
                 )
-            authorize_embed(
-                authorization,
-                parent_origin,
-                source_id=source_id,
-            )
             if source_id not in self.resources.registry.source_ids:
                 raise HTTPException(
                     status_code=400,
                     detail="未知 source_id",
                 )
+            if source_id not in principal.allowed_source_ids:
+                raise HTTPException(
+                    status_code=403,
+                    detail="数据源未获授权",
+                )
+            safe_metadata = {"source_id": source_id}
+            chat_request.metadata = safe_metadata
             chat_request.request_context = RequestContext(
-                cookies=dict(http_request.cookies),
-                headers=dict(http_request.headers),
+                cookies={},
+                headers={
+                    name: value
+                    for name in EMBED_SAFE_CONTEXT_HEADERS
+                    if (value := http_request.headers.get(name))
+                },
                 remote_addr=(
                     http_request.client.host
                     if http_request.client
                     else None
                 ),
-                query_params=dict(http_request.query_params),
-                metadata=chat_request.metadata,
+                query_params={},
+                metadata=safe_metadata,
             )
 
             async def generate() -> AsyncGenerator[str, None]:
@@ -167,15 +180,28 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                         yield f"data: {chunk.model_dump_json()}\n\n"
                     yield "data: [DONE]\n\n"
                 except Exception as exc:
+                    safe_exception = RuntimeError(
+                        "redacted embed execution error "
+                        f"({type(exc).__name__})"
+                    )
+                    logger.exception(
+                        "Embed chat execution failed",
+                        exc_info=(
+                            RuntimeError,
+                            safe_exception,
+                            exc.__traceback__,
+                        ),
+                    )
                     error_data = {
                         "type": "error",
-                        "data": {"message": str(exc)},
+                        "data": {"message": EMBED_SAFE_ERROR_MESSAGE},
                         "conversation_id": (
                             chat_request.conversation_id or ""
                         ),
                         "request_id": chat_request.request_id or "",
                     }
                     yield f"data: {json.dumps(error_data)}\n\n"
+                    yield "data: [DONE]\n\n"
 
             return StreamingResponse(
                 generate(),

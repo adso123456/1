@@ -28,7 +28,10 @@ export function EmbedDemoPage() {
       'script[data-water-agent-demo]',
     );
     if (existing) {
-      window.WaterAgentWidget?.init({ agentUrl: window.location.origin });
+      window.WaterAgentWidget?.init({
+        agentUrl: window.location.origin,
+        widgetPath: '/?mode=widget&devWidget=project-embed-demo',
+      });
       return;
     }
 
@@ -39,7 +42,7 @@ export function EmbedDemoPage() {
     script.onload = () => {
       window.WaterAgentWidget?.init({
         agentUrl: window.location.origin,
-        widgetPath: '/?mode=widget',
+        widgetPath: '/?mode=widget&devWidget=project-embed-demo',
       });
     };
     script.onerror = () => setLoaderError(true);
