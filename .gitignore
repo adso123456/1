@@ -26,6 +26,8 @@ frontend/dist/
 
 # Runtime data
 vanna_data/
+data/system/*.sqlite3
+data/system/*.sqlite3-*
 
 # Generated query results
 agent_data/**/query_results_*.csv

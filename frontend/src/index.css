@@ -18,6 +18,7 @@ body {
 /* 嵌入式浮窗页 */
 .widget-shell {
   position: relative;
+  border-top: 3px solid var(--widget-theme, #1677ff);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -75,6 +76,14 @@ body {
   border-radius: 50%;
   background: #22c55e;
   box-shadow: 0 0 0 4px #dcfce7;
+}
+
+.widget-app-logo {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 6px;
+  object-fit: contain;
 }
 
 .widget-header-actions {

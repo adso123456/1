@@ -6,10 +6,17 @@ import os
 import time
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import jwt
+from backend.assistant_application_registry import (
+    ApplicationDisabled,
+    ApplicationNotFound,
+    AssistantApplicationRegistry,
+    InvalidApplicationConfiguration,
+    validate_app_id,
+)
 
 EMBED_AUDIENCE = "water-agent-embed"
 EMBED_ALGORITHM = "HS256"
@@ -20,7 +27,7 @@ MAX_CLOCK_SKEW_SECONDS = 30
 @dataclass(frozen=True)
 class EmbedApplicationConfig:
     app_id: str
-    app_secret: str
+    app_secret: str = field(repr=False)
     enabled: bool
     allowed_origins: tuple[str, ...]
     allowed_source_ids: tuple[str, ...]
@@ -150,16 +157,14 @@ def verify_embed_token(
     token: str,
     *,
     parent_origin: str,
-    config: EmbedApplicationConfig | None,
+    registry: AssistantApplicationRegistry | None,
     source_id: str | None = None,
     now: int | None = None,
 ) -> EmbedPrincipal:
     """验证签名、应用、Origin、时效和可选数据源权限。"""
 
-    if config is None:
-        raise EmbedAccessError(503, "嵌入访问尚未配置")
-    if not config.enabled:
-        raise EmbedAccessError(403, "嵌入应用已禁用")
+    if registry is None:
+        raise EmbedAccessError(503, "嵌入应用注册表尚未配置")
     if not token:
         raise EmbedAccessError(401, "缺少嵌入访问 Token")
 
@@ -172,11 +177,22 @@ def verify_embed_token(
             options={"verify_signature": False},
             algorithms=[EMBED_ALGORITHM],
         )
-        if unverified.get("app_id") != config.app_id:
+        unverified_app_id = unverified.get("app_id")
+        try:
+            candidate_app_id = validate_app_id(unverified_app_id)
+        except InvalidApplicationConfiguration:
             raise EmbedAccessError(401, "Token 应用无效")
+        try:
+            application = registry.require_for_token_verification(
+                candidate_app_id
+            )
+        except ApplicationNotFound:
+            raise EmbedAccessError(401, "Token 应用无效") from None
+        except ApplicationDisabled:
+            raise EmbedAccessError(403, "嵌入应用已禁用") from None
         claims = jwt.decode(
             token,
-            config.app_secret,
+            application.app_secret,
             algorithms=[EMBED_ALGORITHM],
             audience=EMBED_AUDIENCE,
             options={
@@ -204,21 +220,23 @@ def verify_embed_token(
     if (
         not isinstance(token_origin, str)
         or token_origin != parent_origin
-        or token_origin not in config.allowed_origins
+        or token_origin not in application.allowed_origins
     ):
         raise EmbedAccessError(403, "父页面 Origin 未获授权")
 
+    if claims.get("app_id") != application.app_id:
+        raise EmbedAccessError(401, "Token 应用无效")
     token_sources = claims.get("allowed_source_ids")
     if (
         not isinstance(token_sources, list)
         or any(not isinstance(item, str) for item in token_sources)
     ):
         raise EmbedAccessError(401, "Token 数据源权限无效")
-    effective_sources = tuple(
-        item
-        for item in token_sources
-        if item in config.allowed_source_ids
-    )
+    if any(
+        item not in application.allowed_source_ids for item in token_sources
+    ):
+        raise EmbedAccessError(403, "Token 数据源权限超出应用配置")
+    effective_sources = tuple(dict.fromkeys(token_sources))
     if source_id is not None and source_id not in effective_sources:
         raise EmbedAccessError(403, "数据源未获授权")
 
@@ -230,7 +248,7 @@ def verify_embed_token(
         or not isinstance(expires_at, int)
         or issued_at > current_time + MAX_CLOCK_SKEW_SECONDS
         or expires_at <= issued_at
-        or expires_at - issued_at > config.token_ttl_seconds
+        or expires_at - issued_at > application.token_ttl_seconds
     ):
         raise EmbedAccessError(401, "Token 时间声明无效")
 
@@ -242,7 +260,7 @@ def verify_embed_token(
         raise EmbedAccessError(401, "Token 标识无效")
 
     return EmbedPrincipal(
-        app_id=config.app_id,
+        app_id=application.app_id,
         subject=subject,
         parent_origin=token_origin,
         allowed_source_ids=effective_sources,

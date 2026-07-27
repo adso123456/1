@@ -21,6 +21,9 @@ interface Props {
   hideHeader?: boolean;
   /** 鉴权或其他外层状态未就绪时禁用发送。 */
   disabled?: boolean;
+  welcome?: string;
+  welcomeDescription?: string;
+  theme?: string;
 }
 
 const SUGGESTIONS = [
@@ -29,7 +32,23 @@ const SUGGESTIONS = [
   '查询2025年1月的监测数据，只取pH值有记录的前5条',
 ];
 
-export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false, workspaceUrl, hideHeader = false, disabled = false }: Props) {
+export function ChatArea({
+  messages,
+  loading,
+  onSend,
+  onCancel,
+  onClear,
+  onChangeChartType,
+  onV2ChartSwitch,
+  onAddToDashboard,
+  compact = false,
+  workspaceUrl,
+  hideHeader = false,
+  disabled = false,
+  welcome = '有什么可以帮助你的？',
+  welcomeDescription = '用中文自然语言提问，Agent 自动查询数据库并返回图表',
+  theme = '#2563eb',
+}: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -100,10 +119,10 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', paddingTop: compact ? 28 : 80 }}>
             <h2 style={{ fontSize: 18, color: '#374151', fontWeight: 500, marginBottom: 8 }}>
-              有什么可以帮助你的？
+              {welcome}
             </h2>
             <p style={{ fontSize: 13, color: '#9ca3af', marginBottom: 24 }}>
-              用中文自然语言提问，Agent 自动查询数据库并返回图表
+              {welcomeDescription}
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
               {SUGGESTIONS.map((s, i) => (
@@ -121,7 +140,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
                     color: '#374151',
                     transition: 'all .15s',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = '#2563eb')}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = theme)}
                   onMouseLeave={e => (e.currentTarget.style.borderColor = '#e5e7eb')}
                 >
                   {s}
@@ -204,7 +223,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
                 padding: '10px 18px',
                 border: 'none',
                 borderRadius: 8,
-                backgroundColor: input.trim() && !disabled ? '#2563eb' : '#d1d5db',
+                backgroundColor: input.trim() && !disabled ? theme : '#d1d5db',
                 color: '#fff',
                 cursor: input.trim() && !disabled ? 'pointer' : 'not-allowed',
                 fontSize: 13,

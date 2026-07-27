@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.assistant_application_registry import AssistantApplicationRegistry
 from backend.data_source_registry import DataSourceRegistry
 from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime import DataSourceRuntime
@@ -161,9 +162,39 @@ def make_resources(root: Path):
     )
 
 
+def make_application_registry(
+    root: Path,
+    data_sources: DataSourceRegistry,
+    config: EmbedApplicationConfig,
+) -> AssistantApplicationRegistry:
+    registry = AssistantApplicationRegistry(
+        root / "assistant-apps.sqlite3",
+        data_sources,
+    )
+    registry.create(
+        app_id=config.app_id,
+        name="Local cross-origin demo",
+        enabled=config.enabled,
+        app_secret=config.app_secret,
+        allowed_origins=config.allowed_origins,
+        allowed_source_ids=config.allowed_source_ids,
+        token_ttl_seconds=config.token_ttl_seconds,
+    )
+    return registry
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     config = make_config()
+    direct_temp = tempfile.TemporaryDirectory(prefix="embed-token-registry-")
+    direct_resources, _, _ = make_resources(
+        Path(direct_temp.name).resolve()
+    )
+    application_registry = make_application_registry(
+        Path(direct_temp.name).resolve(),
+        direct_resources.registry,
+        config,
+    )
     valid_token, expires_at = issue_embed_token(
         config,
         subject="local-demo-user",
@@ -171,7 +202,7 @@ def main() -> int:
     principal = verify_embed_token(
         valid_token,
         parent_origin=ORIGIN,
-        config=config,
+        registry=application_registry,
         source_id=SOURCE_ID,
     )
     results.append(
@@ -263,35 +294,37 @@ def main() -> int:
             401,
         ),
     ]
-    for name, token, origin, app_config, status in negative_tokens:
+    for name, token, origin, _app_config, status in negative_tokens:
         expect_access_error(
             name,
-            lambda token=token, origin=origin, app_config=app_config:
+            lambda token=token, origin=origin:
                 verify_embed_token(
                     token,
                     parent_origin=origin,
-                    config=app_config,
+                    registry=application_registry,
                 ),
             status,
             results,
         )
+    application_registry.disable(config.app_id)
     expect_access_error(
         "应用禁用",
         lambda: verify_embed_token(
             valid_token,
             parent_origin=ORIGIN,
-            config=make_config(enabled=False),
+            registry=application_registry,
         ),
         403,
         results,
     )
+    application_registry.enable(config.app_id)
     forbidden_token = encode(token_claims(allowed_source_ids=[]))
     expect_access_error(
         "source_id 不在允许列表",
         lambda: verify_embed_token(
             forbidden_token,
             parent_origin=ORIGIN,
-            config=config,
+            registry=application_registry,
             source_id=SOURCE_ID,
         ),
         403,
@@ -302,9 +335,38 @@ def main() -> int:
         resources, agent, factory_calls = make_resources(
             Path(temp_name).resolve()
         )
+        application_registry = make_application_registry(
+            Path(temp_name).resolve(),
+            resources.registry,
+            config,
+        )
+        second_config = EmbedApplicationConfig(
+            app_id="second-embed-app",
+            app_secret="second-local-test-secret-longer-than-32-characters",
+            enabled=True,
+            allowed_origins=(ORIGIN,),
+            allowed_source_ids=(SOURCE_ID,),
+            token_ttl_seconds=300,
+        )
+        application_registry.create(
+            app_id=second_config.app_id,
+            name="Second assistant",
+            app_secret=second_config.app_secret,
+            allowed_origins=second_config.allowed_origins,
+            allowed_source_ids=second_config.allowed_source_ids,
+            token_ttl_seconds=second_config.token_ttl_seconds,
+            theme="#654321",
+            welcome="Second welcome",
+            welcome_description="Second description",
+            show_history=True,
+        )
+        second_token, _ = issue_embed_token(
+            second_config,
+            subject="second-user",
+        )
         app = DataSourceVannaFastAPIServer(
             resources,
-            embed_config=config,
+            assistant_application_registry=application_registry,
         ).create_app()
         headers = {
             "Authorization": f"Bearer {valid_token}",
@@ -316,6 +378,82 @@ def main() -> int:
             "metadata": {"source_id": SOURCE_ID},
         }
         with TestClient(app) as client:
+            application_response = client.get(
+                "/api/embed/application",
+                headers=headers,
+            )
+            second_application_response = client.get(
+                "/api/embed/application",
+                headers={
+                    **headers,
+                    "Authorization": f"Bearer {second_token}",
+                },
+            )
+            missing_application_token = client.get(
+                "/api/embed/application",
+            )
+            wrong_application_origin = client.get(
+                "/api/embed/application",
+                headers={
+                    **headers,
+                    "X-Water-Agent-Parent-Origin":
+                        "http://unauthorized.example",
+                },
+            )
+            application_registry.disable(second_config.app_id)
+            disabled_application = client.get(
+                "/api/embed/application",
+                headers={
+                    **headers,
+                    "Authorization": f"Bearer {second_token}",
+                },
+            )
+            application_registry.enable(second_config.app_id)
+            safe_fields = {
+                "app_id",
+                "name",
+                "theme",
+                "logo_url",
+                "welcome",
+                "welcome_description",
+                "show_history",
+            }
+            results.append(
+                (
+                    "应用信息接口按 Token 返回各自安全配置且不创建 Runtime",
+                    application_response.status_code == 200
+                    and second_application_response.status_code == 200
+                    and set(application_response.json()) == safe_fields
+                    and set(second_application_response.json()) == safe_fields
+                    and application_response.json()["app_id"] == config.app_id
+                    and second_application_response.json()
+                    == {
+                        "app_id": second_config.app_id,
+                        "name": "Second assistant",
+                        "theme": "#654321",
+                        "logo_url": "",
+                        "welcome": "Second welcome",
+                        "welcome_description": "Second description",
+                        "show_history": True,
+                    }
+                    and SECRET not in application_response.text
+                    and second_config.app_secret
+                    not in second_application_response.text
+                    and "allowed_origins"
+                    not in second_application_response.text
+                    and missing_application_token.status_code == 401
+                    and wrong_application_origin.status_code == 403
+                    and disabled_application.status_code == 403
+                    and factory_calls["count"] == 0
+                    and agent.calls == [],
+                    repr(
+                        {
+                            "first": application_response.json(),
+                            "second": second_application_response.json(),
+                        }
+                    ),
+                )
+            )
             missing_source_body = {
                 "message": "missing source",
                 "conversation_id": "missing-source",
@@ -537,6 +675,7 @@ def main() -> int:
         f"total={len(results)} "
         f"passed={len(results) - failed_count} failed={failed_count}"
     )
+    direct_temp.cleanup()
     return 0 if failed_count == 0 else 1
 
 

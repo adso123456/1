@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { ChatArea } from './components/ChatArea';
@@ -34,11 +35,65 @@ type DashboardTarget =
 
 type DashboardActions = ReturnType<typeof useDashboard>;
 
+export interface WidgetApplicationConfig {
+  app_id: string;
+  name: string;
+  theme: string;
+  logo_url: string;
+  welcome: string;
+  welcome_description: string;
+  show_history: boolean;
+}
+
+export const DEFAULT_WIDGET_APPLICATION_CONFIG: WidgetApplicationConfig = {
+  app_id: '',
+  name: '智能问数',
+  theme: '#1677ff',
+  logo_url: '',
+  welcome: '有什么可以帮助你的？',
+  welcome_description: '用中文自然语言提问，Agent 自动查询数据库并返回图表',
+  show_history: true,
+};
+
+export function normalizeWidgetApplicationConfig(
+  value: unknown,
+): WidgetApplicationConfig {
+  if (typeof value !== 'object' || value === null) {
+    return DEFAULT_WIDGET_APPLICATION_CONFIG;
+  }
+  const candidate = value as Partial<WidgetApplicationConfig>;
+  return {
+    app_id: typeof candidate.app_id === 'string' ? candidate.app_id : '',
+    name: typeof candidate.name === 'string' && candidate.name.trim()
+      ? candidate.name
+      : DEFAULT_WIDGET_APPLICATION_CONFIG.name,
+    theme: typeof candidate.theme === 'string'
+      && /^#[0-9a-fA-F]{6}$/.test(candidate.theme)
+      ? candidate.theme.toLowerCase()
+      : DEFAULT_WIDGET_APPLICATION_CONFIG.theme,
+    logo_url: typeof candidate.logo_url === 'string'
+      && /^https?:\/\//i.test(candidate.logo_url)
+      ? candidate.logo_url
+      : '',
+    welcome: typeof candidate.welcome === 'string'
+      && candidate.welcome.trim()
+      ? candidate.welcome
+      : DEFAULT_WIDGET_APPLICATION_CONFIG.welcome,
+    welcome_description:
+      typeof candidate.welcome_description === 'string'
+      && candidate.welcome_description.trim()
+        ? candidate.welcome_description
+        : DEFAULT_WIDGET_APPLICATION_CONFIG.welcome_description,
+    show_history: candidate.show_history === true,
+  };
+}
+
 interface WidgetChatProps {
   embedContext: WidgetEmbedContext;
   requestOptions?: UseSSERequestOptions;
   dashboard?: DashboardActions;
   workspaceEnabled: boolean;
+  applicationConfig?: WidgetApplicationConfig;
 }
 
 function requestWidgetMinimize(context: WidgetEmbedContext | null): void {
@@ -55,19 +110,36 @@ function WidgetHeader({
   newSessionDisabled,
   workspaceUrl,
   embedContext,
+  applicationConfig,
 }: {
   onNewSession?: () => void;
   newSessionDisabled?: boolean;
   workspaceUrl?: string;
   embedContext: WidgetEmbedContext | null;
+  applicationConfig: WidgetApplicationConfig;
 }) {
+  const [logoFailed, setLogoFailed] = useState(false);
+  useEffect(() => setLogoFailed(false), [applicationConfig.logo_url]);
   return (
     <header className="widget-header">
       <div className="widget-title-block">
-        <span className="widget-status-dot" aria-hidden="true" />
+        {applicationConfig.logo_url && !logoFailed ? (
+          <img
+            className="widget-app-logo"
+            src={applicationConfig.logo_url}
+            alt=""
+            onError={() => setLogoFailed(true)}
+          />
+        ) : (
+          <span
+            className="widget-status-dot"
+            aria-hidden="true"
+            style={{ backgroundColor: applicationConfig.theme }}
+          />
+        )}
         <div>
-          <strong>智能问数</strong>
-          <span>水利数据助手</span>
+          <strong>{applicationConfig.name}</strong>
+          <span>{applicationConfig.welcome}</span>
         </div>
       </div>
       <div className="widget-header-actions">
@@ -121,7 +193,10 @@ export function WidgetAccessView({
       : '正在验证嵌入访问权限';
   return (
     <div className="widget-shell">
-      <WidgetHeader embedContext={embedContext} />
+      <WidgetHeader
+        embedContext={embedContext}
+        applicationConfig={DEFAULT_WIDGET_APPLICATION_CONFIG}
+      />
       <div
         className="widget-error"
         role={status === 'waiting' ? 'status' : 'alert'}
@@ -137,6 +212,7 @@ export function WidgetChat({
   requestOptions,
   dashboard,
   workspaceEnabled,
+  applicationConfig = DEFAULT_WIDGET_APPLICATION_CONFIG,
 }: WidgetChatProps) {
   const {
     messages,
@@ -210,15 +286,22 @@ export function WidgetChat({
   );
 
   return (
-    <div className="widget-shell">
+    <div
+      className="widget-shell"
+      style={{
+        '--widget-theme': applicationConfig.theme,
+      } as CSSProperties}
+    >
       <WidgetHeader
         embedContext={embedContext}
         onNewSession={createNewSession}
         newSessionDisabled={loading}
         workspaceUrl={workspaceUrl}
+        applicationConfig={applicationConfig}
       />
 
       <div className="widget-session-bar">
+        {applicationConfig.show_history && (
         <label>
           <span>会话</span>
           <select
@@ -237,6 +320,7 @@ export function WidgetChat({
             ))}
           </select>
         </label>
+        )}
 
         <label>
           <span>数据源</span>
@@ -283,6 +367,9 @@ export function WidgetChat({
           compact
           workspaceUrl={workspaceUrl}
           hideHeader
+          welcome={applicationConfig.welcome}
+          welcomeDescription={applicationConfig.welcome_description}
+          theme={applicationConfig.theme}
         />
       </div>
 
@@ -454,11 +541,77 @@ function ProtectedWidgetGate({
   }
 
   return (
-    <WidgetChat
+    <ProtectedWidgetChat
       key={authGeneration}
+      embedContext={embedContext}
+      token={embedAuth.token}
+      requestOptions={requestOptions}
+      onAuthorizationError={handleAuthorizationError}
+    />
+  );
+}
+
+function ProtectedWidgetChat({
+  embedContext,
+  token,
+  requestOptions,
+  onAuthorizationError,
+}: {
+  embedContext: WidgetEmbedContext;
+  token: string;
+  requestOptions: UseSSERequestOptions;
+  onAuthorizationError: () => void;
+}) {
+  const [applicationConfig, setApplicationConfig] =
+    useState(DEFAULT_WIDGET_APPLICATION_CONFIG);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void fetch('/api/embed/application', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Water-Agent-Parent-Origin': embedContext.parentOrigin,
+      },
+      signal: controller.signal,
+    })
+      .then(async response => {
+        if (response.status === 401 || response.status === 403) {
+          onAuthorizationError();
+          return null;
+        }
+        if (!response.ok) {
+          throw new Error(`应用配置请求失败：${response.status}`);
+        }
+        return response.json() as Promise<unknown>;
+      })
+      .then(value => {
+        if (value !== null && !controller.signal.aborted) {
+          setApplicationConfig(normalizeWidgetApplicationConfig(value));
+        }
+      })
+      .catch(error => {
+        if (
+          !controller.signal.aborted
+          && !(error instanceof DOMException && error.name === 'AbortError')
+        ) {
+          setApplicationConfig(DEFAULT_WIDGET_APPLICATION_CONFIG);
+        }
+      });
+
+    return () => controller.abort();
+  }, [
+    embedContext.parentOrigin,
+    onAuthorizationError,
+    token,
+  ]);
+
+  return (
+    <WidgetChat
       embedContext={embedContext}
       requestOptions={requestOptions}
       workspaceEnabled={false}
+      applicationConfig={applicationConfig}
     />
   );
 }

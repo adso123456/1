@@ -8,12 +8,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
+from backend.assistant_application_registry import (
+    AssistantApplicationRegistry,
+    resolve_system_db_path,
+)
 from backend.data_source_chat_handler import DataSourceChatHandler
 from backend.embed_access import (
     EmbedAccessError,
-    EmbedApplicationConfig,
     bearer_token,
-    load_embed_application_config,
     verify_embed_token,
 )
 from backend.data_source_registry import (
@@ -39,6 +41,7 @@ class ApplicationResources:
     registry: DataSourceRegistry
     coordinator: DataSourceRequestCoordinator
     runtime_manager: DataSourceRuntimeManager
+    assistant_application_registry: AssistantApplicationRegistry | None = None
 
 
 class DataSourceVannaFastAPIServer(VannaFastAPIServer):
@@ -48,14 +51,14 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         self,
         resources: ApplicationResources,
         config: Mapping[str, Any] | None = None,
-        embed_config: EmbedApplicationConfig | None = None,
+        assistant_application_registry: AssistantApplicationRegistry | None = None,
     ) -> None:
         self.config = dict(config or {})
         self.resources = resources
-        self.embed_config = (
-            embed_config
-            if embed_config is not None
-            else load_embed_application_config()
+        self.assistant_application_registry = (
+            assistant_application_registry
+            if assistant_application_registry is not None
+            else resources.assistant_application_registry
         )
         self.chat_handler = DataSourceChatHandler(
             resources.coordinator,
@@ -93,7 +96,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 return verify_embed_token(
                     token,
                     parent_origin=parent_origin,
-                    config=self.embed_config,
+                    registry=self.assistant_application_registry,
                     source_id=source_id,
                 )
             except EmbedAccessError as exc:
@@ -101,6 +104,33 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     status_code=exc.status_code,
                     detail=exc.safe_message,
                 ) from None
+
+        @app.get("/api/embed/application")
+        async def get_embed_application(
+            authorization: str | None = Header(default=None),
+            parent_origin: str | None = Header(
+                default=None,
+                alias="X-Water-Agent-Parent-Origin",
+            ),
+        ) -> dict[str, object]:
+            principal = authorize_embed(authorization, parent_origin)
+            if self.assistant_application_registry is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="嵌入应用注册表尚未配置",
+                )
+            application = self.assistant_application_registry.get(
+                principal.app_id
+            )
+            return {
+                "app_id": application.app_id,
+                "name": application.name,
+                "theme": application.theme,
+                "logo_url": application.logo_url,
+                "welcome": application.welcome,
+                "welcome_description": application.welcome_description,
+                "show_history": application.show_history,
+            }
 
         @app.get("/api/embed/data-sources")
         async def list_embed_data_sources(
@@ -226,21 +256,27 @@ def create_application_resources(
         registry,
         {"postgresql": create_postgresql_runtime},
     )
+    assistant_application_registry = AssistantApplicationRegistry(
+        resolve_system_db_path(environ),
+        registry,
+    )
+    assistant_application_registry.initialize()
     return ApplicationResources(
         registry=registry,
         coordinator=coordinator,
         runtime_manager=runtime_manager,
+        assistant_application_registry=assistant_application_registry,
     )
 
 
 def create_server(
     resources: ApplicationResources | None = None,
     *,
-    embed_config: EmbedApplicationConfig | None = None,
+    assistant_application_registry: AssistantApplicationRegistry | None = None,
 ) -> DataSourceVannaFastAPIServer:
     return DataSourceVannaFastAPIServer(
         resources or create_application_resources(),
-        embed_config=embed_config,
+        assistant_application_registry=assistant_application_registry,
     )
 
 

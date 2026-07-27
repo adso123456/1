@@ -16,8 +16,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.embed_access import (  # noqa: E402
     EmbedAccessError,
+    EmbedApplicationConfig,
     issue_embed_token,
-    load_embed_application_config,
 )
 
 
@@ -96,17 +96,59 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_host_demo_config() -> tuple[EmbedApplicationConfig, str]:
+    app_id = os.environ.get("WATER_AGENT_HOST_DEMO_APP_ID", "").strip()
+    app_secret = os.environ.get(
+        "WATER_AGENT_HOST_DEMO_APP_SECRET",
+        "",
+    ).strip()
+    host_origin = os.environ.get(
+        "WATER_AGENT_HOST_DEMO_ORIGIN",
+        "http://127.0.0.1:5174",
+    ).strip()
+    source_ids = tuple(
+        dict.fromkeys(
+            item.strip()
+            for item in os.environ.get(
+                "WATER_AGENT_HOST_DEMO_ALLOWED_SOURCE_IDS",
+                "",
+            ).split(",")
+            if item.strip()
+        )
+    )
+    try:
+        ttl = int(
+            os.environ.get(
+                "WATER_AGENT_HOST_DEMO_TOKEN_TTL_SECONDS",
+                "300",
+            )
+        )
+    except ValueError as exc:
+        raise SystemExit("Host Demo Token TTL 必须是整数") from exc
+    if not app_id or len(app_secret) < 32 or not source_ids:
+        raise SystemExit(
+            "缺少 Host Demo app_id、至少 32 字符密钥或数据源配置"
+        )
+    if ttl < 30 or ttl > 3600:
+        raise SystemExit("Host Demo Token TTL 必须在 30～3600 秒之间")
+    return (
+        EmbedApplicationConfig(
+            app_id=app_id,
+            app_secret=app_secret,
+            enabled=True,
+            allowed_origins=(host_origin,),
+            allowed_source_ids=source_ids,
+            token_ttl_seconds=ttl,
+        ),
+        host_origin,
+    )
+
+
 def main() -> None:
     args = parse_args()
-    config = load_embed_application_config()
-    if config is None:
-        raise SystemExit("缺少嵌入应用环境变量，宿主 Demo 拒绝启动")
-    host_origin = os.environ.get(
-        "WATER_AGENT_EMBED_HOST_ORIGIN",
-        f"http://{args.host}:{args.port}",
-    ).strip()
-    if host_origin not in config.allowed_origins:
-        raise SystemExit("宿主 Origin 不在嵌入应用白名单中")
+    config, host_origin = load_host_demo_config()
+    if host_origin != f"http://{args.host}:{args.port}":
+        raise SystemExit("Host Demo Origin 与监听地址不一致")
 
     directory = PROJECT_ROOT / "frontend" / "embed-host-demo"
     handler = partial(EmbedHostDemoHandler, directory=str(directory))

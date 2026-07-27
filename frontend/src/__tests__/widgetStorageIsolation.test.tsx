@@ -141,5 +141,36 @@ test('memory 会话仅在同一 adapter 内保留，重建后为空', () => {
   assert(fresh.sourceBound === false, '新鉴权实例恢复了旧绑定状态');
 });
 
+test('protected Widget 渲染应用配置并转义文本', () => {
+  const html = renderToStaticMarkup(
+    <WidgetChat
+      embedContext={{
+        parentOrigin: 'http://127.0.0.1:5174',
+        instanceId: 'application-config-test',
+      }}
+      requestOptions={{
+        enabled: false,
+        persistenceMode: 'memory',
+      }}
+      workspaceEnabled={false}
+      applicationConfig={{
+        app_id: 'application-config-test',
+        name: '<b>水利助手</b>',
+        theme: '#123456',
+        logo_url: '',
+        welcome: '应用欢迎语',
+        welcome_description: '应用欢迎说明',
+        show_history: false,
+      }}
+    />,
+  );
+  assert(html.includes('&lt;b&gt;水利助手&lt;/b&gt;'), '应用名称未按纯文本转义');
+  assert(!html.includes('<b>水利助手</b>'), '应用名称被当作 HTML 渲染');
+  assert(html.includes('应用欢迎语'), '应用欢迎语未显示');
+  assert(html.includes('应用欢迎说明'), '应用欢迎说明未显示');
+  assert(html.includes('--widget-theme:#123456'), '应用主题未应用');
+  assert(!html.includes('选择会话'), 'show_history=false 时仍显示会话历史');
+});
+
 console.log(`total=${passed + failed} passed=${passed} failed=${failed}`);
 if (failed > 0) throw new Error(`${failed} tests failed`);
