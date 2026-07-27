@@ -16,6 +16,7 @@ import {
 import {
   applyCompactChartLayout,
   getCompactChartHeight,
+  getCompactChartStrategy,
 } from '../compactChartLayout';
 
 interface Props {
@@ -46,11 +47,13 @@ interface Props {
   onAddToDashboard?: (chart: ChartData) => void;
   /** 浮窗紧凑布局，仅覆盖 ECharts 展示参数。 */
   compact?: boolean;
+  /** 浮窗内打开完整工作台的同源地址。 */
+  workspaceUrl?: string;
 }
 
 type ViewMode = 'chart' | 'table';
 
-export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2ChartSwitch, messageId, chartIndex, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard, compact = false }: Props) {
+export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2ChartSwitch, messageId, chartIndex, hideTableToggle, hideDescription, fillHeight, showExport, onAddToDashboard, compact = false, workspaceUrl }: Props) {
   const isChartOnly = !!chart.chartOnly;
 
   const [viewMode, setViewMode] = useState<ViewMode>('chart');
@@ -61,6 +64,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
   const echartsRef = useRef<ReactECharts>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [compactWidth, setCompactWidth] = useState(0);
 
   // ECharts 实际渲染 DOM 的 ResizeObserver（fillHeight 模式，替代 echarts-for-react 内置 autoResize）
   const echartsDomObserverRef = useRef<ResizeObserver | null>(null);
@@ -130,9 +134,6 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
   }
 
   const [localType, setLocalType] = useState<RenderableChartType>(() => pickDefault());
-  const compactChartHeight = getCompactChartHeight(
-    localType === 'horizontal_bar' ? chart.rows.length : undefined,
-  );
 
   // 跟踪上次 dataVersion 和 spec.type，用于判断数据/推荐类型是否真正变化
   const prevDataVersionRef = useRef(chart.dataVersion);
@@ -179,11 +180,10 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     });
 
     // 普通工作台继续使用 echarts-for-react 内置 autoResize。
-    if (!fillHeight && !compact) return;
+    if (!fillHeight) return;
 
     const dom = instance.getDom();
     if (!dom) return;
-
     const observer = new ResizeObserver(() => {
       if (echartsRafRef.current !== null) return; // 合并同一帧内的多次回调
       echartsRafRef.current = requestAnimationFrame(() => {
@@ -199,10 +199,62 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     echartsDomObserverRef.current = observer;
   };
 
+  // 浮窗单独监听 ChartView 外层容器，处理初次渲染、窗口变化及 display:none 恢复。
+  useEffect(() => {
+    if (!compact) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    let frame: number | null = null;
+    const syncCompactLayout = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        const nextWidth = Math.round(container.getBoundingClientRect().width);
+        if (nextWidth > 0) {
+          setCompactWidth(current => current === nextWidth ? current : nextWidth);
+          const instance = echartsRef.current?.getEchartsInstance();
+          if (instance && !instance.isDisposed()) {
+            instance.resize({ width: 'auto', height: 'auto' });
+          }
+        }
+      });
+    };
+
+    const observer = new ResizeObserver(syncCompactLayout);
+    observer.observe(container);
+    window.addEventListener('water-agent-widget:opened', syncCompactLayout);
+    syncCompactLayout();
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('water-agent-widget:opened', syncCompactLayout);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [compact]);
+
   const handleTypeChange = (type: RenderableChartType) => {
     // 仅在目标类型可用（supported 且 spec 非空）时才切换，避免切到不支持的类型
     const target = allTypes.find(t => t.type === type);
     if (!target?.supported || !target.spec) return;
+
+    if (compact && (type === 'pie' || type === 'donut')) {
+      const targetOption = buildChartOption({
+        ...chart,
+        spec: target.spec,
+        explicitType: true,
+      });
+      if (targetOption) {
+        const targetStrategy = getCompactChartStrategy(targetOption, {
+          width: compactWidth || 400,
+          chartType: type,
+        });
+        if (!targetStrategy.compactAvailable) {
+          showToast(targetStrategy.compactUnavailableReason ?? '该图表不适合当前浮窗');
+          return;
+        }
+      }
+    }
 
     // ── V2 路径：chart 有 source 数据时，基于 source 重新 plan+transform ──
     if (chart.sourceColumns && chart.sourceRows) {
@@ -329,20 +381,48 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
     };
   }, [dropdownOpen]);
 
-  const option = useMemo(() => {
+  const rawOption = useMemo(() => {
     // 使用 availability 中验证通过的完整 Spec（不容许仅替换 type）
     if (!activeSpec) return null;
     // 所有类型切换均为用户显式操作（包括自动选择），避免 buildAxisChart 的 explicitType 守卫误判
-    const opt = buildChartOption({ ...chart, spec: activeSpec, explicitType: true });
-    if (!opt) return null;
-    const displayOption = applyCompactChartLayout(opt, compact);
-    if (opt && hideTitle) {
+    return buildChartOption({ ...chart, spec: activeSpec, explicitType: true });
+  }, [chart, activeSpec]);
+
+  const compactStrategy = useMemo(
+    () => rawOption && compact
+      ? getCompactChartStrategy(rawOption, {
+          width: compactWidth || 400,
+          chartType: localType,
+        })
+      : null,
+    [rawOption, compact, compactWidth, localType],
+  );
+
+  const option = useMemo(() => {
+    if (!rawOption) return null;
+    const displayOption = applyCompactChartLayout(rawOption, compact, {
+      width: compactWidth || 400,
+      chartType: localType,
+    });
+    if (hideTitle || compact) {
       const stripped = { ...displayOption };
       delete (stripped as Record<string, unknown>).title;
       return stripped;
     }
     return displayOption;
-  }, [chart, activeSpec, hideTitle, compact]);
+  }, [rawOption, hideTitle, compact, compactWidth, localType]);
+
+  const compactChartHeight = rawOption
+    ? getCompactChartHeight(rawOption, {
+        width: compactWidth || 400,
+        chartType: localType,
+      })
+    : 292;
+  const compactUnavailable = !!(
+    compact
+    && compactStrategy
+    && !compactStrategy.compactAvailable
+  );
 
   // 图表说明（基于当前实际渲染类型与 Spec，与 ECharts 渲染使用同一份 activeSpec）
   const effectiveType = localType;
@@ -447,7 +527,9 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
               color: '#fff',
               borderRadius: 6,
               fontSize: 12,
-              whiteSpace: 'nowrap',
+              width: compact ? 220 : undefined,
+              maxWidth: compact ? 'calc(100vw - 32px)' : undefined,
+              whiteSpace: compact ? 'normal' : 'nowrap',
               zIndex: 102,
               boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
             }}>
@@ -520,7 +602,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
         )}
 
         {/* 三级：导出 / 添加到仪表板（仅图表模式显示；data-export-exclude 确保整板 PNG 不含按钮） */}
-        {(showExport || onAddToDashboard) && (effectiveViewMode === 'chart' || isChartOnly) && (
+        {(showExport || onAddToDashboard || (compact && workspaceUrl)) && (effectiveViewMode === 'chart' || isChartOnly) && (
           <div data-export-exclude style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
             {showExport && (
               <button
@@ -558,13 +640,55 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
                 添加到仪表板
               </button>
             )}
+            {compact && workspaceUrl && (
+              <a
+                href={workspaceUrl}
+                target="_blank"
+                rel="noreferrer"
+                title="在完整工作台查看当前会话"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '4px 10px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  backgroundColor: '#fff',
+                  color: '#374151',
+                  textDecoration: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                完整查看
+              </a>
+            )}
           </div>
         )}
       </div>
       )}
 
+      {compact && (isChartOnly || effectiveViewMode === 'chart') && chart.title && (
+        <div className="compact-chart-title" title={chart.title}>
+          {chart.title}
+        </div>
+      )}
+
       {/* 内容区 */}
-      {(isChartOnly || effectiveViewMode === 'chart') && option ? (
+      {(isChartOnly || effectiveViewMode === 'chart') && option && compactUnavailable ? (
+        <div className="compact-chart-unavailable" role="status">
+          <div>{compactStrategy?.compactUnavailableReason}</div>
+          <div className="compact-chart-unavailable-actions">
+            <button type="button" onClick={() => handleTypeChange('horizontal_bar')}>
+              切换为横向柱状图
+            </button>
+            {workspaceUrl && (
+              <a href={workspaceUrl} target="_blank" rel="noreferrer">
+                在完整工作台查看
+              </a>
+            )}
+          </div>
+        </div>
+      ) : (isChartOnly || effectiveViewMode === 'chart') && option ? (
         <ReactECharts
           ref={echartsRef}
           option={option}
@@ -592,7 +716,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
       ) : null}
 
       {/* 图表说明 — hideDescription 时隐藏 */}
-      {!hideDescription && (isChartOnly || effectiveViewMode === 'chart') && option && description && (
+      {!hideDescription && !compactUnavailable && (isChartOnly || effectiveViewMode === 'chart') && option && description && (
         <div style={{
           marginTop: 10,
           fontSize: 12,

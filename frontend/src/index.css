@@ -212,6 +212,51 @@ body {
   overflow-x: auto;
 }
 
+.compact-chart-title {
+  margin: 2px 0 6px;
+  overflow: hidden;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-chart-unavailable {
+  padding: 18px 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.compact-chart-unavailable-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.compact-chart-unavailable-actions button,
+.compact-chart-unavailable-actions a {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: none;
+}
+
 /* 本地模拟目标网站 */
 .demo-site {
   min-height: 100%;

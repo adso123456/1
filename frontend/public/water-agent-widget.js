@@ -29,6 +29,12 @@
       'aria-label',
       open ? '收起智能问数' : '打开智能问数',
     );
+    if (open && state.iframe && state.iframe.contentWindow) {
+      state.iframe.contentWindow.postMessage(
+        { type: 'water-agent-widget:opened' },
+        state.widgetOrigin,
+      );
+    }
   }
 
   function init(options) {

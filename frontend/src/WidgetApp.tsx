@@ -54,6 +54,22 @@ export function WidgetApp() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  useEffect(() => {
+    const handleWidgetOpened = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent
+        || event.origin !== window.location.origin
+        || !event.data
+        || event.data.type !== 'water-agent-widget:opened'
+      ) {
+        return;
+      }
+      window.dispatchEvent(new Event('water-agent-widget:opened'));
+    };
+    window.addEventListener('message', handleWidgetOpened);
+    return () => window.removeEventListener('message', handleWidgetOpened);
+  }, []);
+
   const currentSessionExists = sessionList.some(
     session => session.id === currentSessionId,
   );
@@ -199,6 +215,7 @@ export function WidgetApp() {
           onV2ChartSwitch={replaceMessageChart}
           onAddToDashboard={handleRequestAddToDashboard}
           compact
+          workspaceUrl={workspaceUrl}
           hideHeader
         />
       </div>

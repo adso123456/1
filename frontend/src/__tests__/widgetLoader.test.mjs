@@ -9,6 +9,7 @@ const loaderSource = fs.readFileSync(
   path.join(frontendRoot, 'public', 'water-agent-widget.js'),
   'utf8',
 );
+const postedMessages = [];
 
 class FakeElement {
   constructor(tagName) {
@@ -20,7 +21,11 @@ class FakeElement {
     this.hidden = false;
     this.isConnected = false;
     this.parentNode = null;
-    this.contentWindow = {};
+    this.contentWindow = {
+      postMessage(message, targetOrigin) {
+        postedMessages.push({ message, targetOrigin });
+      },
+    };
     this.className = '';
     this.textContent = '';
   }
@@ -165,6 +170,18 @@ test('点击、open 和 close 控制浮窗显示', () => {
   assert(panel.hidden === false, 'open 后未显示');
 });
 
+test('每次打开向 iframe 发送受目标来源约束的 resize 消息', () => {
+  assert(postedMessages.length >= 2, '打开浮窗未发送 opened 消息');
+  const latest = postedMessages.at(-1);
+  assert(latest.message.type === 'water-agent-widget:opened', 'opened 消息类型错误');
+  assert(latest.targetOrigin === 'http://localhost:5173', 'opened 消息使用了非限定来源');
+  assert(!loaderSource.includes("postMessage(\n        { type: 'water-agent-widget:opened' },\n        '*'"), 'opened 消息使用了 *');
+});
+
+test('重复初始化不会重复注册 message 监听器', () => {
+  assert(windowListeners.size === 1, '重复初始化注册了重复监听器');
+});
+
 test('destroy 清理按钮、iframe 和消息事件', () => {
   window.WaterAgentWidget.destroy();
   assert(body.children.length === 0, 'DOM 未清理');
@@ -246,6 +263,47 @@ test('compact 图表使用独立高度且说明紧跟图表，普通图表仍为
     chartViewSource.includes('marginTop: 10'),
     '图表说明没有紧跟 ECharts 容器',
   );
+});
+
+test('compact 图表监听真实宽度并在浮窗重新打开或变宽后刷新', () => {
+  assert(
+    chartViewSource.includes('const [compactWidth, setCompactWidth] = useState(0)'),
+    '未记录 compact 实际宽度',
+  );
+  assert(
+    chartViewSource.includes('container.getBoundingClientRect().width'),
+    '未读取 ChartView 外层容器宽度',
+  );
+  assert(
+    chartViewSource.includes('observer.observe(container)'),
+    'ResizeObserver 未监听 ChartView 外层容器',
+  );
+  assert(
+    chartViewSource.includes("window.addEventListener('water-agent-widget:opened'"),
+    'ResizeObserver 未同步 compact 宽度',
+  );
+  assert(
+    chartViewSource.includes('width: compactWidth || 400'),
+    'compact option 未使用实测宽度',
+  );
+});
+
+test('WidgetApp 校验 opened 消息来源且只注册一次监听器', () => {
+  assert(widgetAppSource.includes('event.source !== window.parent'), '未校验 opened 消息 source');
+  assert(widgetAppSource.includes('event.origin !== window.location.origin'), '未校验 opened 消息 origin');
+  assert(widgetAppSource.includes("event.data.type !== 'water-agent-widget:opened'"), '未校验 opened 消息类型');
+  assert(widgetAppSource.includes("removeEventListener('message', handleWidgetOpened)"), 'opened 监听器未清理');
+});
+
+test('compact 提供紧凑标题、饼图替代状态和完整查看入口', () => {
+  assert(chartViewSource.includes('className="compact-chart-title"'), '缺少紧凑外层标题');
+  assert(chartViewSource.includes('className="compact-chart-unavailable"'), '缺少饼图替代状态');
+  assert(chartViewSource.includes('切换为横向柱状图'), '缺少横向柱图快捷切换');
+  assert(chartViewSource.includes('完整查看'), '工具栏缺少完整查看');
+  assert(chartViewSource.includes('在完整工作台查看'), '替代状态缺少完整工作台入口');
+  assert(messageBubbleSource.includes('workspaceUrl={workspaceUrl}'), '完整查看地址未传递到 ChartView');
+  assert(indexCssSource.includes('.compact-chart-title'), '缺少紧凑标题样式');
+  assert(indexCssSource.includes('text-overflow: ellipsis'), '紧凑标题未启用单行截断');
 });
 
 test('Toast 脱离 flex 流并定位在浮窗可见区域', () => {

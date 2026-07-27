@@ -15,6 +15,8 @@ interface Props {
   onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
   /** 浮窗中的紧凑布局。 */
   compact?: boolean;
+  /** 浮窗图表工具栏的完整工作台地址。 */
+  workspaceUrl?: string;
   /** 由浮窗外层提供顶栏时隐藏默认顶栏。 */
   hideHeader?: boolean;
 }
@@ -25,7 +27,7 @@ const SUGGESTIONS = [
   '查询2025年1月的监测数据，只取pH值有记录的前5条',
 ];
 
-export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false, hideHeader = false }: Props) {
+export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false, workspaceUrl, hideHeader = false }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -134,6 +136,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
             onV2ChartSwitch={onV2ChartSwitch}
             onAddToDashboard={onAddToDashboard}
             compact={compact}
+            workspaceUrl={workspaceUrl}
           />
         ))}
         <div ref={messagesEndRef} />
