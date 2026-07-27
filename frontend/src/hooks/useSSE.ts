@@ -609,7 +609,27 @@ export function refreshChartsFromDataframe(
   });
 }
 
-export function useSSE(requestedSessionId?: string) {
+export interface UseSSERequestOptions {
+  enabled?: boolean;
+  dataSourcesEndpoint?: string;
+  chatEndpoint?: string;
+  headersProvider?: () => Record<string, string>;
+  onAuthorizationError?: () => void;
+}
+
+export function useSSE(
+  requestedSessionId?: string,
+  requestOptions?: UseSSERequestOptions,
+) {
+  const requestsEnabled = requestOptions?.enabled ?? true;
+  const dataSourcesEndpoint = (
+    requestOptions?.dataSourcesEndpoint || '/api/data-sources'
+  );
+  const chatEndpoint = (
+    requestOptions?.chatEndpoint || '/api/vanna/v2/chat_sse'
+  );
+  const headersProvider = requestOptions?.headersProvider;
+  const onAuthorizationError = requestOptions?.onAuthorizationError;
   const initialSessionRef = useRef<InitialSessionState | null>(null);
   if (!initialSessionRef.current) {
     initialSessionRef.current = resolveInitialSessionState(requestedSessionId);
@@ -643,9 +663,15 @@ export function useSSE(requestedSessionId?: string) {
   const clearStorageError = useCallback(() => setStorageError(null), []);
 
   useEffect(() => {
+    if (!requestsEnabled) return;
     let active = true;
-    void fetch('/api/data-sources')
+    void fetch(dataSourcesEndpoint, {
+      headers: headersProvider?.(),
+    })
       .then(async response => {
+        if (response.status === 401 || response.status === 403) {
+          onAuthorizationError?.();
+        }
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
@@ -673,7 +699,12 @@ export function useSSE(requestedSessionId?: string) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [
+    dataSourcesEndpoint,
+    headersProvider,
+    onAuthorizationError,
+    requestsEnabled,
+  ]);
 
   /** 流式结束后自动保存当前会话到 localStorage */
   useEffect(() => {
@@ -851,6 +882,7 @@ export function useSSE(requestedSessionId?: string) {
   }, [currentSourceId, dataSources, loading, sourceBound]);
 
   const sendMessage = useCallback(async (userText: string) => {
+    if (!requestsEnabled) return;
     if (!currentSourceId) {
       setDataSourceError('请先选择数据源。');
       return;
@@ -949,11 +981,12 @@ export function useSSE(requestedSessionId?: string) {
     abortRef.current = controller;
 
     try {
-      const response = await fetch('/api/vanna/v2/chat_sse', {
+      const response = await fetch(chatEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
+          ...headersProvider?.(),
         },
         body: JSON.stringify(
           buildChatRequestBody(
@@ -964,6 +997,13 @@ export function useSSE(requestedSessionId?: string) {
         ),
         signal: controller.signal,
       });
+      if (response.status === 401 || response.status === 403) {
+        onAuthorizationError?.();
+        throw new Error('嵌入访问验证已失效');
+      }
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response body');
@@ -1191,7 +1231,15 @@ export function useSSE(requestedSessionId?: string) {
     } finally {
       setLoading(false);
     }
-  }, [currentSessionId, currentSourceId, messages]);
+  }, [
+    chatEndpoint,
+    currentSessionId,
+    currentSourceId,
+    headersProvider,
+    messages,
+    onAuthorizationError,
+    requestsEnabled,
+  ]);
 
   const cancelRequest = useCallback(() => {
     abortRef.current?.abort();

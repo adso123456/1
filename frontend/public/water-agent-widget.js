@@ -14,6 +14,11 @@
     instanceId: '',
     ready: false,
     loadTimer: null,
+    getToken: null,
+    token: '',
+    tokenExpiresAt: 0,
+    authPromise: null,
+    authRetryUsed: false,
     triggerHandler: null,
     messageHandler: null,
   };
@@ -41,6 +46,9 @@
         },
         state.widgetOrigin,
       );
+      if (state.ready && tokenNeedsRefresh()) {
+        void provideAuth(false);
+      }
     }
   }
 
@@ -67,6 +75,73 @@
     ].join('-');
   }
 
+  function tokenNeedsRefresh() {
+    return (
+      !state.token
+      || state.tokenExpiresAt <= Math.floor(Date.now() / 1000) + 60
+    );
+  }
+
+  function sendAuth() {
+    if (!state.iframe || !state.iframe.contentWindow || !state.token) return;
+    state.iframe.contentWindow.postMessage(
+      {
+        type: 'water-agent-widget:auth',
+        instanceId: state.instanceId,
+        token: state.token,
+        expiresAt: state.tokenExpiresAt,
+      },
+      state.widgetOrigin,
+    );
+  }
+
+  function provideAuth(forceRefresh) {
+    if (!state.getToken) {
+      if (state.parentOrigin === state.widgetOrigin) {
+        if (state.loading) state.loading.hidden = true;
+        return Promise.resolve();
+      }
+      showLoadError('嵌入访问验证失败，请联系系统管理员。');
+      return Promise.resolve();
+    }
+    if (!forceRefresh && !tokenNeedsRefresh()) {
+      sendAuth();
+      return Promise.resolve();
+    }
+    if (state.authPromise) return state.authPromise;
+    if (state.loading) {
+      state.loading.hidden = false;
+      state.loading.textContent = '正在验证嵌入访问权限';
+    }
+    state.authPromise = Promise.resolve()
+      .then(function () {
+        return state.getToken();
+      })
+      .then(function (payload) {
+        if (
+          !payload
+          || typeof payload.token !== 'string'
+          || !payload.token
+          || typeof payload.expires_at !== 'number'
+        ) {
+          throw new Error('Token 响应无效');
+        }
+        state.token = payload.token;
+        state.tokenExpiresAt = payload.expires_at;
+        sendAuth();
+        if (state.loading) state.loading.hidden = true;
+      })
+      .catch(function () {
+        state.token = '';
+        state.tokenExpiresAt = 0;
+        showLoadError('嵌入访问验证失败，请联系系统管理员。');
+      })
+      .then(function () {
+        state.authPromise = null;
+      });
+    return state.authPromise;
+  }
+
   function init(options) {
     if (state.root && state.root.isConnected) return api;
 
@@ -83,6 +158,15 @@
     state.widgetOrigin = widgetUrl.origin;
     state.instanceId = createInstanceId();
     state.ready = false;
+    state.getToken = (
+      typeof options.getToken === 'function'
+        ? options.getToken
+        : null
+    );
+    state.token = '';
+    state.tokenExpiresAt = 0;
+    state.authPromise = null;
+    state.authRetryUsed = false;
     widgetUrl.searchParams.set('parentOrigin', state.parentOrigin);
     widgetUrl.searchParams.set('instanceId', state.instanceId);
 
@@ -167,7 +251,7 @@
       if (event.data.type === 'water-agent-widget:ready') {
         state.ready = true;
         clearLoadTimer();
-        loading.hidden = true;
+        void provideAuth(true);
         if (!panel.hidden) setOpen(true);
         return;
       }
@@ -176,6 +260,15 @@
         || event.data.type === 'water-agent-widget:minimize'
       ) {
         setOpen(false);
+        return;
+      }
+      if (event.data.type === 'water-agent-widget:auth-required') {
+        if (state.getToken && !state.authRetryUsed) {
+          state.authRetryUsed = true;
+          void provideAuth(true);
+        } else {
+          showLoadError('嵌入访问验证失败，请联系系统管理员。');
+        }
       }
     };
     trigger.addEventListener('click', state.triggerHandler);
@@ -186,6 +279,9 @@
 
   function open() {
     setOpen(true);
+    if (state.ready && tokenNeedsRefresh()) {
+      void provideAuth(true);
+    }
   }
 
   function close() {
@@ -209,6 +305,11 @@
     state.parentOrigin = '';
     state.instanceId = '';
     state.ready = false;
+    state.getToken = null;
+    state.token = '';
+    state.tokenExpiresAt = 0;
+    state.authPromise = null;
+    state.authRetryUsed = false;
     state.triggerHandler = null;
     state.messageHandler = null;
     state.widgetOrigin = '';

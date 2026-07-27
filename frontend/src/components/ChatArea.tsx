@@ -19,6 +19,8 @@ interface Props {
   workspaceUrl?: string;
   /** 由浮窗外层提供顶栏时隐藏默认顶栏。 */
   hideHeader?: boolean;
+  /** 鉴权或其他外层状态未就绪时禁用发送。 */
+  disabled?: boolean;
 }
 
 const SUGGESTIONS = [
@@ -27,7 +29,7 @@ const SUGGESTIONS = [
   '查询2025年1月的监测数据，只取pH值有记录的前5条',
 ];
 
-export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false, workspaceUrl, hideHeader = false }: Props) {
+export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false, workspaceUrl, hideHeader = false, disabled = false }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -38,7 +40,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
 
   const handleSubmit = () => {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || loading || disabled) return;
     setInput('');
     onSend(text);
   };
@@ -108,6 +110,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
                 <button
                   key={i}
                   onClick={() => { onSend(s); setInput(''); }}
+                  disabled={disabled}
                   style={{
                     padding: '8px 16px',
                     border: '1px solid #e5e7eb',
@@ -162,7 +165,7 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="输入问题... (Enter 发送，Shift+Enter 换行)"
-            disabled={loading}
+            disabled={loading || disabled}
             rows={compact ? 1 : 2}
             style={{
               flex: 1,
@@ -196,14 +199,14 @@ export function ChatArea({ messages, loading, onSend, onCancel, onClear, onChang
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={!input.trim()}
+              disabled={!input.trim() || disabled}
               style={{
                 padding: '10px 18px',
                 border: 'none',
                 borderRadius: 8,
-                backgroundColor: input.trim() ? '#2563eb' : '#d1d5db',
+                backgroundColor: input.trim() && !disabled ? '#2563eb' : '#d1d5db',
                 color: '#fff',
-                cursor: input.trim() ? 'pointer' : 'not-allowed',
+                cursor: input.trim() && !disabled ? 'pointer' : 'not-allowed',
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',

@@ -11,6 +11,7 @@ import {
 import {
   isWidgetMessage,
   postWidgetMessage,
+  readWidgetAuthMessage,
   readWidgetEmbedContext,
 } from './widgetMessageProtocol';
 
@@ -19,6 +20,52 @@ type DashboardTarget =
   | { mode: 'new'; name: string };
 
 export function WidgetApp() {
+  const embedContext = useMemo(
+    () => readWidgetEmbedContext(window.location.href),
+    [],
+  );
+  const developmentMode = (
+    !embedContext
+    || embedContext.parentOrigin === window.location.origin
+  );
+  const [embedAuth, setEmbedAuth] = useState<{
+    status: 'waiting' | 'authorized' | 'error';
+    token: string;
+    expiresAt: number;
+  }>(() => ({
+    status: developmentMode ? 'authorized' : 'waiting',
+    token: '',
+    expiresAt: 0,
+  }));
+  const handleAuthorizationError = useCallback(() => {
+    setEmbedAuth(current => ({ ...current, status: 'error', token: '' }));
+    if (embedContext) {
+      postWidgetMessage(
+        window.parent,
+        embedContext,
+        'water-agent-widget:auth-required',
+      );
+    }
+  }, [embedContext]);
+  const requestOptions = useMemo(() => {
+    if (developmentMode) return undefined;
+    return {
+      enabled: embedAuth.status === 'authorized',
+      dataSourcesEndpoint: '/api/embed/data-sources',
+      chatEndpoint: '/api/embed/vanna/v2/chat_sse',
+      headersProvider: () => ({
+        Authorization: `Bearer ${embedAuth.token}`,
+        'X-Water-Agent-Parent-Origin': embedContext!.parentOrigin,
+      }),
+      onAuthorizationError: handleAuthorizationError,
+    };
+  }, [
+    developmentMode,
+    embedAuth.status,
+    embedAuth.token,
+    embedContext,
+    handleAuthorizationError,
+  ]);
   const {
     messages,
     loading,
@@ -36,7 +83,7 @@ export function WidgetApp() {
     selectDataSource,
     dataSourceError,
     sourceBound,
-  } = useSSE();
+  } = useSSE(undefined, requestOptions);
   const {
     dashboards,
     currentDashboardId,
@@ -45,10 +92,6 @@ export function WidgetApp() {
   } = useDashboard();
   const [pendingAdd, setPendingAdd] = useState<WidgetDashboardPayload | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
-  const embedContext = useMemo(
-    () => readWidgetEmbedContext(window.location.href),
-    [],
-  );
 
   useEffect(() => {
     if (!notice?.ok) return;
@@ -58,7 +101,24 @@ export function WidgetApp() {
 
   useEffect(() => {
     if (!embedContext) return;
-    const handleWidgetOpened = (event: MessageEvent) => {
+    const handleWidgetMessage = (event: MessageEvent) => {
+      const auth = readWidgetAuthMessage(
+        event,
+        embedContext,
+        window.parent,
+      );
+      if (auth) {
+        if (auth.expiresAt <= Math.floor(Date.now() / 1000)) {
+          setEmbedAuth({ status: 'error', token: '', expiresAt: 0 });
+        } else {
+          setEmbedAuth({
+            status: 'authorized',
+            token: auth.token,
+            expiresAt: auth.expiresAt,
+          });
+        }
+        return;
+      }
       if (
         !isWidgetMessage(
           event,
@@ -71,10 +131,10 @@ export function WidgetApp() {
       }
       window.dispatchEvent(new Event('water-agent-widget:opened'));
     };
-    window.addEventListener('message', handleWidgetOpened);
+    window.addEventListener('message', handleWidgetMessage);
     postWidgetMessage(window.parent, embedContext, 'water-agent-widget:ready');
     return () => {
-      window.removeEventListener('message', handleWidgetOpened);
+      window.removeEventListener('message', handleWidgetMessage);
     };
   }, [embedContext]);
 
@@ -149,7 +209,7 @@ export function WidgetApp() {
           <button
             type="button"
             onClick={createNewSession}
-            disabled={loading}
+            disabled={loading || embedAuth.status !== 'authorized'}
             title="新建会话"
           >
             新建
@@ -218,6 +278,17 @@ export function WidgetApp() {
         </label>
       </div>
 
+      {!developmentMode && embedAuth.status !== 'authorized' && (
+        <div
+          className="widget-error"
+          role={embedAuth.status === 'error' ? 'alert' : 'status'}
+        >
+          {embedAuth.status === 'error'
+            ? '嵌入访问验证失败，请联系系统管理员。'
+            : '正在验证嵌入访问权限'}
+        </div>
+      )}
+
       {(dataSourceError || storageError) && (
         <div className="widget-error" role="alert">
           {dataSourceError || storageError}
@@ -237,6 +308,7 @@ export function WidgetApp() {
           compact
           workspaceUrl={workspaceUrl}
           hideHeader
+          disabled={embedAuth.status !== 'authorized'}
         />
       </div>
 

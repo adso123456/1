@@ -301,7 +301,7 @@ const indexCssSource = fs.readFileSync(
 );
 
 test('浮窗复用 useSSE 与 ChatArea 且不加载仪表盘编辑区', () => {
-  assert(widgetAppSource.includes('useSSE()'), '未复用 useSSE');
+  assert(widgetAppSource.includes('useSSE(undefined, requestOptions)'), '未复用 useSSE 嵌入请求配置');
   assert(widgetAppSource.includes('<ChatArea'), '未复用 ChatArea');
   assert(widgetAppSource.includes('sessionList'), '未复用会话列表');
   assert(!widgetAppSource.includes('DashboardView'), '浮窗不应加载仪表盘');
@@ -380,7 +380,7 @@ test('WidgetApp 校验 opened 消息来源、实例 ID 且只注册一次监听�
   assert(widgetProtocolSource.includes('event.source === expectedSource'), '未校验 opened 消息 source');
   assert(widgetProtocolSource.includes('event.origin === context.parentOrigin'), '未校验 opened 消息 origin');
   assert(widgetProtocolSource.includes('data.instanceId === context.instanceId'), '未校验 opened 实例 ID');
-  assert(widgetAppSource.includes("removeEventListener('message', handleWidgetOpened)"), 'opened 监听器未清理');
+  assert(widgetAppSource.includes("removeEventListener('message', handleWidgetMessage)"), 'widget 消息监听器未清理');
 });
 
 test('5174 静态宿主页只跨域加载脚本，不直接访问 API 或 Agent 存储', () => {
@@ -392,7 +392,11 @@ test('5174 静态宿主页只跨域加载脚本，不直接访问 API 或 Agent 
     hostDemoSource.includes("agentUrl: 'http://127.0.0.1:5173'"),
     '宿主页未配置 Agent 地址',
   );
-  assert(!hostDemoSource.includes('/api/'), '宿主页不应直接访问 Agent API');
+  assert(
+    !hostDemoSource.includes('/api/data-sources') && !hostDemoSource.includes('/api/vanna/'),
+    '宿主页除签发 Token 外不应直接访问 Agent API',
+  );
+  assert(hostDemoSource.includes('/api/embed-token'), '宿主页应从宿主后端获取嵌入 Token');
   assert(!hostDemoSource.includes('localStorage'), '宿主页不应读取 Agent localStorage');
 });
 
