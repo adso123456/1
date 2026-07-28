@@ -4,7 +4,21 @@ from __future__ import annotations
 
 import sqlparse
 
-from backend.sql_guard import SQLGuard, SQLGuardResult
+from backend.sql_guard import (
+    SQL_FUNCTIONS,
+    SQL_KEYWORDS,
+    SQLGuard,
+    SQLGuardResult,
+)
+
+
+MYSQL_SQL_FUNCTIONS = SQL_FUNCTIONS | {
+    "date",
+    "year",
+    "month",
+    "date_format",
+    "ifnull",
+}
 
 
 class MySQLSQLGuard(SQLGuard):
@@ -29,3 +43,11 @@ class MySQLSQLGuard(SQLGuard):
                 reason="仅允许单条 SQL，禁止多语句",
             )
         return super().validate(sql=sql, query=query, **kwargs)
+
+    def _is_possible_column_identifier(self, identifier: str) -> bool:
+        value = identifier.strip().strip('"`[]').lower()
+        return (
+            bool(value)
+            and value not in SQL_KEYWORDS
+            and value not in MYSQL_SQL_FUNCTIONS
+        )

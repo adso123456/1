@@ -12,6 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import backend.prompts as prompts_module
 from backend.data_source_registry import build_current_data_source_registry
 from backend.data_source_runtime import DataSourceRuntime
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
@@ -21,6 +22,7 @@ from backend.mysql_runtime_factory import (
     create_mysql_runtime,
 )
 from backend.mysql_sql_guard import MySQLSQLGuard
+from backend.sql_guard import SQL_FUNCTIONS
 from config.data_sources import build_mysql_data_source_config
 from vanna.capabilities.sql_runner import RunSqlToolArgs
 
@@ -191,6 +193,15 @@ def main() -> int:
                 [
                     {"table": "wm_station_info", "column": "id"},
                     {"table": "wm_station_info", "column": "station_name"},
+                    {
+                        "table": "wm_waterquality_hour_records",
+                        "column": "monitor_time",
+                    },
+                    {
+                        "table": "wm_waterquality_hour_records",
+                        "column": "m2_value",
+                    },
+                    {"table": "rs_pollutant_info", "column": "id"},
                 ]
             ),
             encoding="utf-8",
@@ -201,6 +212,46 @@ def main() -> int:
             guard.validate(
                 "SELECT id, station_name FROM wm_station_info LIMIT 5"
             ).passed,
+        )
+        mysql_queries = (
+            "SELECT DATE(monitor_time) "
+            "FROM wm_waterquality_hour_records LIMIT 5",
+            "SELECT YEAR(monitor_time), MONTH(monitor_time) "
+            "FROM wm_waterquality_hour_records LIMIT 5",
+            "SELECT DATE_FORMAT(monitor_time, '%Y-%m') "
+            "FROM wm_waterquality_hour_records LIMIT 5",
+            "SELECT IFNULL(m2_value, 0) "
+            "FROM wm_waterquality_hour_records LIMIT 5",
+            "SELECT ROUND(AVG(m2_value), 2), COUNT(m2_value), "
+            "SUM(m2_value), MAX(m2_value), MIN(m2_value), "
+            "COALESCE(m2_value, 0) "
+            "FROM wm_waterquality_hour_records LIMIT 5",
+        )
+        check(
+            "MySQL 日期与聚合函数通过",
+            all(guard.validate(sql).passed for sql in mysql_queries),
+        )
+        check(
+            "MySQL 专用函数未写入 PostgreSQL 全局函数集合",
+            "date_format" not in SQL_FUNCTIONS
+            and "ifnull" not in SQL_FUNCTIONS
+            and "date_trunc" in SQL_FUNCTIONS,
+        )
+        check(
+            "MySQL 反引号标识符通过",
+            guard.validate(
+                "SELECT `station_name` FROM `wm_station_info` LIMIT 5"
+            ).passed,
+        )
+        excluded_fields = ("geom", "centre", "contact", "phone")
+        check(
+            "排除字段被 MySQL SQLGuard 识别为未知字段",
+            all(
+                not guard.validate(
+                    f"SELECT {field} FROM rs_pollutant_info LIMIT 5"
+                ).passed
+                for field in excluded_fields
+            ),
         )
         for operation, sql in (
             ("INSERT", "INSERT INTO wm_station_info(id) VALUES (1)"),
@@ -243,6 +294,59 @@ def main() -> int:
             == "START TRANSACTION READ ONLY"
             and fake_connection.rolled_back
             and fake_connection.closed,
+        )
+
+        original_trace_writer = prompts_module.write_trace_json
+        prompts_module.write_trace_json = lambda *args, **kwargs: None
+        try:
+            mysql_prompt = asyncio.run(
+                prompts_module.OptimizedSystemPromptBuilder(
+                    sql_dialect="mysql"
+                ).build_system_prompt(None, [])
+            )
+            postgresql_prompt = asyncio.run(
+                prompts_module.OptimizedSystemPromptBuilder().build_system_prompt(
+                    None, []
+                )
+            )
+        finally:
+            prompts_module.write_trace_json = original_trace_writer
+        check(
+            "MySQL Prompt 使用 MySQL 方言且无 PostgreSQL 专用表规则",
+            "MYSQL DIALECT" in mysql_prompt
+            and "MySQL 8 compatible SQL" in mysql_prompt
+            and "rs_outlet_monitor_v2" not in mysql_prompt
+            and "sampling_time" not in mysql_prompt
+            and "pg_catalog" not in mysql_prompt,
+        )
+        check(
+            "PostgreSQL Prompt 保持既有专用规则",
+            "rs_outlet_monitor_v2" in postgresql_prompt
+            and "sampling_time" in postgresql_prompt
+            and "pg_catalog" in postgresql_prompt,
+        )
+
+        generated_rows = json.loads(
+            (
+                PROJECT_ROOT
+                / "agent_data"
+                / "mysql-lzh-monitor"
+                / "column_metadata_index.json"
+            ).read_text(encoding="utf-8")
+        )
+        generated_columns = {
+            (row["table"], row["column"]) for row in generated_rows
+        }
+        check(
+            "生成 Metadata 保留 18 表",
+            len({row["table"] for row in generated_rows}) == 18,
+        )
+        check(
+            "四个排除字段未写入生成 Metadata",
+            all(
+                ("rs_pollutant_info", field) not in generated_columns
+                for field in excluded_fields
+            ),
         )
 
     for name, passed in results:

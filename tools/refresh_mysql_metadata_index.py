@@ -61,6 +61,7 @@ LOGICAL_RELATIONS: dict[str, list[dict[str, str]]] = {
 def load_scope(scope_path: Path) -> dict[str, Any]:
     scope = json.loads(scope_path.read_text(encoding="utf-8"))
     tables = scope.get("approved_tables")
+    excluded_columns = scope.get("excluded_columns")
     if (
         scope.get("datasource_id") != "mysql-lzh-monitor"
         or scope.get("dialect") != "mysql"
@@ -68,8 +69,19 @@ def load_scope(scope_path: Path) -> dict[str, Any]:
         or not isinstance(tables, list)
         or len(tables) != 18
         or len(set(tables)) != 18
+        or not isinstance(excluded_columns, list)
+        or not excluded_columns
+        or len(excluded_columns) != len(set(excluded_columns))
+        or any(
+            not isinstance(item, str)
+            or item.count(".") != 1
+            or item.split(".", 1)[0] not in tables
+            for item in excluded_columns
+        )
     ):
-        raise ValueError("MySQL scope 必须精确描述 lzh_monitor 的 18 张批准表")
+        raise ValueError(
+            "MySQL scope 必须精确描述 lzh_monitor 的 18 张批准表和列排除项"
+        )
     return scope
 
 
@@ -81,6 +93,7 @@ def extract_mysql_metadata(
     connection: Any,
     database: str,
     approved_tables: list[str],
+    excluded_columns: list[str],
 ) -> list[dict[str, Any]]:
     """仅查询 information_schema，并返回稳定排序的列级 Metadata。"""
     placeholders = _placeholders(approved_tables)
@@ -132,6 +145,35 @@ def extract_mysql_metadata(
     finally:
         connection.rollback()
         cursor.close()
+
+    excluded = {
+        tuple(item.split(".", 1))
+        for item in excluded_columns
+    }
+    actual_columns = {
+        (row["table_name"], row["column_name"]) for row in columns
+    }
+    missing_exclusions = sorted(excluded - actual_columns)
+    if missing_exclusions:
+        raise RuntimeError(
+            f"Metadata 列排除项不存在：{missing_exclusions}"
+        )
+
+    columns = [
+        row
+        for row in columns
+        if (row["table_name"], row["column_name"]) not in excluded
+    ]
+    excluded_indexes = {
+        (row["table_name"], row["index_name"])
+        for row in index_rows
+        if (row["table_name"], row["column_name"]) in excluded
+    }
+    index_rows = [
+        row
+        for row in index_rows
+        if (row["table_name"], row["index_name"]) not in excluded_indexes
+    ]
 
     found_tables = {row["table_name"] for row in columns}
     expected_tables = set(approved_tables)
@@ -225,6 +267,7 @@ def main() -> int:
             connection,
             config.connection_settings["database"],
             scope["approved_tables"],
+            scope["excluded_columns"],
         )
     finally:
         connection.close()
@@ -235,6 +278,7 @@ def main() -> int:
     print(f"OUTPUT: {Path(output).expanduser().resolve()}")
     print(f"TABLE_COUNT: {len({row['table'] for row in rows})}")
     print(f"COLUMN_COUNT: {len(rows)}")
+    print(f"EXCLUDED_COLUMN_COUNT: {len(scope['excluded_columns'])}")
     print("FORMAL_CHROMA_WRITES: 0")
     return 0
 

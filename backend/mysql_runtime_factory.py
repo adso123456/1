@@ -137,7 +137,9 @@ def _create_mysql_agent(
         lifecycle_hooks=[OriginalQuestionLifecycleHook()],
         context_enrichers=[OriginalQuestionContextEnricher()],
         config=AgentConfig(stream_responses=True),
-        system_prompt_builder=OptimizedSystemPromptBuilder(),
+        system_prompt_builder=OptimizedSystemPromptBuilder(
+            sql_dialect="mysql"
+        ),
     )
 
 

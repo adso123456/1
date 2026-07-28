@@ -49,6 +49,25 @@ async def main() -> int:
         ),
         None,
     )
+    mysql_function_sql = (
+        "SELECT DATE(monitor_time) AS monitor_date, "
+        "YEAR(monitor_time) AS monitor_year, "
+        "MONTH(monitor_time) AS monitor_month, "
+        "DATE_FORMAT(monitor_time, '%Y-%m') AS monitor_year_month, "
+        "IFNULL(m2_value, 0) AS m2_value "
+        "FROM wm_waterquality_hour_records LIMIT 1"
+    )
+    mysql_function_guard = runtime.sql_guard.validate(mysql_function_sql)
+    mysql_function_rows = await runner.run_sql(
+        RunSqlToolArgs(sql=mysql_function_sql),
+        None,
+    )
+    excluded_guard_results = {
+        field: runtime.sql_guard.validate(
+            f"SELECT {field} FROM rs_pollutant_info LIMIT 5"
+        )
+        for field in ("geom", "centre", "contact", "phone")
+    }
 
     checks = (
         (
@@ -97,6 +116,27 @@ async def main() -> int:
         (
             "数据库事务为只读",
             int(transaction_mode.iloc[0]["transaction_read_only"]) == 1,
+        ),
+        (
+            "MySQL 日期函数通过 Guard 并可执行",
+            mysql_function_guard.passed
+            and len(mysql_function_rows) <= 1
+            and list(mysql_function_rows.columns)
+            == [
+                "monitor_date",
+                "monitor_year",
+                "monitor_month",
+                "monitor_year_month",
+                "m2_value",
+            ],
+        ),
+        (
+            "四个排除字段被 Guard 拒绝为未知字段",
+            all(
+                not result.passed
+                and field in result.unknown_columns
+                for field, result in excluded_guard_results.items()
+            ),
         ),
     )
     for name, passed in checks:

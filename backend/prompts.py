@@ -10,8 +10,39 @@ from backend.request_diagnostics import write_trace_json
 class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
     """在默认 prompt 基础上追加本项目专属的查询优化规则"""
 
+    def __init__(
+        self,
+        base_prompt: str | None = None,
+        *,
+        sql_dialect: str = "postgresql",
+    ) -> None:
+        if sql_dialect not in {"postgresql", "mysql"}:
+            raise ValueError("sql_dialect 仅支持 postgresql 或 mysql")
+        super().__init__(base_prompt=base_prompt)
+        self.sql_dialect = sql_dialect
+
+    def _dialect_rules(self) -> tuple[str, str]:
+        if self.sql_dialect == "mysql":
+            return (
+                "information_schema or any MySQL system schemas",
+                """
+4. **MYSQL DIALECT — REQUIRED:**
+   - Generate MySQL 8 compatible SQL.
+   - Use MySQL date functions and backtick identifiers when needed.
+   - Do not generate PostgreSQL-only functions or syntax.
+""",
+            )
+        return (
+            "information_schema, pg_catalog, or any system tables",
+            """
+4. **For queries involving monitoring data (rs_outlet_monitor_v2):**
+   Always include ORDER BY sampling_time DESC LIMIT 50 unless user specifies otherwise.
+""",
+        )
+
     async def build_system_prompt(self, user, tools):
         base = await super().build_system_prompt(user, tools) or ""
+        system_schema_rule, dialect_rule = self._dialect_rules()
         extra = """
 # CRITICAL QUERY RULES — FOLLOW STRICTLY
 
@@ -26,7 +57,7 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
      does not request new data.
 
 1. **ABSOLUTELY FORBIDDEN: Any schema exploration queries.**
-   - DO NOT query information_schema, pg_catalog, or any system tables.
+   - DO NOT query __SYSTEM_SCHEMA_RULE__.
    - DO NOT run SELECT * or SELECT DISTINCT to explore table structures.
    - DO NOT run queries whose ONLY purpose is to discover column names or data types.
    Relevant table structures, column details, and Chinese descriptions are provided
@@ -38,8 +69,7 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
 3. **Each user question should use AT MOST 1-2 SQL queries total.**
    Write the final answer query directly. Do not run preliminary exploration queries.
 
-4. **For queries involving monitoring data (rs_outlet_monitor_v2):**
-   Always include ORDER BY sampling_time DESC LIMIT 50 unless user specifies otherwise.
+__DIALECT_RULE__
 
 5. **Chart specification annotation:**
    End EVERY response with one or more structured chart_spec HTML comments:
@@ -82,6 +112,9 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
    - Charts must not duplicate each other in type AND data perspective.
    - Example of valid multi-chart: bar chart for regional distribution + pie chart for proportion + line chart for time trend.
 """
+        extra = extra.replace(
+            "__SYSTEM_SCHEMA_RULE__", system_schema_rule
+        ).replace("__DIALECT_RULE__", dialect_rule)
         final_prompt = base + extra
         serialized_tools = []
         serialization_errors = []

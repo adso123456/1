@@ -3,6 +3,12 @@
   "datasource_id": "mysql-lzh-monitor",
   "dialect": "mysql",
   "database": "lzh_monitor",
+  "excluded_columns": [
+    "rs_pollutant_info.geom",
+    "rs_pollutant_info.centre",
+    "rs_pollutant_info.contact",
+    "rs_pollutant_info.phone"
+  ],
   "approved_tables": [
     "wm_waterquality_hour_records",
     "wm_waterquality_day_records",
