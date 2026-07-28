@@ -1,4 +1,8 @@
-export type ApplicationMode = 'workspace' | 'widget' | 'embed-demo';
+export type ApplicationMode =
+  | 'workspace'
+  | 'widget'
+  | 'embed-demo'
+  | 'admin';
 export type WidgetAccessMode =
   | 'protected'
   | 'local-development'
@@ -12,7 +16,10 @@ export function resolveApplicationMode(
 ): ApplicationMode {
   if (pathname === '/embed-demo') return 'embed-demo';
   const params = new URLSearchParams(search);
-  return params.get('mode') === 'widget' ? 'widget' : 'workspace';
+  const mode = params.get('mode');
+  if (mode === 'widget') return 'widget';
+  if (mode === 'admin') return 'admin';
+  return 'workspace';
 }
 
 export function buildWidgetUrl(

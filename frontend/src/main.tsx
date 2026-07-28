@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { AdminApp } from './AdminApp.tsx'
 import { EmbedDemoPage } from './EmbedDemoPage.tsx'
 import { WidgetApp } from './WidgetApp.tsx'
 import { resolveApplicationMode } from './appMode.ts'
@@ -15,6 +16,8 @@ const application = mode === 'embed-demo'
   ? <EmbedDemoPage />
   : mode === 'widget'
     ? <WidgetApp />
+    : mode === 'admin'
+      ? <AdminApp />
     : <App />
 
 createRoot(document.getElementById('root')!).render(
