@@ -137,6 +137,7 @@ def create_v1_tables(
     include_checks: bool = True,
     foreign_key_mode: str = "cascade",
     include_children: bool = True,
+    text_check_interference: bool = False,
 ) -> None:
     enabled_check = (
         " check ( ( ENABLED in ( 1 , 0 ) ) )"
@@ -160,8 +161,31 @@ def create_v1_tables(
         )
     elif foreign_key_mode == "none":
         foreign_key = ""
+    elif foreign_key_mode == "omitted_parent_column":
+        foreign_key = (
+            ", FOREIGN KEY (app_id) "
+            "REFERENCES assistant_applications ON DELETE CASCADE"
+        )
     else:
         raise AssertionError(f"未知外键测试模式: {foreign_key_mode}")
+    interference_default = (
+        " DEFAULT 'noise '' check(enabledin(0,1)) "
+        "check(show_historyin(0,1))'"
+        if text_check_interference
+        else ""
+    )
+    interference_comments = (
+        "-- check(enabledin(0,1))\n"
+        "            /* check(show_historyin(0,1)) */"
+        if text_check_interference
+        else ""
+    )
+    interference_constraint = (
+        ', CONSTRAINT "check(enabledin(0,1)) '
+        'check(show_historyin(0,1))" CHECK (1)'
+        if text_check_interference
+        else ""
+    )
     connection.executescript(
         f"""
         CREATE TABLE assistant_applications (
@@ -171,12 +195,14 @@ def create_v1_tables(
             app_secret TEXT NOT NULL,
             token_ttl_seconds INTEGER NOT NULL,
             theme TEXT NOT NULL,
-            logo_url TEXT NOT NULL,
+            logo_url TEXT NOT NULL{interference_default},
             welcome TEXT NOT NULL,
             welcome_description TEXT NOT NULL,
+            {interference_comments}
             show_history INTEGER NOT NULL{history_check},
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
+            {interference_constraint}
         );
         """
     )
@@ -266,6 +292,25 @@ def database_snapshot(db_path: Path) -> tuple[Any, ...]:
             for table_name in table_names
         )
     return schema, data
+
+
+def application_data_snapshot(db_path: Path) -> tuple[Any, ...]:
+    with closing(sqlite3.connect(db_path)) as connection:
+        return tuple(
+            (
+                table_name,
+                tuple(
+                    connection.execute(
+                        f'SELECT * FROM "{table_name}" ORDER BY rowid'
+                    )
+                ),
+            )
+            for table_name in (
+                "assistant_applications",
+                "assistant_application_origins",
+                "assistant_application_sources",
+            )
+        )
 
 
 def assert_schema_failure_unchanged(
@@ -391,6 +436,71 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
     assert loaded.app_secret == legacy_secret
     assert loaded.allowed_origins == ("http://127.0.0.1:5174",)
     assert loaded.allowed_source_ids == (SOURCE_ID,)
+
+    forged_check_path = root / "forged-check-in-text.sqlite3"
+    with closing(sqlite3.connect(forged_check_path)) as connection:
+        create_v1_tables(
+            connection,
+            include_checks=False,
+            text_check_interference=True,
+        )
+        insert_test_application(connection)
+        connection.commit()
+    assert_schema_failure_unchanged(
+        AssistantApplicationRegistry(
+            forged_check_path,
+            resources.registry,
+        )
+    )
+
+    valid_check_with_interference_path = (
+        root / "valid-check-with-interference.sqlite3"
+    )
+    with closing(
+        sqlite3.connect(valid_check_with_interference_path)
+    ) as connection:
+        create_v1_tables(
+            connection,
+            text_check_interference=True,
+        )
+        insert_test_application(connection)
+        connection.commit()
+    business_data_before = application_data_snapshot(
+        valid_check_with_interference_path
+    )
+    valid_check_registry = AssistantApplicationRegistry(
+        valid_check_with_interference_path,
+        resources.registry,
+    )
+    valid_check_registry.initialize()
+    assert_schema_version(valid_check_with_interference_path)
+    assert (
+        application_data_snapshot(valid_check_with_interference_path)
+        == business_data_before
+    )
+
+    omitted_parent_column_path = (
+        root / "foreign-key-omitted-parent-column.sqlite3"
+    )
+    with closing(sqlite3.connect(omitted_parent_column_path)) as connection:
+        create_v1_tables(
+            connection,
+            foreign_key_mode="omitted_parent_column",
+        )
+        insert_test_application(connection)
+        pragma_rows = tuple(
+            connection.execute(
+                "PRAGMA foreign_key_list(assistant_application_origins)"
+            )
+        )
+        assert pragma_rows and all(row[4] is None for row in pragma_rows)
+        connection.commit()
+    assert_schema_failure_unchanged(
+        AssistantApplicationRegistry(
+            omitted_parent_column_path,
+            resources.registry,
+        )
+    )
 
     for name, options in (
         ("missing-foreign-keys", {"foreign_key_mode": "none"}),

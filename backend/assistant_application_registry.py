@@ -331,7 +331,7 @@ class AssistantApplicationRegistry:
         )
 
     @staticmethod
-    def _normalized_table_sql(
+    def _table_sql(
         connection: sqlite3.Connection,
         table_name: str,
     ) -> str:
@@ -346,36 +346,167 @@ class AssistantApplicationRegistry:
             raise SchemaMigrationError(
                 "小助手应用数据库结构与当前 V1 不兼容"
             )
-        without_comments = re.sub(
-            r"/\*.*?\*/|--[^\r\n]*",
-            "",
-            row["sql"],
-            flags=re.DOTALL,
-        )
-        return re.sub(r"\s+", "", without_comments).lower()
+        return row["sql"]
 
     @staticmethod
-    def _has_boolean_check(table_sql: str, column_name: str) -> bool:
+    def _skip_sql_non_code(sql: str, index: int) -> int | None:
+        length = len(sql)
+        character = sql[index]
+        if character in {"'", '"', "`", "["}:
+            closing = "]" if character == "[" else character
+            cursor = index + 1
+            while cursor < length:
+                if sql[cursor] != closing:
+                    cursor += 1
+                    continue
+                if cursor + 1 < length and sql[cursor + 1] == closing:
+                    cursor += 2
+                    continue
+                return cursor + 1
+            return length
+        if sql.startswith("--", index):
+            newline = sql.find("\n", index + 2)
+            return length if newline < 0 else newline + 1
+        if sql.startswith("/*", index):
+            closing = sql.find("*/", index + 2)
+            return length if closing < 0 else closing + 2
+        return None
+
+    @classmethod
+    def _skip_sql_space_and_comments(cls, sql: str, index: int) -> int:
+        length = len(sql)
+        while index < length:
+            if sql[index].isspace():
+                index += 1
+                continue
+            if sql.startswith(("--", "/*"), index):
+                skipped = cls._skip_sql_non_code(sql, index)
+                index = length if skipped is None else skipped
+                continue
+            break
+        return index
+
+    @classmethod
+    def _extract_parenthesized_sql(
+        cls,
+        sql: str,
+        opening_index: int,
+    ) -> tuple[str, int] | None:
+        depth = 0
+        cursor = opening_index
+        content_start = opening_index + 1
+        while cursor < len(sql):
+            skipped = cls._skip_sql_non_code(sql, cursor)
+            if skipped is not None:
+                cursor = skipped
+                continue
+            if sql[cursor] == "(":
+                depth += 1
+            elif sql[cursor] == ")":
+                depth -= 1
+                if depth == 0:
+                    return sql[content_start:cursor], cursor + 1
+            cursor += 1
+        return None
+
+    @classmethod
+    def _extract_check_expressions(cls, table_sql: str) -> tuple[str, ...]:
+        expressions: list[str] = []
+        cursor = 0
+        while cursor < len(table_sql):
+            skipped = cls._skip_sql_non_code(table_sql, cursor)
+            if skipped is not None:
+                cursor = skipped
+                continue
+            if table_sql[cursor].isalpha() or table_sql[cursor] == "_":
+                start = cursor
+                cursor += 1
+                while cursor < len(table_sql) and (
+                    table_sql[cursor].isalnum()
+                    or table_sql[cursor] in {"_", "$"}
+                ):
+                    cursor += 1
+                if table_sql[start:cursor].lower() != "check":
+                    continue
+                opening = cls._skip_sql_space_and_comments(
+                    table_sql,
+                    cursor,
+                )
+                if opening >= len(table_sql) or table_sql[opening] != "(":
+                    continue
+                extracted = cls._extract_parenthesized_sql(
+                    table_sql,
+                    opening,
+                )
+                if extracted is None:
+                    continue
+                expression, cursor = extracted
+                expressions.append(expression)
+                continue
+            cursor += 1
+        return tuple(expressions)
+
+    @classmethod
+    def _normalized_check_expression(cls, expression: str) -> str:
+        output: list[str] = []
+        cursor = 0
+        while cursor < len(expression):
+            skipped = cls._skip_sql_non_code(expression, cursor)
+            if skipped is not None:
+                output.append(" ")
+                cursor = skipped
+                continue
+            output.append(expression[cursor].lower())
+            cursor += 1
+        return re.sub(r"\s+", "", "".join(output))
+
+    @classmethod
+    def _has_boolean_check(
+        cls,
+        check_expressions: Sequence[str],
+        column_name: str,
+    ) -> bool:
         pattern = (
-            rf"check\(\(*{re.escape(column_name)}"
-            r"in\((?:0,1|1,0)\)\)*\)"
+            rf"\(*{re.escape(column_name)}"
+            r"in\((?:0,1|1,0)\)\)*"
         )
-        return re.search(pattern, table_sql) is not None
+        return any(
+            re.fullmatch(
+                pattern,
+                cls._normalized_check_expression(expression),
+            )
+            is not None
+            for expression in check_expressions
+        )
 
     @staticmethod
     def _has_cascade_app_id_foreign_key(
         connection: sqlite3.Connection,
         table_name: str,
     ) -> bool:
-        return any(
-            row["table"].lower() == "assistant_applications"
-            and row["from"].lower() == "app_id"
-            and row["to"].lower() == "app_id"
-            and row["on_delete"].upper() == "CASCADE"
-            for row in connection.execute(
-                f'PRAGMA foreign_key_list("{table_name}")'
+        for row in connection.execute(
+            f'PRAGMA foreign_key_list("{table_name}")'
+        ):
+            values = (
+                row["table"],
+                row["from"],
+                row["to"],
+                row["on_delete"],
             )
-        )
+            if not all(
+                isinstance(value, str) and bool(value)
+                for value in values
+            ):
+                continue
+            parent_table, child_column, parent_column, on_delete = values
+            if (
+                parent_table.lower() == "assistant_applications"
+                and child_column.lower() == "app_id"
+                and parent_column.lower() == "app_id"
+                and on_delete.upper() == "CASCADE"
+            ):
+                return True
+        return False
 
     def _require_v1_compatible_tables(
         self,
@@ -386,12 +517,13 @@ class AssistantApplicationRegistry:
                 raise SchemaMigrationError(
                     "小助手应用数据库结构与当前 V1 不兼容"
                 )
-        application_sql = self._normalized_table_sql(
+        application_sql = self._table_sql(
             connection,
             "assistant_applications",
         )
+        check_expressions = self._extract_check_expressions(application_sql)
         if not all(
-            self._has_boolean_check(application_sql, column_name)
+            self._has_boolean_check(check_expressions, column_name)
             for column_name in ("enabled", "show_history")
         ):
             raise SchemaMigrationError(
