@@ -71,6 +71,23 @@ export function postWidgetMessage(
   );
 }
 
+export function postWidgetAuthMessage(
+  target: Window,
+  context: WidgetEmbedContext,
+  token: string,
+  expiresAt: number,
+): void {
+  target.postMessage(
+    {
+      type: 'water-agent-widget:auth',
+      instanceId: context.instanceId,
+      token,
+      expiresAt,
+    },
+    context.parentOrigin,
+  );
+}
+
 export function readWidgetAuthMessage(
   event: MessageEvent,
   context: WidgetEmbedContext,

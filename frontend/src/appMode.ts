@@ -9,6 +9,8 @@ export type WidgetAccessMode =
   | 'invalid';
 
 const LOCAL_DEVELOPMENT_WIDGET_MARKER = 'project-embed-demo';
+export const ADMIN_PREVIEW_WIDGET_MARKER =
+  'project-admin-preview-v1';
 
 export function resolveApplicationMode(
   pathname: string,
@@ -37,6 +39,21 @@ export function buildWidgetUrl(
   return url.toString();
 }
 
+export function buildAdminPreviewWidgetUrl(
+  agentUrl: string,
+  parentOrigin: string,
+  instanceId: string,
+): string {
+  const url = new URL(
+    buildWidgetUrl(agentUrl, parentOrigin, instanceId),
+  );
+  url.searchParams.set(
+    'adminPreview',
+    ADMIN_PREVIEW_WIDGET_MARKER,
+  );
+  return url.toString();
+}
+
 export function resolveWidgetAccessMode(
   urlValue: string,
   agentOrigin: string,
@@ -61,6 +78,12 @@ export function resolveWidgetAccessMode(
     return 'invalid';
   }
   if (normalizedParentOrigin !== agentOrigin) return 'protected';
+  if (
+    url.searchParams.get('adminPreview')
+    === ADMIN_PREVIEW_WIDGET_MARKER
+  ) {
+    return 'protected';
+  }
   return (
     developmentBuild
     && url.searchParams.get('devWidget') === LOCAL_DEVELOPMENT_WIDGET_MARKER

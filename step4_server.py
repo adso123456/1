@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 from collections.abc import Mapping
@@ -20,7 +21,8 @@ from backend.data_source_chat_handler import DataSourceChatHandler
 from backend.embed_access import (
     EmbedAccessError,
     bearer_token,
-    verify_embed_token,
+    is_loopback_origin,
+    verify_embed_access_token,
 )
 from backend.data_source_registry import (
     DataSourceRegistry,
@@ -89,6 +91,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             ]
 
         def authorize_embed(
+            request: Request,
             authorization: str | None,
             parent_origin: str | None,
             *,
@@ -101,11 +104,33 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                         403,
                         "嵌入父页面 Origin 未提供",
                     )
-                return verify_embed_token(
+                client_is_loopback = False
+                if request.client is not None:
+                    try:
+                        client_address = ipaddress.ip_address(
+                            request.client.host
+                        )
+                        client_is_loopback = client_address.is_loopback
+                    except ValueError:
+                        client_is_loopback = False
+                return verify_embed_access_token(
                     token,
                     parent_origin=parent_origin,
                     registry=self.assistant_application_registry,
                     source_id=source_id,
+                    allow_admin_preview=(
+                        self.admin_settings.enabled
+                        and client_is_loopback
+                        and is_loopback_origin(parent_origin)
+                    ),
+                    admin_preview_denial_status=(
+                        403
+                        if self.admin_settings.enabled
+                        and not client_is_loopback
+                        else 401
+                    ),
+                    admin_token=self.admin_settings.token,
+                    current_source_ids=self.resources.registry.source_ids,
                 )
             except EmbedAccessError as exc:
                 raise HTTPException(
@@ -115,13 +140,18 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
 
         @app.get("/api/embed/application")
         async def get_embed_application(
+            request: Request,
             authorization: str | None = Header(default=None),
             parent_origin: str | None = Header(
                 default=None,
                 alias="X-Water-Agent-Parent-Origin",
             ),
         ) -> dict[str, object]:
-            principal = authorize_embed(authorization, parent_origin)
+            principal = authorize_embed(
+                request,
+                authorization,
+                parent_origin,
+            )
             if self.assistant_application_registry is None:
                 raise HTTPException(
                     status_code=503,
@@ -142,13 +172,18 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
 
         @app.get("/api/embed/data-sources")
         async def list_embed_data_sources(
+            request: Request,
             authorization: str | None = Header(default=None),
             parent_origin: str | None = Header(
                 default=None,
                 alias="X-Water-Agent-Parent-Origin",
             ),
         ) -> list[dict[str, str]]:
-            principal = authorize_embed(authorization, parent_origin)
+            principal = authorize_embed(
+                request,
+                authorization,
+                parent_origin,
+            )
             return [
                 {
                     "source_id": source_id,
@@ -170,7 +205,11 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 alias="X-Water-Agent-Parent-Origin",
             ),
         ) -> StreamingResponse:
-            principal = authorize_embed(authorization, parent_origin)
+            principal = authorize_embed(
+                http_request,
+                authorization,
+                parent_origin,
+            )
             metadata = chat_request.metadata
             source_id = (
                 metadata.get("source_id")

@@ -19,6 +19,11 @@ from backend.assistant_application_registry import (
     InvalidApplicationConfiguration,
 )
 from backend.data_source_registry import DataSourceRegistry
+from backend.embed_access import (
+    EmbedAccessError,
+    is_loopback_origin,
+    issue_admin_preview_token,
+)
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -322,5 +327,63 @@ def create_admin_router(
             **_view_payload(rotated.application),
             "app_secret": rotated.app_secret,
         }
+
+    @router.post(
+        "/assistant-applications/{app_id}/preview-token",
+        dependencies=dependencies,
+    )
+    def issue_preview_token(
+        app_id: str,
+        request: Request,
+        response: Response,
+        origin: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        if origin is None or not is_loopback_origin(origin):
+            raise HTTPException(
+                status_code=403,
+                detail="管理预览 Origin 不允许",
+            )
+        try:
+            if _exact_origin(origin) != _request_origin(request):
+                raise HTTPException(
+                    status_code=403,
+                    detail="管理预览 Origin 不允许",
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=403,
+                detail="管理预览 Origin 不允许",
+            ) from None
+        application = _safe_call(
+            lambda: application_registry.get(app_id)
+        )
+        if not application.enabled:
+            raise HTTPException(status_code=403, detail="应用已禁用")
+        current_sources = set(data_source_registry.source_ids)
+        effective_sources = tuple(
+            source_id
+            for source_id in application.allowed_source_ids
+            if source_id in current_sources
+        )
+        if not effective_sources:
+            raise HTTPException(
+                status_code=409,
+                detail="应用没有当前有效数据源",
+            )
+        try:
+            token, expires_at = issue_admin_preview_token(
+                admin_token=settings.token,
+                application=application,
+                parent_origin=origin,
+                allowed_source_ids=effective_sources,
+            )
+        except EmbedAccessError as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=exc.safe_message,
+            ) from None
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return {"token": token, "expires_at": expires_at}
 
     return router

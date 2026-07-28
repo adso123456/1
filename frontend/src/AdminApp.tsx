@@ -7,12 +7,15 @@ import {
 } from 'react';
 import { AdminApiError, adminApi } from './adminApi';
 import type {
+  AdminPreviewTokenResponse,
   AdminDataSource,
   AssistantApplicationSecretResponse,
   AssistantApplicationView,
   CreateAssistantApplication,
   UpdateAssistantApplication,
 } from './adminTypes';
+import { AssistantPreviewDialog } from './components/admin/AssistantPreviewDialog';
+import { EmbedCodeDialog } from './components/admin/EmbedCodeDialog';
 import './AdminApp.css';
 
 interface FormState {
@@ -58,6 +61,11 @@ interface RequestOwnership {
 interface ActionOwnership {
   epoch: number;
   id: number;
+}
+
+interface AuxiliaryDialog {
+  type: 'preview' | 'embed-code';
+  application: AssistantApplicationView;
 }
 
 const EMPTY_FORM: FormState = {
@@ -220,6 +228,8 @@ export function AdminApp() {
   const [copyStatus, setCopyStatus] = useState('');
   const [confirmation, setConfirmation] =
     useState<ConfirmationState | null>(null);
+  const [auxiliaryDialog, setAuxiliaryDialog] =
+    useState<AuxiliaryDialog | null>(null);
   const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
   const authEpochRef = useRef(0);
@@ -228,6 +238,7 @@ export function AdminApp() {
   const formSubmitRef = useRef<number | null>(null);
   const secretOperationIdRef = useRef(0);
   const secretOwnershipRef = useRef<SecretOwnership | null>(null);
+  const auxiliaryDialogRef = useRef<AuxiliaryDialog | null>(null);
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const busyRef = useRef<Map<string, ActionOwnership>>(new Map());
 
@@ -287,6 +298,7 @@ export function AdminApp() {
       return;
     }
     secretOwnershipRef.current = null;
+    auxiliaryDialogRef.current = null;
     if (mountedRef.current) setSecretOwnership(null);
   }, []);
 
@@ -310,6 +322,7 @@ export function AdminApp() {
     setSecretOwnership(null);
     setCopyStatus('');
     setConfirmation(null);
+    setAuxiliaryDialog(null);
     busyRef.current.clear();
     setBusyActions(new Set());
     setUnlockError(message);
@@ -424,6 +437,7 @@ export function AdminApp() {
       formSessionRef.current += 1;
       formSubmitRef.current = null;
       secretOwnershipRef.current = null;
+      auxiliaryDialogRef.current = null;
       setSecret(null);
       setSecretOwnership(null);
       setCopyStatus('');
@@ -431,6 +445,7 @@ export function AdminApp() {
       setEditingAppId(null);
       setFormError('');
       setConfirmation(null);
+      setAuxiliaryDialog(null);
       setPageError('');
       setLoading(false);
       busyRef.current.clear();
@@ -498,6 +513,7 @@ export function AdminApp() {
     if (
       formSubmitRef.current !== null
       || secretOwnershipRef.current !== null
+      || auxiliaryDialogRef.current !== null
     ) return;
     formSessionRef.current += 1;
     setEditingAppId(null);
@@ -506,7 +522,10 @@ export function AdminApp() {
   };
 
   const openEdit = (application: AssistantApplicationView) => {
-    if (formSubmitRef.current !== null) return;
+    if (
+      formSubmitRef.current !== null
+      || auxiliaryDialogRef.current !== null
+    ) return;
     formSessionRef.current += 1;
     const knownSourceIds = new Set(
       dataSources.map(source => source.source_id),
@@ -652,7 +671,10 @@ export function AdminApp() {
   ) => {
     if (
       action === 'rotate'
-      && secretOwnershipRef.current !== null
+      && (
+        secretOwnershipRef.current !== null
+        || auxiliaryDialogRef.current !== null
+      )
     ) return;
     setConfirmation({ action, application });
   };
@@ -743,6 +765,55 @@ export function AdminApp() {
       ) return;
       setCopyStatus('复制失败，请手动复制。');
     }
+  };
+
+  const issuePreviewToken = useCallback(async (
+    appId: string,
+    signal: AbortSignal,
+  ): Promise<AdminPreviewTokenResponse> => {
+    const epoch = authEpochRef.current;
+    try {
+      const response = await adminApi.issuePreviewToken(
+        token,
+        appId,
+        signal,
+      );
+      if (
+        !mountedRef.current
+        || epoch !== authEpochRef.current
+      ) {
+        throw new DOMException('旧管理会话响应', 'AbortError');
+      }
+      return response;
+    } catch (error) {
+      if (
+        epoch === authEpochRef.current
+        && error instanceof AdminApiError
+        && error.status === 401
+      ) {
+        lock('管理员 Token 无效。');
+      }
+      throw error;
+    }
+  }, [lock, token]);
+
+  const openAuxiliaryDialog = (
+    type: AuxiliaryDialog['type'],
+    application: AssistantApplicationView,
+  ) => {
+    if (
+      auxiliaryDialogRef.current !== null
+      || secretOwnershipRef.current !== null
+      || formSubmitRef.current !== null
+    ) return;
+    const next = { type, application };
+    auxiliaryDialogRef.current = next;
+    setAuxiliaryDialog(next);
+  };
+
+  const closeAuxiliaryDialog = () => {
+    auxiliaryDialogRef.current = null;
+    setAuxiliaryDialog(null);
   };
 
   const knownSourceIds = new Set(
@@ -950,6 +1021,52 @@ export function AdminApp() {
                           onClick={() => openEdit(application)}
                         >
                           编辑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !application.enabled
+                            || !application.allowed_source_ids.some(
+                              sourceId => knownSourceIds.has(sourceId),
+                            )
+                            || formSubmitRef.current !== null
+                            || secretFlowActive
+                          }
+                          title={
+                            !application.enabled
+                              ? '应用已禁用'
+                              : !application.allowed_source_ids.some(
+                                sourceId => knownSourceIds.has(sourceId),
+                              )
+                                ? '没有当前有效数据源'
+                                : secretFlowActive
+                                  ? '请先完成一次性 Secret 流程'
+                                  : '真实 protected Widget 预览'
+                          }
+                          onClick={() => openAuxiliaryDialog(
+                            'preview',
+                            application,
+                          )}
+                        >
+                          预览
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            formSubmitRef.current !== null
+                            || secretFlowActive
+                          }
+                          title={
+                            secretFlowActive
+                              ? '请先完成一次性 Secret 流程'
+                              : '生成受保护嵌入代码'
+                          }
+                          onClick={() => openAuxiliaryDialog(
+                            'embed-code',
+                            application,
+                          )}
+                        >
+                          嵌入代码
                         </button>
                         {application.enabled ? (
                           <button
@@ -1320,6 +1437,21 @@ export function AdminApp() {
             </div>
           </section>
         </div>
+      )}
+      {auxiliaryDialog?.type === 'preview' && (
+        <AssistantPreviewDialog
+          appId={auxiliaryDialog.application.app_id}
+          appName={auxiliaryDialog.application.name}
+          issueToken={issuePreviewToken}
+          onClose={closeAuxiliaryDialog}
+        />
+      )}
+      {auxiliaryDialog?.type === 'embed-code' && (
+        <EmbedCodeDialog
+          application={auxiliaryDialog.application}
+          dataSources={dataSources}
+          onClose={closeAuxiliaryDialog}
+        />
       )}
     </main>
   );

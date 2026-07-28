@@ -43,3 +43,8 @@ export interface AssistantApplicationSecretResponse
   extends AssistantApplicationView {
   app_secret: string;
 }
+
+export interface AdminPreviewTokenResponse {
+  token: string;
+  expires_at: number;
+}

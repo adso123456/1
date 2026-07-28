@@ -1,5 +1,6 @@
 import type {
   AdminDataSource,
+  AdminPreviewTokenResponse,
   AssistantApplicationSecretResponse,
   AssistantApplicationView,
   CreateAssistantApplication,
@@ -170,6 +171,17 @@ export const adminApi = {
   rotateSecret(token: string, appId: string, signal?: AbortSignal) {
     return request<AssistantApplicationSecretResponse>(
       `${applicationPath(appId)}/rotate-secret`,
+      token,
+      { method: 'POST', signal },
+    );
+  },
+  issuePreviewToken(
+    token: string,
+    appId: string,
+    signal?: AbortSignal,
+  ) {
+    return request<AdminPreviewTokenResponse>(
+      `${applicationPath(appId)}/preview-token`,
       token,
       { method: 'POST', signal },
     );
