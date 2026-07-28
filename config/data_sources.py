@@ -1,4 +1,4 @@
-"""当前 PostgreSQL 数据源的离线配置构建入口。"""
+"""PostgreSQL 与 MySQL 数据源的离线配置构建入口。"""
 
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ from config.settings import (
 
 DEFAULT_POSTGRESQL_SCOPE_PATH = (
     PROJECT_ROOT / "config" / "postgresql_metadata_scope.json"
+)
+DEFAULT_MYSQL_SCOPE_PATH = (
+    PROJECT_ROOT / "config" / "mysql_lzh_monitor_metadata_scope.json"
 )
 
 
@@ -75,5 +78,68 @@ def build_postgresql_data_source_config(
         connection_settings=connection_settings,
         metadata_path=_resolve_metadata_path(environ),
         memory_path=_resolve_memory_path(environ),
+        read_only=True,
+    )
+
+
+def _positive_mysql_int(
+    source: Mapping[str, str], name: str, default: int
+) -> int:
+    raw_value = source.get(name, str(default))
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"环境变量 {name} 必须是正整数") from exc
+    if value <= 0:
+        raise ValueError(f"环境变量 {name} 必须是正整数")
+    return value
+
+
+def build_mysql_data_source_config(
+    *,
+    environ: Mapping[str, str] | None = None,
+    scope_path: Path = DEFAULT_MYSQL_SCOPE_PATH,
+) -> DataSourceConfig:
+    """从独立环境变量构造 lzh_monitor MySQL 只读数据源配置。"""
+    source = os.environ if environ is None else environ
+    resolved_scope_path = Path(scope_path).expanduser().resolve()
+    scope = json.loads(resolved_scope_path.read_text(encoding="utf-8"))
+    if not isinstance(scope, dict):
+        raise ValueError("MySQL Metadata scope 顶层必须是对象")
+    if scope.get("dialect") != "mysql":
+        raise ValueError("MySQL Metadata scope 的 dialect 必须为 mysql")
+
+    connection_settings = {
+        "host": source.get("MYSQL_HOST", "127.0.0.1"),
+        "port": _positive_mysql_int(source, "MYSQL_PORT", 3307),
+        "database": source.get("MYSQL_DATABASE", "lzh_monitor"),
+        "user": source.get("MYSQL_USER"),
+        "password": source.get("MYSQL_PASSWORD"),
+        "connect_timeout": _positive_mysql_int(
+            source, "MYSQL_CONNECT_TIMEOUT", 10
+        ),
+        "charset": "utf8mb4",
+    }
+    mysql_root = (PROJECT_ROOT / "agent_data" / "mysql-lzh-monitor").resolve()
+    metadata_path = Path(
+        source.get(
+            "MYSQL_METADATA_INDEX_PATH",
+            str(mysql_root / "column_metadata_index.json"),
+        )
+    ).expanduser().resolve()
+    memory_path = Path(
+        source.get(
+            "MYSQL_VANNA_DATA_DIR",
+            str(PROJECT_ROOT / "vanna_data" / "mysql-lzh-monitor"),
+        )
+    ).expanduser().resolve()
+
+    return DataSourceConfig(
+        source_id=scope.get("datasource_id"),
+        database_type="mysql",
+        sql_dialect="mysql",
+        connection_settings=connection_settings,
+        metadata_path=metadata_path,
+        memory_path=memory_path,
         read_only=True,
     )

@@ -29,6 +29,7 @@ from backend.data_source_registry import (
 from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
+from backend.mysql_runtime_factory import create_mysql_runtime
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -289,11 +290,17 @@ def create_application_resources(
     *,
     environ: Mapping[str, str] | None = None,
 ) -> ApplicationResources:
-    registry = build_current_data_source_registry(environ=environ)
+    registry = build_current_data_source_registry(
+        environ=environ,
+        include_mysql=True,
+    )
     coordinator = DataSourceRequestCoordinator(registry)
     runtime_manager = DataSourceRuntimeManager(
         registry,
-        {"postgresql": create_postgresql_runtime},
+        {
+            "postgresql": create_postgresql_runtime,
+            "mysql": create_mysql_runtime,
+        },
     )
     assistant_application_registry = AssistantApplicationRegistry(
         resolve_system_db_path(environ),
