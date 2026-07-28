@@ -20,6 +20,14 @@ POSTGRESQL_REQUIRED_CONNECTION_FIELDS = (
     "password",
     "connect_timeout",
 )
+MYSQL_REQUIRED_CONNECTION_FIELDS = (
+    "host",
+    "port",
+    "database",
+    "user",
+    "password",
+    "connect_timeout",
+)
 
 
 def _freeze_value(value: Any) -> Any:
@@ -76,6 +84,30 @@ def _validate_postgresql_connection_settings(settings: Mapping[str, Any]) -> Non
             raise ValueError(f"PostgreSQL 连接字段 {field_name} 必须是非空字符串")
 
 
+def _validate_mysql_connection_settings(settings: Mapping[str, Any]) -> None:
+    missing = [
+        field_name
+        for field_name in MYSQL_REQUIRED_CONNECTION_FIELDS
+        if field_name not in settings
+        or settings[field_name] is None
+        or (
+            isinstance(settings[field_name], str)
+            and not settings[field_name].strip()
+        )
+    ]
+    if missing:
+        raise ValueError("MySQL 连接配置缺少必需字段：" + ", ".join(missing))
+
+    for field_name in ("port", "connect_timeout"):
+        value = settings[field_name]
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ValueError(f"MySQL 连接字段 {field_name} 必须是正整数")
+
+    for field_name in ("host", "database", "user", "password"):
+        if not isinstance(settings[field_name], str):
+            raise ValueError(f"MySQL 连接字段 {field_name} 必须是非空字符串")
+
+
 @dataclass(frozen=True)
 class DataSourceConfig:
     """一个数据源所需的完整、不可变运行时配置。"""
@@ -106,12 +138,21 @@ class DataSourceConfig:
                 "PostgreSQL 数据源必须同时使用 database_type=postgresql "
                 "和 sql_dialect=postgresql"
             )
+        if "mysql" in {database_type, sql_dialect} and (
+            database_type != "mysql" or sql_dialect != "mysql"
+        ):
+            raise ValueError(
+                "MySQL 数据源必须同时使用 database_type=mysql "
+                "和 sql_dialect=mysql"
+            )
 
         if not isinstance(self.connection_settings, Mapping):
             raise ValueError("connection_settings 必须是映射")
         connection_settings = _freeze_value(self.connection_settings)
         if database_type == "postgresql":
             _validate_postgresql_connection_settings(connection_settings)
+        elif database_type == "mysql":
+            _validate_mysql_connection_settings(connection_settings)
 
         metadata_path = _require_absolute_path(
             "metadata_path", self.metadata_path

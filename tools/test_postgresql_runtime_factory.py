@@ -38,7 +38,14 @@ def make_config(
             "connect_timeout": 1,
         }
         if database_type == "postgresql"
-        else {"token": SECRET}
+        else {
+            "host": "offline.invalid",
+            "port": 3307,
+            "database": "offline",
+            "user": "offline",
+            "password": SECRET,
+            "connect_timeout": 1,
+        }
     )
     return DataSourceConfig(
         source_id="postgresql-main" if database_type == "postgresql" else "other",

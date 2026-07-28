@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "datasource_id": "mysql-lzh-monitor",
+  "dialect": "mysql",
+  "database": "lzh_monitor",
+  "approved_tables": [
+    "wm_waterquality_hour_records",
+    "wm_waterquality_day_records",
+    "wm_waterquality_month_records",
+    "wm_station_info",
+    "wm_section_info",
+    "wm_waterbody_info",
+    "gis_region",
+    "ad_dict",
+    "wh_hydrological_hour_records",
+    "wh_hydrological_day_records",
+    "wm_hydrological_info",
+    "wh_meteorological_hour_records",
+    "wh_meteorological_day_records",
+    "wm_meteorological_info",
+    "rs_pollutant_hour_records",
+    "rs_pollutant_day_records",
+    "rs_warn_records",
+    "rs_pollutant_info"
+  ]
+}

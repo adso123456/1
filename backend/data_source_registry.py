@@ -63,12 +63,22 @@ def build_current_data_source_registry(
     *,
     environ: Mapping[str, str] | None = None,
     scope_path: Path | None = None,
+    include_mysql: bool = False,
+    mysql_scope_path: Path | None = None,
 ) -> DataSourceRegistry:
-    """用当前 PostgreSQL 离线配置构造单数据源 Registry。"""
-    from config.data_sources import build_postgresql_data_source_config
+    """构造当前数据源 Registry；服务端可显式启用 MySQL。"""
+    from config.data_sources import (
+        build_mysql_data_source_config,
+        build_postgresql_data_source_config,
+    )
 
     build_kwargs: dict[str, object] = {"environ": environ}
     if scope_path is not None:
         build_kwargs["scope_path"] = scope_path
-    config = build_postgresql_data_source_config(**build_kwargs)
-    return DataSourceRegistry((config,))
+    configs = [build_postgresql_data_source_config(**build_kwargs)]
+    if include_mysql:
+        mysql_kwargs: dict[str, object] = {"environ": environ}
+        if mysql_scope_path is not None:
+            mysql_kwargs["scope_path"] = mysql_scope_path
+        configs.append(build_mysql_data_source_config(**mysql_kwargs))
+    return DataSourceRegistry(configs)
