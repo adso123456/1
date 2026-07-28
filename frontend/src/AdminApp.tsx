@@ -32,8 +32,17 @@ interface FormState {
 
 interface SecretState {
   id: number;
+  epoch: number;
   appId: string;
   value: string;
+}
+
+interface SecretOwnership {
+  epoch: number;
+  id: number;
+  status: 'pending' | 'displaying';
+  operation: 'create' | 'rotate';
+  appId: string | null;
 }
 
 interface ConfirmationState {
@@ -206,6 +215,8 @@ export function AdminApp() {
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
   const [secret, setSecret] = useState<SecretState | null>(null);
+  const [secretOwnership, setSecretOwnership] =
+    useState<SecretOwnership | null>(null);
   const [copyStatus, setCopyStatus] = useState('');
   const [confirmation, setConfirmation] =
     useState<ConfirmationState | null>(null);
@@ -215,7 +226,8 @@ export function AdminApp() {
   const actionIdRef = useRef(0);
   const formSessionRef = useRef(0);
   const formSubmitRef = useRef<number | null>(null);
-  const secretIdRef = useRef(0);
+  const secretOperationIdRef = useRef(0);
+  const secretOwnershipRef = useRef<SecretOwnership | null>(null);
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const busyRef = useRef<Map<string, ActionOwnership>>(new Map());
 
@@ -224,8 +236,63 @@ export function AdminApp() {
     controllersRef.current.clear();
   }, []);
 
+  const acquireSecretOwnership = useCallback((
+    operation: SecretOwnership['operation'],
+    appId: string | null,
+  ): SecretOwnership | null => {
+    if (secretOwnershipRef.current !== null) return null;
+    secretOperationIdRef.current += 1;
+    const ownership: SecretOwnership = {
+      epoch: authEpochRef.current,
+      id: secretOperationIdRef.current,
+      status: 'pending',
+      operation,
+      appId,
+    };
+    secretOwnershipRef.current = ownership;
+    setSecretOwnership(ownership);
+    return ownership;
+  }, []);
+
+  const ownsSecretFlow = useCallback((
+    ownership: Pick<SecretOwnership, 'epoch' | 'id'>,
+  ) => {
+    const current = secretOwnershipRef.current;
+    return (
+      mountedRef.current
+      && ownership.epoch === authEpochRef.current
+      && current?.epoch === ownership.epoch
+      && current.id === ownership.id
+    );
+  }, []);
+
+  const markSecretDisplaying = useCallback((
+    ownership: SecretOwnership,
+  ): SecretOwnership | null => {
+    if (!ownsSecretFlow(ownership)) return null;
+    const displaying = { ...ownership, status: 'displaying' as const };
+    secretOwnershipRef.current = displaying;
+    setSecretOwnership(displaying);
+    return displaying;
+  }, [ownsSecretFlow]);
+
+  const releaseSecretOwnership = useCallback((
+    ownership: Pick<SecretOwnership, 'epoch' | 'id'>,
+  ) => {
+    const current = secretOwnershipRef.current;
+    if (
+      current?.epoch !== ownership.epoch
+      || current.id !== ownership.id
+    ) {
+      return;
+    }
+    secretOwnershipRef.current = null;
+    if (mountedRef.current) setSecretOwnership(null);
+  }, []);
+
   const lock = useCallback((message = '') => {
     authEpochRef.current += 1;
+    secretOwnershipRef.current = null;
     abortRequests();
     formSessionRef.current += 1;
     formSubmitRef.current = null;
@@ -239,8 +306,8 @@ export function AdminApp() {
     setForm(null);
     setEditingAppId(null);
     setFormError('');
-    secretIdRef.current += 1;
     setSecret(null);
+    setSecretOwnership(null);
     setCopyStatus('');
     setConfirmation(null);
     busyRef.current.clear();
@@ -356,8 +423,9 @@ export function AdminApp() {
       if (!isCurrentRequest(request)) return;
       formSessionRef.current += 1;
       formSubmitRef.current = null;
-      secretIdRef.current += 1;
+      secretOwnershipRef.current = null;
       setSecret(null);
+      setSecretOwnership(null);
       setCopyStatus('');
       setForm(null);
       setEditingAppId(null);
@@ -427,7 +495,10 @@ export function AdminApp() {
   ]);
 
   const openCreate = () => {
-    if (formSubmitRef.current !== null) return;
+    if (
+      formSubmitRef.current !== null
+      || secretOwnershipRef.current !== null
+    ) return;
     formSessionRef.current += 1;
     setEditingAppId(null);
     setForm({ ...EMPTY_FORM, sourceIds: [], staleSourceIds: [] });
@@ -467,10 +538,21 @@ export function AdminApp() {
     }
     const actionKey = editingAppId ? `edit:${editingAppId}` : 'create';
     const epoch = authEpochRef.current;
+    const secretOwner = editingAppId === null
+      ? acquireSecretOwnership('create', form.appId)
+      : null;
+    if (editingAppId === null && !secretOwner) {
+      setFormError('已有一次性 Secret 操作正在进行，请完成后再试。');
+      return;
+    }
     const action = beginAction(actionKey, epoch);
-    if (!action) return;
+    if (!action) {
+      if (secretOwner) releaseSecretOwnership(secretOwner);
+      return;
+    }
     const formSession = formSessionRef.current;
     formSubmitRef.current = formSession;
+    let secretDelivered = false;
     setFormError('');
     const request = startRequest(epoch);
     const ownsForm = () => (
@@ -499,14 +581,21 @@ export function AdminApp() {
           payload,
           request.controller.signal,
         );
-        if (!ownsForm()) return;
+        if (
+          !ownsForm()
+          || !secretOwner
+          || !ownsSecretFlow(secretOwner)
+        ) return;
         replaceApplication(viewFromSecretResponse(created));
-        secretIdRef.current += 1;
+        const displayingOwner = markSecretDisplaying(secretOwner);
+        if (!displayingOwner) return;
         setSecret({
-          id: secretIdRef.current,
+          id: displayingOwner.id,
+          epoch: displayingOwner.epoch,
           appId: created.app_id,
           value: created.app_secret,
         });
+        secretDelivered = true;
       }
       if (!ownsForm()) return;
       formSubmitRef.current = null;
@@ -527,6 +616,9 @@ export function AdminApp() {
     } finally {
       finishRequest(request);
       if (ownsForm()) formSubmitRef.current = null;
+      if (secretOwner && !secretDelivered) {
+        releaseSecretOwnership(secretOwner);
+      }
       endAction(actionKey, action);
     }
   };
@@ -554,13 +646,36 @@ export function AdminApp() {
     }
   };
 
+  const openConfirmation = (
+    action: ConfirmationState['action'],
+    application: AssistantApplicationView,
+  ) => {
+    if (
+      action === 'rotate'
+      && secretOwnershipRef.current !== null
+    ) return;
+    setConfirmation({ action, application });
+  };
+
   const runConfirmedAction = async () => {
     if (!confirmation) return;
     const { action, application } = confirmation;
     const actionKey = `${action}:${application.app_id}`;
     const epoch = authEpochRef.current;
+    const secretOwner = action === 'rotate'
+      ? acquireSecretOwnership('rotate', application.app_id)
+      : null;
+    if (action === 'rotate' && !secretOwner) {
+      setConfirmation(null);
+      setPageError('已有一次性 Secret 操作正在进行，请完成后再试。');
+      return;
+    }
     const ownership = beginAction(actionKey, epoch);
-    if (!ownership) return;
+    if (!ownership) {
+      if (secretOwner) releaseSecretOwnership(secretOwner);
+      return;
+    }
+    let secretDelivered = false;
     setConfirmation(null);
     const request = startRequest(epoch);
     try {
@@ -577,44 +692,54 @@ export function AdminApp() {
           application.app_id,
           request.controller.signal,
         );
-        if (!isCurrentRequest(request)) return;
+        if (
+          !isCurrentRequest(request)
+          || !secretOwner
+          || !ownsSecretFlow(secretOwner)
+        ) return;
         replaceApplication(viewFromSecretResponse(rotated));
-        secretIdRef.current += 1;
+        const displayingOwner = markSecretDisplaying(secretOwner);
+        if (!displayingOwner) return;
         setSecret({
-          id: secretIdRef.current,
+          id: displayingOwner.id,
+          epoch: displayingOwner.epoch,
           appId: rotated.app_id,
           value: rotated.app_secret,
         });
+        secretDelivered = true;
       }
     } catch (error) {
       handleError(error, request);
     } finally {
       finishRequest(request);
+      if (secretOwner && !secretDelivered) {
+        releaseSecretOwnership(secretOwner);
+      }
       endAction(actionKey, ownership);
     }
   };
 
   const closeSecret = () => {
-    secretIdRef.current += 1;
+    if (secret) {
+      releaseSecretOwnership(secret);
+    }
     setSecret(null);
     setCopyStatus('');
   };
 
   const copySecret = async () => {
     if (!secret) return;
-    const epoch = authEpochRef.current;
-    const secretId = secret.id;
+    const { epoch, id } = secret;
     try {
       await navigator.clipboard.writeText(secret.value);
-      if (
-        epoch !== authEpochRef.current
-        || secretId !== secretIdRef.current
-      ) return;
+      if (!ownsSecretFlow({ epoch, id })) return;
       setCopyStatus('已复制到剪贴板。');
     } catch {
+      const current = secretOwnershipRef.current;
       if (
         epoch !== authEpochRef.current
-        || secretId !== secretIdRef.current
+        || current?.epoch !== epoch
+        || current.id !== id
       ) return;
       setCopyStatus('复制失败，请手动复制。');
     }
@@ -634,6 +759,7 @@ export function AdminApp() {
     : null;
   const formSubmitting = formActionKey !== null
     && busyActions.has(formActionKey);
+  const secretFlowActive = secretOwnership !== null;
 
   if (!token) {
     return (
@@ -699,7 +825,9 @@ export function AdminApp() {
             className="admin-button admin-button--primary"
             type="button"
             onClick={openCreate}
-            disabled={formSubmitRef.current !== null}
+            disabled={
+              formSubmitRef.current !== null || secretFlowActive
+            }
           >
             新建小助手
           </button>
@@ -738,7 +866,9 @@ export function AdminApp() {
               className="admin-button admin-button--primary"
               type="button"
               onClick={openCreate}
-              disabled={formSubmitRef.current !== null}
+              disabled={
+                formSubmitRef.current !== null || secretFlowActive
+              }
             >
               新建小助手
             </button>
@@ -827,10 +957,10 @@ export function AdminApp() {
                             disabled={busyActions.has(
                               `disable:${application.app_id}`,
                             )}
-                            onClick={() => setConfirmation({
-                              action: 'disable',
+                            onClick={() => openConfirmation(
+                              'disable',
                               application,
-                            })}
+                            )}
                           >
                             禁用
                           </button>
@@ -849,13 +979,16 @@ export function AdminApp() {
                         )}
                         <button
                           type="button"
-                          disabled={busyActions.has(
-                            `rotate:${application.app_id}`,
-                          )}
-                          onClick={() => setConfirmation({
-                            action: 'rotate',
+                          disabled={
+                            secretFlowActive
+                            || busyActions.has(
+                              `rotate:${application.app_id}`,
+                            )
+                          }
+                          onClick={() => openConfirmation(
+                            'rotate',
                             application,
-                          })}
+                          )}
                         >
                           轮换 Secret
                         </button>
