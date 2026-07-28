@@ -183,7 +183,13 @@
     state.panel.style.right = '';
     state.panel.style.top = '';
     state.panel.style.bottom = '';
-    if (state.appearance.float_x_anchor === 'left') {
+    var horizontalAnchor = state.dragPosition
+      ? state.dragPosition.float_x_anchor
+      : state.appearance.float_x_anchor;
+    var verticalAnchor = state.dragPosition
+      ? state.dragPosition.float_y_anchor
+      : state.appearance.float_y_anchor;
+    if (horizontalAnchor === 'left') {
       state.panel.style.left = clamp(
         rect.left,
         8,
@@ -196,7 +202,7 @@
         viewportWidth() - panelWidth - 8,
       ) + 'px';
     }
-    if (state.appearance.float_y_anchor === 'top') {
+    if (verticalAnchor === 'top') {
       state.panel.style.top = clamp(
         rect.top + rect.height + 12,
         8,
@@ -285,8 +291,25 @@
   }
 
   function applyAppearance(appearance) {
+    var previous = state.appearance;
+    var persistentPositionChanged = (
+      previous.float_x_anchor !== appearance.float_x_anchor
+      || previous.float_x_offset !== appearance.float_x_offset
+      || previous.float_y_anchor !== appearance.float_y_anchor
+      || previous.float_y_offset !== appearance.float_y_offset
+    );
+    var draggingDisabled = (
+      previous.float_icon_draggable
+      && !appearance.float_icon_draggable
+    );
     state.appearance = appearance;
-    state.dragPosition = null;
+    if (
+      !isDesktop()
+      || persistentPositionChanged
+      || draggingDisabled
+    ) {
+      state.dragPosition = null;
+    }
     if (state.trigger && state.trigger.style) {
       state.trigger.style.setProperty('--water-agent-theme', appearance.theme);
     }
@@ -553,6 +576,18 @@
           8,
           viewportHeight() - height - 8,
         ),
+        float_x_anchor: (
+          pointer.startLeft + deltaX + width / 2
+          <= viewportWidth() / 2
+            ? 'left'
+            : 'right'
+        ),
+        float_y_anchor: (
+          pointer.startTop + deltaY + height / 2
+          <= viewportHeight() / 2
+            ? 'top'
+            : 'bottom'
+        ),
       };
       applyTriggerPosition();
       if (event.preventDefault) event.preventDefault();
@@ -573,19 +608,21 @@
       var height = elementSize(trigger, 'height', 58);
       var centerX = state.dragPosition.left + width / 2;
       var centerY = state.dragPosition.top + height / 2;
-      state.appearance.float_x_anchor = (
+      var horizontalAnchor = (
         centerX <= viewportWidth() / 2 ? 'left' : 'right'
       );
-      state.appearance.float_y_anchor = (
+      var verticalAnchor = (
         centerY <= viewportHeight() / 2 ? 'top' : 'bottom'
       );
       state.dragPosition = {
-        left: state.appearance.float_x_anchor === 'left'
+        left: horizontalAnchor === 'left'
           ? 8
           : viewportWidth() - width - 8,
-        top: state.appearance.float_y_anchor === 'top'
+        top: verticalAnchor === 'top'
           ? 8
           : viewportHeight() - height - 8,
+        float_x_anchor: horizontalAnchor,
+        float_y_anchor: verticalAnchor,
       };
       state.suppressClick = true;
       applyTriggerPosition();

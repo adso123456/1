@@ -97,24 +97,40 @@ export function AssistantAppearanceDialog({
           <section className="admin-appearance-preview" aria-label="静态实时预览">
             <p className="admin-appearance-section-title">静态实时预览</p>
             <div className="admin-preview-stage">
-              <div className="admin-preview-chat">
+              <div
+                className="admin-preview-chat"
+                style={{ borderTopColor: appearance.theme }}
+              >
                 <header
                   style={{
-                    backgroundColor: appearance.theme,
                     color: appearance.header_font_color,
                   }}
                 >
-                  {appearance.logo_url ? (
-                    <img src={appearance.logo_url} alt="" />
-                  ) : (
-                    <span aria-hidden="true">水</span>
-                  )}
-                  <strong>{application.name}</strong>
+                  <div className="admin-preview-title-block">
+                    {appearance.logo_url ? (
+                      <img src={appearance.logo_url} alt="" />
+                    ) : (
+                      <span
+                        className="admin-preview-status-dot"
+                        aria-hidden="true"
+                        style={{ backgroundColor: appearance.theme }}
+                      />
+                    )}
+                    <div>
+                      <strong>{application.name}</strong>
+                      <small>{appearance.welcome || '欢迎语'}</small>
+                    </div>
+                  </div>
+                  <div
+                    className="admin-preview-header-actions"
+                    aria-hidden="true"
+                  >
+                    <span>新建</span>
+                    <span>—</span>
+                  </div>
                 </header>
                 <div className="admin-preview-chat-body">
-                  <h3 style={{ color: appearance.header_font_color }}>
-                    {appearance.welcome || '欢迎语'}
-                  </h3>
+                  <h3>{appearance.welcome || '欢迎语'}</h3>
                   <p>{appearance.welcome_description || '欢迎描述'}</p>
                   <div className="admin-preview-prompt">
                     在这里输入问题…

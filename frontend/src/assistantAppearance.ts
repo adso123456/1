@@ -154,8 +154,14 @@ export function validateAssistantAppearance(
   if (!isSafeAssetUrl(appearance.float_icon_url)) {
     return '浮窗图标 URL 必须为空或为不含凭据的 http/https URL。';
   }
+  if (!appearance.welcome.trim()) {
+    return '欢迎语不能为空、不能包含 HTML，且不能超过 120 个字符。';
+  }
   if (safeText(appearance.welcome, '', 120) !== appearance.welcome.trim()) {
     return '欢迎语不能为空、不能包含 HTML，且不能超过 120 个字符。';
+  }
+  if (!appearance.welcome_description.trim()) {
+    return '欢迎描述不能为空、不能包含 HTML，且不能超过 500 个字符。';
   }
   if (
     safeText(appearance.welcome_description, '', 500)

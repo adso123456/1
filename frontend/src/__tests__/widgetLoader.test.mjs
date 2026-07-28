@@ -380,7 +380,93 @@ test('拖动超过阈值后吸附边角且不误触点击', () => {
   assert(panel.hidden === true, '拖动结束误触发了打开');
   trigger.dispatch('click');
   assert(panel.hidden === false, '拖动后正常点击未恢复');
+  assert(
+    panel.style.right !== '' && panel.style.bottom !== '',
+    '面板未使用页面拖动后的吸附锚点',
+  );
   window.WaterAgentWidget.close();
+});
+
+test('appearance 重发只在持久化位置或拖动开关变化时复位', () => {
+  const trigger = findByClass(body, 'water-agent-trigger');
+  const draggedAppearance = {
+    ...validAppearance,
+    float_icon_url: '',
+    float_x_anchor: 'left',
+    float_y_anchor: 'top',
+  };
+
+  sendAppearance(draggedAppearance);
+  assert(
+    trigger.style.left === '1214px' && trigger.style.top === '834px',
+    '完全相同 appearance 重发后拖动位置被复位',
+  );
+
+  const themedAppearance = {
+    ...draggedAppearance,
+    theme: '#abcdef',
+  };
+  sendAppearance(themedAppearance);
+  assert(
+    trigger.style.left === '1214px' && trigger.style.top === '834px',
+    '仅修改 theme 后拖动位置被复位',
+  );
+  assert(
+    trigger.style['--water-agent-theme'] === '#abcdef',
+    '保留拖动位置时主题未更新',
+  );
+
+  const iconAppearance = {
+    ...themedAppearance,
+    float_icon_url: 'https://example.test/updated-icon.png',
+  };
+  sendAppearance(iconAppearance);
+  assert(
+    trigger.style.left === '1214px' && trigger.style.top === '834px',
+    '仅修改 float_icon_url 后拖动位置被复位',
+  );
+
+  const movedPersistentAppearance = {
+    ...iconAppearance,
+    float_x_offset: 60,
+    float_y_offset: 70,
+  };
+  sendAppearance(movedPersistentAppearance);
+  assert(
+    trigger.style.left === '60px' && trigger.style.top === '70px',
+    '持久化位置变化后未使用新的数据库位置',
+  );
+
+  trigger.dispatch('pointerdown', {
+    pointerId: 8,
+    button: 0,
+    clientX: 60,
+    clientY: 70,
+  });
+  windowListeners.get('pointermove')({
+    pointerId: 8,
+    clientX: 1100,
+    clientY: 800,
+    preventDefault() {},
+  });
+  windowListeners.get('pointerup')({
+    pointerId: 8,
+    clientX: 1100,
+    clientY: 800,
+  });
+  assert(
+    trigger.style.left === '1214px' && trigger.style.top === '834px',
+    '第二次拖动未形成页面内位置',
+  );
+
+  sendAppearance({
+    ...movedPersistentAppearance,
+    float_icon_draggable: false,
+  });
+  assert(
+    trigger.style.left === '60px' && trigger.style.top === '70px',
+    '禁用拖动后未恢复持久化位置',
+  );
 });
 
 test('移动端忽略自定义偏移并禁用拖动', () => {
