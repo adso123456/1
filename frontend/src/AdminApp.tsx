@@ -20,6 +20,7 @@ interface FormState {
   name: string;
   origins: string;
   sourceIds: string[];
+  staleSourceIds: string[];
   ttl: string;
   theme: string;
   logoUrl: string;
@@ -30,6 +31,7 @@ interface FormState {
 }
 
 interface SecretState {
+  id: number;
   appId: string;
   value: string;
 }
@@ -39,11 +41,22 @@ interface ConfirmationState {
   application: AssistantApplicationView;
 }
 
+interface RequestOwnership {
+  controller: AbortController;
+  epoch: number;
+}
+
+interface ActionOwnership {
+  epoch: number;
+  id: number;
+}
+
 const EMPTY_FORM: FormState = {
   appId: '',
   name: '',
   origins: '',
   sourceIds: [],
+  staleSourceIds: [],
   ttl: '300',
   theme: '#1677ff',
   logoUrl: '',
@@ -55,12 +68,16 @@ const EMPTY_FORM: FormState = {
 
 function formFromApplication(
   application: AssistantApplicationView,
+  knownSourceIds: Set<string>,
 ): FormState {
   return {
     appId: application.app_id,
     name: application.name,
     origins: application.allowed_origins.join('\n'),
     sourceIds: [...application.allowed_source_ids],
+    staleSourceIds: application.allowed_source_ids.filter(
+      sourceId => !knownSourceIds.has(sourceId),
+    ),
     ttl: String(application.token_ttl_seconds),
     theme: application.theme,
     logoUrl: application.logo_url,
@@ -112,7 +129,11 @@ function isValidLogoUrl(value: string): boolean {
   }
 }
 
-function validateForm(form: FormState, editing: boolean): string | null {
+function validateForm(
+  form: FormState,
+  editing: boolean,
+  knownSourceIds: Set<string>,
+): string | null {
   if (!editing && !/^[A-Za-z0-9_-]{3,64}$/.test(form.appId)) {
     return 'app_id 必须为 3～64 位字母、数字、下划线或短横线。';
   }
@@ -129,6 +150,12 @@ function validateForm(form: FormState, editing: boolean): string | null {
   }
   if (!form.welcome.trim()) return '欢迎语不能为空。';
   if (!form.welcomeDescription.trim()) return '欢迎描述不能为空。';
+  if (
+    editing
+    && form.sourceIds.some(sourceId => !knownSourceIds.has(sourceId))
+  ) {
+    return '请先取消已经失效的数据源授权，再保存修改。';
+  }
   const invalidOrigin = normalizeOrigins(form.origins).find(
     origin => !isExactOrigin(origin),
   );
@@ -184,8 +211,13 @@ export function AdminApp() {
     useState<ConfirmationState | null>(null);
   const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
+  const authEpochRef = useRef(0);
+  const actionIdRef = useRef(0);
+  const formSessionRef = useRef(0);
+  const formSubmitRef = useRef<number | null>(null);
+  const secretIdRef = useRef(0);
   const controllersRef = useRef<Set<AbortController>>(new Set());
-  const busyRef = useRef<Set<string>>(new Set());
+  const busyRef = useRef<Map<string, ActionOwnership>>(new Map());
 
   const abortRequests = useCallback(() => {
     for (const controller of controllersRef.current) controller.abort();
@@ -193,15 +225,21 @@ export function AdminApp() {
   }, []);
 
   const lock = useCallback((message = '') => {
+    authEpochRef.current += 1;
     abortRequests();
+    formSessionRef.current += 1;
+    formSubmitRef.current = null;
     setToken('');
     setTokenInput('');
+    setUnlocking(false);
     setDataSources([]);
     setApplications([]);
+    setLoading(false);
     setPageError('');
     setForm(null);
     setEditingAppId(null);
     setFormError('');
+    secretIdRef.current += 1;
     setSecret(null);
     setCopyStatus('');
     setConfirmation(null);
@@ -218,29 +256,54 @@ export function AdminApp() {
     };
   }, [abortRequests]);
 
-  const startRequest = useCallback(() => {
+  const startRequest = useCallback((epoch: number): RequestOwnership => {
     const controller = new AbortController();
     controllersRef.current.add(controller);
-    return controller;
+    return { controller, epoch };
   }, []);
 
-  const finishRequest = useCallback((controller: AbortController) => {
-    controllersRef.current.delete(controller);
+  const finishRequest = useCallback((request: RequestOwnership) => {
+    controllersRef.current.delete(request.controller);
   }, []);
 
-  const beginAction = useCallback((key: string): boolean => {
-    if (busyRef.current.has(key)) return false;
-    busyRef.current.add(key);
-    setBusyActions(new Set(busyRef.current));
-    return true;
+  const isCurrentRequest = useCallback((request: RequestOwnership) => (
+    mountedRef.current && request.epoch === authEpochRef.current
+  ), []);
+
+  const beginAction = useCallback((
+    key: string,
+    epoch: number,
+  ): ActionOwnership | null => {
+    if (busyRef.current.has(key)) return null;
+    const ownership = { epoch, id: actionIdRef.current + 1 };
+    actionIdRef.current = ownership.id;
+    busyRef.current.set(key, ownership);
+    setBusyActions(new Set(busyRef.current.keys()));
+    return ownership;
   }, []);
 
-  const endAction = useCallback((key: string) => {
+  const endAction = useCallback((
+    key: string,
+    ownership: ActionOwnership,
+  ) => {
+    const current = busyRef.current.get(key);
+    if (
+      !mountedRef.current
+      || ownership.epoch !== authEpochRef.current
+      || current?.id !== ownership.id
+      || current.epoch !== ownership.epoch
+    ) {
+      return;
+    }
     busyRef.current.delete(key);
-    if (mountedRef.current) setBusyActions(new Set(busyRef.current));
+    setBusyActions(new Set(busyRef.current.keys()));
   }, []);
 
-  const handleError = useCallback((error: unknown) => {
+  const handleError = useCallback((
+    error: unknown,
+    request: RequestOwnership,
+  ) => {
+    if (!isCurrentRequest(request)) return;
     if (error instanceof DOMException && error.name === 'AbortError') return;
     if (error instanceof AdminApiError && error.status === 401) {
       lock('管理员 Token 无效。');
@@ -251,7 +314,7 @@ export function AdminApp() {
         ? error.message
         : '管理服务暂时不可用。',
     );
-  }, [lock]);
+  }, [isCurrentRequest, lock]);
 
   const replaceApplication = useCallback(
     (next: AssistantApplicationView) => {
@@ -269,26 +332,49 @@ export function AdminApp() {
 
   const unlock = async (event: FormEvent) => {
     event.preventDefault();
-    if (!tokenInput || !beginAction('unlock')) return;
+    if (!tokenInput || unlocking) return;
+    const epoch = authEpochRef.current + 1;
+    authEpochRef.current = epoch;
+    abortRequests();
+    busyRef.current.clear();
+    setBusyActions(new Set());
+    const action = beginAction('unlock', epoch);
+    if (!action) return;
     setUnlocking(true);
     setUnlockError('');
     const candidate = tokenInput;
-    const controller = startRequest();
+    const request = startRequest(epoch);
     try {
       const sources = await adminApi.listDataSources(
         candidate,
-        controller.signal,
+        request.controller.signal,
       );
       const items = await adminApi.listApplications(
         candidate,
-        controller.signal,
+        request.controller.signal,
       );
-      if (!mountedRef.current) return;
-      setToken(candidate);
+      if (!isCurrentRequest(request)) return;
+      formSessionRef.current += 1;
+      formSubmitRef.current = null;
+      secretIdRef.current += 1;
+      setSecret(null);
+      setCopyStatus('');
+      setForm(null);
+      setEditingAppId(null);
+      setFormError('');
+      setConfirmation(null);
+      setPageError('');
+      setLoading(false);
+      busyRef.current.clear();
+      setBusyActions(new Set());
       setTokenInput('');
+      setUnlockError('');
       setDataSources(sources);
       setApplications(items);
+      setUnlocking(false);
+      setToken(candidate);
     } catch (error) {
+      if (!isCurrentRequest(request)) return;
       if (error instanceof DOMException && error.name === 'AbortError') return;
       setTokenInput('');
       setUnlockError(
@@ -297,54 +383,71 @@ export function AdminApp() {
           : '管理服务暂时不可用。',
       );
     } finally {
-      finishRequest(controller);
-      if (mountedRef.current) setUnlocking(false);
-      endAction('unlock');
+      finishRequest(request);
+      if (isCurrentRequest(request)) {
+        setUnlocking(false);
+        endAction('unlock', action);
+      }
     }
   };
 
   const refresh = useCallback(async () => {
-    if (!token || !beginAction('refresh')) return;
+    if (!token) return;
+    const epoch = authEpochRef.current;
+    const action = beginAction('refresh', epoch);
+    if (!action) return;
     setLoading(true);
     setPageError('');
-    const controller = startRequest();
+    const request = startRequest(epoch);
     try {
       const [sources, items] = await Promise.all([
-        adminApi.listDataSources(token, controller.signal),
-        adminApi.listApplications(token, controller.signal),
+        adminApi.listDataSources(token, request.controller.signal),
+        adminApi.listApplications(token, request.controller.signal),
       ]);
-      if (!mountedRef.current) return;
+      if (!isCurrentRequest(request)) return;
       setDataSources(sources);
       setApplications(items);
     } catch (error) {
-      if (mountedRef.current) handleError(error);
+      handleError(error, request);
     } finally {
-      finishRequest(controller);
-      if (mountedRef.current) setLoading(false);
-      endAction('refresh');
+      finishRequest(request);
+      if (isCurrentRequest(request)) {
+        setLoading(false);
+        endAction('refresh', action);
+      }
     }
   }, [
     beginAction,
     endAction,
     finishRequest,
     handleError,
+    isCurrentRequest,
     startRequest,
     token,
   ]);
 
   const openCreate = () => {
+    if (formSubmitRef.current !== null) return;
+    formSessionRef.current += 1;
     setEditingAppId(null);
-    setForm({ ...EMPTY_FORM, sourceIds: [] });
+    setForm({ ...EMPTY_FORM, sourceIds: [], staleSourceIds: [] });
     setFormError('');
   };
 
   const openEdit = (application: AssistantApplicationView) => {
+    if (formSubmitRef.current !== null) return;
+    formSessionRef.current += 1;
+    const knownSourceIds = new Set(
+      dataSources.map(source => source.source_id),
+    );
     setEditingAppId(application.app_id);
-    setForm(formFromApplication(application));
+    setForm(formFromApplication(application, knownSourceIds));
     setFormError('');
   };
 
   const closeForm = () => {
+    if (formSubmitRef.current !== null) return;
+    formSessionRef.current += 1;
     setForm(null);
     setEditingAppId(null);
     setFormError('');
@@ -353,24 +456,37 @@ export function AdminApp() {
   const submitForm = async (event: FormEvent) => {
     event.preventDefault();
     if (!form) return;
-    const validationError = validateForm(form, editingAppId !== null);
+    const validationError = validateForm(
+      form,
+      editingAppId !== null,
+      knownSourceIds,
+    );
     if (validationError) {
       setFormError(validationError);
       return;
     }
     const actionKey = editingAppId ? `edit:${editingAppId}` : 'create';
-    if (!beginAction(actionKey)) return;
+    const epoch = authEpochRef.current;
+    const action = beginAction(actionKey, epoch);
+    if (!action) return;
+    const formSession = formSessionRef.current;
+    formSubmitRef.current = formSession;
     setFormError('');
-    const controller = startRequest();
+    const request = startRequest(epoch);
+    const ownsForm = () => (
+      isCurrentRequest(request)
+      && formSessionRef.current === formSession
+      && formSubmitRef.current === formSession
+    );
     try {
       if (editingAppId) {
         const updated = await adminApi.updateApplication(
           token,
           editingAppId,
           commonPayload(form),
-          controller.signal,
+          request.controller.signal,
         );
-        if (!mountedRef.current) return;
+        if (!ownsForm()) return;
         replaceApplication(updated);
       } else {
         const payload: CreateAssistantApplication = {
@@ -381,16 +497,24 @@ export function AdminApp() {
         const created = await adminApi.createApplication(
           token,
           payload,
-          controller.signal,
+          request.controller.signal,
         );
-        if (!mountedRef.current) return;
+        if (!ownsForm()) return;
         replaceApplication(viewFromSecretResponse(created));
-        setSecret({ appId: created.app_id, value: created.app_secret });
+        secretIdRef.current += 1;
+        setSecret({
+          id: secretIdRef.current,
+          appId: created.app_id,
+          value: created.app_secret,
+        });
       }
+      if (!ownsForm()) return;
+      formSubmitRef.current = null;
       closeForm();
     } catch (error) {
+      if (!ownsForm()) return;
       if (error instanceof AdminApiError && error.status === 401) {
-        handleError(error);
+        handleError(error, request);
       } else if (
         !(error instanceof DOMException && error.name === 'AbortError')
       ) {
@@ -401,8 +525,9 @@ export function AdminApp() {
         );
       }
     } finally {
-      finishRequest(controller);
-      endAction(actionKey);
+      finishRequest(request);
+      if (ownsForm()) formSubmitRef.current = null;
+      endAction(actionKey, action);
     }
   };
 
@@ -410,20 +535,22 @@ export function AdminApp() {
     application: AssistantApplicationView,
   ) => {
     const actionKey = `enable:${application.app_id}`;
-    if (!beginAction(actionKey)) return;
-    const controller = startRequest();
+    const epoch = authEpochRef.current;
+    const action = beginAction(actionKey, epoch);
+    if (!action) return;
+    const request = startRequest(epoch);
     try {
       const updated = await adminApi.enableApplication(
         token,
         application.app_id,
-        controller.signal,
+        request.controller.signal,
       );
-      if (mountedRef.current) replaceApplication(updated);
+      if (isCurrentRequest(request)) replaceApplication(updated);
     } catch (error) {
-      if (mountedRef.current) handleError(error);
+      handleError(error, request);
     } finally {
-      finishRequest(controller);
-      endAction(actionKey);
+      finishRequest(request);
+      endAction(actionKey, action);
     }
   };
 
@@ -431,52 +558,82 @@ export function AdminApp() {
     if (!confirmation) return;
     const { action, application } = confirmation;
     const actionKey = `${action}:${application.app_id}`;
-    if (!beginAction(actionKey)) return;
+    const epoch = authEpochRef.current;
+    const ownership = beginAction(actionKey, epoch);
+    if (!ownership) return;
     setConfirmation(null);
-    const controller = startRequest();
+    const request = startRequest(epoch);
     try {
       if (action === 'disable') {
         const updated = await adminApi.disableApplication(
           token,
           application.app_id,
-          controller.signal,
+          request.controller.signal,
         );
-        if (mountedRef.current) replaceApplication(updated);
+        if (isCurrentRequest(request)) replaceApplication(updated);
       } else {
         const rotated = await adminApi.rotateSecret(
           token,
           application.app_id,
-          controller.signal,
+          request.controller.signal,
         );
-        if (!mountedRef.current) return;
+        if (!isCurrentRequest(request)) return;
         replaceApplication(viewFromSecretResponse(rotated));
+        secretIdRef.current += 1;
         setSecret({
+          id: secretIdRef.current,
           appId: rotated.app_id,
           value: rotated.app_secret,
         });
       }
     } catch (error) {
-      if (mountedRef.current) handleError(error);
+      handleError(error, request);
     } finally {
-      finishRequest(controller);
-      endAction(actionKey);
+      finishRequest(request);
+      endAction(actionKey, ownership);
     }
   };
 
   const closeSecret = () => {
+    secretIdRef.current += 1;
     setSecret(null);
     setCopyStatus('');
   };
 
   const copySecret = async () => {
     if (!secret) return;
+    const epoch = authEpochRef.current;
+    const secretId = secret.id;
     try {
       await navigator.clipboard.writeText(secret.value);
+      if (
+        epoch !== authEpochRef.current
+        || secretId !== secretIdRef.current
+      ) return;
       setCopyStatus('已复制到剪贴板。');
     } catch {
+      if (
+        epoch !== authEpochRef.current
+        || secretId !== secretIdRef.current
+      ) return;
       setCopyStatus('复制失败，请手动复制。');
     }
   };
+
+  const knownSourceIds = new Set(
+    dataSources.map(source => source.source_id),
+  );
+  const formStaleSourceIds = form
+    ? [...new Set([
+      ...form.staleSourceIds,
+      ...form.sourceIds.filter(sourceId => !knownSourceIds.has(sourceId)),
+    ])]
+    : [];
+  const formActionKey = form
+    ? editingAppId ? `edit:${editingAppId}` : 'create'
+    : null;
+  const formSubmitting = formActionKey !== null
+    && busyActions.has(formActionKey);
 
   if (!token) {
     return (
@@ -542,6 +699,7 @@ export function AdminApp() {
             className="admin-button admin-button--primary"
             type="button"
             onClick={openCreate}
+            disabled={formSubmitRef.current !== null}
           >
             新建小助手
           </button>
@@ -580,6 +738,7 @@ export function AdminApp() {
               className="admin-button admin-button--primary"
               type="button"
               onClick={openCreate}
+              disabled={formSubmitRef.current !== null}
             >
               新建小助手
             </button>
@@ -621,8 +780,18 @@ export function AdminApp() {
                       <div className="admin-chip-group">
                         {application.allowed_source_ids.length
                           ? application.allowed_source_ids.map(sourceId => (
-                            <span className="admin-chip" key={sourceId}>
-                              {sourceId}
+                            <span
+                              className={
+                                knownSourceIds.has(sourceId)
+                                  ? 'admin-chip'
+                                  : 'admin-chip admin-chip--stale'
+                              }
+                              key={sourceId}
+                            >
+                              <strong>{sourceId}</strong>
+                              {!knownSourceIds.has(sourceId) && (
+                                <small>已失效</small>
+                              )}
                             </span>
                           ))
                           : <span className="admin-muted">无授权数据源</span>}
@@ -647,6 +816,7 @@ export function AdminApp() {
                       <div className="admin-row-actions">
                         <button
                           type="button"
+                          disabled={formSubmitRef.current !== null}
                           onClick={() => openEdit(application)}
                         >
                           编辑
@@ -716,7 +886,12 @@ export function AdminApp() {
                   {editingAppId ? '编辑小助手' : '新建小助手'}
                 </h2>
               </div>
-              <button type="button" onClick={closeForm} aria-label="关闭表单">
+              <button
+                type="button"
+                onClick={closeForm}
+                aria-label="关闭表单"
+                disabled={formSubmitting}
+              >
                 ×
               </button>
             </div>
@@ -814,6 +989,34 @@ export function AdminApp() {
                     </label>
                   ))}
                 </fieldset>
+                {editingAppId && formStaleSourceIds.length > 0 && (
+                  <fieldset className={
+                    'admin-form-span-2 admin-source-fieldset '
+                    + 'admin-source-fieldset--stale'
+                  }>
+                    <legend>已失效的数据源授权</legend>
+                    {formStaleSourceIds.map(sourceId => (
+                      <label key={sourceId}>
+                        <input
+                          type="checkbox"
+                          checked={form.sourceIds.includes(sourceId)}
+                          onChange={event => {
+                            const sourceIds = event.target.checked
+                              ? [...form.sourceIds, sourceId]
+                              : form.sourceIds.filter(
+                                selected => selected !== sourceId,
+                              );
+                            setForm({ ...form, sourceIds });
+                          }}
+                        />
+                        <span>
+                          <strong>{sourceId}</strong>
+                          <small>当前数据源配置中不存在</small>
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
                 <label className="admin-form-span-2">
                   <span>Logo URL</span>
                   <input
@@ -887,19 +1090,16 @@ export function AdminApp() {
                   className="admin-button"
                   type="button"
                   onClick={closeForm}
+                  disabled={formSubmitting}
                 >
                   取消
                 </button>
                 <button
                   className="admin-button admin-button--primary"
                   type="submit"
-                  disabled={busyActions.has(
-                    editingAppId ? `edit:${editingAppId}` : 'create',
-                  )}
+                  disabled={formSubmitting}
                 >
-                  {busyActions.has(
-                    editingAppId ? `edit:${editingAppId}` : 'create',
-                  )
+                  {formSubmitting
                     ? '提交中…'
                     : editingAppId ? '保存修改' : '创建小助手'}
                 </button>

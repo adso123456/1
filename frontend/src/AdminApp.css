@@ -418,6 +418,9 @@
 }
 
 .admin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   max-width: 100%;
   padding: 2px 7px;
   overflow: hidden;
@@ -428,6 +431,28 @@
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 10px;
   text-overflow: ellipsis;
+}
+
+.admin-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-chip small {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #fff0e8;
+  color: #a84516;
+  font-family: inherit;
+  font-size: 9px;
+}
+
+.admin-chip--stale {
+  border-color: #efc3ae;
+  background: #fff7f2;
+  color: #8c3d18;
 }
 
 .admin-origin-list {
@@ -520,6 +545,11 @@
   font-size: 22px;
 }
 
+.admin-modal-header > button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
 .admin-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -529,6 +559,16 @@
 .admin-form label,
 .admin-source-fieldset {
   min-width: 0;
+}
+
+.admin-source-fieldset--stale {
+  border-color: #efc3ae;
+  background: #fffaf7;
+}
+
+.admin-source-fieldset--stale legend,
+.admin-form .admin-source-fieldset--stale small {
+  color: #9b451d;
 }
 
 .admin-form small {
