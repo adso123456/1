@@ -330,6 +330,53 @@ class AssistantApplicationRegistry:
             )
         )
 
+    @staticmethod
+    def _normalized_table_sql(
+        connection: sqlite3.Connection,
+        table_name: str,
+    ) -> str:
+        row = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+        if row is None or not isinstance(row["sql"], str):
+            raise SchemaMigrationError(
+                "小助手应用数据库结构与当前 V1 不兼容"
+            )
+        without_comments = re.sub(
+            r"/\*.*?\*/|--[^\r\n]*",
+            "",
+            row["sql"],
+            flags=re.DOTALL,
+        )
+        return re.sub(r"\s+", "", without_comments).lower()
+
+    @staticmethod
+    def _has_boolean_check(table_sql: str, column_name: str) -> bool:
+        pattern = (
+            rf"check\(\(*{re.escape(column_name)}"
+            r"in\((?:0,1|1,0)\)\)*\)"
+        )
+        return re.search(pattern, table_sql) is not None
+
+    @staticmethod
+    def _has_cascade_app_id_foreign_key(
+        connection: sqlite3.Connection,
+        table_name: str,
+    ) -> bool:
+        return any(
+            row["table"].lower() == "assistant_applications"
+            and row["from"].lower() == "app_id"
+            and row["to"].lower() == "app_id"
+            and row["on_delete"].upper() == "CASCADE"
+            for row in connection.execute(
+                f'PRAGMA foreign_key_list("{table_name}")'
+            )
+        )
+
     def _require_v1_compatible_tables(
         self,
         connection: sqlite3.Connection,
@@ -339,12 +386,34 @@ class AssistantApplicationRegistry:
                 raise SchemaMigrationError(
                     "小助手应用数据库结构与当前 V1 不兼容"
                 )
+        application_sql = self._normalized_table_sql(
+            connection,
+            "assistant_applications",
+        )
+        if not all(
+            self._has_boolean_check(application_sql, column_name)
+            for column_name in ("enabled", "show_history")
+        ):
+            raise SchemaMigrationError(
+                "小助手应用数据库结构与当前 V1 不兼容"
+            )
+        for table_name in (
+            "assistant_application_origins",
+            "assistant_application_sources",
+        ):
+            if not self._has_cascade_app_id_foreign_key(
+                connection,
+                table_name,
+            ):
+                raise SchemaMigrationError(
+                    "小助手应用数据库结构与当前 V1 不兼容"
+                )
 
     @staticmethod
     def _create_v1_tables(connection: sqlite3.Connection) -> None:
         connection.execute(
             """
-                CREATE TABLE IF NOT EXISTS assistant_applications (
+                CREATE TABLE assistant_applications (
                     app_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
@@ -362,7 +431,7 @@ class AssistantApplicationRegistry:
         )
         connection.execute(
             """
-                CREATE TABLE IF NOT EXISTS assistant_application_origins (
+                CREATE TABLE assistant_application_origins (
                     app_id TEXT NOT NULL,
                     origin TEXT NOT NULL,
                     PRIMARY KEY (app_id, origin),
@@ -374,7 +443,7 @@ class AssistantApplicationRegistry:
         )
         connection.execute(
             """
-                CREATE TABLE IF NOT EXISTS assistant_application_sources (
+                CREATE TABLE assistant_application_sources (
                     app_id TEXT NOT NULL,
                     source_id TEXT NOT NULL,
                     PRIMARY KEY (app_id, source_id),
@@ -443,8 +512,16 @@ class AssistantApplicationRegistry:
             return
 
         version = row["version"]
-        if not isinstance(version, int) or version > SCHEMA_VERSION:
-            raise SchemaMigrationError("小助手应用数据库版本高于当前代码支持版本")
+        if (
+            not isinstance(version, int)
+            or version < 0
+            or version > SCHEMA_VERSION
+        ):
+            raise SchemaMigrationError("小助手应用数据库版本不受当前代码支持")
+        if version == 0 and existing_application_tables:
+            raise SchemaMigrationError(
+                "V0 数据库已存在 V1 应用表，无法安全迁移"
+            )
         migrations = {0: self._migrate_0_to_1}
         while version < SCHEMA_VERSION:
             migration = migrations.get(version)

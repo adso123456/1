@@ -25,6 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 MIN_ADMIN_TOKEN_LENGTH = 32
+PUBLIC_ADMIN_TOKEN_PLACEHOLDER = (
+    "replace_with_admin_token_at_least_32_characters"
+)
 SAFE_INTERNAL_ERROR = "管理服务暂时不可用"
 T = TypeVar("T")
 
@@ -47,11 +50,19 @@ def load_admin_settings(
     values = environ if environ is not None else os.environ
     enabled = values.get("WATER_AGENT_ADMIN_ENABLED", "").strip().lower() == "true"
     token = values.get("WATER_AGENT_ADMIN_TOKEN", "")
-    if enabled and len(token) < MIN_ADMIN_TOKEN_LENGTH:
+    if not enabled:
+        return AdminSettings()
+    if (
+        not isinstance(token, str)
+        or len(token) < MIN_ADMIN_TOKEN_LENGTH
+        or not token.strip()
+        or token != token.strip()
+        or token == PUBLIC_ADMIN_TOKEN_PLACEHOLDER
+    ):
         raise AdminConfigurationError(
             "管理员 API 已启用，但 WATER_AGENT_ADMIN_TOKEN 无效"
         )
-    return AdminSettings(enabled=enabled, token=token if enabled else "")
+    return AdminSettings(enabled=True, token=token)
 
 
 class CreateAssistantApplicationRequest(BaseModel):

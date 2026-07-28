@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import socket
 import sqlite3
 import sys
@@ -15,6 +16,7 @@ from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import uvicorn
 from fastapi.testclient import TestClient
@@ -23,7 +25,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.assistant_admin_api import AdminConfigurationError
+from backend.assistant_admin_api import (
+    PUBLIC_ADMIN_TOKEN_PLACEHOLDER,
+    AdminConfigurationError,
+    load_admin_settings,
+)
 from backend.assistant_application_registry import (
     SCHEMA_COMPONENT,
     SCHEMA_VERSION_TABLE,
@@ -39,7 +45,7 @@ from config.data_source_config import DataSourceConfig
 from step4_server import ApplicationResources, DataSourceVannaFastAPIServer
 
 
-ADMIN_TOKEN = "temporary-admin-token-with-at-least-32-characters"
+ADMIN_TOKEN = secrets.token_urlsafe(32)
 APP_SECRET_FIELD = "app_secret"
 SOURCE_ID = "source-a"
 ORIGIN = "http://127.0.0.1"
@@ -125,39 +131,223 @@ def assert_schema_version(db_path: Path, expected: int = 1) -> None:
     assert row == (expected,)
 
 
-def create_legacy_v1(connection: sqlite3.Connection) -> None:
+def create_v1_tables(
+    connection: sqlite3.Connection,
+    *,
+    include_checks: bool = True,
+    foreign_key_mode: str = "cascade",
+    include_children: bool = True,
+) -> None:
+    enabled_check = (
+        " check ( ( ENABLED in ( 1 , 0 ) ) )"
+        if include_checks
+        else ""
+    )
+    history_check = (
+        " Check ( show_history In ( 0 , 1 ) )"
+        if include_checks
+        else ""
+    )
+    if foreign_key_mode == "cascade":
+        foreign_key = (
+            ", FOREIGN KEY (app_id) "
+            "REFERENCES assistant_applications(app_id) ON DELETE CASCADE"
+        )
+    elif foreign_key_mode == "no_action":
+        foreign_key = (
+            ", FOREIGN KEY (app_id) "
+            "REFERENCES assistant_applications(app_id)"
+        )
+    elif foreign_key_mode == "none":
+        foreign_key = ""
+    else:
+        raise AssertionError(f"未知外键测试模式: {foreign_key_mode}")
     connection.executescript(
-        """
+        f"""
         CREATE TABLE assistant_applications (
             app_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+            enabled INTEGER NOT NULL{enabled_check},
             app_secret TEXT NOT NULL,
             token_ttl_seconds INTEGER NOT NULL,
             theme TEXT NOT NULL,
             logo_url TEXT NOT NULL,
             welcome TEXT NOT NULL,
             welcome_description TEXT NOT NULL,
-            show_history INTEGER NOT NULL CHECK (show_history IN (0, 1)),
+            show_history INTEGER NOT NULL{history_check},
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        """
+    )
+    if include_children:
+        connection.executescript(
+            f"""
         CREATE TABLE assistant_application_origins (
             app_id TEXT NOT NULL,
             origin TEXT NOT NULL,
-            PRIMARY KEY (app_id, origin),
-            FOREIGN KEY (app_id) REFERENCES assistant_applications(app_id)
-                ON DELETE CASCADE
+            PRIMARY KEY (app_id, origin)
+            {foreign_key}
         );
         CREATE TABLE assistant_application_sources (
             app_id TEXT NOT NULL,
             source_id TEXT NOT NULL,
-            PRIMARY KEY (app_id, source_id),
-            FOREIGN KEY (app_id) REFERENCES assistant_applications(app_id)
-                ON DELETE CASCADE
+            PRIMARY KEY (app_id, source_id)
+            {foreign_key}
         );
         """
+        )
+
+
+def create_schema_version(
+    connection: sqlite3.Connection,
+    version: int,
+) -> None:
+    connection.execute(
+        f"""
+        CREATE TABLE {SCHEMA_VERSION_TABLE} (
+            component TEXT PRIMARY KEY,
+            version INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
     )
+    connection.execute(
+        f"""
+        INSERT INTO {SCHEMA_VERSION_TABLE}
+            (component, version, updated_at)
+        VALUES (?, ?, 1)
+        """,
+        (SCHEMA_COMPONENT, version),
+    )
+
+
+def insert_test_application(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        INSERT INTO assistant_applications VALUES
+            ('preserved-app', 'Preserved', 1, 'preserved-test-secret',
+             300, '#1677ff', '', 'welcome', 'description', 0, 10, 20)
+        """
+    )
+
+
+def database_snapshot(db_path: Path) -> tuple[Any, ...]:
+    with closing(sqlite3.connect(db_path)) as connection:
+        schema = tuple(
+            connection.execute(
+                """
+                SELECT type, name, tbl_name, sql
+                FROM sqlite_master
+                WHERE name NOT LIKE 'sqlite_%'
+                ORDER BY type, name
+                """
+            )
+        )
+        table_names = tuple(
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+                """
+            )
+        )
+        data = tuple(
+            (
+                table_name,
+                tuple(
+                    connection.execute(
+                        f'SELECT * FROM "{table_name}" ORDER BY rowid'
+                    )
+                ),
+            )
+            for table_name in table_names
+        )
+    return schema, data
+
+
+def assert_schema_failure_unchanged(
+    registry: AssistantApplicationRegistry,
+) -> None:
+    before = database_snapshot(registry.db_path)
+    try:
+        registry.initialize()
+    except SchemaMigrationError as exc:
+        assert "V1" in str(exc) or "版本" in str(exc)
+    else:
+        raise AssertionError("不兼容数据库未失败关闭")
+    assert database_snapshot(registry.db_path) == before
+
+
+def test_admin_settings(resources: ApplicationResources) -> None:
+    disabled = load_admin_settings(
+        {
+            "WATER_AGENT_ADMIN_ENABLED": "false",
+            "WATER_AGENT_ADMIN_TOKEN": "",
+        }
+    )
+    assert disabled.enabled is False and disabled.token == ""
+    assert "token=" not in repr(disabled)
+
+    invalid_tokens = (
+        "",
+        "too-short",
+        " " * 32,
+        f" {ADMIN_TOKEN}",
+        f"{ADMIN_TOKEN} ",
+        PUBLIC_ADMIN_TOKEN_PLACEHOLDER,
+        123,
+    )
+    for token in invalid_tokens:
+        try:
+            load_admin_settings(
+                {
+                    "WATER_AGENT_ADMIN_ENABLED": "true",
+                    "WATER_AGENT_ADMIN_TOKEN": token,
+                }
+            )
+        except AdminConfigurationError as exc:
+            assert str(exc) == (
+                "管理员 API 已启用，但 WATER_AGENT_ADMIN_TOKEN 无效"
+            )
+            if isinstance(token, str) and token:
+                assert token not in str(exc)
+        else:
+            raise AssertionError("无效管理员 Token 未失败关闭")
+
+    valid = load_admin_settings(
+        {
+            "WATER_AGENT_ADMIN_ENABLED": "true",
+            "WATER_AGENT_ADMIN_TOKEN": ADMIN_TOKEN,
+        }
+    )
+    assert valid.enabled is True and valid.token == ADMIN_TOKEN
+    assert ADMIN_TOKEN not in repr(valid)
+
+    app = make_app(resources)
+    wrong_token = secrets.token_urlsafe(32)
+    with patch("backend.assistant_admin_api.logger") as admin_logger:
+        with TestClient(
+            app,
+            base_url=ORIGIN,
+            client=("127.0.0.1", 50000),
+        ) as client:
+            response = client.get(
+                "/api/admin/data-sources",
+                headers=auth_headers(token=wrong_token),
+            )
+            valid_response = client.get(
+                "/api/admin/data-sources",
+                headers=auth_headers(),
+            )
+    assert response.status_code == 401
+    assert wrong_token not in response.text
+    assert valid_response.status_code == 200
+    assert ADMIN_TOKEN not in valid_response.text
+    assert wrong_token not in repr(admin_logger.mock_calls)
+    assert ADMIN_TOKEN not in repr(admin_logger.mock_calls)
 
 
 def test_migrations(root: Path, resources: ApplicationResources) -> None:
@@ -173,7 +363,7 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
     legacy_path = root / "legacy.sqlite3"
     legacy_secret = "legacy-secret-that-must-remain-unchanged-123456"
     with closing(sqlite3.connect(legacy_path)) as connection:
-        create_legacy_v1(connection)
+        create_v1_tables(connection)
         connection.execute(
             """
             INSERT INTO assistant_applications VALUES
@@ -201,6 +391,68 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
     assert loaded.app_secret == legacy_secret
     assert loaded.allowed_origins == ("http://127.0.0.1:5174",)
     assert loaded.allowed_source_ids == (SOURCE_ID,)
+
+    for name, options in (
+        ("missing-foreign-keys", {"foreign_key_mode": "none"}),
+        ("missing-cascade", {"foreign_key_mode": "no_action"}),
+        ("missing-checks", {"include_checks": False}),
+    ):
+        db_path = root / f"{name}.sqlite3"
+        with closing(sqlite3.connect(db_path)) as connection:
+            create_v1_tables(connection, **options)
+            insert_test_application(connection)
+            connection.commit()
+        assert_schema_failure_unchanged(
+            AssistantApplicationRegistry(db_path, resources.registry)
+        )
+
+    version_zero_partial_path = root / "version-zero-partial.sqlite3"
+    with closing(sqlite3.connect(version_zero_partial_path)) as connection:
+        create_v1_tables(connection, include_children=False)
+        insert_test_application(connection)
+        create_schema_version(connection, 0)
+        connection.commit()
+    assert_schema_failure_unchanged(
+        AssistantApplicationRegistry(
+            version_zero_partial_path,
+            resources.registry,
+        )
+    )
+
+    version_zero_empty_path = root / "version-zero-empty.sqlite3"
+    with closing(sqlite3.connect(version_zero_empty_path)) as connection:
+        create_schema_version(connection, 0)
+        connection.execute(
+            "CREATE TABLE unrelated_component_data (value TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO unrelated_component_data VALUES ('preserved')"
+        )
+        connection.commit()
+    version_zero_empty_registry = AssistantApplicationRegistry(
+        version_zero_empty_path,
+        resources.registry,
+    )
+    version_zero_empty_registry.initialize()
+    version_zero_empty_registry.initialize()
+    assert_schema_version(version_zero_empty_path)
+    with closing(sqlite3.connect(version_zero_empty_path)) as connection:
+        assert connection.execute(
+            "SELECT value FROM unrelated_component_data"
+        ).fetchone() == ("preserved",)
+
+    version_one_partial_path = root / "version-one-partial.sqlite3"
+    with closing(sqlite3.connect(version_one_partial_path)) as connection:
+        create_v1_tables(connection, include_children=False)
+        insert_test_application(connection)
+        create_schema_version(connection, 1)
+        connection.commit()
+    assert_schema_failure_unchanged(
+        AssistantApplicationRegistry(
+            version_one_partial_path,
+            resources.registry,
+        )
+    )
 
     future_path = root / "future.sqlite3"
     future_registry = AssistantApplicationRegistry(
@@ -231,24 +483,12 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
             "CREATE TABLE assistant_applications (app_id TEXT PRIMARY KEY)"
         )
         connection.commit()
-    incompatible_registry = AssistantApplicationRegistry(
-        incompatible_path,
-        resources.registry,
+    assert_schema_failure_unchanged(
+        AssistantApplicationRegistry(
+            incompatible_path,
+            resources.registry,
+        )
     )
-    try:
-        incompatible_registry.initialize()
-    except SchemaMigrationError:
-        pass
-    else:
-        raise AssertionError("不兼容数据库未失败关闭")
-    with closing(sqlite3.connect(incompatible_path)) as connection:
-        tables = {
-            row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
-    assert tables == {"assistant_applications"}
 
     rollback_path = root / "rollback.sqlite3"
     rollback_registry = AssistantApplicationRegistry(
@@ -665,6 +905,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="assistant-admin-api-") as temp_name:
         root = Path(temp_name).resolve()
         resources = make_resources(root)
+        test_admin_settings(resources)
         test_migrations(root, resources)
         test_admin_api(root, resources)
         test_live_http(resources)
