@@ -5,6 +5,7 @@ import { DashboardView } from './components/DashboardView';
 import { DashboardListPanel } from './components/DashboardListPanel';
 import { AddChartDialog } from './components/AddChartDialog';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
+import { AssistantManagement } from './AdminApp';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
 import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec } from './types';
@@ -13,7 +14,7 @@ import {
   readWorkspaceSessionId,
 } from './appMode';
 
-type View = 'chat' | 'dashboard';
+type View = 'chat' | 'dashboard' | 'assistant';
 
 /** 待添加到仪表板的图表上下文（点击"添加到仪表板"时暂存） */
 interface PendingAdd {
@@ -229,7 +230,7 @@ function App() {
           onCreate={createDashboard}
         />
       )}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
         {/* Chat localStorage 读写失败提示（不影响 Dashboard Toast） */}
         {currentView === 'chat' && storageError && (
           <div style={{
@@ -261,7 +262,7 @@ function App() {
             </button>
           </div>
         )}
-        {currentView === 'chat' ? (
+        {currentView === 'chat' && (
           <ChatArea
             messages={messages}
             loading={loading}
@@ -272,7 +273,8 @@ function App() {
             onV2ChartSwitch={replaceMessageChart}
             onAddToDashboard={handleRequestAddToDashboard}
           />
-        ) : (
+        )}
+        {currentView === 'dashboard' && (
           <DashboardView
             items={dashboardItems}
             dashboardName={currentDashboardName}
@@ -284,6 +286,14 @@ function App() {
             onV2ChartSwitch={handleDashboardV2ChartSwitch}
           />
         )}
+        <div
+          style={{
+            display: currentView === 'assistant' ? 'block' : 'none',
+            height: '100%',
+          }}
+        >
+          <AssistantManagement embedded />
+        </div>
       </div>
 
       {/* 添加图表和表格弹窗 */}

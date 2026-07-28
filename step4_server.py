@@ -14,7 +14,6 @@ from backend.assistant_application_registry import (
 )
 from backend.assistant_admin_api import (
     create_admin_router,
-    load_admin_settings,
 )
 from backend.data_source_chat_handler import DataSourceChatHandler
 from backend.embed_access import (
@@ -58,7 +57,6 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         resources: ApplicationResources,
         config: Mapping[str, Any] | None = None,
         assistant_application_registry: AssistantApplicationRegistry | None = None,
-        admin_environ: Mapping[str, str] | None = None,
     ) -> None:
         self.config = dict(config or {})
         self.resources = resources
@@ -67,7 +65,6 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             if assistant_application_registry is not None
             else resources.assistant_application_registry
         )
-        self.admin_settings = load_admin_settings(admin_environ)
         self.chat_handler = DataSourceChatHandler(
             resources.coordinator,
             resources.runtime_manager,
@@ -258,9 +255,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 },
             )
 
-        if self.admin_settings.enabled:
-            if self.assistant_application_registry is None:
-                raise RuntimeError("管理员 API 缺少小助手应用注册表")
+        if self.assistant_application_registry is not None:
 
             @app.exception_handler(RequestValidationError)
             async def safe_admin_validation_error(
@@ -276,7 +271,6 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
 
             app.include_router(
                 create_admin_router(
-                    settings=self.admin_settings,
                     application_registry=self.assistant_application_registry,
                     data_source_registry=self.resources.registry,
                 )
@@ -317,7 +311,6 @@ def create_server(
     return DataSourceVannaFastAPIServer(
         resources or create_application_resources(environ=environ),
         assistant_application_registry=assistant_application_registry,
-        admin_environ=environ,
     )
 
 

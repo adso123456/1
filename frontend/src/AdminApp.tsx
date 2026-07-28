@@ -181,11 +181,13 @@ function viewFromSecretResponse(
   return application;
 }
 
-export function AdminApp() {
-  const [tokenInput, setTokenInput] = useState('');
-  const [token, setToken] = useState('');
-  const [unlocking, setUnlocking] = useState(false);
-  const [unlockError, setUnlockError] = useState('');
+interface AssistantManagementProps {
+  embedded?: boolean;
+}
+
+export function AssistantManagement({
+  embedded = false,
+}: AssistantManagementProps) {
   const [dataSources, setDataSources] = useState<AdminDataSource[]>([]);
   const [applications, setApplications] = useState<
     AssistantApplicationView[]
@@ -206,7 +208,7 @@ export function AdminApp() {
   const [appearanceError, setAppearanceError] = useState('');
   const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
-  const authEpochRef = useRef(0);
+  const lifecycleEpochRef = useRef(0);
   const actionIdRef = useRef(0);
   const formSessionRef = useRef(0);
   const formSubmitRef = useRef<number | null>(null);
@@ -236,7 +238,7 @@ export function AdminApp() {
     if (secretOwnershipRef.current !== null) return null;
     secretOperationIdRef.current += 1;
     const ownership: SecretOwnership = {
-      epoch: authEpochRef.current,
+      epoch: lifecycleEpochRef.current,
       id: secretOperationIdRef.current,
       status: 'pending',
       operation,
@@ -253,7 +255,7 @@ export function AdminApp() {
     const current = secretOwnershipRef.current;
     return (
       mountedRef.current
-      && ownership.epoch === authEpochRef.current
+      && ownership.epoch === lifecycleEpochRef.current
       && current?.epoch === ownership.epoch
       && current.id === ownership.id
     );
@@ -283,43 +285,14 @@ export function AdminApp() {
     if (mountedRef.current) setSecretOwnership(null);
   }, []);
 
-  const lock = useCallback((message = '') => {
-    authEpochRef.current += 1;
-    secretOwnershipRef.current = null;
-    abortRequests();
-    formSessionRef.current += 1;
-    formSubmitRef.current = null;
-    formDialogOpenRef.current = false;
-    confirmationDialogOpenRef.current = false;
-    appearanceSessionRef.current += 1;
-    appearanceDialogRef.current = null;
-    appearanceSaveRef.current = null;
-    setToken('');
-    setTokenInput('');
-    setUnlocking(false);
-    setDataSources([]);
-    setApplications([]);
-    setLoading(false);
-    setPageError('');
-    setForm(null);
-    setEditingAppId(null);
-    setFormError('');
-    setSecret(null);
-    setSecretOwnership(null);
-    setCopyStatus('');
-    setConfirmation(null);
-    setAppearanceDialog(null);
-    setAppearanceError('');
-    busyRef.current.clear();
-    setBusyActions(new Set());
-    setUnlockError(message);
-  }, [abortRequests]);
-
   useEffect(() => {
+    const activeBusyActions = busyRef.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      lifecycleEpochRef.current += 1;
       abortRequests();
+      activeBusyActions.clear();
     };
   }, [abortRequests]);
 
@@ -334,7 +307,7 @@ export function AdminApp() {
   }, []);
 
   const isCurrentRequest = useCallback((request: RequestOwnership) => (
-    mountedRef.current && request.epoch === authEpochRef.current
+    mountedRef.current && request.epoch === lifecycleEpochRef.current
   ), []);
 
   const beginAction = useCallback((
@@ -356,7 +329,7 @@ export function AdminApp() {
     const current = busyRef.current.get(key);
     if (
       !mountedRef.current
-      || ownership.epoch !== authEpochRef.current
+      || ownership.epoch !== lifecycleEpochRef.current
       || current?.id !== ownership.id
       || current.epoch !== ownership.epoch
     ) {
@@ -372,16 +345,12 @@ export function AdminApp() {
   ) => {
     if (!isCurrentRequest(request)) return;
     if (error instanceof DOMException && error.name === 'AbortError') return;
-    if (error instanceof AdminApiError && error.status === 401) {
-      lock('管理员 Token 无效。');
-      return;
-    }
     setPageError(
       error instanceof AdminApiError
         ? error.message
         : '管理服务暂时不可用。',
     );
-  }, [isCurrentRequest, lock]);
+  }, [isCurrentRequest]);
 
   const replaceApplication = useCallback(
     (next: AssistantApplicationView) => {
@@ -397,78 +366,8 @@ export function AdminApp() {
     [],
   );
 
-  const unlock = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!tokenInput || unlocking) return;
-    const epoch = authEpochRef.current + 1;
-    authEpochRef.current = epoch;
-    abortRequests();
-    busyRef.current.clear();
-    setBusyActions(new Set());
-    const action = beginAction('unlock', epoch);
-    if (!action) return;
-    setUnlocking(true);
-    setUnlockError('');
-    const candidate = tokenInput;
-    const request = startRequest(epoch);
-    try {
-      const sources = await adminApi.listDataSources(
-        candidate,
-        request.controller.signal,
-      );
-      const items = await adminApi.listApplications(
-        candidate,
-        request.controller.signal,
-      );
-      if (!isCurrentRequest(request)) return;
-      formSessionRef.current += 1;
-      formSubmitRef.current = null;
-      formDialogOpenRef.current = false;
-      confirmationDialogOpenRef.current = false;
-      secretOwnershipRef.current = null;
-      appearanceSessionRef.current += 1;
-      appearanceDialogRef.current = null;
-      appearanceSaveRef.current = null;
-      setSecret(null);
-      setSecretOwnership(null);
-      setCopyStatus('');
-      setForm(null);
-      setEditingAppId(null);
-      setFormError('');
-      setConfirmation(null);
-      setAppearanceDialog(null);
-      setAppearanceError('');
-      setPageError('');
-      setLoading(false);
-      busyRef.current.clear();
-      setBusyActions(new Set());
-      setTokenInput('');
-      setUnlockError('');
-      setDataSources(sources);
-      setApplications(items);
-      setUnlocking(false);
-      setToken(candidate);
-    } catch (error) {
-      if (!isCurrentRequest(request)) return;
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      setTokenInput('');
-      setUnlockError(
-        error instanceof AdminApiError
-          ? error.message
-          : '管理服务暂时不可用。',
-      );
-    } finally {
-      finishRequest(request);
-      if (isCurrentRequest(request)) {
-        setUnlocking(false);
-        endAction('unlock', action);
-      }
-    }
-  };
-
   const refresh = useCallback(async () => {
-    if (!token) return;
-    const epoch = authEpochRef.current;
+    const epoch = lifecycleEpochRef.current;
     const action = beginAction('refresh', epoch);
     if (!action) return;
     setLoading(true);
@@ -476,8 +375,8 @@ export function AdminApp() {
     const request = startRequest(epoch);
     try {
       const [sources, items] = await Promise.all([
-        adminApi.listDataSources(token, request.controller.signal),
-        adminApi.listApplications(token, request.controller.signal),
+        adminApi.listDataSources(request.controller.signal),
+        adminApi.listApplications(request.controller.signal),
       ]);
       if (!isCurrentRequest(request)) return;
       setDataSources(sources);
@@ -498,8 +397,11 @@ export function AdminApp() {
     handleError,
     isCurrentRequest,
     startRequest,
-    token,
   ]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const openCreate = () => {
     if (
@@ -556,7 +458,7 @@ export function AdminApp() {
       return;
     }
     const actionKey = editingAppId ? `edit:${editingAppId}` : 'create';
-    const epoch = authEpochRef.current;
+    const epoch = lifecycleEpochRef.current;
     const secretOwner = editingAppId === null
       ? acquireSecretOwnership('create', form.appId)
       : null;
@@ -582,7 +484,6 @@ export function AdminApp() {
     try {
       if (editingAppId) {
         const updated = await adminApi.updateApplication(
-          token,
           editingAppId,
           commonPayload(form),
           request.controller.signal,
@@ -597,7 +498,6 @@ export function AdminApp() {
           ...commonPayload(form),
         };
         const created = await adminApi.createApplication(
-          token,
           payload,
           request.controller.signal,
         );
@@ -622,11 +522,7 @@ export function AdminApp() {
       closeForm();
     } catch (error) {
       if (!ownsForm()) return;
-      if (error instanceof AdminApiError && error.status === 401) {
-        handleError(error, request);
-      } else if (
-        !(error instanceof DOMException && error.name === 'AbortError')
-      ) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
         setFormError(
           error instanceof AdminApiError
             ? error.message
@@ -647,13 +543,12 @@ export function AdminApp() {
     application: AssistantApplicationView,
   ) => {
     const actionKey = `enable:${application.app_id}`;
-    const epoch = authEpochRef.current;
+    const epoch = lifecycleEpochRef.current;
     const action = beginAction(actionKey, epoch);
     if (!action) return;
     const request = startRequest(epoch);
     try {
       const updated = await adminApi.enableApplication(
-        token,
         application.app_id,
         request.controller.signal,
       );
@@ -690,7 +585,7 @@ export function AdminApp() {
     ) return;
     appearanceSessionRef.current += 1;
     const dialog = {
-      epoch: authEpochRef.current,
+      epoch: lifecycleEpochRef.current,
       sessionId: appearanceSessionRef.current,
       application,
     };
@@ -719,7 +614,7 @@ export function AdminApp() {
     if (
       !dialog
       || appearanceSaveRef.current !== null
-      || dialog.epoch !== authEpochRef.current
+      || dialog.epoch !== lifecycleEpochRef.current
     ) return;
     const actionKey = `appearance:${dialog.application.app_id}`;
     const action = beginAction(actionKey, dialog.epoch);
@@ -740,7 +635,6 @@ export function AdminApp() {
     );
     try {
       const updated = await adminApi.updateApplication(
-        token,
         dialog.application.app_id,
         appearance,
         request.controller.signal,
@@ -753,11 +647,7 @@ export function AdminApp() {
       setAppearanceDialog(null);
     } catch (error) {
       if (!ownsAppearance()) return;
-      if (error instanceof AdminApiError && error.status === 401) {
-        handleError(error, request);
-      } else if (
-        !(error instanceof DOMException && error.name === 'AbortError')
-      ) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
         setAppearanceError(
           error instanceof AdminApiError
             ? error.message
@@ -777,7 +667,7 @@ export function AdminApp() {
     if (!confirmation) return;
     const { action, application } = confirmation;
     const actionKey = `${action}:${application.app_id}`;
-    const epoch = authEpochRef.current;
+    const epoch = lifecycleEpochRef.current;
     const secretOwner = action === 'rotate'
       ? acquireSecretOwnership('rotate', application.app_id)
       : null;
@@ -799,14 +689,12 @@ export function AdminApp() {
     try {
       if (action === 'disable') {
         const updated = await adminApi.disableApplication(
-          token,
           application.app_id,
           request.controller.signal,
         );
         if (isCurrentRequest(request)) replaceApplication(updated);
       } else {
         const rotated = await adminApi.rotateSecret(
-          token,
           application.app_id,
           request.controller.signal,
         );
@@ -860,7 +748,7 @@ export function AdminApp() {
     } catch {
       const current = secretOwnershipRef.current;
       if (
-        epoch !== authEpochRef.current
+        epoch !== lifecycleEpochRef.current
         || current?.epoch !== epoch
         || current.id !== id
       ) return;
@@ -884,54 +772,15 @@ export function AdminApp() {
     && busyActions.has(formActionKey);
   const secretFlowActive = secretOwnership !== null;
 
-  if (!token) {
-    return (
-      <main className="admin-lock-shell">
-        <section className="admin-lock-card" aria-labelledby="admin-lock-title">
-          <div className="admin-brand-mark" aria-hidden="true">水</div>
-          <p className="admin-eyebrow">LOCAL ADMINISTRATION</p>
-          <h1 id="admin-lock-title">小助手管理</h1>
-          <p className="admin-lock-intro">
-            此页面仅供本机管理员使用。刷新或关闭页面后需要重新解锁。
-          </p>
-          <form onSubmit={unlock}>
-            <label htmlFor="admin-token">管理员 Token</label>
-            <input
-              id="admin-token"
-              type="password"
-              autoComplete="off"
-              value={tokenInput}
-              onChange={event => setTokenInput(event.target.value)}
-              disabled={unlocking}
-              autoFocus
-            />
-            {unlockError && (
-              <p className="admin-inline-error" role="alert">{unlockError}</p>
-            )}
-            <button
-              className="admin-button admin-button--primary admin-button--wide"
-              type="submit"
-              disabled={unlocking || !tokenInput}
-            >
-              {unlocking ? '正在验证…' : '解锁管理页面'}
-            </button>
-          </form>
-          <p className="admin-security-note">
-            Token 仅保存在当前页面内存中，不会写入浏览器存储。
-          </p>
-        </section>
-      </main>
-    );
-  }
-
   return (
-    <main className="admin-shell">
+    <main
+      className={`admin-shell${embedded ? ' admin-shell--embedded' : ''}`}
+    >
       <header className="admin-header">
         <div>
           <p className="admin-eyebrow">ASSISTANT REGISTRY</p>
           <div className="admin-title-row">
             <h1>小助手管理</h1>
-            <span className="admin-local-badge">仅限本机</span>
           </div>
           <p>管理嵌入应用的来源授权、展示配置与启用状态。</p>
         </div>
@@ -955,13 +804,6 @@ export function AdminApp() {
             }
           >
             新建小助手
-          </button>
-          <button
-            className="admin-button admin-button--danger-ghost"
-            type="button"
-            onClick={() => lock()}
-          >
-            锁定管理页面
           </button>
         </div>
       </header>
@@ -1427,4 +1269,8 @@ export function AdminApp() {
       )}
     </main>
   );
+}
+
+export function AdminApp() {
+  return <AssistantManagement />;
 }

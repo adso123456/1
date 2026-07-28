@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import secrets
 import socket
 import sqlite3
 import sys
@@ -16,7 +15,6 @@ from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import uvicorn
 from fastapi.testclient import TestClient
@@ -25,11 +23,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.assistant_admin_api import (
-    PUBLIC_ADMIN_TOKEN_PLACEHOLDER,
-    AdminConfigurationError,
-    load_admin_settings,
-)
 from backend.assistant_application_registry import (
     SCHEMA_COMPONENT,
     SCHEMA_VERSION_TABLE,
@@ -45,7 +38,6 @@ from config.data_source_config import DataSourceConfig
 from step4_server import ApplicationResources, DataSourceVannaFastAPIServer
 
 
-ADMIN_TOKEN = secrets.token_urlsafe(32)
 APP_SECRET_FIELD = "app_secret"
 SOURCE_ID = "source-a"
 ORIGIN = "http://127.0.0.1"
@@ -97,23 +89,12 @@ def make_resources(root: Path) -> ApplicationResources:
     )
 
 
-def make_app(
-    resources: ApplicationResources,
-    *,
-    enabled: str = "true",
-    token: str = ADMIN_TOKEN,
-):
-    return DataSourceVannaFastAPIServer(
-        resources,
-        admin_environ={
-            "WATER_AGENT_ADMIN_ENABLED": enabled,
-            "WATER_AGENT_ADMIN_TOKEN": token,
-        },
-    ).create_app()
+def make_app(resources: ApplicationResources):
+    return DataSourceVannaFastAPIServer(resources).create_app()
 
 
-def auth_headers(*, token: str = ADMIN_TOKEN, origin: str | None = None):
-    headers = {"Authorization": f"Bearer {token}"}
+def auth_headers(*, origin: str | None = None):
+    headers = {}
     if origin is not None:
         headers["Origin"] = origin
     return headers
@@ -335,75 +316,6 @@ def assert_schema_failure_unchanged(
     else:
         raise AssertionError("不兼容数据库未失败关闭")
     assert database_snapshot(registry.db_path) == before
-
-
-def test_admin_settings(resources: ApplicationResources) -> None:
-    disabled = load_admin_settings(
-        {
-            "WATER_AGENT_ADMIN_ENABLED": "false",
-            "WATER_AGENT_ADMIN_TOKEN": "",
-        }
-    )
-    assert disabled.enabled is False and disabled.token == ""
-    assert "token=" not in repr(disabled)
-
-    invalid_tokens = (
-        "",
-        "too-short",
-        " " * 32,
-        f" {ADMIN_TOKEN}",
-        f"{ADMIN_TOKEN} ",
-        PUBLIC_ADMIN_TOKEN_PLACEHOLDER,
-        123,
-    )
-    for token in invalid_tokens:
-        try:
-            load_admin_settings(
-                {
-                    "WATER_AGENT_ADMIN_ENABLED": "true",
-                    "WATER_AGENT_ADMIN_TOKEN": token,
-                }
-            )
-        except AdminConfigurationError as exc:
-            assert str(exc) == (
-                "管理员 API 已启用，但 WATER_AGENT_ADMIN_TOKEN 无效"
-            )
-            if isinstance(token, str) and token:
-                assert token not in str(exc)
-        else:
-            raise AssertionError("无效管理员 Token 未失败关闭")
-
-    valid = load_admin_settings(
-        {
-            "WATER_AGENT_ADMIN_ENABLED": "true",
-            "WATER_AGENT_ADMIN_TOKEN": ADMIN_TOKEN,
-        }
-    )
-    assert valid.enabled is True and valid.token == ADMIN_TOKEN
-    assert ADMIN_TOKEN not in repr(valid)
-
-    app = make_app(resources)
-    wrong_token = secrets.token_urlsafe(32)
-    with patch("backend.assistant_admin_api.logger") as admin_logger:
-        with TestClient(
-            app,
-            base_url=ORIGIN,
-            client=("127.0.0.1", 50000),
-        ) as client:
-            response = client.get(
-                "/api/admin/data-sources",
-                headers=auth_headers(token=wrong_token),
-            )
-            valid_response = client.get(
-                "/api/admin/data-sources",
-                headers=auth_headers(),
-            )
-    assert response.status_code == 401
-    assert wrong_token not in response.text
-    assert valid_response.status_code == 200
-    assert ADMIN_TOKEN not in valid_response.text
-    assert wrong_token not in repr(admin_logger.mock_calls)
-    assert ADMIN_TOKEN not in repr(admin_logger.mock_calls)
 
 
 def test_migrations(root: Path, resources: ApplicationResources) -> None:
@@ -638,22 +550,6 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
 
 
 def test_admin_api(root: Path, resources: ApplicationResources) -> None:
-    disabled_app = make_app(resources, enabled="false", token="")
-    with TestClient(
-        disabled_app,
-        base_url=ORIGIN,
-        client=("127.0.0.1", 50000),
-    ) as client:
-        assert client.get("/api/admin/data-sources").status_code == 404
-
-    for token in ("", "too-short"):
-        try:
-            make_app(resources, token=token)
-        except AdminConfigurationError:
-            pass
-        else:
-            raise AssertionError("无效管理员 Token 未阻止启动")
-
     app = make_app(resources)
     with TestClient(
         app,
@@ -661,10 +557,12 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         client=("127.0.0.1", 50000),
     ) as client:
         path = "/api/admin/data-sources"
-        assert client.get(path).status_code == 401
-        assert client.get(path, headers=auth_headers(token="wrong-token")).status_code == 401
-        sources = client.get(path, headers=auth_headers())
+        sources = client.get(path)
         assert sources.status_code == 200
+        assert client.get(
+            path,
+            headers={"Authorization": "Bearer obsolete-management-token"},
+        ).status_code == 200
         assert sources.json() == [
             {"source_id": SOURCE_ID, "database_type": "offline"}
         ]
@@ -942,13 +840,10 @@ def test_live_http(resources: ApplicationResources) -> None:
         method: str,
         path: str,
         *,
-        token: str | None = ADMIN_TOKEN,
         origin: str | None = None,
         body: dict[str, Any] | None = None,
     ) -> tuple[int, dict[str, Any] | list[Any], Mapping[str, str]]:
         headers = {}
-        if token is not None:
-            headers["Authorization"] = f"Bearer {token}"
         if origin is not None:
             headers["Origin"] = origin
         data = None
@@ -976,12 +871,6 @@ def test_live_http(resources: ApplicationResources) -> None:
 
     application_path = "/api/admin/assistant-applications"
     try:
-        assert request("GET", "/api/admin/data-sources", token=None)[0] == 401
-        assert request(
-            "GET",
-            "/api/admin/data-sources",
-            token="incorrect-token",
-        )[0] == 401
         assert request("GET", "/api/admin/data-sources")[0] == 200
         assert request(
             "GET",
@@ -1087,7 +976,6 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="assistant-admin-api-") as temp_name:
         root = Path(temp_name).resolve()
         resources = make_resources(root)
-        test_admin_settings(resources)
         test_migrations(root, resources)
         test_admin_api(root, resources)
         test_live_http(resources)

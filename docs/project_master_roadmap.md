@@ -21,6 +21,8 @@
 - 仪表板拖拽、缩放和持久化；
 - 表格和图表加入仪表板；
 - 仪表板图片导出；
+- 主工作台内的小助手应用管理与外观配置；
+- 基于 app_id、App Secret、Embed JWT、Origin 和数据源授权的 Widget 嵌入；
 - 基于 FastAPI / SSE 的流式问答。
 
 当前仓库：
@@ -93,6 +95,14 @@ MySQL 接入
 一句话生成报表
 外部网站机器人集成
 ```
+
+当前产品界面状态（2026-07-28）：
+
+- “小助手”已作为主工作台导航和右侧内容视图，不再定位为独立管理员后台；
+- `?mode=admin` 仅作为兼容入口，复用同一份小助手管理组件；
+- 小助手管理 API 不使用用户、角色或管理员 Token，仍限制为本机访问和同源请求；
+- Widget 与 `embed-demo` 继续使用独立运行入口；
+- app_id、App Secret、Embed JWT、Origin 白名单、数据源授权、Token TTL、`postMessage` 和 Widget 来源校验保持不变。
 
 ---
 

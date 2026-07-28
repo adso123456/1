@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-import secrets
 import sqlite3
-from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable
+from dataclasses import asdict
 from typing import Any, TypeVar
 from urllib.parse import urlsplit
 
@@ -34,45 +33,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 logger = logging.getLogger(__name__)
-MIN_ADMIN_TOKEN_LENGTH = 32
-PUBLIC_ADMIN_TOKEN_PLACEHOLDER = (
-    "replace_with_admin_token_at_least_32_characters"
-)
 SAFE_INTERNAL_ERROR = "管理服务暂时不可用"
 T = TypeVar("T")
-
-
-class AdminConfigurationError(RuntimeError):
-    """管理员配置无效时阻止服务启动。"""
-
-
-@dataclass(frozen=True)
-class AdminSettings:
-    enabled: bool = False
-    token: str = field(default="", repr=False)
-
-
-def load_admin_settings(
-    environ: Mapping[str, str] | None = None,
-) -> AdminSettings:
-    import os
-
-    values = environ if environ is not None else os.environ
-    enabled = values.get("WATER_AGENT_ADMIN_ENABLED", "").strip().lower() == "true"
-    token = values.get("WATER_AGENT_ADMIN_TOKEN", "")
-    if not enabled:
-        return AdminSettings()
-    if (
-        not isinstance(token, str)
-        or len(token) < MIN_ADMIN_TOKEN_LENGTH
-        or not token.strip()
-        or token != token.strip()
-        or token == PUBLIC_ADMIN_TOKEN_PLACEHOLDER
-    ):
-        raise AdminConfigurationError(
-            "管理员 API 已启用，但 WATER_AGENT_ADMIN_TOKEN 无效"
-        )
-    return AdminSettings(enabled=True, token=token)
 
 
 class CreateAssistantApplicationRequest(BaseModel):
@@ -179,8 +141,6 @@ def _request_origin(request: Request) -> str:
 
 def _authorize(
     request: Request,
-    settings: AdminSettings,
-    authorization: str | None,
     origin: str | None,
 ) -> None:
     if not _is_loopback(request.client.host if request.client else None):
@@ -191,19 +151,6 @@ def _authorize(
                 raise ValueError("Origin 不匹配")
         except ValueError:
             raise HTTPException(status_code=403, detail="Origin 不允许") from None
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="需要 Bearer 管理员令牌",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    token = authorization.removeprefix("Bearer ")
-    if not token or not secrets.compare_digest(token, settings.token):
-        raise HTTPException(
-            status_code=401,
-            detail="管理员令牌无效",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
 
 def _safe_call(action: Callable[[], T]) -> T:
@@ -237,7 +184,6 @@ def _view_payload(view: Any) -> dict[str, Any]:
 
 def create_admin_router(
     *,
-    settings: AdminSettings,
     application_registry: AssistantApplicationRegistry,
     data_source_registry: DataSourceRegistry,
 ) -> APIRouter:
@@ -245,10 +191,9 @@ def create_admin_router(
 
     def authorize(
         request: Request,
-        authorization: str | None = Header(default=None),
         origin: str | None = Header(default=None),
     ) -> None:
-        _authorize(request, settings, authorization, origin)
+        _authorize(request, origin)
 
     dependencies = [Depends(authorize)]
 

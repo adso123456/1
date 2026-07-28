@@ -142,8 +142,8 @@ assert(
 assert(
   adminSource.includes('appearanceSessionRef')
     && adminSource.includes('appearanceSaveRef')
-    && adminSource.includes('authEpochRef'),
-  '外观保存缺少 session、请求和认证代次所有权',
+    && adminSource.includes('lifecycleEpochRef'),
+  '外观保存缺少 session、请求和生命周期代次所有权',
 );
 assert(
   adminSource.includes('request.controller.signal')
