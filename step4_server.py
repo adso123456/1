@@ -12,6 +12,10 @@ from backend.assistant_application_registry import (
     AssistantApplicationRegistry,
     resolve_system_db_path,
 )
+from backend.assistant_admin_api import (
+    create_admin_router,
+    load_admin_settings,
+)
 from backend.data_source_chat_handler import DataSourceChatHandler
 from backend.embed_access import (
     EmbedAccessError,
@@ -26,7 +30,9 @@ from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
 from vanna.core.user.request_context import RequestContext
 from vanna.servers.fastapi.app import VannaFastAPIServer
 from vanna.servers.base import ChatRequest
@@ -52,6 +58,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         resources: ApplicationResources,
         config: Mapping[str, Any] | None = None,
         assistant_application_registry: AssistantApplicationRegistry | None = None,
+        admin_environ: Mapping[str, str] | None = None,
     ) -> None:
         self.config = dict(config or {})
         self.resources = resources
@@ -60,6 +67,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             if assistant_application_registry is not None
             else resources.assistant_application_registry
         )
+        self.admin_settings = load_admin_settings(admin_environ)
         self.chat_handler = DataSourceChatHandler(
             resources.coordinator,
             resources.runtime_manager,
@@ -243,6 +251,30 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 },
             )
 
+        if self.admin_settings.enabled:
+            if self.assistant_application_registry is None:
+                raise RuntimeError("管理员 API 缺少小助手应用注册表")
+
+            @app.exception_handler(RequestValidationError)
+            async def safe_admin_validation_error(
+                request: Request,
+                exc: RequestValidationError,
+            ):
+                if request.url.path.startswith("/api/admin/"):
+                    return JSONResponse(
+                        status_code=422,
+                        content={"detail": "管理请求格式无效"},
+                    )
+                return await request_validation_exception_handler(request, exc)
+
+            app.include_router(
+                create_admin_router(
+                    settings=self.admin_settings,
+                    application_registry=self.assistant_application_registry,
+                    data_source_registry=self.resources.registry,
+                )
+            )
+
         return app
 
 
@@ -273,10 +305,12 @@ def create_server(
     resources: ApplicationResources | None = None,
     *,
     assistant_application_registry: AssistantApplicationRegistry | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> DataSourceVannaFastAPIServer:
     return DataSourceVannaFastAPIServer(
-        resources or create_application_resources(),
+        resources or create_application_resources(environ=environ),
         assistant_application_registry=assistant_application_registry,
+        admin_environ=environ,
     )
 
 

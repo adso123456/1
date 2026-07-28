@@ -26,6 +26,34 @@ DEFAULT_WELCOME_DESCRIPTION = (
 )
 MIN_TOKEN_TTL_SECONDS = 30
 MAX_TOKEN_TTL_SECONDS = 3600
+SCHEMA_COMPONENT = "assistant_application_registry"
+SCHEMA_VERSION = 1
+SCHEMA_VERSION_TABLE = "system_schema_versions"
+
+APPLICATION_TABLE_SCHEMAS = {
+    "assistant_applications": (
+        ("app_id", "TEXT", 0, 1),
+        ("name", "TEXT", 1, 0),
+        ("enabled", "INTEGER", 1, 0),
+        ("app_secret", "TEXT", 1, 0),
+        ("token_ttl_seconds", "INTEGER", 1, 0),
+        ("theme", "TEXT", 1, 0),
+        ("logo_url", "TEXT", 1, 0),
+        ("welcome", "TEXT", 1, 0),
+        ("welcome_description", "TEXT", 1, 0),
+        ("show_history", "INTEGER", 1, 0),
+        ("created_at", "INTEGER", 1, 0),
+        ("updated_at", "INTEGER", 1, 0),
+    ),
+    "assistant_application_origins": (
+        ("app_id", "TEXT", 1, 1),
+        ("origin", "TEXT", 1, 2),
+    ),
+    "assistant_application_sources": (
+        ("app_id", "TEXT", 1, 1),
+        ("source_id", "TEXT", 1, 2),
+    ),
+}
 
 
 class AssistantApplicationError(Exception):
@@ -46,6 +74,10 @@ class InvalidApplicationConfiguration(AssistantApplicationError):
 
 class ApplicationDisabled(AssistantApplicationError):
     pass
+
+
+class SchemaMigrationError(AssistantApplicationError):
+    """SQLite schema 无法安全迁移时使用的脱敏异常。"""
 
 
 @dataclass(frozen=True)
@@ -258,9 +290,60 @@ class AssistantApplicationRegistry:
 
     def initialize(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connection() as connection:
-            connection.executescript(
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._initialize_schema(connection)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _table_names(connection: sqlite3.Connection) -> set[str]:
+        return {
+            row["name"]
+            for row in connection.execute(
                 """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                """
+            )
+        }
+
+    @staticmethod
+    def _table_signature(
+        connection: sqlite3.Connection,
+        table_name: str,
+    ) -> tuple[tuple[str, str, int, int], ...]:
+        return tuple(
+            (
+                row["name"],
+                row["type"].upper(),
+                row["notnull"],
+                row["pk"],
+            )
+            for row in connection.execute(
+                f'PRAGMA table_info("{table_name}")'
+            )
+        )
+
+    def _require_v1_compatible_tables(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        for table_name, expected in APPLICATION_TABLE_SCHEMAS.items():
+            if self._table_signature(connection, table_name) != expected:
+                raise SchemaMigrationError(
+                    "小助手应用数据库结构与当前 V1 不兼容"
+                )
+
+    @staticmethod
+    def _create_v1_tables(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
                 CREATE TABLE IF NOT EXISTS assistant_applications (
                     app_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -274,7 +357,11 @@ class AssistantApplicationRegistry:
                     show_history INTEGER NOT NULL CHECK (show_history IN (0, 1)),
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
-                );
+                )
+            """
+        )
+        connection.execute(
+            """
                 CREATE TABLE IF NOT EXISTS assistant_application_origins (
                     app_id TEXT NOT NULL,
                     origin TEXT NOT NULL,
@@ -282,7 +369,11 @@ class AssistantApplicationRegistry:
                     FOREIGN KEY (app_id)
                         REFERENCES assistant_applications(app_id)
                         ON DELETE CASCADE
-                );
+                )
+            """
+        )
+        connection.execute(
+            """
                 CREATE TABLE IF NOT EXISTS assistant_application_sources (
                     app_id TEXT NOT NULL,
                     source_id TEXT NOT NULL,
@@ -290,9 +381,86 @@ class AssistantApplicationRegistry:
                     FOREIGN KEY (app_id)
                         REFERENCES assistant_applications(app_id)
                         ON DELETE CASCADE
-                );
-                """
+                )
+            """
+        )
+
+    def _migrate_0_to_1(self, connection: sqlite3.Connection) -> None:
+        self._create_v1_tables(connection)
+        self._require_v1_compatible_tables(connection)
+
+    def _initialize_schema(self, connection: sqlite3.Connection) -> None:
+        version_schema = (
+            ("component", "TEXT", 0, 1),
+            ("version", "INTEGER", 1, 0),
+            ("updated_at", "INTEGER", 1, 0),
+        )
+        table_names = self._table_names(connection)
+        application_tables = set(APPLICATION_TABLE_SCHEMAS)
+        existing_application_tables = table_names & application_tables
+
+        if (
+            SCHEMA_VERSION_TABLE in table_names
+            and self._table_signature(connection, SCHEMA_VERSION_TABLE)
+            != version_schema
+        ):
+            raise SchemaMigrationError("系统数据库版本表结构不兼容")
+
+        connection.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {SCHEMA_VERSION_TABLE} (
+                component TEXT PRIMARY KEY,
+                version INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
             )
+            """
+        )
+        row = connection.execute(
+            f"""
+            SELECT version FROM {SCHEMA_VERSION_TABLE}
+            WHERE component = ?
+            """,
+            (SCHEMA_COMPONENT,),
+        ).fetchone()
+
+        if row is None:
+            if existing_application_tables:
+                if existing_application_tables != application_tables:
+                    raise SchemaMigrationError(
+                        "小助手应用数据库仅存在部分 V1 表，无法安全接管"
+                    )
+                self._require_v1_compatible_tables(connection)
+            else:
+                self._migrate_0_to_1(connection)
+            connection.execute(
+                f"""
+                INSERT INTO {SCHEMA_VERSION_TABLE}
+                    (component, version, updated_at)
+                VALUES (?, ?, ?)
+                """,
+                (SCHEMA_COMPONENT, SCHEMA_VERSION, int(time.time())),
+            )
+            return
+
+        version = row["version"]
+        if not isinstance(version, int) or version > SCHEMA_VERSION:
+            raise SchemaMigrationError("小助手应用数据库版本高于当前代码支持版本")
+        migrations = {0: self._migrate_0_to_1}
+        while version < SCHEMA_VERSION:
+            migration = migrations.get(version)
+            if migration is None:
+                raise SchemaMigrationError("缺少小助手应用数据库迁移步骤")
+            migration(connection)
+            version += 1
+            connection.execute(
+                f"""
+                UPDATE {SCHEMA_VERSION_TABLE}
+                SET version = ?, updated_at = ?
+                WHERE component = ?
+                """,
+                (version, int(time.time()), SCHEMA_COMPONENT),
+            )
+        self._require_v1_compatible_tables(connection)
 
     def _normalize_origins(
         self,
