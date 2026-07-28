@@ -119,7 +119,7 @@ def auth_headers(*, token: str = ADMIN_TOKEN, origin: str | None = None):
     return headers
 
 
-def assert_schema_version(db_path: Path, expected: int = 1) -> None:
+def assert_schema_version(db_path: Path, expected: int = 2) -> None:
     with closing(sqlite3.connect(db_path)) as connection:
         row = connection.execute(
             f"""
@@ -296,20 +296,31 @@ def database_snapshot(db_path: Path) -> tuple[Any, ...]:
 
 def application_data_snapshot(db_path: Path) -> tuple[Any, ...]:
     with closing(sqlite3.connect(db_path)) as connection:
-        return tuple(
+        return (
             (
-                table_name,
-                tuple(
-                    connection.execute(
-                        f'SELECT * FROM "{table_name}" ORDER BY rowid'
-                    )
-                ),
-            )
-            for table_name in (
                 "assistant_applications",
-                "assistant_application_origins",
-                "assistant_application_sources",
-            )
+                tuple(connection.execute(
+                    """
+                    SELECT app_id, name, enabled, app_secret,
+                           token_ttl_seconds, theme, logo_url, welcome,
+                           welcome_description, show_history,
+                           created_at, updated_at
+                    FROM assistant_applications ORDER BY rowid
+                    """
+                )),
+            ),
+            *(
+                (
+                    table_name,
+                    tuple(connection.execute(
+                        f'SELECT * FROM "{table_name}" ORDER BY rowid'
+                    )),
+                )
+                for table_name in (
+                    "assistant_application_origins",
+                    "assistant_application_sources",
+                )
+            ),
         )
 
 
@@ -320,7 +331,7 @@ def assert_schema_failure_unchanged(
     try:
         registry.initialize()
     except SchemaMigrationError as exc:
-        assert "V1" in str(exc) or "版本" in str(exc)
+        assert str(exc) and "secret" not in str(exc).lower()
     else:
         raise AssertionError("不兼容数据库未失败关闭")
     assert database_snapshot(registry.db_path) == before
@@ -573,7 +584,7 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
     with closing(sqlite3.connect(future_path)) as connection:
         connection.execute(
             f"""
-            UPDATE {SCHEMA_VERSION_TABLE} SET version = 2
+            UPDATE {SCHEMA_VERSION_TABLE} SET version = 3
             WHERE component = ?
             """,
             (SCHEMA_COMPONENT,),
@@ -585,7 +596,7 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
         pass
     else:
         raise AssertionError("高版本数据库未失败关闭")
-    assert_schema_version(future_path, 2)
+    assert_schema_version(future_path, 3)
 
     incompatible_path = root / "incompatible.sqlite3"
     with closing(sqlite3.connect(incompatible_path)) as connection:
@@ -693,6 +704,23 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         first_secret = created.json()[APP_SECRET_FIELD]
         assert len(first_secret) >= 32
         assert created.text.count(first_secret) == 1
+        for field_name, expected in (
+            ("theme", "#1677ff"),
+            ("header_font_color", "#1f2329"),
+            ("logo_url", ""),
+            ("welcome", "有什么可以帮助你的？"),
+            (
+                "welcome_description",
+                "用中文自然语言提问，Agent 自动查询数据库并返回图表",
+            ),
+            ("float_icon_url", ""),
+            ("float_icon_draggable", False),
+            ("float_x_anchor", "right"),
+            ("float_x_offset", 24),
+            ("float_y_anchor", "bottom"),
+            ("float_y_offset", 24),
+        ):
+            assert created.json()[field_name] == expected
 
         listed = client.get(
             "/api/admin/assistant-applications",
@@ -747,6 +775,50 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         assert updated.status_code == 200
         assert updated.json()["name"] == "Updated"
         assert updated.json()["show_history"] is True
+        appearance_patch = {
+            "theme": "#123abc",
+            "header_font_color": "#fedcba",
+            "logo_url": "https://example.test/logo.png",
+            "welcome": "新的欢迎语",
+            "welcome_description": "新的欢迎描述",
+            "float_icon_url": "https://example.test/icon.svg",
+            "float_icon_draggable": True,
+            "float_x_anchor": "left",
+            "float_x_offset": 1000,
+            "float_y_anchor": "top",
+            "float_y_offset": 0,
+        }
+        appearance_updated = client.patch(
+            "/api/admin/assistant-applications/admin-created",
+            headers=auth_headers(),
+            json=appearance_patch,
+        )
+        assert appearance_updated.status_code == 200
+        for field_name, expected in appearance_patch.items():
+            assert appearance_updated.json()[field_name] == expected
+        assert appearance_updated.json()["allowed_origins"] == [
+            "http://127.0.0.1:5174"
+        ]
+        assert appearance_updated.json()["allowed_source_ids"] == [SOURCE_ID]
+        assert APP_SECRET_FIELD not in appearance_updated.json()
+        for field_name, invalid in (
+            ("theme", ""),
+            ("header_font_color", "red"),
+            ("logo_url", "https://user:pass@example.test/logo.png"),
+            ("float_icon_url", "javascript:alert(1)"),
+            ("float_icon_draggable", "true"),
+            ("float_x_anchor", "center"),
+            ("float_y_anchor", "middle"),
+            ("float_x_offset", 1001),
+            ("float_y_offset", True),
+        ):
+            rejected_appearance = client.patch(
+                "/api/admin/assistant-applications/admin-created",
+                headers=auth_headers(),
+                json={field_name: invalid},
+            )
+            assert rejected_appearance.status_code in {400, 422}
+            assert first_secret not in rejected_appearance.text
         injected_value = "client-supplied-secret-must-not-be-echoed"
         for body in (
             {APP_SECRET_FIELD: injected_value},
@@ -1001,7 +1073,7 @@ def test_live_http(resources: ApplicationResources) -> None:
                 WHERE app_id = 'live-http-app'
                 """
             ).fetchone()
-        assert version == (1,)
+        assert version == (2,)
         assert application == (second_secret,)
         assert origin_count == (1,)
         assert source_count == (1,)

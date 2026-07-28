@@ -413,9 +413,16 @@ def main() -> int:
                 "app_id",
                 "name",
                 "theme",
+                "header_font_color",
                 "logo_url",
                 "welcome",
                 "welcome_description",
+                "float_icon_url",
+                "float_icon_draggable",
+                "float_x_anchor",
+                "float_x_offset",
+                "float_y_anchor",
+                "float_y_offset",
                 "show_history",
             }
             results.append(
@@ -431,9 +438,16 @@ def main() -> int:
                         "app_id": second_config.app_id,
                         "name": "Second assistant",
                         "theme": "#654321",
+                        "header_font_color": "#1f2329",
                         "logo_url": "",
                         "welcome": "Second welcome",
                         "welcome_description": "Second description",
+                        "float_icon_url": "",
+                        "float_icon_draggable": False,
+                        "float_x_anchor": "right",
+                        "float_x_offset": 24,
+                        "float_y_anchor": "bottom",
+                        "float_y_offset": 24,
                         "show_history": True,
                     }
                     and SECRET not in application_response.text

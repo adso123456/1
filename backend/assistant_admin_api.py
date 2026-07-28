@@ -12,6 +12,16 @@ from typing import Any, TypeVar
 from urllib.parse import urlsplit
 
 from backend.assistant_application_registry import (
+    DEFAULT_FLOAT_ICON_DRAGGABLE,
+    DEFAULT_FLOAT_ICON_URL,
+    DEFAULT_FLOAT_X_ANCHOR,
+    DEFAULT_FLOAT_X_OFFSET,
+    DEFAULT_FLOAT_Y_ANCHOR,
+    DEFAULT_FLOAT_Y_OFFSET,
+    DEFAULT_HEADER_FONT_COLOR,
+    DEFAULT_THEME,
+    DEFAULT_WELCOME,
+    DEFAULT_WELCOME_DESCRIPTION,
     ApplicationAlreadyExists,
     ApplicationNotFound,
     AssistantApplicationError,
@@ -73,12 +83,17 @@ class CreateAssistantApplicationRequest(BaseModel):
     allowed_origins: list[str] = Field(default_factory=list)
     allowed_source_ids: list[str] = Field(default_factory=list)
     token_ttl_seconds: int = 300
-    theme: str = "#1677ff"
+    theme: str = DEFAULT_THEME
+    header_font_color: str = DEFAULT_HEADER_FONT_COLOR
     logo_url: str = ""
-    welcome: str = "有什么可以帮助你的？"
-    welcome_description: str = (
-        "用中文自然语言提问，Agent 自动查询数据库并返回图表"
-    )
+    welcome: str = DEFAULT_WELCOME
+    welcome_description: str = DEFAULT_WELCOME_DESCRIPTION
+    float_icon_url: str = DEFAULT_FLOAT_ICON_URL
+    float_icon_draggable: bool = DEFAULT_FLOAT_ICON_DRAGGABLE
+    float_x_anchor: str = DEFAULT_FLOAT_X_ANCHOR
+    float_x_offset: int = DEFAULT_FLOAT_X_OFFSET
+    float_y_anchor: str = DEFAULT_FLOAT_Y_ANCHOR
+    float_y_offset: int = DEFAULT_FLOAT_Y_OFFSET
     show_history: bool = False
     enabled: bool = True
 
@@ -91,9 +106,16 @@ class UpdateAssistantApplicationRequest(BaseModel):
     allowed_source_ids: list[str] | None = None
     token_ttl_seconds: int | None = None
     theme: str | None = None
+    header_font_color: str | None = None
     logo_url: str | None = None
     welcome: str | None = None
     welcome_description: str | None = None
+    float_icon_url: str | None = None
+    float_icon_draggable: bool | None = None
+    float_x_anchor: str | None = None
+    float_x_offset: int | None = None
+    float_y_anchor: str | None = None
+    float_y_offset: int | None = None
     show_history: bool | None = None
 
     @model_validator(mode="after")

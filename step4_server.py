@@ -134,9 +134,16 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 "app_id": application.app_id,
                 "name": application.name,
                 "theme": application.theme,
+                "header_font_color": application.header_font_color,
                 "logo_url": application.logo_url,
                 "welcome": application.welcome,
                 "welcome_description": application.welcome_description,
+                "float_icon_url": application.float_icon_url,
+                "float_icon_draggable": application.float_icon_draggable,
+                "float_x_anchor": application.float_x_anchor,
+                "float_x_offset": application.float_x_offset,
+                "float_y_anchor": application.float_y_anchor,
+                "float_y_offset": application.float_y_offset,
                 "show_history": application.show_history,
             }
 

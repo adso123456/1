@@ -1,9 +1,11 @@
+import type { AssistantAppearance } from './assistantAppearance';
+
 export interface AdminDataSource {
   source_id: string;
   database_type: string;
 }
 
-export interface AssistantApplicationView {
+export interface AssistantApplicationView extends AssistantAppearance {
   app_id: string;
   name: string;
   enabled: boolean;
@@ -11,33 +13,25 @@ export interface AssistantApplicationView {
   allowed_origins: string[];
   allowed_source_ids: string[];
   token_ttl_seconds: number;
-  theme: string;
-  logo_url: string;
-  welcome: string;
-  welcome_description: string;
   show_history: boolean;
   created_at: number;
   updated_at: number;
 }
 
-export interface CreateAssistantApplication {
+export interface CreateAssistantApplication extends AssistantAppearance {
   app_id: string;
   name: string;
   allowed_origins: string[];
   allowed_source_ids: string[];
   token_ttl_seconds: number;
-  theme: string;
-  logo_url: string;
-  welcome: string;
-  welcome_description: string;
   show_history: boolean;
   enabled: boolean;
 }
 
-export type UpdateAssistantApplication = Omit<
+export type UpdateAssistantApplication = Partial<Omit<
   CreateAssistantApplication,
   'app_id' | 'enabled'
->;
+>>;
 
 export interface AssistantApplicationSecretResponse
   extends AssistantApplicationView {

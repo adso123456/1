@@ -28,6 +28,13 @@ class FakeElement {
     };
     this.className = '';
     this.textContent = '';
+    this.style = {
+      setProperty(name, value) {
+        this[name] = value;
+      },
+    };
+    this.offsetWidth = 0;
+    this.offsetHeight = 0;
   }
 
   appendChild(child) {
@@ -49,6 +56,35 @@ class FakeElement {
   getAttribute(name) {
     return this.attributes.get(name) ?? null;
   }
+
+  removeAttribute(name) {
+    this.attributes.delete(name);
+    if (name === 'src') this.src = '';
+  }
+
+  querySelector(selector) {
+    if (!selector.startsWith('.')) return null;
+    return findByClass(this, selector.slice(1));
+  }
+
+  getBoundingClientRect() {
+    const left = Number.parseFloat(this.style.left) || 0;
+    const top = Number.parseFloat(this.style.top) || 0;
+    return {
+      left,
+      top,
+      width: this.offsetWidth || (
+        this.className === 'water-agent-trigger' ? 58 : 440
+      ),
+      height: this.offsetHeight || (
+        this.className === 'water-agent-trigger' ? 58 : 700
+      ),
+    };
+  }
+
+  setPointerCapture() {}
+
+  releasePointerCapture() {}
 
   addEventListener(type, handler) {
     const handlers = this.listeners.get(type) ?? [];
@@ -95,6 +131,8 @@ const document = {
 
 const windowListeners = new Map();
 const window = {
+  innerWidth: 1280,
+  innerHeight: 900,
   location: {
     origin: 'http://localhost:5173',
     href: 'http://localhost:5173/embed-demo',
@@ -235,6 +273,144 @@ test('loader 只接受匹配 Origin、source 和实例 ID 的 iframe 消息', ()
   assert(panel.hidden === true, '合法 minimize 消息未收起浮窗');
 });
 
+function sendAppearance(appearance, overrides = {}) {
+  const iframe = findByClass(body, 'water-agent-frame');
+  const iframeUrl = new URL(iframe.src);
+  windowListeners.get('message')({
+    origin: 'http://localhost:5173',
+    source: iframe.contentWindow,
+    data: {
+      type: 'water-agent-widget:appearance',
+      instanceId: iframeUrl.searchParams.get('instanceId'),
+      appearance,
+      ...overrides,
+    },
+  });
+}
+
+const validAppearance = {
+  theme: '#13579b',
+  float_icon_url: 'https://example.test/icon.png',
+  float_icon_draggable: true,
+  float_x_anchor: 'left',
+  float_x_offset: 30,
+  float_y_anchor: 'top',
+  float_y_offset: 40,
+};
+
+test('加载器应用严格外观快照并拒绝非法字段', () => {
+  const trigger = findByClass(body, 'water-agent-trigger');
+  sendAppearance(validAppearance);
+  assert(
+    trigger.style['--water-agent-theme'] === '#13579b',
+    '主题色未应用',
+  );
+  assert(trigger.style.left === '30px', '水平锚点或偏移未应用');
+  assert(trigger.style.top === '40px', '垂直锚点或偏移未应用');
+
+  sendAppearance({ ...validAppearance, float_x_offset: 1001 });
+  assert(trigger.style.left === '30px', '非法偏移覆盖了有效外观');
+  sendAppearance({ ...validAppearance, token: 'must-not-pass' });
+  assert(trigger.style.left === '30px', '含额外字段的消息被接受');
+});
+
+test('浮窗图标加载失败回退内置图标', () => {
+  const image = findByClass(body, 'water-agent-trigger-image');
+  const face = findByClass(body, 'water-agent-face');
+  assert(image.src === validAppearance.float_icon_url, '图标 URL 未设置');
+  image.onload();
+  assert(image.style.display === 'block', '有效图片未显示');
+  image.onerror();
+  assert(image.style.display === 'none', '失败图片仍显示');
+  assert(face.style.display === '', '内置图标未恢复');
+});
+
+test('四种锚点均作用于按钮和面板同侧定位', () => {
+  const trigger = findByClass(body, 'water-agent-trigger');
+  const panel = findByClass(body, 'water-agent-panel');
+  for (const horizontal of ['left', 'right']) {
+    for (const vertical of ['top', 'bottom']) {
+      sendAppearance({
+        ...validAppearance,
+        float_icon_url: '',
+        float_icon_draggable: false,
+        float_x_anchor: horizontal,
+        float_y_anchor: vertical,
+      });
+      assert(trigger.style[horizontal] === '30px', `${horizontal} 未应用`);
+      assert(trigger.style[vertical] === '40px', `${vertical} 未应用`);
+      window.WaterAgentWidget.open();
+      assert(panel.style[horizontal] !== '', `面板未保持 ${horizontal}`);
+      assert(panel.style[vertical] !== '', `面板未保持 ${vertical}`);
+      window.WaterAgentWidget.close();
+    }
+  }
+});
+
+test('拖动超过阈值后吸附边角且不误触点击', () => {
+  const trigger = findByClass(body, 'water-agent-trigger');
+  const panel = findByClass(body, 'water-agent-panel');
+  sendAppearance({
+    ...validAppearance,
+    float_icon_url: '',
+    float_x_anchor: 'left',
+    float_y_anchor: 'top',
+  });
+  panel.hidden = true;
+  trigger.dispatch('pointerdown', {
+    pointerId: 7,
+    button: 0,
+    clientX: 30,
+    clientY: 40,
+  });
+  windowListeners.get('pointermove')({
+    pointerId: 7,
+    clientX: 1100,
+    clientY: 800,
+    preventDefault() {},
+  });
+  windowListeners.get('pointerup')({
+    pointerId: 7,
+    clientX: 1100,
+    clientY: 800,
+  });
+  assert(trigger.style.left === '1214px', '未吸附到最近水平边');
+  assert(trigger.style.top === '834px', '未吸附到最近垂直边');
+  trigger.dispatch('click');
+  assert(panel.hidden === true, '拖动结束误触发了打开');
+  trigger.dispatch('click');
+  assert(panel.hidden === false, '拖动后正常点击未恢复');
+  window.WaterAgentWidget.close();
+});
+
+test('移动端忽略自定义偏移并禁用拖动', () => {
+  const trigger = findByClass(body, 'water-agent-trigger');
+  window.innerWidth = 600;
+  sendAppearance(validAppearance);
+  assert(
+    trigger.style.left === ''
+      && trigger.style.right === ''
+      && trigger.style.top === ''
+      && trigger.style.bottom === '',
+    '移动端仍使用桌面自定义偏移',
+  );
+  trigger.dispatch('pointerdown', {
+    pointerId: 9,
+    button: 0,
+    clientX: 20,
+    clientY: 20,
+  });
+  windowListeners.get('pointermove')({
+    pointerId: 9,
+    clientX: 300,
+    clientY: 300,
+    preventDefault() {},
+  });
+  assert(trigger.style.left === '', '移动端仍可拖动');
+  window.innerWidth = 1280;
+  windowListeners.get('resize')();
+});
+
 test('iframe 加载失败时显示可理解提示', () => {
   const iframe = findByClass(body, 'water-agent-frame');
   const loading = findByClass(body, 'water-agent-loading');
@@ -248,13 +424,21 @@ test('iframe 加载失败时显示可理解提示', () => {
 });
 
 test('重复初始化不会重复注册 message 监听器', () => {
-  assert(windowListeners.size === 1, '重复初始化注册了重复监听器');
+  assert(windowListeners.has('message'), 'message 监听器缺失');
 });
 
 test('destroy 清理按钮、iframe 和消息事件', () => {
   window.WaterAgentWidget.destroy();
   assert(body.children.length === 0, 'DOM 未清理');
   assert(!windowListeners.has('message'), '消息事件未清理');
+  for (const type of [
+    'pointermove',
+    'pointerup',
+    'pointercancel',
+    'resize',
+  ]) {
+    assert(!windowListeners.has(type), `${type} 事件未清理`);
+  }
 });
 
 test('agentUrl 尾部有无斜杠均生成正确绝对 iframe 地址', () => {

@@ -49,6 +49,21 @@ const checks = [
     'Logo 加载失败未回退默认图标',
   ],
   [
+    widgetSource.includes('normalizeAssistantAppearance(candidate)')
+      && widgetSource.includes('...DEFAULT_ASSISTANT_APPEARANCE'),
+    'Widget 未复用统一外观默认值与规范化',
+  ],
+  [
+    widgetSource.includes(
+      "'--widget-header-color': applicationConfig.header_font_color",
+    ),
+    '标题文字色未应用到 Widget',
+  ],
+  [
+    widgetSource.includes('postWidgetAppearanceMessage('),
+    'Widget 成功加载配置后未发送外观快照',
+  ],
+  [
     widgetSource.includes("persistenceMode: 'memory'"),
     '受保护 Widget 会话不再使用内存隔离',
   ],

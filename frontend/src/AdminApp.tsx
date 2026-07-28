@@ -6,12 +6,18 @@ import {
   type FormEvent,
 } from 'react';
 import { AdminApiError, adminApi } from './adminApi';
+import {
+  DEFAULT_ASSISTANT_APPEARANCE,
+  type AssistantAppearance,
+} from './assistantAppearance';
+import {
+  AssistantAppearanceDialog,
+} from './components/admin/AssistantAppearanceDialog';
 import type {
   AdminDataSource,
   AssistantApplicationSecretResponse,
   AssistantApplicationView,
   CreateAssistantApplication,
-  UpdateAssistantApplication,
 } from './adminTypes';
 import './AdminApp.css';
 
@@ -22,10 +28,6 @@ interface FormState {
   sourceIds: string[];
   staleSourceIds: string[];
   ttl: string;
-  theme: string;
-  logoUrl: string;
-  welcome: string;
-  welcomeDescription: string;
   showHistory: boolean;
   enabled: boolean;
 }
@@ -60,6 +62,12 @@ interface ActionOwnership {
   id: number;
 }
 
+interface AppearanceDialogState {
+  epoch: number;
+  sessionId: number;
+  application: AssistantApplicationView;
+}
+
 const EMPTY_FORM: FormState = {
   appId: '',
   name: '',
@@ -67,10 +75,6 @@ const EMPTY_FORM: FormState = {
   sourceIds: [],
   staleSourceIds: [],
   ttl: '300',
-  theme: '#1677ff',
-  logoUrl: '',
-  welcome: '有什么可以帮助你的？',
-  welcomeDescription: '用中文自然语言提问，Agent 自动查询数据库并返回图表',
   showHistory: false,
   enabled: true,
 };
@@ -88,10 +92,6 @@ function formFromApplication(
       sourceId => !knownSourceIds.has(sourceId),
     ),
     ttl: String(application.token_ttl_seconds),
-    theme: application.theme,
-    logoUrl: application.logo_url,
-    welcome: application.welcome,
-    welcomeDescription: application.welcome_description,
     showHistory: application.show_history,
     enabled: application.enabled,
   };
@@ -124,20 +124,6 @@ function isExactOrigin(value: string): boolean {
   }
 }
 
-function isValidLogoUrl(value: string): boolean {
-  if (!value) return true;
-  try {
-    const url = new URL(value);
-    return (
-      (url.protocol === 'http:' || url.protocol === 'https:')
-      && !url.username
-      && !url.password
-    );
-  } catch {
-    return false;
-  }
-}
-
 function validateForm(
   form: FormState,
   editing: boolean,
@@ -151,14 +137,6 @@ function validateForm(
   if (!Number.isInteger(ttl) || ttl < 30 || ttl > 3600) {
     return 'Token 有效期必须是 30～3600 秒的整数。';
   }
-  if (!/^#[0-9A-Fa-f]{6}$/.test(form.theme)) {
-    return '主题色必须使用 #RRGGBB 格式。';
-  }
-  if (!isValidLogoUrl(form.logoUrl.trim())) {
-    return 'Logo URL 必须为空或为不含凭据的 http/https URL。';
-  }
-  if (!form.welcome.trim()) return '欢迎语不能为空。';
-  if (!form.welcomeDescription.trim()) return '欢迎描述不能为空。';
   if (
     editing
     && form.sourceIds.some(sourceId => !knownSourceIds.has(sourceId))
@@ -174,16 +152,19 @@ function validateForm(
   return null;
 }
 
-function commonPayload(form: FormState): UpdateAssistantApplication {
+function commonPayload(form: FormState): Pick<
+  CreateAssistantApplication,
+  | 'name'
+  | 'allowed_origins'
+  | 'allowed_source_ids'
+  | 'token_ttl_seconds'
+  | 'show_history'
+> {
   return {
     name: form.name.trim(),
     allowed_origins: normalizeOrigins(form.origins),
     allowed_source_ids: [...form.sourceIds],
     token_ttl_seconds: Number(form.ttl),
-    theme: form.theme.toLowerCase(),
-    logo_url: form.logoUrl.trim(),
-    welcome: form.welcome.trim(),
-    welcome_description: form.welcomeDescription.trim(),
     show_history: form.showHistory,
   };
 }
@@ -220,14 +201,26 @@ export function AdminApp() {
   const [copyStatus, setCopyStatus] = useState('');
   const [confirmation, setConfirmation] =
     useState<ConfirmationState | null>(null);
+  const [appearanceDialog, setAppearanceDialog] =
+    useState<AppearanceDialogState | null>(null);
+  const [appearanceError, setAppearanceError] = useState('');
   const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
   const authEpochRef = useRef(0);
   const actionIdRef = useRef(0);
   const formSessionRef = useRef(0);
   const formSubmitRef = useRef<number | null>(null);
+  const formDialogOpenRef = useRef(false);
+  const confirmationDialogOpenRef = useRef(false);
   const secretOperationIdRef = useRef(0);
   const secretOwnershipRef = useRef<SecretOwnership | null>(null);
+  const appearanceSessionRef = useRef(0);
+  const appearanceDialogRef = useRef<AppearanceDialogState | null>(null);
+  const appearanceSaveRef = useRef<{
+    epoch: number;
+    sessionId: number;
+    request: RequestOwnership;
+  } | null>(null);
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const busyRef = useRef<Map<string, ActionOwnership>>(new Map());
 
@@ -296,6 +289,11 @@ export function AdminApp() {
     abortRequests();
     formSessionRef.current += 1;
     formSubmitRef.current = null;
+    formDialogOpenRef.current = false;
+    confirmationDialogOpenRef.current = false;
+    appearanceSessionRef.current += 1;
+    appearanceDialogRef.current = null;
+    appearanceSaveRef.current = null;
     setToken('');
     setTokenInput('');
     setUnlocking(false);
@@ -310,6 +308,8 @@ export function AdminApp() {
     setSecretOwnership(null);
     setCopyStatus('');
     setConfirmation(null);
+    setAppearanceDialog(null);
+    setAppearanceError('');
     busyRef.current.clear();
     setBusyActions(new Set());
     setUnlockError(message);
@@ -423,7 +423,12 @@ export function AdminApp() {
       if (!isCurrentRequest(request)) return;
       formSessionRef.current += 1;
       formSubmitRef.current = null;
+      formDialogOpenRef.current = false;
+      confirmationDialogOpenRef.current = false;
       secretOwnershipRef.current = null;
+      appearanceSessionRef.current += 1;
+      appearanceDialogRef.current = null;
+      appearanceSaveRef.current = null;
       setSecret(null);
       setSecretOwnership(null);
       setCopyStatus('');
@@ -431,6 +436,8 @@ export function AdminApp() {
       setEditingAppId(null);
       setFormError('');
       setConfirmation(null);
+      setAppearanceDialog(null);
+      setAppearanceError('');
       setPageError('');
       setLoading(false);
       busyRef.current.clear();
@@ -497,17 +504,28 @@ export function AdminApp() {
   const openCreate = () => {
     if (
       formSubmitRef.current !== null
+      || formDialogOpenRef.current
+      || confirmationDialogOpenRef.current
       || secretOwnershipRef.current !== null
+      || appearanceDialogRef.current !== null
     ) return;
     formSessionRef.current += 1;
+    formDialogOpenRef.current = true;
     setEditingAppId(null);
     setForm({ ...EMPTY_FORM, sourceIds: [], staleSourceIds: [] });
     setFormError('');
   };
 
   const openEdit = (application: AssistantApplicationView) => {
-    if (formSubmitRef.current !== null) return;
+    if (
+      formSubmitRef.current !== null
+      || formDialogOpenRef.current
+      || confirmationDialogOpenRef.current
+      || secretOwnershipRef.current !== null
+      || appearanceDialogRef.current !== null
+    ) return;
     formSessionRef.current += 1;
+    formDialogOpenRef.current = true;
     const knownSourceIds = new Set(
       dataSources.map(source => source.source_id),
     );
@@ -519,6 +537,7 @@ export function AdminApp() {
   const closeForm = () => {
     if (formSubmitRef.current !== null) return;
     formSessionRef.current += 1;
+    formDialogOpenRef.current = false;
     setForm(null);
     setEditingAppId(null);
     setFormError('');
@@ -574,6 +593,7 @@ export function AdminApp() {
         const payload: CreateAssistantApplication = {
           app_id: form.appId,
           enabled: form.enabled,
+          ...DEFAULT_ASSISTANT_APPEARANCE,
           ...commonPayload(form),
         };
         const created = await adminApi.createApplication(
@@ -651,10 +671,106 @@ export function AdminApp() {
     application: AssistantApplicationView,
   ) => {
     if (
-      action === 'rotate'
-      && secretOwnershipRef.current !== null
+      appearanceDialogRef.current !== null
+      || formDialogOpenRef.current
+      || confirmationDialogOpenRef.current
+      || secretOwnershipRef.current !== null
     ) return;
+    confirmationDialogOpenRef.current = true;
     setConfirmation({ action, application });
+  };
+
+  const openAppearance = (application: AssistantApplicationView) => {
+    if (
+      appearanceDialogRef.current !== null
+      || formDialogOpenRef.current
+      || formSubmitRef.current !== null
+      || confirmationDialogOpenRef.current
+      || secretOwnershipRef.current !== null
+    ) return;
+    appearanceSessionRef.current += 1;
+    const dialog = {
+      epoch: authEpochRef.current,
+      sessionId: appearanceSessionRef.current,
+      application,
+    };
+    appearanceDialogRef.current = dialog;
+    setAppearanceDialog(dialog);
+    setAppearanceError('');
+  };
+
+  const closeAppearance = () => {
+    const dialog = appearanceDialogRef.current;
+    const saving = appearanceSaveRef.current;
+    if (
+      saving
+      && dialog
+      && saving.epoch === dialog.epoch
+      && saving.sessionId === dialog.sessionId
+    ) return;
+    appearanceSessionRef.current += 1;
+    appearanceDialogRef.current = null;
+    setAppearanceDialog(null);
+    setAppearanceError('');
+  };
+
+  const saveAppearance = async (appearance: AssistantAppearance) => {
+    const dialog = appearanceDialogRef.current;
+    if (
+      !dialog
+      || appearanceSaveRef.current !== null
+      || dialog.epoch !== authEpochRef.current
+    ) return;
+    const actionKey = `appearance:${dialog.application.app_id}`;
+    const action = beginAction(actionKey, dialog.epoch);
+    if (!action) return;
+    const request = startRequest(dialog.epoch);
+    const ownership = {
+      epoch: dialog.epoch,
+      sessionId: dialog.sessionId,
+      request,
+    };
+    appearanceSaveRef.current = ownership;
+    setAppearanceError('');
+    const ownsAppearance = () => (
+      isCurrentRequest(request)
+      && appearanceSaveRef.current === ownership
+      && appearanceDialogRef.current?.epoch === ownership.epoch
+      && appearanceDialogRef.current.sessionId === ownership.sessionId
+    );
+    try {
+      const updated = await adminApi.updateApplication(
+        token,
+        dialog.application.app_id,
+        appearance,
+        request.controller.signal,
+      );
+      if (!ownsAppearance()) return;
+      replaceApplication(updated);
+      appearanceSaveRef.current = null;
+      appearanceSessionRef.current += 1;
+      appearanceDialogRef.current = null;
+      setAppearanceDialog(null);
+    } catch (error) {
+      if (!ownsAppearance()) return;
+      if (error instanceof AdminApiError && error.status === 401) {
+        handleError(error, request);
+      } else if (
+        !(error instanceof DOMException && error.name === 'AbortError')
+      ) {
+        setAppearanceError(
+          error instanceof AdminApiError
+            ? error.message
+            : '保存外观失败，请稍后重试。',
+        );
+      }
+    } finally {
+      finishRequest(request);
+      if (appearanceSaveRef.current === ownership) {
+        appearanceSaveRef.current = null;
+      }
+      endAction(actionKey, action);
+    }
   };
 
   const runConfirmedAction = async () => {
@@ -666,6 +782,7 @@ export function AdminApp() {
       ? acquireSecretOwnership('rotate', application.app_id)
       : null;
     if (action === 'rotate' && !secretOwner) {
+      confirmationDialogOpenRef.current = false;
       setConfirmation(null);
       setPageError('已有一次性 Secret 操作正在进行，请完成后再试。');
       return;
@@ -676,6 +793,7 @@ export function AdminApp() {
       return;
     }
     let secretDelivered = false;
+    confirmationDialogOpenRef.current = false;
     setConfirmation(null);
     const request = startRequest(epoch);
     try {
@@ -717,6 +835,11 @@ export function AdminApp() {
       }
       endAction(actionKey, ownership);
     }
+  };
+
+  const closeConfirmation = () => {
+    confirmationDialogOpenRef.current = false;
+    setConfirmation(null);
   };
 
   const closeSecret = () => {
@@ -826,7 +949,9 @@ export function AdminApp() {
             type="button"
             onClick={openCreate}
             disabled={
-              formSubmitRef.current !== null || secretFlowActive
+              formSubmitRef.current !== null
+              || secretFlowActive
+              || appearanceDialog !== null
             }
           >
             新建小助手
@@ -867,7 +992,9 @@ export function AdminApp() {
               type="button"
               onClick={openCreate}
               disabled={
-                formSubmitRef.current !== null || secretFlowActive
+                formSubmitRef.current !== null
+                || secretFlowActive
+                || appearanceDialog !== null
               }
             >
               新建小助手
@@ -946,10 +1073,25 @@ export function AdminApp() {
                       <div className="admin-row-actions">
                         <button
                           type="button"
-                          disabled={formSubmitRef.current !== null}
+                          disabled={
+                            formSubmitRef.current !== null
+                            || appearanceDialog !== null
+                          }
                           onClick={() => openEdit(application)}
                         >
                           编辑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            appearanceDialog !== null
+                            || form !== null
+                            || confirmation !== null
+                            || secretFlowActive
+                          }
+                          onClick={() => openAppearance(application)}
+                        >
+                          外观设置
                         </button>
                         {application.enabled ? (
                           <button
@@ -981,6 +1123,7 @@ export function AdminApp() {
                           type="button"
                           disabled={
                             secretFlowActive
+                            || appearanceDialog !== null
                             || busyActions.has(
                               `rotate:${application.app_id}`,
                             )
@@ -1066,26 +1209,6 @@ export function AdminApp() {
                     })}
                   />
                 </label>
-                <label>
-                  <span>主题色</span>
-                  <div className="admin-color-field">
-                    <input
-                      type="color"
-                      value={form.theme}
-                      onChange={event => setForm({
-                        ...form,
-                        theme: event.target.value,
-                      })}
-                    />
-                    <input
-                      value={form.theme}
-                      onChange={event => setForm({
-                        ...form,
-                        theme: event.target.value,
-                      })}
-                    />
-                  </div>
-                </label>
                 <label className="admin-form-span-2">
                   <span>允许 Origin（一行一个）</span>
                   <textarea
@@ -1150,38 +1273,6 @@ export function AdminApp() {
                     ))}
                   </fieldset>
                 )}
-                <label className="admin-form-span-2">
-                  <span>Logo URL</span>
-                  <input
-                    value={form.logoUrl}
-                    onChange={event => setForm({
-                      ...form,
-                      logoUrl: event.target.value,
-                    })}
-                    placeholder="https://example.com/logo.png"
-                  />
-                </label>
-                <label className="admin-form-span-2">
-                  <span>欢迎语</span>
-                  <input
-                    value={form.welcome}
-                    onChange={event => setForm({
-                      ...form,
-                      welcome: event.target.value,
-                    })}
-                  />
-                </label>
-                <label className="admin-form-span-2">
-                  <span>欢迎描述</span>
-                  <textarea
-                    rows={3}
-                    value={form.welcomeDescription}
-                    onChange={event => setForm({
-                      ...form,
-                      welcomeDescription: event.target.value,
-                    })}
-                  />
-                </label>
                 <label className="admin-checkbox-row admin-form-span-2">
                   <input
                     type="checkbox"
@@ -1242,6 +1333,19 @@ export function AdminApp() {
         </div>
       )}
 
+      {appearanceDialog && (
+        <AssistantAppearanceDialog
+          key={`${appearanceDialog.epoch}:${appearanceDialog.sessionId}`}
+          application={appearanceDialog.application}
+          saving={busyActions.has(
+            `appearance:${appearanceDialog.application.app_id}`,
+          )}
+          requestError={appearanceError}
+          onClose={closeAppearance}
+          onSave={saveAppearance}
+        />
+      )}
+
       {confirmation && (
         <div className="admin-modal-backdrop" role="presentation">
           <section
@@ -1268,7 +1372,7 @@ export function AdminApp() {
               <button
                 className="admin-button"
                 type="button"
-                onClick={() => setConfirmation(null)}
+                onClick={closeConfirmation}
               >
                 取消
               </button>

@@ -23,11 +23,17 @@ import {
 } from './widgetDashboardSnapshot';
 import {
   isWidgetMessage,
+  postWidgetAppearanceMessage,
   postWidgetMessage,
   readWidgetAuthMessage,
   readWidgetEmbedContext,
   type WidgetEmbedContext,
 } from './widgetMessageProtocol';
+import {
+  DEFAULT_ASSISTANT_APPEARANCE,
+  normalizeAssistantAppearance,
+  type AssistantAppearance,
+} from './assistantAppearance';
 
 type DashboardTarget =
   | { mode: 'existing'; dashboardId: string }
@@ -35,23 +41,21 @@ type DashboardTarget =
 
 type DashboardActions = ReturnType<typeof useDashboard>;
 
-export interface WidgetApplicationConfig {
+export interface WidgetApplicationConfig extends AssistantAppearance {
   app_id: string;
   name: string;
-  theme: string;
-  logo_url: string;
-  welcome: string;
-  welcome_description: string;
   show_history: boolean;
 }
 
+type WidgetApplicationConfigInput = Pick<
+  WidgetApplicationConfig,
+  'app_id' | 'name' | 'show_history'
+> & Partial<AssistantAppearance>;
+
 export const DEFAULT_WIDGET_APPLICATION_CONFIG: WidgetApplicationConfig = {
+  ...DEFAULT_ASSISTANT_APPEARANCE,
   app_id: '',
   name: '智能问数',
-  theme: '#1677ff',
-  logo_url: '',
-  welcome: '有什么可以帮助你的？',
-  welcome_description: '用中文自然语言提问，Agent 自动查询数据库并返回图表',
   show_history: true,
 };
 
@@ -62,28 +66,13 @@ export function normalizeWidgetApplicationConfig(
     return DEFAULT_WIDGET_APPLICATION_CONFIG;
   }
   const candidate = value as Partial<WidgetApplicationConfig>;
+  const appearance = normalizeAssistantAppearance(candidate);
   return {
+    ...appearance,
     app_id: typeof candidate.app_id === 'string' ? candidate.app_id : '',
     name: typeof candidate.name === 'string' && candidate.name.trim()
       ? candidate.name
       : DEFAULT_WIDGET_APPLICATION_CONFIG.name,
-    theme: typeof candidate.theme === 'string'
-      && /^#[0-9a-fA-F]{6}$/.test(candidate.theme)
-      ? candidate.theme.toLowerCase()
-      : DEFAULT_WIDGET_APPLICATION_CONFIG.theme,
-    logo_url: typeof candidate.logo_url === 'string'
-      && /^https?:\/\//i.test(candidate.logo_url)
-      ? candidate.logo_url
-      : '',
-    welcome: typeof candidate.welcome === 'string'
-      && candidate.welcome.trim()
-      ? candidate.welcome
-      : DEFAULT_WIDGET_APPLICATION_CONFIG.welcome,
-    welcome_description:
-      typeof candidate.welcome_description === 'string'
-      && candidate.welcome_description.trim()
-        ? candidate.welcome_description
-        : DEFAULT_WIDGET_APPLICATION_CONFIG.welcome_description,
     show_history: candidate.show_history === true,
   };
 }
@@ -93,7 +82,7 @@ interface WidgetChatProps {
   requestOptions?: UseSSERequestOptions;
   dashboard?: DashboardActions;
   workspaceEnabled: boolean;
-  applicationConfig?: WidgetApplicationConfig;
+  applicationConfig?: WidgetApplicationConfigInput;
 }
 
 function requestWidgetMinimize(context: WidgetEmbedContext | null): void {
@@ -212,8 +201,12 @@ export function WidgetChat({
   requestOptions,
   dashboard,
   workspaceEnabled,
-  applicationConfig = DEFAULT_WIDGET_APPLICATION_CONFIG,
+  applicationConfig: applicationConfigInput =
+    DEFAULT_WIDGET_APPLICATION_CONFIG,
 }: WidgetChatProps) {
+  const applicationConfig = normalizeWidgetApplicationConfig(
+    applicationConfigInput,
+  );
   const {
     messages,
     loading,
@@ -290,6 +283,7 @@ export function WidgetChat({
       className="widget-shell"
       style={{
         '--widget-theme': applicationConfig.theme,
+        '--widget-header-color': applicationConfig.header_font_color,
       } as CSSProperties}
     >
       <WidgetHeader
@@ -564,6 +558,7 @@ function ProtectedWidgetChat({
 }) {
   const [applicationConfig, setApplicationConfig] =
     useState(DEFAULT_WIDGET_APPLICATION_CONFIG);
+  const { parentOrigin, instanceId } = embedContext;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -571,7 +566,7 @@ function ProtectedWidgetChat({
     void fetch('/api/embed/application', {
       headers: {
         Authorization: `Bearer ${token}`,
-        'X-Water-Agent-Parent-Origin': embedContext.parentOrigin,
+        'X-Water-Agent-Parent-Origin': parentOrigin,
       },
       signal: controller.signal,
     })
@@ -587,7 +582,13 @@ function ProtectedWidgetChat({
       })
       .then(value => {
         if (value !== null && !controller.signal.aborted) {
-          setApplicationConfig(normalizeWidgetApplicationConfig(value));
+          const normalized = normalizeWidgetApplicationConfig(value);
+          setApplicationConfig(normalized);
+          postWidgetAppearanceMessage(
+            window.parent,
+            { parentOrigin, instanceId },
+            normalized,
+          );
         }
       })
       .catch(error => {
@@ -601,8 +602,9 @@ function ProtectedWidgetChat({
 
     return () => controller.abort();
   }, [
-    embedContext.parentOrigin,
+    instanceId,
     onAuthorizationError,
+    parentOrigin,
     token,
   ]);
 

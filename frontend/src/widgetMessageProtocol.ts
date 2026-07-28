@@ -1,3 +1,5 @@
+import type { AssistantAppearance } from './assistantAppearance';
+
 export type WidgetParentMessageType =
   | 'water-agent-widget:opened'
   | 'water-agent-widget:auth';
@@ -5,7 +7,8 @@ export type WidgetFrameMessageType =
   | 'water-agent-widget:ready'
   | 'water-agent-widget:close'
   | 'water-agent-widget:minimize'
-  | 'water-agent-widget:auth-required';
+  | 'water-agent-widget:auth-required'
+  | 'water-agent-widget:appearance';
 
 export interface WidgetEmbedContext {
   parentOrigin: string;
@@ -21,6 +24,17 @@ export interface WidgetAuthMessage {
   token: string;
   expiresAt: number;
 }
+
+export type WidgetLoaderAppearance = Pick<
+  AssistantAppearance,
+  | 'theme'
+  | 'float_icon_url'
+  | 'float_icon_draggable'
+  | 'float_x_anchor'
+  | 'float_x_offset'
+  | 'float_y_anchor'
+  | 'float_y_offset'
+>;
 
 function normalizeOrigin(value: string): string {
   try {
@@ -67,6 +81,29 @@ export function postWidgetMessage(
 ): void {
   target.postMessage(
     { type, instanceId: context.instanceId },
+    context.parentOrigin,
+  );
+}
+
+export function postWidgetAppearanceMessage(
+  target: Window,
+  context: WidgetEmbedContext,
+  appearance: WidgetLoaderAppearance,
+): void {
+  target.postMessage(
+    {
+      type: 'water-agent-widget:appearance',
+      instanceId: context.instanceId,
+      appearance: {
+        theme: appearance.theme,
+        float_icon_url: appearance.float_icon_url,
+        float_icon_draggable: appearance.float_icon_draggable,
+        float_x_anchor: appearance.float_x_anchor,
+        float_x_offset: appearance.float_x_offset,
+        float_y_anchor: appearance.float_y_anchor,
+        float_y_offset: appearance.float_y_offset,
+      },
+    },
     context.parentOrigin,
   );
 }

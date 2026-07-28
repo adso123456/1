@@ -37,6 +37,7 @@ body {
   padding: 10px 12px 10px 14px;
   border-bottom: 1px solid #e5e7eb;
   background: #fff;
+  color: var(--widget-header-color, #1f2329);
 }
 
 .widget-title-block,
@@ -65,8 +66,9 @@ body {
 }
 
 .widget-title-block span {
-  color: #94a3b8;
+  color: var(--widget-header-color, #1f2329);
   font-size: 10px;
+  opacity: .62;
 }
 
 .widget-status-dot {
@@ -100,7 +102,7 @@ body {
   border: 1px solid #dbe2ea;
   border-radius: 6px;
   background: #fff;
-  color: #475569;
+  color: var(--widget-header-color, #1f2329);
   cursor: pointer;
   font-size: 11px;
   text-decoration: none;

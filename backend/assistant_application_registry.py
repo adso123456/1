@@ -20,17 +20,25 @@ from backend.data_source_registry import DataSourceRegistry
 APP_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{3,64}\Z")
 THEME_PATTERN = re.compile(r"#[0-9A-Fa-f]{6}\Z")
 DEFAULT_THEME = "#1677ff"
+DEFAULT_HEADER_FONT_COLOR = "#1f2329"
 DEFAULT_WELCOME = "有什么可以帮助你的？"
 DEFAULT_WELCOME_DESCRIPTION = (
     "用中文自然语言提问，Agent 自动查询数据库并返回图表"
 )
+DEFAULT_FLOAT_ICON_URL = ""
+DEFAULT_FLOAT_ICON_DRAGGABLE = False
+DEFAULT_FLOAT_X_ANCHOR = "right"
+DEFAULT_FLOAT_X_OFFSET = 24
+DEFAULT_FLOAT_Y_ANCHOR = "bottom"
+DEFAULT_FLOAT_Y_OFFSET = 24
+MAX_FLOAT_OFFSET = 1000
 MIN_TOKEN_TTL_SECONDS = 30
 MAX_TOKEN_TTL_SECONDS = 3600
 SCHEMA_COMPONENT = "assistant_application_registry"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA_VERSION_TABLE = "system_schema_versions"
 
-APPLICATION_TABLE_SCHEMAS = {
+V1_APPLICATION_TABLE_SCHEMAS = {
     "assistant_applications": (
         ("app_id", "TEXT", 0, 1),
         ("name", "TEXT", 1, 0),
@@ -53,6 +61,28 @@ APPLICATION_TABLE_SCHEMAS = {
         ("app_id", "TEXT", 1, 1),
         ("source_id", "TEXT", 1, 2),
     ),
+}
+APPLICATION_TABLE_SCHEMAS = {
+    **V1_APPLICATION_TABLE_SCHEMAS,
+    "assistant_applications": (
+        *V1_APPLICATION_TABLE_SCHEMAS["assistant_applications"],
+        ("header_font_color", "TEXT", 1, 0),
+        ("float_icon_url", "TEXT", 1, 0),
+        ("float_icon_draggable", "INTEGER", 1, 0),
+        ("float_x_anchor", "TEXT", 1, 0),
+        ("float_x_offset", "INTEGER", 1, 0),
+        ("float_y_anchor", "TEXT", 1, 0),
+        ("float_y_offset", "INTEGER", 1, 0),
+    ),
+}
+V2_COLUMN_DEFAULTS = {
+    "header_font_color": ("text", "#1f2329"),
+    "float_icon_url": ("text", ""),
+    "float_icon_draggable": ("integer", 0),
+    "float_x_anchor": ("text", "right"),
+    "float_x_offset": ("integer", 24),
+    "float_y_anchor": ("text", "bottom"),
+    "float_y_offset": ("integer", 24),
 }
 
 
@@ -92,9 +122,16 @@ class AssistantApplication:
     allowed_source_ids: tuple[str, ...]
     token_ttl_seconds: int
     theme: str
+    header_font_color: str
     logo_url: str
     welcome: str
     welcome_description: str
+    float_icon_url: str
+    float_icon_draggable: bool
+    float_x_anchor: str
+    float_x_offset: int
+    float_y_anchor: str
+    float_y_offset: int
     show_history: bool
     created_at: int
     updated_at: int
@@ -112,9 +149,16 @@ class AssistantApplicationView:
     allowed_source_ids: tuple[str, ...]
     token_ttl_seconds: int
     theme: str
+    header_font_color: str
     logo_url: str
     welcome: str
     welcome_description: str
+    float_icon_url: str
+    float_icon_draggable: bool
+    float_x_anchor: str
+    float_x_offset: int
+    float_y_anchor: str
+    float_y_offset: int
     show_history: bool
     created_at: int
     updated_at: int
@@ -212,25 +256,35 @@ def _validate_text(
     return normalized
 
 
-def _validate_theme(value: Any) -> str:
-    if value is None or value == "":
-        return DEFAULT_THEME
+def _validate_color(field_name: str, value: Any, default: str) -> str:
+    if value is None:
+        return default
     if not isinstance(value, str) or THEME_PATTERN.fullmatch(value) is None:
         raise InvalidApplicationConfiguration(
-            "theme 必须是 #RRGGBB 颜色格式"
+            f"{field_name} 必须是 #RRGGBB 颜色格式"
         )
     return value.lower()
 
 
-def _validate_logo_url(value: Any) -> str:
+def _validate_theme(value: Any) -> str:
+    return _validate_color("theme", value, DEFAULT_THEME)
+
+
+def _validate_asset_url(field_name: str, value: Any) -> str:
     if value is None or value == "":
         return ""
-    if not isinstance(value, str) or len(value) > 2048:
-        raise InvalidApplicationConfiguration("logo_url 格式无效")
+    if (
+        not isinstance(value, str)
+        or len(value) > 2048
+        or value != value.strip()
+        or "<" in value
+        or ">" in value
+    ):
+        raise InvalidApplicationConfiguration(f"{field_name} 格式无效")
     try:
         parsed = urlsplit(value)
     except ValueError as exc:
-        raise InvalidApplicationConfiguration("logo_url 格式无效") from exc
+        raise InvalidApplicationConfiguration(f"{field_name} 格式无效") from exc
     if (
         parsed.scheme.lower() not in {"http", "https"}
         or not parsed.hostname
@@ -238,7 +292,32 @@ def _validate_logo_url(value: Any) -> str:
         or parsed.password is not None
     ):
         raise InvalidApplicationConfiguration(
-            "logo_url 只允许不含凭据的 http/https 地址"
+            f"{field_name} 只允许不含凭据的 http/https 地址"
+        )
+    return value
+
+
+def _validate_logo_url(value: Any) -> str:
+    return _validate_asset_url("logo_url", value)
+
+
+def _validate_anchor(field_name: str, value: Any, allowed: set[str]) -> str:
+    if not isinstance(value, str) or value not in allowed:
+        raise InvalidApplicationConfiguration(
+            f"{field_name} 取值无效"
+        )
+    return value
+
+
+def _validate_offset(field_name: str, value: Any) -> int:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        or value > MAX_FLOAT_OFFSET
+    ):
+        raise InvalidApplicationConfiguration(
+            f"{field_name} 必须是 0 到 {MAX_FLOAT_OFFSET} 的整数"
         )
     return value
 
@@ -331,6 +410,70 @@ class AssistantApplicationRegistry:
         )
 
     @staticmethod
+    def _table_defaults(
+        connection: sqlite3.Connection,
+        table_name: str,
+    ) -> dict[str, str | None]:
+        return {
+            row["name"]: row["dflt_value"]
+            for row in connection.execute(
+                f'PRAGMA table_info("{table_name}")'
+            )
+        }
+
+    @staticmethod
+    def _normalized_schema_default(
+        value: str | None,
+    ) -> tuple[str, str | int] | None:
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip()
+        while (
+            len(normalized) >= 2
+            and normalized[0] == "("
+            and normalized[-1] == ")"
+        ):
+            depth = 0
+            wraps_entire_value = True
+            for index, character in enumerate(normalized):
+                if character == "(":
+                    depth += 1
+                elif character == ")":
+                    depth -= 1
+                    if depth == 0 and index != len(normalized) - 1:
+                        wraps_entire_value = False
+                        break
+                if depth < 0:
+                    wraps_entire_value = False
+                    break
+            if not wraps_entire_value or depth != 0:
+                break
+            normalized = normalized[1:-1].strip()
+        if re.fullmatch(r"[+-]?\d+", normalized):
+            return ("integer", int(normalized))
+        if (
+            len(normalized) >= 2
+            and normalized[0] == normalized[-1]
+            and normalized[0] in {"'", '"'}
+        ):
+            quote = normalized[0]
+            body = normalized[1:-1]
+            escaped_quote = quote * 2
+            cursor = 0
+            output: list[str] = []
+            while cursor < len(body):
+                if body.startswith(escaped_quote, cursor):
+                    output.append(quote)
+                    cursor += 2
+                elif body[cursor] == quote:
+                    return None
+                else:
+                    output.append(body[cursor])
+                    cursor += 1
+            return ("text", "".join(output))
+        return None
+
+    @staticmethod
     def _table_sql(
         connection: sqlite3.Connection,
         table_name: str,
@@ -344,7 +487,7 @@ class AssistantApplicationRegistry:
         ).fetchone()
         if row is None or not isinstance(row["sql"], str):
             raise SchemaMigrationError(
-                "小助手应用数据库结构与当前 V1 不兼容"
+                "小助手应用数据库结构与当前版本不兼容"
             )
         return row["sql"]
 
@@ -451,6 +594,25 @@ class AssistantApplicationRegistry:
         output: list[str] = []
         cursor = 0
         while cursor < len(expression):
+            if expression[cursor] == "'":
+                literal: list[str] = []
+                cursor += 1
+                while cursor < len(expression):
+                    if expression[cursor] != "'":
+                        literal.append(expression[cursor].lower())
+                        cursor += 1
+                        continue
+                    if (
+                        cursor + 1 < len(expression)
+                        and expression[cursor + 1] == "'"
+                    ):
+                        literal.append("'")
+                        cursor += 2
+                        continue
+                    cursor += 1
+                    break
+                output.extend(("'", "".join(literal), "'"))
+                continue
             skipped = cls._skip_sql_non_code(expression, cursor)
             if skipped is not None:
                 output.append(" ")
@@ -466,16 +628,66 @@ class AssistantApplicationRegistry:
         check_expressions: Sequence[str],
         column_name: str,
     ) -> bool:
-        pattern = (
-            rf"\(*{re.escape(column_name)}"
-            r"in\((?:0,1|1,0)\)\)*"
-        )
         return any(
-            re.fullmatch(
-                pattern,
-                cls._normalized_check_expression(expression),
-            )
-            is not None
+            cls._normalized_check_expression(expression)
+            .replace("(", "")
+            .replace(")", "")
+            in {
+                f"{column_name}in0,1",
+                f"{column_name}in1,0",
+            }
+            for expression in check_expressions
+        )
+
+    @classmethod
+    def _has_anchor_check(
+        cls,
+        check_expressions: Sequence[str],
+        column_name: str,
+        first: str,
+        second: str,
+    ) -> bool:
+        return any(
+            cls._normalized_check_expression(expression)
+            .replace("(", "")
+            .replace(")", "")
+            in {
+                f"{column_name}in'{first}','{second}'",
+                f"{column_name}in'{second}','{first}'",
+            }
+            for expression in check_expressions
+        )
+
+    @classmethod
+    def _has_offset_check(
+        cls,
+        check_expressions: Sequence[str],
+        column_name: str,
+    ) -> bool:
+        equivalent_checks = {
+            f"{column_name}between0and{MAX_FLOAT_OFFSET}",
+            (
+                f"{column_name}>=0and"
+                f"{column_name}<={MAX_FLOAT_OFFSET}"
+            ),
+            (
+                f"0<={column_name}and"
+                f"{column_name}<={MAX_FLOAT_OFFSET}"
+            ),
+            (
+                f"{column_name}<={MAX_FLOAT_OFFSET}and"
+                f"{column_name}>=0"
+            ),
+            (
+                f"{MAX_FLOAT_OFFSET}>={column_name}and"
+                f"{column_name}>=0"
+            ),
+        }
+        return any(
+            cls._normalized_check_expression(expression)
+            .replace("(", "")
+            .replace(")", "")
+            in equivalent_checks
             for expression in check_expressions
         )
 
@@ -512,10 +724,33 @@ class AssistantApplicationRegistry:
         self,
         connection: sqlite3.Connection,
     ) -> None:
-        for table_name, expected in APPLICATION_TABLE_SCHEMAS.items():
+        self._require_compatible_tables(
+            connection,
+            V1_APPLICATION_TABLE_SCHEMAS,
+            version=1,
+        )
+
+    def _require_v2_compatible_tables(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        self._require_compatible_tables(
+            connection,
+            APPLICATION_TABLE_SCHEMAS,
+            version=2,
+        )
+
+    def _require_compatible_tables(
+        self,
+        connection: sqlite3.Connection,
+        schemas: Mapping[str, tuple[tuple[str, str, int, int], ...]],
+        *,
+        version: int,
+    ) -> None:
+        for table_name, expected in schemas.items():
             if self._table_signature(connection, table_name) != expected:
                 raise SchemaMigrationError(
-                    "小助手应用数据库结构与当前 V1 不兼容"
+                    f"小助手应用数据库结构与当前 V{version} 不兼容"
                 )
         application_sql = self._table_sql(
             connection,
@@ -527,8 +762,51 @@ class AssistantApplicationRegistry:
             for column_name in ("enabled", "show_history")
         ):
             raise SchemaMigrationError(
-                "小助手应用数据库结构与当前 V1 不兼容"
+                f"小助手应用数据库结构与当前 V{version} 不兼容"
             )
+        if version == 2:
+            defaults = self._table_defaults(
+                connection,
+                "assistant_applications",
+            )
+            if any(
+                self._normalized_schema_default(
+                    defaults.get(column_name)
+                ) != expected
+                for column_name, expected in V2_COLUMN_DEFAULTS.items()
+            ):
+                raise SchemaMigrationError(
+                    "小助手应用数据库结构与当前 V2 不兼容"
+                )
+            if (
+                not self._has_boolean_check(
+                    check_expressions,
+                    "float_icon_draggable",
+                )
+                or not self._has_anchor_check(
+                    check_expressions,
+                    "float_x_anchor",
+                    "left",
+                    "right",
+                )
+                or not self._has_anchor_check(
+                    check_expressions,
+                    "float_y_anchor",
+                    "top",
+                    "bottom",
+                )
+                or not self._has_offset_check(
+                    check_expressions,
+                    "float_x_offset",
+                )
+                or not self._has_offset_check(
+                    check_expressions,
+                    "float_y_offset",
+                )
+            ):
+                raise SchemaMigrationError(
+                    "小助手应用数据库结构与当前 V2 不兼容"
+                )
         for table_name in (
             "assistant_application_origins",
             "assistant_application_sources",
@@ -538,7 +816,7 @@ class AssistantApplicationRegistry:
                 table_name,
             ):
                 raise SchemaMigrationError(
-                    "小助手应用数据库结构与当前 V1 不兼容"
+                    f"小助手应用数据库结构与当前 V{version} 不兼容"
                 )
 
     @staticmethod
@@ -590,6 +868,48 @@ class AssistantApplicationRegistry:
         self._create_v1_tables(connection)
         self._require_v1_compatible_tables(connection)
 
+    def _migrate_1_to_2(self, connection: sqlite3.Connection) -> None:
+        self._require_v1_compatible_tables(connection)
+        statements = (
+            """
+            ALTER TABLE assistant_applications
+            ADD COLUMN header_font_color TEXT NOT NULL
+                DEFAULT '#1f2329'
+            """,
+            """
+            ALTER TABLE assistant_applications
+            ADD COLUMN float_icon_url TEXT NOT NULL DEFAULT ''
+            """,
+            """
+            ALTER TABLE assistant_applications
+            ADD COLUMN float_icon_draggable INTEGER NOT NULL DEFAULT 0
+                CHECK (float_icon_draggable IN (0, 1))
+            """,
+            """
+            ALTER TABLE assistant_applications
+            ADD COLUMN float_x_anchor TEXT NOT NULL DEFAULT 'right'
+                CHECK (float_x_anchor IN ('left', 'right'))
+            """,
+            f"""
+            ALTER TABLE assistant_applications
+            ADD COLUMN float_x_offset INTEGER NOT NULL DEFAULT 24
+                CHECK (float_x_offset BETWEEN 0 AND {MAX_FLOAT_OFFSET})
+            """,
+            """
+            ALTER TABLE assistant_applications
+            ADD COLUMN float_y_anchor TEXT NOT NULL DEFAULT 'bottom'
+                CHECK (float_y_anchor IN ('top', 'bottom'))
+            """,
+            f"""
+            ALTER TABLE assistant_applications
+            ADD COLUMN float_y_offset INTEGER NOT NULL DEFAULT 24
+                CHECK (float_y_offset BETWEEN 0 AND {MAX_FLOAT_OFFSET})
+            """,
+        )
+        for statement in statements:
+            connection.execute(statement)
+        self._require_v2_compatible_tables(connection)
+
     def _initialize_schema(self, connection: sqlite3.Connection) -> None:
         version_schema = (
             ("component", "TEXT", 0, 1),
@@ -628,11 +948,34 @@ class AssistantApplicationRegistry:
             if existing_application_tables:
                 if existing_application_tables != application_tables:
                     raise SchemaMigrationError(
-                        "小助手应用数据库仅存在部分 V1 表，无法安全接管"
+                        "小助手应用数据库仅存在部分应用表，无法安全接管"
                     )
-                self._require_v1_compatible_tables(connection)
+                application_signature = self._table_signature(
+                    connection,
+                    "assistant_applications",
+                )
+                if (
+                    application_signature
+                    == V1_APPLICATION_TABLE_SCHEMAS[
+                        "assistant_applications"
+                    ]
+                ):
+                    self._require_v1_compatible_tables(connection)
+                    self._migrate_1_to_2(connection)
+                elif (
+                    application_signature
+                    == APPLICATION_TABLE_SCHEMAS[
+                        "assistant_applications"
+                    ]
+                ):
+                    self._require_v2_compatible_tables(connection)
+                else:
+                    raise SchemaMigrationError(
+                        "小助手应用数据库结构无法安全接管"
+                    )
             else:
                 self._migrate_0_to_1(connection)
+                self._migrate_1_to_2(connection)
             connection.execute(
                 f"""
                 INSERT INTO {SCHEMA_VERSION_TABLE}
@@ -654,7 +997,10 @@ class AssistantApplicationRegistry:
             raise SchemaMigrationError(
                 "V0 数据库已存在 V1 应用表，无法安全迁移"
             )
-        migrations = {0: self._migrate_0_to_1}
+        migrations = {
+            0: self._migrate_0_to_1,
+            1: self._migrate_1_to_2,
+        }
         while version < SCHEMA_VERSION:
             migration = migrations.get(version)
             if migration is None:
@@ -669,7 +1015,7 @@ class AssistantApplicationRegistry:
                 """,
                 (version, int(time.time()), SCHEMA_COMPONENT),
             )
-        self._require_v1_compatible_tables(connection)
+        self._require_v2_compatible_tables(connection)
 
     def _normalize_origins(
         self,
@@ -715,9 +1061,16 @@ class AssistantApplicationRegistry:
         allowed_source_ids: Sequence[str] = (),
         token_ttl_seconds: int = 300,
         theme: str = DEFAULT_THEME,
+        header_font_color: str = DEFAULT_HEADER_FONT_COLOR,
         logo_url: str = "",
         welcome: str = DEFAULT_WELCOME,
         welcome_description: str = DEFAULT_WELCOME_DESCRIPTION,
+        float_icon_url: str = DEFAULT_FLOAT_ICON_URL,
+        float_icon_draggable: bool = DEFAULT_FLOAT_ICON_DRAGGABLE,
+        float_x_anchor: str = DEFAULT_FLOAT_X_ANCHOR,
+        float_x_offset: int = DEFAULT_FLOAT_X_OFFSET,
+        float_y_anchor: str = DEFAULT_FLOAT_Y_ANCHOR,
+        float_y_offset: int = DEFAULT_FLOAT_Y_OFFSET,
         show_history: bool = False,
         enabled: bool = True,
         app_secret: str | None = None,
@@ -728,6 +1081,11 @@ class AssistantApplicationRegistry:
         source_ids = self._normalize_source_ids(allowed_source_ids)
         ttl = _validate_ttl(token_ttl_seconds)
         theme = _validate_theme(theme)
+        header_font_color = _validate_color(
+            "header_font_color",
+            header_font_color,
+            DEFAULT_HEADER_FONT_COLOR,
+        )
         logo_url = _validate_logo_url(logo_url)
         welcome = _validate_text("welcome", welcome, maximum=120)
         welcome_description = _validate_text(
@@ -735,10 +1093,36 @@ class AssistantApplicationRegistry:
             welcome_description,
             maximum=500,
         )
-        if not isinstance(show_history, bool) or not isinstance(enabled, bool):
+        float_icon_url = _validate_asset_url(
+            "float_icon_url",
+            float_icon_url,
+        )
+        if (
+            not isinstance(show_history, bool)
+            or not isinstance(enabled, bool)
+            or not isinstance(float_icon_draggable, bool)
+        ):
             raise InvalidApplicationConfiguration(
-                "enabled 和 show_history 必须是布尔值"
+                "enabled、show_history 和 float_icon_draggable 必须是布尔值"
             )
+        float_x_anchor = _validate_anchor(
+            "float_x_anchor",
+            float_x_anchor,
+            {"left", "right"},
+        )
+        float_x_offset = _validate_offset(
+            "float_x_offset",
+            float_x_offset,
+        )
+        float_y_anchor = _validate_anchor(
+            "float_y_anchor",
+            float_y_anchor,
+            {"top", "bottom"},
+        )
+        float_y_offset = _validate_offset(
+            "float_y_offset",
+            float_y_offset,
+        )
         secret = app_secret if app_secret is not None else secrets.token_urlsafe(32)
         if not isinstance(secret, str) or len(secret) < 32:
             raise InvalidApplicationConfiguration(
@@ -754,8 +1138,14 @@ class AssistantApplicationRegistry:
                         app_id, name, enabled, app_secret,
                         token_ttl_seconds, theme, logo_url,
                         welcome, welcome_description, show_history,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, header_font_color,
+                        float_icon_url, float_icon_draggable,
+                        float_x_anchor, float_x_offset,
+                        float_y_anchor, float_y_offset
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?
+                    )
                     """,
                     (
                         app_id,
@@ -770,6 +1160,13 @@ class AssistantApplicationRegistry:
                         int(show_history),
                         now,
                         now,
+                        header_font_color,
+                        float_icon_url,
+                        int(float_icon_draggable),
+                        float_x_anchor,
+                        float_x_offset,
+                        float_y_anchor,
+                        float_y_offset,
                     ),
                 )
                 connection.executemany(
@@ -849,9 +1246,16 @@ class AssistantApplicationRegistry:
             allowed_source_ids=source_ids,
             token_ttl_seconds=row["token_ttl_seconds"],
             theme=row["theme"],
+            header_font_color=row["header_font_color"],
             logo_url=row["logo_url"],
             welcome=row["welcome"],
             welcome_description=row["welcome_description"],
+            float_icon_url=row["float_icon_url"],
+            float_icon_draggable=bool(row["float_icon_draggable"]),
+            float_x_anchor=row["float_x_anchor"],
+            float_x_offset=row["float_x_offset"],
+            float_y_anchor=row["float_y_anchor"],
+            float_y_offset=row["float_y_offset"],
             show_history=bool(row["show_history"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -868,9 +1272,16 @@ class AssistantApplicationRegistry:
             allowed_source_ids=application.allowed_source_ids,
             token_ttl_seconds=application.token_ttl_seconds,
             theme=application.theme,
+            header_font_color=application.header_font_color,
             logo_url=application.logo_url,
             welcome=application.welcome,
             welcome_description=application.welcome_description,
+            float_icon_url=application.float_icon_url,
+            float_icon_draggable=application.float_icon_draggable,
+            float_x_anchor=application.float_x_anchor,
+            float_x_offset=application.float_x_offset,
+            float_y_anchor=application.float_y_anchor,
+            float_y_offset=application.float_y_offset,
             show_history=application.show_history,
             created_at=application.created_at,
             updated_at=application.updated_at,
@@ -908,9 +1319,16 @@ class AssistantApplicationRegistry:
         allowed_source_ids: Sequence[str] | None = None,
         token_ttl_seconds: int | None = None,
         theme: str | None = None,
+        header_font_color: str | None = None,
         logo_url: str | None = None,
         welcome: str | None = None,
         welcome_description: str | None = None,
+        float_icon_url: str | None = None,
+        float_icon_draggable: bool | None = None,
+        float_x_anchor: str | None = None,
+        float_x_offset: int | None = None,
+        float_y_anchor: str | None = None,
+        float_y_offset: int | None = None,
         show_history: bool | None = None,
     ) -> AssistantApplicationView:
         current = self._load_full(app_id)
@@ -935,6 +1353,15 @@ class AssistantApplicationRegistry:
             else _validate_ttl(token_ttl_seconds)
         )
         next_theme = current.theme if theme is None else _validate_theme(theme)
+        next_header_font_color = (
+            current.header_font_color
+            if header_font_color is None
+            else _validate_color(
+                "header_font_color",
+                header_font_color,
+                DEFAULT_HEADER_FONT_COLOR,
+            )
+        )
         next_logo = (
             current.logo_url
             if logo_url is None
@@ -954,6 +1381,51 @@ class AssistantApplicationRegistry:
                 maximum=500,
             )
         )
+        next_float_icon_url = (
+            current.float_icon_url
+            if float_icon_url is None
+            else _validate_asset_url("float_icon_url", float_icon_url)
+        )
+        if (
+            float_icon_draggable is not None
+            and not isinstance(float_icon_draggable, bool)
+        ):
+            raise InvalidApplicationConfiguration(
+                "float_icon_draggable 必须是布尔值"
+            )
+        next_float_icon_draggable = (
+            current.float_icon_draggable
+            if float_icon_draggable is None
+            else float_icon_draggable
+        )
+        next_float_x_anchor = (
+            current.float_x_anchor
+            if float_x_anchor is None
+            else _validate_anchor(
+                "float_x_anchor",
+                float_x_anchor,
+                {"left", "right"},
+            )
+        )
+        next_float_x_offset = (
+            current.float_x_offset
+            if float_x_offset is None
+            else _validate_offset("float_x_offset", float_x_offset)
+        )
+        next_float_y_anchor = (
+            current.float_y_anchor
+            if float_y_anchor is None
+            else _validate_anchor(
+                "float_y_anchor",
+                float_y_anchor,
+                {"top", "bottom"},
+            )
+        )
+        next_float_y_offset = (
+            current.float_y_offset
+            if float_y_offset is None
+            else _validate_offset("float_y_offset", float_y_offset)
+        )
         if show_history is not None and not isinstance(show_history, bool):
             raise InvalidApplicationConfiguration(
                 "show_history 必须是布尔值"
@@ -969,17 +1441,27 @@ class AssistantApplicationRegistry:
                 """
                 UPDATE assistant_applications
                 SET name = ?, token_ttl_seconds = ?, theme = ?,
-                    logo_url = ?, welcome = ?, welcome_description = ?,
-                    show_history = ?, updated_at = ?
+                    header_font_color = ?, logo_url = ?, welcome = ?,
+                    welcome_description = ?, float_icon_url = ?,
+                    float_icon_draggable = ?, float_x_anchor = ?,
+                    float_x_offset = ?, float_y_anchor = ?,
+                    float_y_offset = ?, show_history = ?, updated_at = ?
                 WHERE app_id = ?
                 """,
                 (
                     next_name,
                     next_ttl,
                     next_theme,
+                    next_header_font_color,
                     next_logo,
                     next_welcome,
                     next_description,
+                    next_float_icon_url,
+                    int(next_float_icon_draggable),
+                    next_float_x_anchor,
+                    next_float_x_offset,
+                    next_float_y_anchor,
+                    next_float_y_offset,
                     int(next_show_history),
                     now,
                     app_id,
