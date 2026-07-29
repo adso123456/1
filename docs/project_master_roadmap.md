@@ -92,8 +92,8 @@ DDL Text Memory：18
 Business Documentation Text Memory：12
 SQL Tool Memory：18
 正式 MySQL Chroma 总记录数：48
-SQL Batch Content SHA256：576ccc9b5451a2dfb37b499683b1fd16f7dd4baa61d52b6e8599aaa72ee6bc7f
-Record Set SHA256：a947d6843e50c6ff2d05a880481936c0879ba6ab846078c1e862fc4d2627e1f6
+SQL Batch Content SHA256：3d41bd6a06eed4c8104d475450e1bf370d704d711fb6bdab6752a70062795e77
+Record Set SHA256：077f0f72908e6b9c3288aef6f0f797229ef1b9891881fab4bb06860d97f10e2f
 ```
 
 当前仓库 HEAD 以 Git 为准，不在路线文档中维护自引用提交 SHA。
