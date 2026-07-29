@@ -29,6 +29,10 @@ from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
 from backend.mysql_runtime_factory import create_mysql_runtime
+from backend.water_quality_reports.api import create_report_router
+from backend.water_quality_reports.chat_handler import WaterQualityReportChatHandler
+from backend.water_quality_reports.repository import ReportRepository
+from backend.water_quality_reports.service import WaterQualityReportService
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -72,6 +76,21 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         )
 
     def create_app(self) -> FastAPI:
+        report_service_factory = None
+        if "mysql-lzh-monitor" in self.resources.registry.source_ids:
+            report_config = self.resources.registry.require("mysql-lzh-monitor")
+            report_service_factory = lambda: WaterQualityReportService(
+                ReportRepository(report_config)
+            )
+            if not isinstance(self.chat_handler, WaterQualityReportChatHandler):
+                self.chat_handler = WaterQualityReportChatHandler(
+                    self.chat_handler,
+                    report_service_factory,
+                    lambda request: self.resources.coordinator.resolve(
+                        request.conversation_id,
+                        request.metadata,
+                    ).source_id,
+                )
         app = super().create_app()
 
         @app.get("/api/data-sources")
@@ -275,6 +294,11 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     application_registry=self.assistant_application_registry,
                     data_source_registry=self.resources.registry,
                 )
+            )
+
+        if report_service_factory is not None:
+            app.include_router(
+                create_report_router(report_service_factory)
             )
 
         return app

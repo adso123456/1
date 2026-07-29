@@ -6,6 +6,7 @@ import { DashboardListPanel } from './components/DashboardListPanel';
 import { AddChartDialog } from './components/AddChartDialog';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { AssistantManagement } from './AdminApp';
+import { ReportPage } from './components/ReportPage';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
 import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec } from './types';
@@ -14,7 +15,7 @@ import {
   readWorkspaceSessionId,
 } from './appMode';
 
-type View = 'chat' | 'dashboard' | 'assistant';
+type View = 'chat' | 'dashboard' | 'reports' | 'assistant';
 
 /** 待添加到仪表板的图表上下文（点击"添加到仪表板"时暂存） */
 interface PendingAdd {
@@ -286,6 +287,7 @@ function App() {
             onV2ChartSwitch={handleDashboardV2ChartSwitch}
           />
         )}
+        {currentView === 'reports' && <ReportPage />}
         <div
           style={{
             display: currentView === 'assistant' ? 'block' : 'none',

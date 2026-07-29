@@ -1,0 +1,19 @@
+{
+  "source_id": "mysql-lzh-monitor",
+  "read_only": true,
+  "tables": [
+    "wm_station_info",
+    "wm_section_info",
+    "wm_waterquality_hour_records",
+    "wm_waterquality_day_records",
+    "wm_waterquality_month_records"
+  ],
+  "report_only_tables": [
+    "wm_section_wq_info"
+  ],
+  "training_scope_changed": false,
+  "notes": [
+    "wm_section_wq_info 仅用于读取断面月度或年度水质目标，不加入 B3 Metadata 或 Chroma。",
+    "所有时序查询使用半开区间、明确列名和 LIMIT。"
+  ]
+}

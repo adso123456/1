@@ -4,8 +4,8 @@ interface Props {
   sessions: SessionMeta[];
   currentSessionId: string;
   loading: boolean;
-  currentView: 'chat' | 'dashboard' | 'assistant';
-  onViewChange: (view: 'chat' | 'dashboard' | 'assistant') => void;
+  currentView: 'chat' | 'dashboard' | 'reports' | 'assistant';
+  onViewChange: (view: 'chat' | 'dashboard' | 'reports' | 'assistant') => void;
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
@@ -43,6 +43,15 @@ function DashboardIcon({ color }: { color: string }) {
       <rect x="14" y="3" width="7" height="5" rx="1" />
       <rect x="14" y="12" width="7" height="9" rx="1" />
       <rect x="3" y="16" width="7" height="5" rx="1" />
+    </svg>
+  );
+}
+
+function ReportIcon({ color }: { color: string }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2h9l4 4v16H6z" />
+      <path d="M14 2v5h5M9 12h6M9 16h6" />
     </svg>
   );
 }
@@ -339,12 +348,14 @@ export function Sidebar({ sessions, currentSessionId, loading, currentView, onVi
           { key: 'chat' as const, label: '智能问答', Icon: ChatIcon },
           { key: 'datasource' as const, label: '数据源', Icon: DatabaseIcon },
           { key: 'dashboard' as const, label: '仪表板', Icon: DashboardIcon },
+          { key: 'reports' as const, label: '日报月报', Icon: ReportIcon },
           { key: 'assistant' as const, label: '小助手', Icon: AssistantIcon },
           { key: 'settings' as const, label: '设置', Icon: SettingsIcon },
         ].map(({ key, label, Icon }) => {
           const navigable = (
             key === 'chat'
             || key === 'dashboard'
+            || key === 'reports'
             || key === 'assistant'
           );
           const active = key === currentView;
