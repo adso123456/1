@@ -254,6 +254,13 @@ def main() -> int:
                 else any(chart == "none" for chart in chart_types)
             )
             minimum_chart_count = case.get("minimum_chart_count", 1)
+            normalized_sql = " ".join(sql.lower().split())
+            expected_sql_fragments = [
+                fragment.lower() for fragment in case.get("expected_sql_contains", [])
+            ]
+            forbidden_sql_fragments = [
+                fragment.lower() for fragment in case.get("forbidden_sql_contains", [])
+            ]
             checks = {
                 "http_ok": response["http_status"] == 200,
                 "no_sse_error": not response["errors"],
@@ -267,6 +274,14 @@ def main() -> int:
                     used_tables
                 ),
                 "expected_columns": set(case["expected_columns"]).issubset(columns),
+                "expected_sql": all(
+                    fragment in normalized_sql
+                    for fragment in expected_sql_fragments
+                ),
+                "forbidden_sql": not any(
+                    fragment in normalized_sql
+                    for fragment in forbidden_sql_fragments
+                ),
                 "answer_present": bool(response["final_text"]),
                 "chart_expected": chart_expected,
                 "chart_fields_valid": chart_fields_valid,

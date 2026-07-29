@@ -45,7 +45,7 @@ def main() -> int:
         agent_dir.mkdir()
         os.environ["VANNA_DATA_DIR"] = str(validation)
         os.environ["AGENT_DATA_DIR"] = str(agent_dir)
-        process, _logs = _start_server()
+        process, logs = _start_server()
         source_ids = {
             item["source_id"] for item in _get_json("/api/data-sources")
         }
@@ -88,7 +88,11 @@ def main() -> int:
         print(f"COLUMNS={columns}")
         print(f"ROWS={frame.get('row_count', 0)}")
         print(f"CHARTS={[item.get('type') for item in charts]}")
+        print(f"ERRORS={response['errors']}")
         failures = [name for name, passed in checks.items() if not passed]
+        if failures:
+            print("SERVER_LOG_TAIL=")
+            print("\n".join(logs[-30:]))
         print(
             f"TOTAL={len(checks)} PASS={len(checks) - len(failures)} "
             f"FAIL={len(failures)}"

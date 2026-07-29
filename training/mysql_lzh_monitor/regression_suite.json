@@ -18,6 +18,6 @@
     {"case_id":"B3_CROSS_01","question":"统计2025年5月各区域水质站点的平均pH，并从高到低展示","expected_tables":["wm_waterquality_day_records","wm_station_info","gis_region"],"forbidden_tables":[],"expected_columns":["region_name","avg_ph"],"chart_types":["bar","horizontal_bar"],"allow_empty":false},
     {"case_id":"B3_CROSS_02","question":"再统计各区域有效水质站点数量，并追加一个饼图","expected_tables":["wm_station_info","gis_region"],"forbidden_tables":[],"expected_columns":["region_name","station_count"],"chart_types":["pie","donut"],"allow_empty":false,"follow_up_to":"B3_CROSS_01"},
     {"case_id":"B3_WQ_REPEAT","question":"查询幸福河站2025年4月9日的pH小时变化并生成折线图","expected_tables":["wm_waterquality_hour_records","wm_station_info"],"forbidden_tables":["rs_pollutant_info"],"expected_columns":["monitor_time","ph_value"],"chart_types":["line"],"allow_empty":false,"repeat_of":"B3_WQ_01"},
-    {"case_id":"B3_WQ_MULTI","question":"查询幸福河站2025年4月9日的pH和溶解氧小时变化，分别生成两张折线图","expected_tables":["wm_waterquality_hour_records","wm_station_info"],"forbidden_tables":[],"expected_columns":["monitor_time","ph_value","do_value"],"chart_types":["line"],"minimum_chart_count":2,"allow_empty":false}
+    {"case_id":"B3_WQ_MULTI","question":"查询幸福河站2025年4月9日的pH和溶解氧小时变化，分别生成两张折线图","expected_tables":["wm_waterquality_hour_records","wm_station_info"],"forbidden_tables":[],"expected_columns":["monitor_time","ph_value","do_value"],"expected_sql_contains":["r.m2_value AS ph_value","r.m3_value AS do_value"],"forbidden_sql_contains":["r.m1_value AS do_value"],"chart_types":["line"],"minimum_chart_count":2,"allow_empty":false}
   ]
 }

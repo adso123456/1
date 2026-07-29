@@ -211,16 +211,16 @@
       "expected_tables": ["wm_station_info", "gis_region"]
     },
     {
-      "sample_id": "MYSQL_WQ_DICT_018",
-      "question": "查询水质固定位置指标编码和名称，最多返回31条",
+      "sample_id": "MYSQL_WQ_MULTI_018",
+      "question": "查询幸福河站2025年4月9日的pH和溶解氧小时变化，最多返回50条",
       "tool_name": "run_sql",
-      "args": {"sql": "SELECT ITEM_CODE, ITEM_NAME\nFROM ad_dict\nWHERE LIST_TYPE = 'waterquality_indicator'\n  AND DELETED_FLAG = '0'\nORDER BY ITEM_CODE\nLIMIT 31"},
+      "args": {"sql": "SELECT r.monitor_time, r.m2_value AS ph_value, r.m3_value AS do_value\nFROM wm_waterquality_hour_records AS r\nJOIN wm_station_info AS s ON s.id = r.station_id AND s.del_flag = '0'\nWHERE s.station_name = '幸福河'\n  AND r.monitor_time >= '2025-04-09 00:00:00'\n  AND r.monitor_time < '2025-04-10 00:00:00'\n  AND r.del_flag = '0'\nORDER BY r.monitor_time\nLIMIT 50"},
       "training_level": "level2_mysql_sql_examples",
       "train_decision": "approved",
-      "review_reason": "真实字典固定位置映射",
+      "review_reason": "水质固定位置映射：m2 为 pH，m3 为溶解氧",
       "source": "B3 verified MySQL sample",
-      "expected_behavior": "返回水质指标位置编码和名称表格",
-      "expected_tables": ["ad_dict"]
+      "expected_behavior": "返回时间、pH 和溶解氧，适合两张折线图",
+      "expected_tables": ["wm_waterquality_hour_records", "wm_station_info"]
     }
   ]
 }

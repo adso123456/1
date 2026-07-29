@@ -6,8 +6,8 @@
   "business_document_count": 12,
   "sql_example_count": 18,
   "total_record_count": 48,
-  "sql_batch_content_sha256": "576ccc9b5451a2dfb37b499683b1fd16f7dd4baa61d52b6e8599aaa72ee6bc7f",
-  "record_set_sha256": "a947d6843e50c6ff2d05a880481936c0879ba6ab846078c1e862fc4d2627e1f6",
+  "sql_batch_content_sha256": "3d41bd6a06eed4c8104d475450e1bf370d704d711fb6bdab6752a70062795e77",
+  "record_set_sha256": "077f0f72908e6b9c3288aef6f0f797229ef1b9891881fab4bb06860d97f10e2f",
   "inputs": {
     "metadata": "agent_data/mysql-lzh-monitor/column_metadata_index.json",
     "scope": "config/mysql_lzh_monitor_metadata_scope.json",
@@ -280,10 +280,10 @@
       "content_fingerprint": "9e446088f7a5d10776399141f66f7d885e99051a8b56b1ebc7a84a22bd641a52"
     },
     {
-      "record_id": "toolmem-v1-a31dfd94f6c78f9017cda47138ed276a2258498c834611bca24d6cc15ad05a4d",
+      "record_id": "toolmem-v1-b1c4fb17d4235c2a71a7643b0e298f756b56c7d6b35d454cea0a3ca96fe9cff4",
       "category": "sql_example",
-      "logical_name": "MYSQL_WQ_DICT_018",
-      "content_fingerprint": "a31dfd94f6c78f9017cda47138ed276a2258498c834611bca24d6cc15ad05a4d"
+      "logical_name": "MYSQL_WQ_MULTI_018",
+      "content_fingerprint": "b1c4fb17d4235c2a71a7643b0e298f756b56c7d6b35d454cea0a3ca96fe9cff4"
     },
     {
       "record_id": "toolmem-v1-d0b44e50e18085a244c8cd5d01287b4ca4d4eac3cbe4af685bc99d98db7abcd1",
