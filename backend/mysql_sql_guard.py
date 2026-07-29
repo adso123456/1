@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import sqlparse
 
 from backend.sql_guard import (
@@ -51,3 +53,23 @@ class MySQLSQLGuard(SQLGuard):
             and value not in SQL_KEYWORDS
             and value not in MYSQL_SQL_FUNCTIONS
         )
+
+    def _extract_columns(self, sql, used_tables, aliases, virtual_columns=None):
+        """MySQL 允许在 ORDER BY/HAVING 中引用 SELECT 输出别名。"""
+        used_columns, unknown_columns = super()._extract_columns(
+            sql, used_tables, aliases, virtual_columns
+        )
+        select_part = self._extract_between_keywords(sql, "select", ["from"])
+        output_aliases = {
+            match.group(1).lower()
+            for match in re.finditer(
+                r"\bas\s+`?([a-zA-Z_][\w]*)`?\s*(?:,|$)",
+                select_part,
+                flags=re.I,
+            )
+        }
+        return used_columns, [
+            column
+            for column in unknown_columns
+            if column.strip("`").lower() not in output_aliases
+        ]

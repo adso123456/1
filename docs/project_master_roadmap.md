@@ -13,7 +13,7 @@
 本项目是一个基于 Vanna 2.0、React、ECharts 和 ChromaDB 的中文数据问答系统，当前主要能力包括：
 
 - 中文自然语言转 SQL；
-- PostgreSQL 数据查询；
+- PostgreSQL / MySQL 双数据源查询；
 - SQLGuard 安全校验；
 - DDL / Metadata 检索；
 - Tool Memory SQL 示例检索；
@@ -41,6 +41,12 @@ E:\3\posgresql\1
 
 ```text
 E:\3\_runtime\vanna-level1\vanna_data
+```
+
+MySQL `lzh_monitor` 独立正式 Chroma：
+
+```text
+vanna_data/mysql-lzh-monitor
 ```
 
 ---
@@ -76,22 +82,34 @@ P1 指纹溯源结论：
 - 当前正式资产已在 F6-1I-C-R3-B 中通过验收：managed-v1 DDL `115/115`、legacy expected DDL `0`、non-DDL `83`、full regression `15/15`，并明确 `retain_current_live = true`；
 - 当前正式 managed-v1 资产保持不变，P1 审计分类为 `D8EB_EXPECTATION_MISBOUND`。
 
+MySQL B3 首批正式训练资产（与上述 PostgreSQL 资产完全隔离）：
+
+```text
+source_id：mysql-lzh-monitor
+database：lzh_monitor
+Metadata：18表 / 651字段
+DDL Text Memory：18
+Business Documentation Text Memory：12
+SQL Tool Memory：18
+正式 MySQL Chroma 总记录数：48
+SQL Batch Content SHA256：576ccc9b5451a2dfb37b499683b1fd16f7dd4baa61d52b6e8599aaa72ee6bc7f
+Record Set SHA256：a947d6843e50c6ff2d05a880481936c0879ba6ab846078c1e862fc4d2627e1f6
+```
+
 当前仓库 HEAD 以 Git 为准，不在路线文档中维护自引用提交 SHA。
 
 当前阶段：
 
 ```text
-阶段 2 已完成：仓库 vendored Vanna 源码已删除，editable 依赖已移除，
-requirements.txt 已锁定 vanna==2.0.2，运行时从 vanna_venv\Lib\site-packages\vanna 加载；
-下一阶段为阶段 3：多数据源核心架构，尚未开始实现。
+B3 已完成：PostgreSQL / MySQL 多数据源运行时、18表 MySQL 首批训练、
+自然语言问数、真实表格和图表链路均已验收。
+下一独立板块为 B4：日报月报设计与实现，本阶段尚未开始。
 ```
 
 当前禁止越界进入：
 
 ```text
-新增正式Memory
 Legacy迁移
-MySQL 接入
 一句话生成报表
 外部网站机器人集成
 ```
@@ -1648,6 +1666,32 @@ M vanna_data/chroma.sqlite3
 
 ---
 
+# 35.1 B3 MySQL 数据源训练与通用问数验收
+
+B3 已完成以下正式能力：
+
+- `mysql-lzh-monitor` 与 `postgresql-main` 同时注册，主工作台按 `metadata.source_id` 路由并锁定会话数据源；
+- MySQL 18 表 Metadata、Chroma、Agent、Prompt、SQLGuard、Runner 和 SQL 示例均使用独立路径；
+- 确定性训练流程支持 Materials → Plan → Candidate → Apply，失败不发布部分结果，相同材料重复执行保持 48 条；
+- 首批训练范围覆盖水质、水文、气象、污染源和水质预警；
+- 水质 `m1`—`m31` 使用 `ad_dict` 固定位置映射；水文只命名 `m1`—`m5`；气象只命名 `m1`—`m14`；
+- 17 条正式 Agent/SSE 固定回归全部通过，包含表格、折线图、柱状图、饼图、用户指定图表、同会话追问、重复执行和两张折线图；
+- 18 条批准 SQL 全部通过 MySQL SQLGuard、真实只读执行、结果列和非空范围校验；
+- MySQL 正式查询只使用批准 18 表，未出现 PostgreSQL 专用表或方言。
+
+继续保持的业务边界：
+
+- 污染源小时/日记录的 `station_id` 真实维度表未确认，只允许按数值查询，禁止关联站点名称表；
+- `area_code` 不关联 `gis_region.region_code`，预警记录中未验证的污染源与关键点字段不建立 JOIN；
+- 水文 `m6`—`m10`、气象 `m15` 不命名、不进入 SQL 示例；
+- 水质月表只按 `section_id` 关联断面，来源尚未完全确认；
+- 日表时间可能为 20:00 或 23:00，统一使用半开时间区间；
+- 大型小时表明细必须有时间范围和 `LIMIT`；本阶段不修改 MySQL 索引。
+
+B3 不包含日报月报设计或实现。后续日报月报作为独立 B4 板块执行。
+
+---
+
 # 36. 当前任务看板
 
 | 板块 | 状态 | 当前节点 |
@@ -1659,9 +1703,9 @@ M vanna_data/chroma.sqlite3
 | F6 DDL 幂等治理 | 已完成 | current live正式保留；pre-switch作为旧基线备份保留 |
 | F6-2 Metadata 更新机制 | 已完成 | 正式 Metadata 与 Chroma 已切换；切换后全新隔离副本通过 20/20 HTTP、6/6 Memory |
 | Vanna 源码移除与安装包依赖锁定 | 已完成 | vanna_src 已删除；非 editable；运行时使用 vanna==2.0.2 |
-| 多数据源架构 | 下一阶段 | 阶段 3，尚未开始实现 |
-| MySQL 训练 | 已登记 | 独立 Metadata 和 Memory |
-| 一句话报表 | 已登记 | MySQL 接入后 |
+| 多数据源架构 | 已完成 | PostgreSQL / MySQL Runtime、Prompt、Guard、路由和隔离已验收 |
+| MySQL 训练 | 已完成 | 18表、48条 Memory、17/17 Agent/SSE 回归 |
+| 日报月报 | 下一独立板块 | B4，尚未开始 |
 | 外部网站机器人 | 已登记 | 自有 API 和报表稳定后 |
 | 生产化治理 | 已登记 | 最后阶段 |
 
@@ -1670,8 +1714,8 @@ M vanna_data/chroma.sqlite3
 # 37. 当前唯一动作
 
 ```text
-阶段 2 已完成；下一唯一动作是阶段 3：多数据源核心架构。
-本次仅完成文档收口，不开始阶段 3 实现。
+B3 已完成；下一唯一动作是独立 B4：日报月报设计与实现。
+本次只完成 B3，不开始 B4。
 ```
 
-F6-1、F6-2 与阶段 2 均已正式完成。项目继续直接使用已安装的 Vanna 2.0.2 API；下一阶段为阶段 3：多数据源核心架构。
+F6-1、F6-2、阶段 2 与 B3 均已正式完成。项目继续直接使用已安装的 Vanna 2.0.2 API；下一独立板块为 B4：日报月报设计与实现。

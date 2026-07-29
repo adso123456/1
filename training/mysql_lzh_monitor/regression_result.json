@@ -1,0 +1,907 @@
+{
+  "suite_id": "mysql-lzh-monitor-b3-v1",
+  "source_id": "mysql-lzh-monitor",
+  "data_source_list": [
+    "mysql-lzh-monitor",
+    "postgresql-main"
+  ],
+  "data_source_list_passed": true,
+  "case_count": 17,
+  "passed_count": 17,
+  "failed_count": 0,
+  "repeat_reexecuted": true,
+  "postgresql_table_absent_from_mysql_sql": true,
+  "cases": [
+    {
+      "case_id": "B3_WQ_01",
+      "question": "查询幸福河站2025年4月9日的pH小时变化并生成折线图",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "fdc60e5f-6d69-49f5-a57d-2a05630512a6",
+      "duration_ms": 19703,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT r.monitor_time, r.m2_value AS ph_value FROM wm_waterquality_hour_records AS r JOIN wm_station_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '幸福河' AND r.monitor_time >= '2025-04-09 00:00:00' AND r.monitor_time < '2025-04-10 00:00:00' AND r.del_flag = '0' ORDER BY r.monitor_time LIMIT 50",
+      "used_tables": [
+        "wm_station_info",
+        "wm_waterquality_hour_records"
+      ],
+      "columns": [
+        "monitor_time",
+        "ph_value"
+      ],
+      "row_count": 24,
+      "chart_specs": [
+        {
+          "type": "line",
+          "title": "幸福河站2025年4月9日pH小时变化趋势",
+          "xField": "monitor_time",
+          "yFields": [
+            "ph_value"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WQ_02",
+      "question": "比较2025年5月27日各水质站点的平均pH，用柱状图展示",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "0bfc6843-0cb0-42cc-bef4-b7abd98f234e",
+      "duration_ms": 8603,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT s.station_name, r.m2_value AS avg_ph FROM wm_waterquality_day_records AS r JOIN wm_station_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2025-05-27 00:00:00' AND r.monitor_time < '2025-05-28 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL ORDER BY s.station_name LIMIT 50",
+      "used_tables": [
+        "wm_station_info",
+        "wm_waterquality_day_records"
+      ],
+      "columns": [
+        "station_name",
+        "avg_ph"
+      ],
+      "row_count": 13,
+      "chart_specs": [
+        {
+          "type": "bar",
+          "title": "2025年5月27日各水质站点平均pH对比",
+          "xField": "station_name",
+          "yFields": [
+            "avg_ph"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": "pH"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WQ_03",
+      "question": "统计2025年5月27日水质等级分布并生成环图",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "89499e1e-75db-47ca-8ce8-87f5bb34ae2a",
+      "duration_ms": 8019,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT r.water_quality_level, COUNT(r.id) AS record_count FROM wm_waterquality_day_records AS r WHERE r.monitor_time >= '2025-05-27 00:00:00' AND r.monitor_time < '2025-05-28 00:00:00' AND r.del_flag = '0' AND r.water_quality_level IS NOT NULL GROUP BY r.water_quality_level ORDER BY record_count DESC LIMIT 20",
+      "used_tables": [
+        "wm_waterquality_day_records"
+      ],
+      "columns": [
+        "water_quality_level",
+        "record_count"
+      ],
+      "row_count": 5,
+      "chart_specs": [
+        {
+          "type": "donut",
+          "title": "2025年5月27日水质等级分布",
+          "xField": "water_quality_level",
+          "yFields": [
+            "record_count"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WQ_04",
+      "question": "查询2021年1月各断面的月度pH结果，以表格返回，不生成图表，最多返回50条",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "143de873-e51a-4463-84d0-4bb88712a824",
+      "duration_ms": 9159,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT s.section_name, r.monitor_year, r.monitor_month, r.m2_value AS ph_value, r.water_quality_level FROM wm_waterquality_month_records AS r JOIN wm_section_info AS s ON s.id = r.section_id AND s.del_flag = '0' WHERE r.monitor_time >= '2021-01-01 00:00:00' AND r.monitor_time < '2021-02-01 00:00:00' AND r.del_flag = '0' AND r.section_id IS NOT NULL ORDER BY s.section_name LIMIT 50",
+      "used_tables": [
+        "wm_section_info",
+        "wm_waterquality_month_records"
+      ],
+      "columns": [
+        "section_name",
+        "monitor_year",
+        "monitor_month",
+        "ph_value",
+        "water_quality_level"
+      ],
+      "row_count": 12,
+      "chart_specs": [
+        {
+          "type": "none",
+          "title": null,
+          "xField": null,
+          "yFields": null,
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WQ_05",
+      "question": "列出2025年5月27日水质站点的pH、溶解氧和综合水质等级，以表格返回，不生成图表，最多50条",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "c3ff07e1-bd62-4982-b248-f1deb14b9563",
+      "duration_ms": 10472,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT s.station_name, r.monitor_time, r.m2_value AS ph_value, r.m3_value AS dissolved_oxygen, r.water_quality_level FROM wm_waterquality_day_records AS r JOIN wm_station_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2025-05-27 00:00:00' AND r.monitor_time < '2025-05-28 00:00:00' AND r.del_flag = '0' ORDER BY s.station_name LIMIT 50",
+      "used_tables": [
+        "wm_station_info",
+        "wm_waterquality_day_records"
+      ],
+      "columns": [
+        "station_name",
+        "monitor_time",
+        "ph_value",
+        "dissolved_oxygen",
+        "water_quality_level"
+      ],
+      "row_count": 13,
+      "chart_specs": [
+        {
+          "type": "none",
+          "title": "",
+          "xField": null,
+          "yFields": [],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_HYDRO_01",
+      "question": "查询幸福河水文站2025年6月11日的流速和流量趋势并生成折线图",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "a1b69264-82fa-4afe-bfc8-8ba0021d9d6f",
+      "duration_ms": 7545,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT r.monitor_time, r.m2_value AS flow_velocity, r.m3_value AS flow_rate FROM wh_hydrological_hour_records AS r JOIN wm_hydrological_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '幸福河' AND r.monitor_time >= '2025-06-11 00:00:00' AND r.monitor_time < '2025-06-12 00:00:00' AND r.del_flag = '0' ORDER BY r.monitor_time LIMIT 50",
+      "used_tables": [
+        "wh_hydrological_hour_records",
+        "wm_hydrological_info"
+      ],
+      "columns": [
+        "monitor_time",
+        "flow_velocity",
+        "flow_rate"
+      ],
+      "row_count": 9,
+      "chart_specs": [
+        {
+          "type": "line",
+          "title": "幸福河水文站2025年6月11日流速与流量趋势",
+          "xField": "monitor_time",
+          "yFields": [
+            "flow_velocity",
+            "flow_rate"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_HYDRO_02",
+      "question": "比较2025年6月11日各水文站的平均流速，最多返回30站",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "78bcf9dd-efd8-4e7f-b524-72d5752f3baf",
+      "duration_ms": 7916,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT s.station_name, ROUND(AVG(r.m2_value), 3) AS avg_flow_velocity FROM wh_hydrological_hour_records AS r JOIN wm_hydrological_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2025-06-11 00:00:00' AND r.monitor_time < '2025-06-12 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_flow_velocity DESC LIMIT 30",
+      "used_tables": [
+        "wh_hydrological_hour_records",
+        "wm_hydrological_info"
+      ],
+      "columns": [
+        "station_name",
+        "avg_flow_velocity"
+      ],
+      "row_count": 9,
+      "chart_specs": [
+        {
+          "type": "horizontal_bar",
+          "title": "2025年6月11日各水文站平均流速比较",
+          "xField": "station_name",
+          "yFields": [
+            "avg_flow_velocity"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": "m/s"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_MET_01",
+      "question": "查询武汉气象站2025年6月11日的气温和风速趋势并生成折线图",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "c8a4a8fc-5b56-4d71-a59d-c0adf7796e22",
+      "duration_ms": 9117,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT r.monitor_time, r.m4_value AS air_temperature, r.m1_value AS wind_speed FROM wh_meteorological_hour_records AS r JOIN wm_meteorological_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '武汉气象站' AND r.monitor_time >= '2025-06-11 00:00:00' AND r.monitor_time < '2025-06-12 00:00:00' AND r.del_flag = '0' ORDER BY r.monitor_time",
+      "used_tables": [
+        "wh_meteorological_hour_records",
+        "wm_meteorological_info"
+      ],
+      "columns": [
+        "monitor_time",
+        "air_temperature",
+        "wind_speed"
+      ],
+      "row_count": 8,
+      "chart_specs": [
+        {
+          "type": "line",
+          "title": "武汉气象站2025年6月11日气温与风速趋势",
+          "xField": "monitor_time",
+          "yFields": [
+            "air_temperature",
+            "wind_speed"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_MET_02",
+      "question": "列出武汉气象站2025年6月11日的风速、风向、气压、气温和湿度，以表格返回，不生成图表，最多24条",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "ee9bc449-7733-48cd-898d-d2dcc58f71b8",
+      "duration_ms": 10160,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT r.monitor_time, r.m1_value AS wind_speed, r.m2_value AS wind_direction, r.m3_value AS air_pressure, r.m4_value AS air_temperature, r.m5_value AS humidity FROM wh_meteorological_hour_records AS r JOIN wm_meteorological_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '武汉气象站' AND r.monitor_time >= '2025-06-11 00:00:00' AND r.monitor_time < '2025-06-12 00:00:00' AND r.del_flag = '0' ORDER BY r.monitor_time LIMIT 24",
+      "used_tables": [
+        "wh_meteorological_hour_records",
+        "wm_meteorological_info"
+      ],
+      "columns": [
+        "monitor_time",
+        "wind_speed",
+        "wind_direction",
+        "air_pressure",
+        "air_temperature",
+        "humidity"
+      ],
+      "row_count": 8,
+      "chart_specs": [
+        {
+          "type": "none",
+          "title": "",
+          "xField": null,
+          "yFields": [],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_POLL_01",
+      "question": "查询污染源监测站ID 96在2023年12月24日的日监测指标，以表格返回，不生成图表",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "153e2275-0797-4a2b-8959-13ea2672f83d",
+      "duration_ms": 5496,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT station_id, monitor_time, ph, an, tp, tn, cod FROM rs_pollutant_day_records WHERE station_id = 96 AND monitor_time >= '2023-12-24 00:00:00' AND monitor_time < '2023-12-25 00:00:00' AND del_flag = '0' ORDER BY monitor_time LIMIT 20",
+      "used_tables": [
+        "rs_pollutant_day_records"
+      ],
+      "columns": [
+        "station_id",
+        "monitor_time",
+        "ph",
+        "an",
+        "tp",
+        "tn",
+        "cod"
+      ],
+      "row_count": 1,
+      "chart_specs": [
+        {
+          "type": "none",
+          "title": "",
+          "xField": null,
+          "yFields": null,
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_POLL_02",
+      "question": "比较污染源监测站ID 96、97、98在2023年12月24日的平均氨氮，用柱状图展示",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "9e03924e-5725-4d66-bb16-be56a71cee58",
+      "duration_ms": 7987,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT station_id, ROUND(AVG(an), 3) AS avg_ammonia_nitrogen FROM rs_pollutant_day_records WHERE station_id IN (96, 97, 98) AND monitor_time >= '2023-12-24 00:00:00' AND monitor_time < '2023-12-25 00:00:00' AND del_flag = '0' AND an IS NOT NULL GROUP BY station_id ORDER BY station_id LIMIT 10",
+      "used_tables": [
+        "rs_pollutant_day_records"
+      ],
+      "columns": [
+        "station_id",
+        "avg_ammonia_nitrogen"
+      ],
+      "row_count": 3,
+      "chart_specs": [
+        {
+          "type": "bar",
+          "title": "污染源监测站2023年12月24日平均氨氮对比",
+          "xField": "station_id",
+          "yFields": [
+            "avg_ammonia_nitrogen"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": "mg/L"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WARN_01",
+      "question": "统计2025年5月27日各预警级别的预警数量",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "1a53a10c-67fa-4f8a-85b4-b025130f329b",
+      "duration_ms": 5516,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT warn_level, COUNT(id) AS warn_count FROM rs_warn_records WHERE warn_time >= '2025-05-27 00:00:00' AND warn_time < '2025-05-28 00:00:00' AND del_flag = '0' GROUP BY warn_level ORDER BY warn_count DESC LIMIT 20",
+      "used_tables": [
+        "rs_warn_records"
+      ],
+      "columns": [
+        "warn_level",
+        "warn_count"
+      ],
+      "row_count": 3,
+      "chart_specs": [
+        {
+          "type": "bar",
+          "title": "2025年5月27日各预警级别预警数量",
+          "xField": "warn_level",
+          "yFields": [
+            "warn_count"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": "条"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WARN_02",
+      "question": "列出2025年5月27日预警的站点名称、指标、级别和内容，以表格返回，不生成图表，最多50条",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "b3b48ddc-e6f1-46f8-bebb-85ce061d19b5",
+      "duration_ms": 13123,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT s.station_name, w.warn_time, w.warn_indicator, w.warn_level, w.warn_content FROM rs_warn_records AS w JOIN wm_station_info AS s ON s.id = w.station_id AND s.del_flag = '0' WHERE w.warn_time >= '2025-05-27 00:00:00' AND w.warn_time < '2025-05-28 00:00:00' AND w.del_flag = '0' ORDER BY w.warn_time LIMIT 50",
+      "used_tables": [
+        "rs_warn_records",
+        "wm_station_info"
+      ],
+      "columns": [
+        "station_name",
+        "warn_time",
+        "warn_indicator",
+        "warn_level",
+        "warn_content"
+      ],
+      "row_count": 24,
+      "chart_specs": [
+        {
+          "type": "none",
+          "title": "",
+          "xField": null,
+          "yFields": null,
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_CROSS_01",
+      "question": "统计2025年5月各区域水质站点的平均pH，并从高到低展示",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "4c8add45-96d2-4739-9b69-9a70d621deed",
+      "duration_ms": 7329,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT g.region_name, ROUND(AVG(r.m2_value), 3) AS avg_ph FROM wm_waterquality_day_records AS r JOIN wm_station_info AS s ON s.id = r.station_id AND s.del_flag = '0' JOIN gis_region AS g ON g.region_code = s.region_code AND g.del_flag = '0' WHERE r.monitor_time >= '2025-05-01 00:00:00' AND r.monitor_time < '2025-06-01 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL GROUP BY g.region_name ORDER BY avg_ph DESC LIMIT 30",
+      "used_tables": [
+        "gis_region",
+        "wm_station_info",
+        "wm_waterquality_day_records"
+      ],
+      "columns": [
+        "region_name",
+        "avg_ph"
+      ],
+      "row_count": 2,
+      "chart_specs": [
+        {
+          "type": "bar",
+          "title": "2025年5月各区域水质站点平均pH",
+          "xField": "region_name",
+          "yFields": [
+            "avg_ph"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_CROSS_02",
+      "question": "再统计各区域有效水质站点数量，并追加一个饼图",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "4c8add45-96d2-4739-9b69-9a70d621deed",
+      "duration_ms": 5168,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT g.region_name, COUNT(s.id) AS station_count FROM wm_station_info AS s JOIN gis_region AS g ON g.region_code = s.region_code AND g.del_flag = '0' WHERE s.del_flag = '0' GROUP BY g.region_name ORDER BY station_count DESC LIMIT 30",
+      "used_tables": [
+        "gis_region",
+        "wm_station_info"
+      ],
+      "columns": [
+        "region_name",
+        "station_count"
+      ],
+      "row_count": 2,
+      "chart_specs": [
+        {
+          "type": "pie",
+          "title": "各区域有效水质站点数量分布",
+          "xField": "region_name",
+          "yFields": [
+            "station_count"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": "个"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WQ_REPEAT",
+      "question": "查询幸福河站2025年4月9日的pH小时变化并生成折线图",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "fdc60e5f-6d69-49f5-a57d-2a05630512a6",
+      "duration_ms": 10433,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT r.monitor_time, r.m2_value AS ph_value FROM wm_waterquality_hour_records AS r JOIN wm_station_info AS s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '幸福河' AND r.monitor_time >= '2025-04-09 00:00:00' AND r.monitor_time < '2025-04-10 00:00:00' AND r.del_flag = '0' ORDER BY r.monitor_time LIMIT 50",
+      "used_tables": [
+        "wm_station_info",
+        "wm_waterquality_hour_records"
+      ],
+      "columns": [
+        "monitor_time",
+        "ph_value"
+      ],
+      "row_count": 24,
+      "chart_specs": [
+        {
+          "type": "line",
+          "title": "幸福河站2025年4月9日pH小时变化趋势",
+          "xField": "monitor_time",
+          "yFields": [
+            "ph_value"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case_id": "B3_WQ_MULTI",
+      "question": "查询幸福河站2025年4月9日的pH和溶解氧小时变化，分别生成两张折线图",
+      "source_id": "mysql-lzh-monitor",
+      "conversation_id": "2b67179e-d289-4d6d-8697-d6bb830cd47c",
+      "duration_ms": 9344,
+      "passed": true,
+      "checks": {
+        "http_ok": true,
+        "no_sse_error": true,
+        "sql_executed": true,
+        "result_nonempty": true,
+        "guard_passed": true,
+        "approved_tables_only": true,
+        "expected_tables": true,
+        "forbidden_tables": true,
+        "expected_columns": true,
+        "answer_present": true,
+        "chart_expected": true,
+        "chart_fields_valid": true,
+        "chart_count": true,
+        "source_id_bound": true
+      },
+      "sql": "SELECT r.monitor_time, r.m2_value AS ph_value, r.m1_value AS do_value \nFROM wm_waterquality_hour_records AS r \nJOIN wm_station_info AS s ON s.id = r.station_id AND s.del_flag = '0' \nWHERE s.station_name = '幸福河' \n  AND r.monitor_time >= '2025-04-09 00:00:00' \n  AND r.monitor_time < '2025-04-10 00:00:00' \n  AND r.del_flag = '0' \nORDER BY r.monitor_time \nLIMIT 50",
+      "used_tables": [
+        "wm_station_info",
+        "wm_waterquality_hour_records"
+      ],
+      "columns": [
+        "monitor_time",
+        "ph_value",
+        "do_value"
+      ],
+      "row_count": 24,
+      "chart_specs": [
+        {
+          "type": "line",
+          "title": "幸福河站2025年4月9日pH小时变化",
+          "xField": "monitor_time",
+          "yFields": [
+            "ph_value"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": null
+        },
+        {
+          "type": "line",
+          "title": "幸福河站2025年4月9日溶解氧小时变化",
+          "xField": "monitor_time",
+          "yFields": [
+            "do_value"
+          ],
+          "seriesField": null,
+          "sizeField": null,
+          "valueField": null,
+          "min": null,
+          "max": null,
+          "unit": "mg/L"
+        }
+      ],
+      "errors": []
+    }
+  ]
+}

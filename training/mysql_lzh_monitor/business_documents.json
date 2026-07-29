@@ -1,0 +1,62 @@
+[
+  {
+    "document_id": "mysql-business-validity-status",
+    "title": "通用有效数据与状态字段",
+    "content": "mysql-lzh-monitor 首批问数只覆盖批准的18张表。普通业务表默认有效条件为 del_flag = '0'；ad_dict 使用 DELETED_FLAG = '0'。不要默认过滤 record_type、status、water_quality_level 或告警流转状态，只有用户明确要求时才过滤。record_type 仅在存在该字段的水质、水文、气象记录表中解释为 0=自动、1=手工；污染源小时表和日表没有 record_type，禁止套用。水质记录的 status 表示整条记录状态，water_quality_level 表示综合水质等级，mN_status 表示单项指标状态，三者不得混用。"
+  },
+  {
+    "document_id": "mysql-business-time-range",
+    "title": "时间范围与自然日规则",
+    "content": "所有时间范围使用半开区间：monitor_time >= 起始时间 AND monitor_time < 结束时间。主要范围过滤不得写成 DATE(monitor_time)=某日。日表 monitor_time 表示当天最后一个参与汇总的监测时刻，真实数据可能为20:00或23:00，不是统一零点日期键。明细查询必须同时有明确时间范围和 LIMIT；月度分析优先使用日表或水质月表，避免在大型小时表上做无边界聚合。"
+  },
+  {
+    "document_id": "mysql-business-waterquality-grain",
+    "title": "水质小时、日、月粒度",
+    "content": "wm_waterquality_hour_records 是站点小时监测事实，按 station_id 关联 wm_station_info.id。wm_waterquality_day_records 是站点预聚合日结果，已验证样本中 mN_value 为小时值平均结果，mN_count 为参与日平均的非空记录数量。wm_waterquality_month_records 是断面月结果，当前必须按 section_id 关联 wm_section_info.id，不得训练成站点月表。月表来源尚未完全确认，不能宣称一定由小时表或日表生成。"
+  },
+  {
+    "document_id": "mysql-business-waterquality-indicators",
+    "title": "水质固定位置指标映射",
+    "content": "水质指标遵循固定位置规则 mN_value 对应 ad_dict 中 LIST_TYPE='waterquality_indicator'、ITEM_CODE=N-1 的项目。站点指标编码只表示站点支持哪些固定位置，不会重新压缩排序。正式映射：m1 水温(℃)；m2 pH(无量纲)；m3 溶解氧(mg/L)；m4 浊度(NTU)；m5 电导率(μS/cm)；m6 氨氮(mg/L)；m7 高锰酸盐(mg/L)；m8 总磷(mg/L)；m9 总氮(mg/L)；m10 叶绿素a(ug/L)；m11 藻密度(cell/mL)；m12 化学需氧量(mg/L)；m13 五日生化需氧量(mg/L)；m14 铜(mg/L)；m15 硒(mg/L)；m16 锌(mg/L)；m17 氟化物(mg/L)；m18 砷(mg/L)；m19 汞(mg/L)；m20 镉(mg/L)；m21 铬(mg/L)；m22 铅(mg/L)；m23 氰化物(mg/L)；m24 挥发酚(mg/L)；m25 石油类(mg/L)；m26 阴离子表面活性剂(mg/L)；m27 硫化物(mg/L)；m28 水中油(mg/L)；m29 硝酸盐(mg/L)；m30 生物毒性(%)；m31 大肠杆菌(cell/L)。"
+  },
+  {
+    "document_id": "mysql-business-hydrological",
+    "title": "水文监测语义",
+    "content": "wh_hydrological_hour_records 是水文小时事实，wh_hydrological_day_records 是预聚合日结果，均按 station_id 关联 wm_hydrological_info.id。只允许命名已经确认的固定位置：m1 水位、m2 流速、m3 流量、m4 水位高度、m5 水位-1。m6至m10不得命名，也不得进入正式 SQL 示例。日表 mN_count 表示参与日结果的非空记录数量。"
+  },
+  {
+    "document_id": "mysql-business-meteorological",
+    "title": "气象监测语义",
+    "content": "wh_meteorological_hour_records 是气象小时事实，wh_meteorological_day_records 是预聚合日结果，均按 station_id 关联 wm_meteorological_info.id。固定位置：m1 风速、m2 风向、m3 气压、m4 气温、m5 湿度、m6 分钟降雨量、m7 蒸发量、m8 小时降雨量、m9 24小时降雨量、m10 累计降雨量、m11 蒸发重量、m12 能见度、m13 相对湿度最大值、m14 相对湿度最小值。m15不得命名或进入 SQL 示例。"
+  },
+  {
+    "document_id": "mysql-business-pollutant",
+    "title": "污染源监测语义和限制",
+    "content": "rs_pollutant_hour_records 和 rs_pollutant_day_records 是污染源监测事实，可按明确数值 station_id 查询 ph、an、tp、tn、cod、rc、ss、frq、frs 等指标。两表 station_id 的真实维度表尚未确认，禁止关联 wm_station_info、rs_pollutant_info 或其他站点名称表。两表没有 record_type。rs_pollutant_info 仅作为污染源档案使用；首批范围明确排除的敏感或空间字段不得查询、关联或展示。"
+  },
+  {
+    "document_id": "mysql-business-warning",
+    "title": "水质预警记录",
+    "content": "rs_warn_records 是预警事实，时间字段为 warn_time，默认有效条件 del_flag='0'。允许 station_id 关联 wm_station_info.id。warn_indicator 是预警指标编码，warn_level 是预警级别；publish_status、check_status、release_status 分别表示发布、核查和解除流转状态，默认不得过滤。pollutant_id 与 key_point_id 的维度关系未验证，禁止据此 JOIN。"
+  },
+  {
+    "document_id": "mysql-business-allowed-relations",
+    "title": "允许的逻辑关联矩阵",
+    "content": "允许关联：wm_waterquality_hour_records.station_id、wm_waterquality_day_records.station_id → wm_station_info.id；wm_waterquality_month_records.section_id → wm_section_info.id；wm_station_info.section_id → wm_section_info.id；wm_station_info.water_body_id、wm_section_info.water_body_id → wm_waterbody_info.id；wm_station_info.region_code → gis_region.region_code；wh_hydrological_hour_records.station_id、wh_hydrological_day_records.station_id → wm_hydrological_info.id；wh_meteorological_hour_records.station_id、wh_meteorological_day_records.station_id → wm_meteorological_info.id；rs_warn_records.station_id → wm_station_info.id；rs_pollutant_info.region_id → gis_region.id；rs_pollutant_info.code → gis_region.code。这些是逻辑关系，不得伪造成数据库外键。"
+  },
+  {
+    "document_id": "mysql-business-forbidden-relations",
+    "title": "禁止关联矩阵",
+    "content": "禁止关联 rs_pollutant_hour_records.station_id 或 rs_pollutant_day_records.station_id 到 wm_station_info、rs_pollutant_info 或任何站点名称表。禁止 area_code → gis_region.region_code。禁止未验证的 rs_warn_records.pollutant_id、rs_warn_records.key_point_id JOIN。禁止根据字段同名猜测任何关联。水质月表禁止按 station_id 关联站点维度。"
+  },
+  {
+    "document_id": "mysql-business-data-quality-performance",
+    "title": "数据质量与性能边界",
+    "content": "日表 monitor_time 时刻不统一；部分指标大量为空；部分大表时间字段缺少索引。明细查询必须限定时间并 LIMIT，月度分析优先日表或月表，禁止无边界小时表聚合。mN 字段命名只允许已确认范围。表和列注释缺失时不得补猜业务含义。本阶段不修改表、索引或数据。"
+  },
+  {
+    "document_id": "mysql-business-answerability",
+    "title": "适合与不适合回答的问题",
+    "content": "适合回答：指定站点和时间范围的水质、水文、气象趋势；多站点或区域汇总；水质等级分布；断面月水质；明确 station_id 的污染源指标；预警数量及流转状态；有限明细表格和基于真实结果列的图表。不适合回答：污染源 station_id 对应名称、月表来源算法、未确认指标位置、预测结果、遥感、巡检、水生态、摄像头、排污口及其余未批准表。遇到这些问题必须说明当前训练范围不足。"
+  }
+]

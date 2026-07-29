@@ -1,0 +1,307 @@
+{
+  "manifest_schema_version": "1.0",
+  "source_id": "mysql-lzh-monitor",
+  "database": "lzh_monitor",
+  "approved_table_count": 18,
+  "business_document_count": 12,
+  "sql_example_count": 18,
+  "total_record_count": 48,
+  "sql_batch_content_sha256": "576ccc9b5451a2dfb37b499683b1fd16f7dd4baa61d52b6e8599aaa72ee6bc7f",
+  "record_set_sha256": "a947d6843e50c6ff2d05a880481936c0879ba6ab846078c1e862fc4d2627e1f6",
+  "inputs": {
+    "metadata": "agent_data/mysql-lzh-monitor/column_metadata_index.json",
+    "scope": "config/mysql_lzh_monitor_metadata_scope.json",
+    "business_documents": "training/mysql_lzh_monitor/business_documents.json",
+    "sql_examples": "training/mysql_lzh_monitor/sql_examples.json"
+  },
+  "records": [
+    {
+      "record_id": "ddlmem-v1-09747f55035d72b33654371c8462a743ca8d6f5a1fef5eb25b12a60bf429ea28",
+      "category": "ddl",
+      "logical_name": "wm_section_info",
+      "content_fingerprint": "c1774a2030dca7c2b4d9c98bee839fb277691db3a55f6a89f63e9555535a6847"
+    },
+    {
+      "record_id": "ddlmem-v1-1421d5d07073ed03f53e9b3e31e375093ac18bc60e2c7c2886f68c05505b705e",
+      "category": "ddl",
+      "logical_name": "wm_waterbody_info",
+      "content_fingerprint": "ea6ea61ead8e47e4116bd4829595643e48942ea25084059c74c99f99fdb3cc87"
+    },
+    {
+      "record_id": "ddlmem-v1-2706eeba5cf4bf1db40a11efb41ff29c6edca3fa3ec679269b65a4b73411fe9e",
+      "category": "ddl",
+      "logical_name": "wh_meteorological_hour_records",
+      "content_fingerprint": "61687c09684a556817720205ff71b021ac7f2a20cade49bd083c5f3ca006effb"
+    },
+    {
+      "record_id": "ddlmem-v1-3614baefe7e0b806056a307f14a76e1b9239593cfa43df0f321e3442ea4401ef",
+      "category": "ddl",
+      "logical_name": "wh_hydrological_day_records",
+      "content_fingerprint": "b244815c1c50c16d77d441faca2b5144852ab92ee8289f8ac0156a3f8f075347"
+    },
+    {
+      "record_id": "ddlmem-v1-4964d953617b95d99d9542d047239809a4bea546a69df2d43030ca9baadb93dd",
+      "category": "ddl",
+      "logical_name": "rs_warn_records",
+      "content_fingerprint": "d73325bb109fee3375829f94f32b72d9c0689a129c259d2898dd5dd4ece15ef7"
+    },
+    {
+      "record_id": "ddlmem-v1-567f199e4fb3718c7d3bfd5407230dad9e63c8e2588fe27a8bdd2fafd1ce698c",
+      "category": "ddl",
+      "logical_name": "wh_hydrological_hour_records",
+      "content_fingerprint": "a4028c7e0a4f0107dfc9cd911e016c076f9debea8db57755454b50d2eebd9a12"
+    },
+    {
+      "record_id": "ddlmem-v1-5e5e0d1b287fd74e6851db14fdcd3c59861a54d642aefce25f2c58c71c430c48",
+      "category": "ddl",
+      "logical_name": "rs_pollutant_info",
+      "content_fingerprint": "3c32c7ed21532a8d59323de4dd50b8acbabf12d5dabd20e7cc9aec9c9b46c651"
+    },
+    {
+      "record_id": "ddlmem-v1-69641593da5e923bf5cc3e8139a8b8066f3b78a799d3d30e737c20da0b885be3",
+      "category": "ddl",
+      "logical_name": "wm_meteorological_info",
+      "content_fingerprint": "d47304284e763206e90b1d46f863fbfdec7f5ac7eaff775f5f72f369a803feac"
+    },
+    {
+      "record_id": "ddlmem-v1-7a12b897fcc3aaaeab571fc6720265ff1fa14dd1701b94cf403672c037fd7ca4",
+      "category": "ddl",
+      "logical_name": "rs_pollutant_day_records",
+      "content_fingerprint": "ab8338d539c0c671f7f07d4fcaa011eccd14082e1d6703b66d898ea3a5c0639f"
+    },
+    {
+      "record_id": "ddlmem-v1-8f05510d5e06591962f6720a5ce7416a1e95f937d5802339de35f265bcbe1785",
+      "category": "ddl",
+      "logical_name": "wm_waterquality_hour_records",
+      "content_fingerprint": "9fc73ed5e49cc98aed4f45caa6c8e189e8648e88a80fb5b9cafb2f5ff83bd6ab"
+    },
+    {
+      "record_id": "ddlmem-v1-a1e0f1f718d66cfdcb76181211948451ae0834cde5972870b5532b22e317b130",
+      "category": "ddl",
+      "logical_name": "ad_dict",
+      "content_fingerprint": "d7aa239b06afb2c334cbc004e10f520bee18504e739c815aacb6e5bc9517f3e7"
+    },
+    {
+      "record_id": "ddlmem-v1-a594ba90c0e6696473bda7caaf6500cb1ee4c8627819507fb3c16472af0dcea4",
+      "category": "ddl",
+      "logical_name": "gis_region",
+      "content_fingerprint": "f2600892725a33386ead793d7a0a2816063c9cd2acbff1f93b01e9edc36d7233"
+    },
+    {
+      "record_id": "ddlmem-v1-a68fc269e3a7a4eccb5008f8b2ca20dbbb4c67970f6a41e018d46f82f17a64ce",
+      "category": "ddl",
+      "logical_name": "wm_waterquality_day_records",
+      "content_fingerprint": "30b1e87acbcdbafcf8cc86daf91a579391c03201fcd587d55604cbf6ec0ce7a8"
+    },
+    {
+      "record_id": "ddlmem-v1-aab5474848a9f9e190678c2efc7b43fa4c1ed193baecdb09060be1f4aec706fd",
+      "category": "ddl",
+      "logical_name": "wm_waterquality_month_records",
+      "content_fingerprint": "473d009fa32ba5c95ff5c62940c28e57e3100f49613015dd192089e0e37d0560"
+    },
+    {
+      "record_id": "ddlmem-v1-ac125ec7a163463583873dc3f71af34e8eda060093b989867b9852b9089d53a9",
+      "category": "ddl",
+      "logical_name": "wm_station_info",
+      "content_fingerprint": "4a1e86c64fa5f7d43c6a9f53fae884c903831e54bf9186745c8c47f4f633765a"
+    },
+    {
+      "record_id": "ddlmem-v1-cf6e1ab806b71210791aff67771aec0d8c8b6c4d2f379adc584e1b2a961a475a",
+      "category": "ddl",
+      "logical_name": "rs_pollutant_hour_records",
+      "content_fingerprint": "b5b7230840c9d555fd9bf7b36d741e193a097c0c956fb77f2b7a579c58554aeb"
+    },
+    {
+      "record_id": "ddlmem-v1-f160f32d2d2fa4afe4b82c7bb357f62b463498b7f41d418017395fe6b887fd1d",
+      "category": "ddl",
+      "logical_name": "wm_hydrological_info",
+      "content_fingerprint": "e27d12effe3c68c31af5595aa326c38459784231ab29b8645dba8131a3d2ccad"
+    },
+    {
+      "record_id": "ddlmem-v1-f1fa30207382af35ae80e7eba12d46c15354fa73c3c60aebc0f7f835eb61e7b8",
+      "category": "ddl",
+      "logical_name": "wh_meteorological_day_records",
+      "content_fingerprint": "1699d44e1f059687c159cbf6f355196a51810eb6ff6d8ab19357d78934edd9a3"
+    },
+    {
+      "record_id": "docmem-v1-0745a463c0a9435446f7c19fc51489246e4ca1bb903c0bb0e42ffa6076c6253d",
+      "category": "business_document",
+      "logical_name": "mysql-business-time-range",
+      "content_fingerprint": "caf3949297a4d875f2112983e1c4c4e9ac195ff97226fdec922c80c77031a49e"
+    },
+    {
+      "record_id": "docmem-v1-2881be257e08db919e7284400c8424d9324930fb0da616589f27949cdb8ca283",
+      "category": "business_document",
+      "logical_name": "mysql-business-waterquality-indicators",
+      "content_fingerprint": "ceafad7b3e9724d4dd96ede859180598c097edfcc11344ca622a3bd15f1d147b"
+    },
+    {
+      "record_id": "docmem-v1-4f8b1a472300542b33c760ae23311d3a487c671317921eb2af1408b9d1738601",
+      "category": "business_document",
+      "logical_name": "mysql-business-allowed-relations",
+      "content_fingerprint": "3caee95f0712ec7e4892b3b808e2e58bf49612986035bb1c46206178c449aeab"
+    },
+    {
+      "record_id": "docmem-v1-56b647fd43e802257de66f0841669b60ce8941727bba58747de64b868925bb77",
+      "category": "business_document",
+      "logical_name": "mysql-business-validity-status",
+      "content_fingerprint": "f90c5fd215d69dd06d3150fef874b37298cd6c07c228d5fcc8ace105c2188f01"
+    },
+    {
+      "record_id": "docmem-v1-660dbdf9cebbfdb65bc43e84b9f816e9e9bb5c77d92e4187befe9cc30fc2daf2",
+      "category": "business_document",
+      "logical_name": "mysql-business-answerability",
+      "content_fingerprint": "927a0bc0ffcc00faefbb4f3d05e2e4fcbb73260eb3fc7bf76a05be4a2ed68f49"
+    },
+    {
+      "record_id": "docmem-v1-771b4dd23f3dc537091f6d34e632d35022c6b53e3dae211d904c16836cbc8d23",
+      "category": "business_document",
+      "logical_name": "mysql-business-forbidden-relations",
+      "content_fingerprint": "0de8bff26451d353878f57a6c51ce5cb9bfefa847fc2256a4b8ed82a9b36c1cc"
+    },
+    {
+      "record_id": "docmem-v1-856ee4f67624bb999aa346eb32a398a793cde84aeb0b12660042de264cade033",
+      "category": "business_document",
+      "logical_name": "mysql-business-data-quality-performance",
+      "content_fingerprint": "7e26c7daca2200c6620460dd57a624796345db3197da3c7c04cf1caea2ed84e8"
+    },
+    {
+      "record_id": "docmem-v1-9edd6670db91fe331449a4c1ac1f127b95e3f9c7089b31f56bf1a4cdec76d645",
+      "category": "business_document",
+      "logical_name": "mysql-business-pollutant",
+      "content_fingerprint": "c5b2126ba3bcef2ce97976dcf9024d4272647d0f88bb7e5ece17d0812f268ee5"
+    },
+    {
+      "record_id": "docmem-v1-b8f90037ee52e3d78ab0077e2ad322fd4908dcd0b0915babfea2e5f2e14333eb",
+      "category": "business_document",
+      "logical_name": "mysql-business-meteorological",
+      "content_fingerprint": "9e1afff410bc42b16299a240bf85399368234cb3831776913d2a0a5e2edf416a"
+    },
+    {
+      "record_id": "docmem-v1-cdfba32a4db0c792be4c751fe089428d79a252947ab0978fcc180c2ba0846400",
+      "category": "business_document",
+      "logical_name": "mysql-business-warning",
+      "content_fingerprint": "0150bc89fe55d74e514ee174af688d4f9edc273645d88d04fd361cb7d3f3d58f"
+    },
+    {
+      "record_id": "docmem-v1-dabde01f0685760ae7bff059c3c8c5322f005e390121df61a6da238370fe7cd2",
+      "category": "business_document",
+      "logical_name": "mysql-business-waterquality-grain",
+      "content_fingerprint": "ce11afb4019620d5b73f57afd66da5d98fc80df4902dbbfb0c1c8e4ab51a6a10"
+    },
+    {
+      "record_id": "docmem-v1-df70717b3d6479d6e75102ff19c9f79590607e37c3245a92f2f0472b8c428b7a",
+      "category": "business_document",
+      "logical_name": "mysql-business-hydrological",
+      "content_fingerprint": "801995bce846cfeb2328a3ea20896700539174152a1ab4a4ba71153c8a46c291"
+    },
+    {
+      "record_id": "toolmem-v1-130e849080878109e0c4e51893b9c1f02d8e415fc39c9200052edc10fd83a467",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_DAY_COMPARE_002",
+      "content_fingerprint": "130e849080878109e0c4e51893b9c1f02d8e415fc39c9200052edc10fd83a467"
+    },
+    {
+      "record_id": "toolmem-v1-1b432819afef5d83652a8a1d1a583f6c86a87f3bbdeec5902d5a335c82aec659",
+      "category": "sql_example",
+      "logical_name": "MYSQL_POLL_STATION_012",
+      "content_fingerprint": "1b432819afef5d83652a8a1d1a583f6c86a87f3bbdeec5902d5a335c82aec659"
+    },
+    {
+      "record_id": "toolmem-v1-2ae2cd28406e6bbce1b4f755bbd5e14b633c57a3f0e8ea81755ca8852a08c957",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_HOUR_TREND_001",
+      "content_fingerprint": "2ae2cd28406e6bbce1b4f755bbd5e14b633c57a3f0e8ea81755ca8852a08c957"
+    },
+    {
+      "record_id": "toolmem-v1-31076d68d7f2d499fd2ca278fa39ddfd4c836c50484bc730e3d78f7f0881e1f6",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_SEVEN_DAY_006",
+      "content_fingerprint": "31076d68d7f2d499fd2ca278fa39ddfd4c836c50484bc730e3d78f7f0881e1f6"
+    },
+    {
+      "record_id": "toolmem-v1-38f1b45c5678abaeb4df014e1e1094a8f59559ae9e9806bdb0e7b6b3a157c439",
+      "category": "sql_example",
+      "logical_name": "MYSQL_REGION_STATIONS_017",
+      "content_fingerprint": "38f1b45c5678abaeb4df014e1e1094a8f59559ae9e9806bdb0e7b6b3a157c439"
+    },
+    {
+      "record_id": "toolmem-v1-3ba25d27bc6c68fa8573c2247abcf301e9f0327560843fa848004d3a49711934",
+      "category": "sql_example",
+      "logical_name": "MYSQL_MET_DETAIL_011",
+      "content_fingerprint": "3ba25d27bc6c68fa8573c2247abcf301e9f0327560843fa848004d3a49711934"
+    },
+    {
+      "record_id": "toolmem-v1-5d1811c3964e638094b499828136a8a04b3e939c498d544c54be8977f3f86ec8",
+      "category": "sql_example",
+      "logical_name": "MYSQL_POLL_COMPARE_013",
+      "content_fingerprint": "5d1811c3964e638094b499828136a8a04b3e939c498d544c54be8977f3f86ec8"
+    },
+    {
+      "record_id": "toolmem-v1-68be4d934a30173cfb8f5a92f49446491f14e4b592874fe56b1c6a013045ef6b",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WARN_STATUS_015",
+      "content_fingerprint": "68be4d934a30173cfb8f5a92f49446491f14e4b592874fe56b1c6a013045ef6b"
+    },
+    {
+      "record_id": "toolmem-v1-6c23ee62746fcc3ab5b13bcea16012f0656942dc0bdbebeae019e65afbfb3a61",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_LEVEL_DIST_004",
+      "content_fingerprint": "6c23ee62746fcc3ab5b13bcea16012f0656942dc0bdbebeae019e65afbfb3a61"
+    },
+    {
+      "record_id": "toolmem-v1-6f589cb4bb646841db5d6c72cf778d019c8a9e07507ef0aa8d6f50b4fb18765c",
+      "category": "sql_example",
+      "logical_name": "MYSQL_MET_TREND_010",
+      "content_fingerprint": "6f589cb4bb646841db5d6c72cf778d019c8a9e07507ef0aa8d6f50b4fb18765c"
+    },
+    {
+      "record_id": "toolmem-v1-7fd926aa1c8019d7885710689aae6a71c259949c0f12361a3d09560e1594dbce",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_DETAIL_007",
+      "content_fingerprint": "7fd926aa1c8019d7885710689aae6a71c259949c0f12361a3d09560e1594dbce"
+    },
+    {
+      "record_id": "toolmem-v1-83545029ec57a470c9c5990b1c0dc531046eeeed9589100902d47bb9eca5eff3",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_SECTION_MONTH_005",
+      "content_fingerprint": "83545029ec57a470c9c5990b1c0dc531046eeeed9589100902d47bb9eca5eff3"
+    },
+    {
+      "record_id": "toolmem-v1-86865b0799795dbfc53bc03e404c5eb06109c9ae068c6d74276e1cd6f3db2cd9",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_REGION_AVG_003",
+      "content_fingerprint": "86865b0799795dbfc53bc03e404c5eb06109c9ae068c6d74276e1cd6f3db2cd9"
+    },
+    {
+      "record_id": "toolmem-v1-9e446088f7a5d10776399141f66f7d885e99051a8b56b1ebc7a84a22bd641a52",
+      "category": "sql_example",
+      "logical_name": "MYSQL_HYDRO_COMPARE_009",
+      "content_fingerprint": "9e446088f7a5d10776399141f66f7d885e99051a8b56b1ebc7a84a22bd641a52"
+    },
+    {
+      "record_id": "toolmem-v1-a31dfd94f6c78f9017cda47138ed276a2258498c834611bca24d6cc15ad05a4d",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WQ_DICT_018",
+      "content_fingerprint": "a31dfd94f6c78f9017cda47138ed276a2258498c834611bca24d6cc15ad05a4d"
+    },
+    {
+      "record_id": "toolmem-v1-d0b44e50e18085a244c8cd5d01287b4ca4d4eac3cbe4af685bc99d98db7abcd1",
+      "category": "sql_example",
+      "logical_name": "MYSQL_HYDRO_TREND_008",
+      "content_fingerprint": "d0b44e50e18085a244c8cd5d01287b4ca4d4eac3cbe4af685bc99d98db7abcd1"
+    },
+    {
+      "record_id": "toolmem-v1-e3721bd3a79d36dc34f84bc47ad9bb77506a43912c3d1079451525a247cb4fc9",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WARN_LEVEL_014",
+      "content_fingerprint": "e3721bd3a79d36dc34f84bc47ad9bb77506a43912c3d1079451525a247cb4fc9"
+    },
+    {
+      "record_id": "toolmem-v1-e5cf77b57e6343bae9d706b50a4ecbc943ee64354a9b5bee8cb17845863de26e",
+      "category": "sql_example",
+      "logical_name": "MYSQL_WARN_DETAIL_016",
+      "content_fingerprint": "e5cf77b57e6343bae9d706b50a4ecbc943ee64354a9b5bee8cb17845863de26e"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ from backend.sql_guard import SQLGuard
 
 ALLOWED_TRAINING_LEVELS = {
     "level2_sql_examples",
+    "level2_mysql_sql_examples",
     "level3_sql_examples",
     "level3_p0_sql_examples",
     "level3_p1_sql_examples",
