@@ -30,6 +30,7 @@ from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
 from backend.mysql_runtime_factory import create_mysql_runtime
 from backend.water_quality_reports.api import create_report_router
+from backend.water_quality_reports.artifacts import ReportArtifactStore
 from backend.water_quality_reports.chat_handler import WaterQualityReportChatHandler
 from backend.water_quality_reports.repository import ReportRepository
 from backend.water_quality_reports.service import WaterQualityReportService
@@ -82,10 +83,11 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             report_service_factory = lambda: WaterQualityReportService(
                 ReportRepository(report_config)
             )
+            report_artifact_store = ReportArtifactStore(report_service_factory)
             if not isinstance(self.chat_handler, WaterQualityReportChatHandler):
                 self.chat_handler = WaterQualityReportChatHandler(
                     self.chat_handler,
-                    report_service_factory,
+                    report_artifact_store,
                     lambda request: self.resources.coordinator.resolve(
                         request.conversation_id,
                         request.metadata,
@@ -298,7 +300,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
 
         if report_service_factory is not None:
             app.include_router(
-                create_report_router(report_service_factory)
+                create_report_router(
+                    report_service_factory,
+                    artifact_store=report_artifact_store,
+                )
             )
 
         return app

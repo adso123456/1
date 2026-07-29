@@ -154,7 +154,7 @@ def _monthly_html(report: dict[str, Any]) -> str:
     monitoring = report["monitoring"]
     conditions = report["station_conditions"]
     return f"""
-<h2>1. 月度监测情况</h2>
+<h2>1. 监测情况</h2>
 <p>{escape(report["narratives"]["monitoring"])}</p>
 <p class="table-title">表1 监测点位监测情况</p>
 {_table(
@@ -163,7 +163,6 @@ def _monthly_html(report: dict[str, Any]) -> str:
       row["missing_indicators_and_periods"]] for row in monitoring["rows"]]
 )}
 <h2>2. 各监测点位情况</h2>
-<p>{escape(conditions["counting_rule"])}</p>
 <p class="table-title">表2 监测点位水质情况</p>
 {_table(
     ["序号","监测点位名称","120小时连续超水质目标次数","连续7天均值超水质目标次数",

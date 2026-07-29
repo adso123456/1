@@ -20,6 +20,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     LongTable,
+    PageBreak,
     PageTemplate,
     Paragraph,
     Spacer,
@@ -66,7 +67,12 @@ class _InvariantCanvas(canvas.Canvas):
 
 
 class WaterQualityPdfRenderer:
-    def render(self, report: dict[str, Any]) -> Path:
+    def render(
+        self,
+        report: dict[str, Any],
+        *,
+        target_path: Path | None = None,
+    ) -> Path:
         font_name = _register_font()
         output_root = _runtime_root()
         output_root.mkdir(parents=True, exist_ok=True)
@@ -76,7 +82,9 @@ class WaterQualityPdfRenderer:
         else:
             suffix = report["report_month"].replace("-", "")
             filename = f"梁子湖流域自动站水质月报_{suffix}.pdf"
-        target = output_root / filename
+        target = target_path.resolve() if target_path is not None else output_root / filename
+        if target_path is not None and target.parent != output_root:
+            raise PdfRenderError("PDF 输出路径无效")
         lock = _PATH_LOCKS.setdefault(target, threading.Lock())
         with lock:
             temporary = output_root / f".{filename}.{uuid.uuid4().hex}.tmp"
@@ -410,7 +418,7 @@ class WaterQualityPdfRenderer:
         monitoring = report["monitoring"]
         conditions = report["station_conditions"]
         return [
-            Paragraph("1. 月度监测情况", styles["HeadingCN"]),
+            Paragraph("1. 监测情况", styles["HeadingCN"]),
             Paragraph(report["narratives"]["monitoring"], styles["BodyCN"]),
             Paragraph("表1 监测点位监测情况", styles["TableTitleCN"]),
             self._table(
@@ -427,8 +435,8 @@ class WaterQualityPdfRenderer:
                 [10 * mm, 30 * mm, 54 * mm, 78 * mm],
                 styles,
             ),
+            PageBreak(),
             Paragraph("2. 各监测点位情况", styles["HeadingCN"]),
-            Paragraph(conditions["counting_rule"], styles["BodyCN"]),
             Paragraph("表2 监测点位水质情况", styles["TableTitleCN"]),
             self._table(
                 ["序号", "监测点位名称", "120小时连续超目标次数",

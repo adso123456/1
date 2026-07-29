@@ -210,4 +210,9 @@ export interface ChatMessage {
   streaming: boolean;
   /** 本次查询实际执行的 SQL（仅 SELECT 成功时返回） */
   sql?: string | null;
+  /** 可持久化的结构化报表配置或结果组件。 */
+  reportComponent?: {
+    type: 'report_config' | 'report_result';
+    data: Record<string, unknown>;
+  };
 }

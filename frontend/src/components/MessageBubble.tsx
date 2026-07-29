@@ -6,6 +6,12 @@ import { buildChartOption } from '../chartRegistry';
 import { ThinkingSteps } from './ThinkingSteps';
 import { ChartView } from './ChartView';
 import { ChartErrorBoundary } from './ChartCard';
+import {
+  ReportConfigCard,
+  ReportResultCard,
+  type ReportConfigData,
+  type ReportResultData,
+} from './ReportComponents';
 
 interface Props {
   message: ChatMessage;
@@ -16,6 +22,8 @@ interface Props {
   onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
   compact?: boolean;
   workspaceUrl?: string;
+  onReportGenerated?: (messageId: string, result: ReportResultData) => void;
+  onReportPreview?: (result: ReportResultData) => void;
 }
 
 /** 去除图表注释标记及流式未闭合残片，避免显示在正文中 */
@@ -27,7 +35,16 @@ function cleanMarkdown(text: string): string {
     .trimEnd();
 }
 
-export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onAddToDashboard, compact = false, workspaceUrl }: Props) {
+export function MessageBubble({
+  message,
+  onChangeChartType,
+  onV2ChartSwitch,
+  onAddToDashboard,
+  compact = false,
+  workspaceUrl,
+  onReportGenerated,
+  onReportPreview,
+}: Props) {
   const isUser = message.role === 'user';
   const hasSql = !!(message.sql && message.sql.trim());
   const [showSql, setShowSql] = useState(false);
@@ -88,6 +105,19 @@ export function MessageBubble({ message, onChangeChartType, onV2ChartSwitch, onA
             {/* 思考过程（中间步骤，默认折叠） */}
             {message.dataframes.length > 1 && (
               <ThinkingSteps dataframes={message.dataframes.slice(0, -1)} />
+            )}
+
+            {message.reportComponent?.type === 'report_config' && (
+              <ReportConfigCard
+                config={message.reportComponent.data as unknown as ReportConfigData}
+                onGenerated={result => onReportGenerated?.(message.id, result)}
+              />
+            )}
+            {message.reportComponent?.type === 'report_result' && (
+              <ReportResultCard
+                result={message.reportComponent.data as unknown as ReportResultData}
+                onPreview={result => onReportPreview?.(result)}
+              />
             )}
 
             {/* Markdown 正文 */}

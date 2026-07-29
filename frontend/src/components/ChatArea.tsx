@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ChatMessage, ChartData, RenderableChartType } from '../types';
 import { MessageBubble } from './MessageBubble';
+import type { ReportResultData } from './ReportComponents';
 
 interface Props {
   messages: ChatMessage[];
@@ -24,6 +25,8 @@ interface Props {
   welcome?: string;
   welcomeDescription?: string;
   theme?: string;
+  onReportGenerated?: (messageId: string, result: ReportResultData) => void;
+  onReportPreview?: (result: ReportResultData) => void;
 }
 
 const SUGGESTIONS = [
@@ -49,6 +52,8 @@ export function ChatArea({
   welcome = '有什么可以帮助你的？',
   welcomeDescription = '用中文自然语言提问，Agent 自动查询数据库并返回图表',
   theme = '#2563eb',
+  onReportGenerated,
+  onReportPreview,
 }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -160,6 +165,8 @@ export function ChatArea({
             onAddToDashboard={onAddToDashboard}
             compact={compact}
             workspaceUrl={workspaceUrl}
+            onReportGenerated={onReportGenerated}
+            onReportPreview={onReportPreview}
           />
         ))}
         <div ref={messagesEndRef} />

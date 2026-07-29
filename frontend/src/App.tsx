@@ -6,7 +6,10 @@ import { DashboardListPanel } from './components/DashboardListPanel';
 import { AddChartDialog } from './components/AddChartDialog';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { AssistantManagement } from './AdminApp';
-import { ReportPage } from './components/ReportPage';
+import {
+  ReportPreviewModal,
+  type ReportResultData,
+} from './components/ReportComponents';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
 import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec } from './types';
@@ -15,7 +18,7 @@ import {
   readWorkspaceSessionId,
 } from './appMode';
 
-type View = 'chat' | 'dashboard' | 'reports' | 'assistant';
+type View = 'chat' | 'dashboard' | 'assistant';
 
 /** 待添加到仪表板的图表上下文（点击"添加到仪表板"时暂存） */
 interface PendingAdd {
@@ -44,6 +47,7 @@ function App() {
     cancelRequest,
     clearMessages,
     replaceMessageChart,
+    replaceMessageReport,
     sessionList,
     currentSessionId,
     createNewSession,
@@ -78,6 +82,7 @@ function App() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [pendingAdd, setPendingAdd] = useState<PendingAdd | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [reportPreview, setReportPreview] = useState<ReportResultData | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -273,6 +278,11 @@ function App() {
             onChangeChartType={() => {}}
             onV2ChartSwitch={replaceMessageChart}
             onAddToDashboard={handleRequestAddToDashboard}
+            onReportGenerated={(messageId, result) => {
+              replaceMessageReport(messageId, result as unknown as Record<string, unknown>);
+              setReportPreview(result);
+            }}
+            onReportPreview={setReportPreview}
           />
         )}
         {currentView === 'dashboard' && (
@@ -287,7 +297,6 @@ function App() {
             onV2ChartSwitch={handleDashboardV2ChartSwitch}
           />
         )}
-        {currentView === 'reports' && <ReportPage />}
         <div
           style={{
             display: currentView === 'assistant' ? 'block' : 'none',
@@ -297,6 +306,11 @@ function App() {
           <AssistantManagement embedded />
         </div>
       </div>
+
+      <ReportPreviewModal
+        result={reportPreview}
+        onClose={() => setReportPreview(null)}
+      />
 
       {/* 添加图表和表格弹窗 */}
       {showAddDialog && (

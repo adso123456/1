@@ -158,7 +158,7 @@ class WaterQualityReportService:
         return {
             "source_id": REPORT_SOURCE_ID,
             "indicators": indicators,
-            "recent_days": [1, 2, 3, 5, 7],
+            "recent_days": [2, 3, 4, 5, 6, 7],
         }
 
     def daily(
@@ -169,8 +169,8 @@ class WaterQualityReportService:
         frequency_overrides: dict[int, int] | None = None,
         recent_days: int = 3,
     ) -> dict[str, Any]:
-        if recent_days < 1 or recent_days > 7:
-            raise ValueError("近日报告范围必须为1至7天")
+        if recent_days < 2 or recent_days > 7:
+            raise ValueError("近日报告范围必须为2至7天")
         start = _day_start(report_date)
         end = start + timedelta(days=1)
         history_start = start - timedelta(days=7)
@@ -376,6 +376,10 @@ class WaterQualityReportService:
                     if indicator_codes is not None
                     else sorted(allowed_frequencies)
                 ),
+                "indicator_names": self._indicator_names(
+                    stations,
+                    indicator_codes,
+                ),
                 "frequency_hours": {
                     str(code): hours
                     for code, hours in sorted(frequency_overrides.items())
@@ -576,7 +580,14 @@ class WaterQualityReportService:
         frequency_overrides: dict[int, int],
     ) -> dict[str, Any]:
         month_end = _next_month(month_start)
-        enabled = [row for row in stations if str(row.get("build_state")) == "1"]
+        monthly_stations = [
+            row for row in stations if str(row.get("station_type")) != "3"
+        ]
+        enabled = [
+            row
+            for row in monthly_stations
+            if str(row.get("build_state")) == "1"
+        ]
         day_levels = _daily_level_map(daily)
         hour_levels = _hourly_level_map(hourly)
         allowed_frequencies = self._allowed_frequencies(stations)
@@ -597,7 +608,7 @@ class WaterQualityReportService:
 
         monitoring_rows: list[dict[str, Any]] = []
         valid_slots = expected_slots = valid_station_count = 0
-        for index, station in enumerate(stations, 1):
+        for station in monthly_stations:
             station_id = int(station["id"])
             indicators = self._selected_indicators(
                 station,
@@ -640,15 +651,16 @@ class WaterQualityReportService:
                 expected_slots += station_expected
                 if station_valid > 0:
                     valid_station_count += 1
-            monitoring_rows.append(
-                {
-                    "index": index,
-                    "station_id": station_id,
-                    "station_name": station["station_name"],
-                    "expected_indicators": _indicator_summary(indicators),
-                    "missing_indicators_and_periods": missing_text,
-                }
-            )
+            if str(station.get("build_state")) == "1" and station_valid > 0:
+                monitoring_rows.append(
+                    {
+                        "index": len(monitoring_rows) + 1,
+                        "station_id": station_id,
+                        "station_name": station["station_name"],
+                        "expected_indicators": _indicator_summary(indicators),
+                        "missing_indicators_and_periods": missing_text,
+                    }
+                )
 
         condition_rows = [
             self._monthly_condition_row(
@@ -659,7 +671,7 @@ class WaterQualityReportService:
                 day_levels,
                 hour_levels,
             )
-            for station in enabled
+            for station in monthly_stations
         ]
         report = {
             "report_type": "monthly",
@@ -672,20 +684,27 @@ class WaterQualityReportService:
                     if indicator_codes is not None
                     else sorted(allowed_frequencies)
                 ),
+                "indicator_names": self._indicator_names(
+                    stations,
+                    indicator_codes,
+                ),
                 "frequency_hours": {
                     str(code): hours
                     for code, hours in sorted(frequency_overrides.items())
                 },
             },
             "monitoring": {
-                "configured_station_count": len(stations),
+                "configured_station_count": len(monthly_stations),
                 "enabled_station_count": len(enabled),
-                "disabled_station_count": len(stations) - len(enabled),
+                "disabled_station_count": len(monthly_stations) - len(enabled),
                 "valid_station_count": valid_station_count,
                 "valid_transmission_numerator": valid_slots,
                 "valid_transmission_denominator": expected_slots,
-                "valid_transmission_rate": percent(valid_slots, expected_slots),
-                "rate_formula": "当月有效采样点数 ÷ 已启用站点配置的当月预期采样点数",
+                "valid_transmission_rate": percent(
+                    valid_station_count,
+                    len(monthly_stations),
+                ),
+                "rate_formula": "当月有效传输站点数 ÷ 应运行水质自动站点数",
                 "rows": monitoring_rows,
             },
             "station_conditions": {
@@ -713,6 +732,20 @@ class WaterQualityReportService:
             for item in parse_monitor_frequency(station.get("monitor_frequency")):
                 result[int(item["code"])].add(int(item["hours"]))
         return result
+
+    @staticmethod
+    def _indicator_names(
+        stations: list[dict[str, Any]],
+        indicator_codes: tuple[int, ...] | None,
+    ) -> list[str]:
+        allowed = set(indicator_codes) if indicator_codes is not None else None
+        names: dict[int, str] = {}
+        for station in stations:
+            for item in parse_monitor_frequency(station.get("monitor_frequency")):
+                code = int(item["code"])
+                if allowed is None or code in allowed:
+                    names.setdefault(code, str(item["name"]))
+        return [names[code] for code in sorted(names)]
 
     @staticmethod
     def _validate_selection(
@@ -850,9 +883,10 @@ class WaterQualityReportService:
         rate = monitoring["valid_transmission_rate"]
         return {
             "monitoring": (
-                f"{report['report_month']}，应运行站点"
-                f"{monitoring['enabled_station_count']}个，当月有有效传输数据的站点"
-                f"{monitoring['valid_station_count']}个，月度数据有效传输率为"
+                f"{report['report_month'][:4]}年{report['report_month'][5:]}月，"
+                f"梁子湖流域应运行的{monitoring['configured_station_count']}个"
+                f"水质自动站中，实际正常运行并有效传输数据的站点为"
+                f"{monitoring['valid_station_count']}个，数据有效传输率为"
                 f"{'暂无数据' if rate is None else f'{rate:.2f}%'}。"
             )
         }

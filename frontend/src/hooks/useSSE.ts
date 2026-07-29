@@ -1289,6 +1289,18 @@ export function useSSE(
                   )
                 );
               }
+            } else if (rich.type === 'report_config' || rich.type === 'report_result') {
+              const reportComponent = {
+                type: rich.type,
+                data: rich.data,
+              } as ChatMessage['reportComponent'];
+              setMessages(prev =>
+                prev.map(message =>
+                  message.id === assistantMsgId
+                    ? { ...message, reportComponent }
+                    : message
+                )
+              );
             }
           } catch {
             // 忽略 JSON 解析错误
@@ -1369,6 +1381,22 @@ export function useSSE(
     [],
   );
 
+  const replaceMessageReport = useCallback(
+    (messageId: string, data: Record<string, unknown>) => {
+      setMessages(prev =>
+        prev.map(message =>
+          message.id === messageId
+            ? {
+                ...message,
+                reportComponent: { type: 'report_result', data },
+              }
+            : message
+        )
+      );
+    },
+    [],
+  );
+
   return {
     messages,
     loading,
@@ -1376,6 +1404,7 @@ export function useSSE(
     cancelRequest,
     clearMessages,
     replaceMessageChart,
+    replaceMessageReport,
     sessionList,
     currentSessionId,
     createNewSession,

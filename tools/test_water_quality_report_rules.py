@@ -23,8 +23,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.water_quality_reports.api import create_report_router
+from backend.water_quality_reports.artifacts import ReportArtifactStore
 from backend.water_quality_reports.chat_handler import (
     WaterQualityReportChatHandler,
+    resolve_indicators,
     parse_report_intent,
 )
 from backend.water_quality_reports.pdf_renderer import (
@@ -224,13 +226,33 @@ def test_service() -> tuple[dict, dict]:
 
     monthly = service.monthly(date(2025, 7, 1))
     assert monthly["monitoring"]["valid_station_count"] == 1
-    assert monthly["monitoring"]["valid_transmission_rate"] == 100.0
+    assert monthly["monitoring"]["configured_station_count"] == 2
+    assert monthly["monitoring"]["valid_transmission_rate"] == 50.0
+    assert len(monthly["monitoring"]["rows"]) == 1
+    assert len(monthly["station_conditions"]["rows"]) == 2
     assert monthly["station_conditions"]["rows"][0][
         "continuous_120h_over_target_count"
     ] == 0
     assert monthly["station_conditions"]["rows"][0][
         "continuous_3d_worse_iv_count"
     ] == 0
+
+    repository_with_super = FakeRepository()
+    repository_with_super._stations.append(
+        station(3, "超级站", station_type="3")
+    )
+    monthly_with_super = WaterQualityReportService(
+        repository_with_super
+    ).monthly(date(2025, 7, 1))
+    assert monthly_with_super["monitoring"]["configured_station_count"] == 2
+    assert all(
+        row["station_name"] != "超级站"
+        for row in monthly_with_super["monitoring"]["rows"]
+    )
+    assert all(
+        row["station_name"] != "超级站"
+        for row in monthly_with_super["station_conditions"]["rows"]
+    )
     return daily, monthly
 
 
@@ -288,18 +310,39 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
                     return {
                         "source_id": "mysql-lzh-monitor",
                         "indicators": [
-                            {"code": 0, "name": "水温", "frequencies": [1]}
+                            {"code": 0, "name": "水温", "frequencies": [1]},
+                            {"code": 5, "name": "氨氮", "frequencies": [4]},
+                            {"code": 7, "name": "总磷", "frequencies": [4]},
                         ],
-                        "recent_days": [1, 2, 3, 5, 7],
+                        "recent_days": [2, 3, 4, 5, 6, 7],
                     }
 
                 def daily(self, report_date, **kwargs):
                     assert report_date == date(2025, 7, 28)
-                    return daily
+                    result = json.loads(json.dumps(daily, ensure_ascii=False))
+                    codes = kwargs.get("indicator_codes")
+                    result["options"]["indicator_codes"] = (
+                        list(codes) if codes is not None else [0, 5, 7]
+                    )
+                    result["options"]["frequency_hours"] = {
+                        str(code): hours
+                        for code, hours in kwargs.get("frequency_overrides", {}).items()
+                    }
+                    result["options"]["recent_days"] = kwargs.get("recent_days", 3)
+                    return result
 
                 def monthly(self, report_month, **kwargs):
                     assert report_month == date(2025, 7, 1)
-                    return monthly
+                    result = json.loads(json.dumps(monthly, ensure_ascii=False))
+                    codes = kwargs.get("indicator_codes")
+                    result["options"]["indicator_codes"] = (
+                        list(codes) if codes is not None else [0, 5, 7]
+                    )
+                    result["options"]["frequency_hours"] = {
+                        str(code): hours
+                        for code, hours in kwargs.get("frequency_overrides", {}).items()
+                    }
+                    return result
 
             app = FastAPI()
             app.include_router(create_report_router(StubService))
@@ -332,6 +375,8 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             )
             assert preview.status_code == 200
             assert "梁子湖流域自动站水质月报" in preview.text
+            assert "1. 监测情况" in preview.text
+            assert "1. 月度监测情况" not in preview.text
             pdf = client.get(
                 "/api/reports/water-quality/monthly/pdf?month=2025-07"
             )
@@ -339,15 +384,75 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             assert pdf.headers["content-type"] == "application/pdf"
             assert "202507.pdf" in pdf.headers["content-disposition"]
 
+            generated = client.post(
+                "/api/reports/water-quality/generate",
+                json={
+                    "report_type": "daily",
+                    "date": "2025-07-28",
+                    "indicators": [5],
+                    "frequency_hours": {"5": 4},
+                    "recent_days": 5,
+                },
+            )
+            assert generated.status_code == 200
+            report_result = generated.json()
+            assert report_result["report_id"].startswith("wqr-")
+            artifact_preview = client.get(report_result["preview_url"])
+            artifact_pdf = client.get(report_result["download_url"])
+            assert artifact_preview.status_code == 200
+            assert artifact_pdf.status_code == 200
+            assert client.get(
+                "/api/reports/water-quality/artifacts/not-valid/preview"
+            ).status_code == 404
+
+            variants = [
+                {
+                    "report_type": "daily",
+                    "date": "2025-07-28",
+                    "indicators": indicators,
+                    "frequency_hours": {},
+                    "recent_days": recent_days,
+                }
+                for indicators, recent_days in (([0, 5, 7], 3), ([5], 5), ([7], 7))
+            ]
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                variant_responses = list(
+                    executor.map(
+                        lambda payload: client.post(
+                            "/api/reports/water-quality/generate",
+                            json=payload,
+                        ).json(),
+                        variants,
+                    )
+                )
+            assert len({item["report_id"] for item in variant_responses}) == 3
+            assert all(
+                Path(temp_name, f"{item['report_id']}.json").is_file()
+                and Path(temp_name, f"{item['report_id']}.pdf").is_file()
+                for item in variant_responses
+            )
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                identical = list(
+                    executor.map(
+                        lambda _: client.post(
+                            "/api/reports/water-quality/generate",
+                            json=variants[1],
+                        ).json()["report_id"],
+                        range(4),
+                    )
+                )
+            assert len(set(identical)) == 1
+
             class RejectFallback:
                 async def handle_stream(self, request):
                     raise AssertionError("报表指令不得进入普通 Agent")
                     yield
 
+            artifact_store = ReportArtifactStore(StubService, renderer)
             resolved_conversations: list[str | None] = []
             handler = WaterQualityReportChatHandler(
                 RejectFallback(),
-                StubService,
+                artifact_store,
                 lambda request: (
                     resolved_conversations.append(request.conversation_id)
                     or "mysql-lzh-monitor"
@@ -364,11 +469,50 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
                 return [chunk async for chunk in handler.handle_stream(request)]
 
             chunks = asyncio.run(collect_report_chunks())
-            content = chunks[0].rich["data"]["content"]
-            assert "已按固定模板生成" in content
-            assert "应测指标：水温" in content
-            assert "/daily/pdf?date=2025-07-28" in content
+            assert chunks[0].rich["type"] == "report_result"
+            assert chunks[0].rich["data"]["indicator_names"] == ["水温"]
+            assert chunks[0].rich["data"]["preview_url"].startswith(
+                "/api/reports/water-quality/artifacts/"
+            )
             assert resolved_conversations == ["report-chat-test"]
+
+            class NoDatabaseArtifact:
+                def options(self):
+                    raise AssertionError("周期缺失不得访问数据库")
+
+                def generate(self, **kwargs):
+                    raise AssertionError("周期缺失不得生成报告")
+
+            vague_handler = WaterQualityReportChatHandler(
+                RejectFallback(),
+                NoDatabaseArtifact(),
+            )
+
+            async def collect_vague():
+                request = ChatRequest(
+                    message="给我梁子湖月报",
+                    conversation_id="vague-report",
+                    metadata={"source_id": "mysql-lzh-monitor"},
+                )
+                return [chunk async for chunk in vague_handler.handle_stream(request)]
+
+            vague = asyncio.run(collect_vague())
+            assert vague[0].rich["type"] == "report_config"
+            assert vague[0].rich["data"]["report_type"] == "monthly"
+
+            available = StubService().options()["indicators"]
+            selected, unknown, explicit = resolve_indicators(
+                "生成2025年7月28日水质日报，只看氨氮和不存在指标",
+                available,
+            )
+            assert explicit and [item["name"] for item in selected] == ["氨氮"]
+            assert unknown == ["不存在指标"]
+            alias_selected, alias_unknown, _ = resolve_indicators(
+                "生成2025年7月28日水质日报，只看pH值",
+                [{"code": 1, "name": "pH", "frequencies": [1]}],
+            )
+            assert [item["name"] for item in alias_selected] == ["pH"]
+            assert not alias_unknown
 
             class FailedService(StubService):
                 def daily(self, report_date, **kwargs):
@@ -384,7 +528,7 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             assert "暂不可用" in failed_response.json()["detail"]
 
             class FailedRenderer:
-                def render(self, report):
+                def render(self, report, **kwargs):
                     raise PdfRenderError("测试渲染失败")
 
             pdf_failed_app = FastAPI()
