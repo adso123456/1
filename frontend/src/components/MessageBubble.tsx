@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatMessage, ChartData, RenderableChartType } from '../types';
+import type { ChatMessage, ChartData, DataSourceSummary, RenderableChartType } from '../types';
 import { buildChartOption } from '../chartRegistry';
 import { ThinkingSteps } from './ThinkingSteps';
 import { ChartView } from './ChartView';
@@ -26,6 +26,7 @@ interface Props {
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
   onDataSourceSuggestion?: (sourceId: string, question: string) => void;
+  dataSources?: DataSourceSummary[];
 }
 
 /** 去除图表注释标记及流式未闭合残片，避免显示在正文中 */
@@ -47,6 +48,7 @@ export function MessageBubble({
   onReportGenerated,
   onReportPreview,
   onDataSourceSuggestion,
+  dataSources = [],
 }: Props) {
   const isUser = message.role === 'user';
   const hasSql = !!(message.sql && message.sql.trim());
@@ -126,6 +128,7 @@ export function MessageBubble({
               <DataSourceSuggestionCard
                 suggestion={message.dataSourceSuggestion}
                 onOpen={onDataSourceSuggestion}
+                dataSources={dataSources}
               />
             )}
 

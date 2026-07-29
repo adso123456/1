@@ -13,6 +13,89 @@ from pathlib import Path
 from typing import Any
 
 from backend.data_source_catalog import DataSourceCatalog, DataSourceCatalogError
+from backend.mysql_tls import build_mysql_tls_settings
+
+
+def _group_mysql_indexes(
+    rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            str(row["schema_name"]),
+            str(row["table_name"]),
+            str(row["index_name"]),
+        )
+        index = grouped.setdefault(
+            key,
+            {
+                "name": str(row["index_name"]),
+                "unique": not bool(row["non_unique"]),
+                "primary": str(row["index_name"]).upper() == "PRIMARY",
+                "method": str(row.get("index_type") or "").upper(),
+                "columns": [],
+            },
+        )
+        column_name = row.get("column_name")
+        if column_name:
+            direction = {
+                "A": "ASC",
+                "D": "DESC",
+            }.get(str(row.get("collation") or "").upper(), "")
+            index["columns"].append(
+                {
+                    "name": str(column_name),
+                    "position": int(row["position"]),
+                    "direction": direction,
+                }
+            )
+    result: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for (schema, table, _), index in grouped.items():
+        index["columns"].sort(key=lambda item: item["position"])
+        result.setdefault((schema, table), []).append(index)
+    for indexes in result.values():
+        indexes.sort(key=lambda item: item["name"])
+    return result
+
+
+def _group_postgresql_indexes(
+    rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            str(row["schema_name"]),
+            str(row["table_name"]),
+            str(row["index_name"]),
+        )
+        index = grouped.setdefault(
+            key,
+            {
+                "name": str(row["index_name"]),
+                "unique": bool(row["is_unique"]),
+                "primary": bool(row["is_primary"]),
+                "method": str(row.get("index_method") or ""),
+                "columns": [],
+            },
+        )
+        column_name = row.get("column_name")
+        column: dict[str, Any] = {
+            "position": int(row["position"]),
+            "direction": str(row.get("direction") or "ASC").upper(),
+        }
+        if column_name:
+            column["name"] = str(column_name)
+        else:
+            column["expression"] = str(row.get("expression") or "")
+            column["unsupported_expression"] = True
+        index["columns"].append(column)
+    result: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for (schema, table, _), index in grouped.items():
+        index["columns"].sort(key=lambda item: item["position"])
+        result.setdefault((schema, table), []).append(index)
+    for indexes in result.values():
+        indexes.sort(key=lambda item: item["name"])
+    return result
 
 
 def _safe_connection_error(exc: Exception) -> str:
@@ -42,6 +125,12 @@ class DirectDatabaseConnector:
         if record.database_type == "mysql":
             import pymysql
 
+            tls_settings = build_mysql_tls_settings(
+                mode=record.mysql_tls_mode,
+                ca_path=record.ssl_ca_path,
+                cert_path=record.ssl_cert_path,
+                key_path=record.ssl_key_path,
+            )
             return pymysql.connect(
                 host=record.host,
                 port=record.port,
@@ -52,6 +141,7 @@ class DirectDatabaseConnector:
                 charset="utf8mb4",
                 autocommit=False,
                 cursorclass=pymysql.cursors.DictCursor,
+                **tls_settings,
             )
         import psycopg2
         import psycopg2.extras
@@ -205,11 +295,89 @@ class DirectDatabaseConnector:
                         (record.database_name, schema),
                     )
                 rows = cursor.fetchall()
+                if record.database_type == "mysql":
+                    cursor.execute(
+                        """
+                        SELECT TABLE_SCHEMA AS schema_name,
+                               TABLE_NAME AS table_name,
+                               INDEX_NAME AS index_name,
+                               NON_UNIQUE AS non_unique,
+                               SEQ_IN_INDEX AS position,
+                               COLUMN_NAME AS column_name,
+                               COLLATION AS collation,
+                               INDEX_TYPE AS index_type
+                        FROM information_schema.STATISTICS
+                        WHERE TABLE_SCHEMA = %s
+                        ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX
+                        """,
+                        (record.database_name,),
+                    )
+                    indexes_by_table = _group_mysql_indexes(cursor.fetchall())
+                else:
+                    cursor.execute(
+                        """
+                        SELECT ns.nspname AS schema_name,
+                               tbl.relname AS table_name,
+                               idx.relname AS index_name,
+                               ind.indisunique AS is_unique,
+                               ind.indisprimary AS is_primary,
+                               key_column.ordinality AS position,
+                               att.attname AS column_name,
+                               CASE
+                                 WHEN att.attname IS NULL
+                                 THEN pg_get_indexdef(
+                                     ind.indexrelid,
+                                     key_column.ordinality::integer,
+                                     TRUE
+                                 )
+                                 ELSE ''
+                               END AS expression,
+                               am.amname AS index_method,
+                               CASE
+                                 WHEN (
+                                   ind.indoption[key_column.ordinality - 1] & 1
+                                 ) = 1 THEN 'DESC'
+                                 ELSE 'ASC'
+                               END AS direction
+                        FROM pg_index ind
+                        JOIN pg_class tbl ON tbl.oid = ind.indrelid
+                        JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+                        JOIN pg_class idx ON idx.oid = ind.indexrelid
+                        JOIN pg_am am ON am.oid = idx.relam
+                        CROSS JOIN LATERAL unnest(ind.indkey)
+                          WITH ORDINALITY AS key_column(attnum, ordinality)
+                        LEFT JOIN pg_attribute att
+                          ON att.attrelid = tbl.oid
+                         AND att.attnum = key_column.attnum
+                         AND key_column.attnum > 0
+                        WHERE ns.nspname = %s
+                          AND key_column.ordinality <= ind.indnkeyatts
+                        ORDER BY tbl.relname, idx.relname,
+                                 key_column.ordinality
+                        """,
+                        (schema,),
+                    )
+                    indexes_by_table = _group_postgresql_indexes(
+                        cursor.fetchall()
+                    )
                 connection.rollback()
             finally:
                 cursor.close()
-            metadata = [
-                {
+            metadata = []
+            for row in rows:
+                table_key = (
+                    str(row["schema_name"]),
+                    str(row["table_name"]),
+                )
+                table_indexes = indexes_by_table.get(table_key, [])
+                column_name = str(row["column_name"])
+                owned_indexes = [
+                    index
+                    for index in table_indexes
+                    if index["columns"]
+                    and index["columns"][0].get("name") == column_name
+                ]
+                metadata.append({
                     "schema": row["schema_name"],
                     "table": row["table_name"],
                     "object_type": str(row["object_type"]).lower(),
@@ -220,11 +388,9 @@ class DirectDatabaseConnector:
                     "nullable": str(row["is_nullable"]).upper() == "YES",
                     "primary_key": row["column_key"] == "PRI",
                     "ordinal_position": int(row["ordinal_position"]),
-                    "indexes": [],
+                    "indexes": owned_indexes,
                     "logical_relations": [],
-                }
-                for row in rows
-            ]
+                })
             self.catalog.save_discovery(source_id, metadata)
             return metadata
         except DataSourceCatalogError:
@@ -272,16 +438,100 @@ class DataSourceAssetPreparer:
             ) + self._quote(table, record.database_type)
             definitions = []
             for item in columns:
-                suffix = " PRIMARY KEY" if item.get("primary_key") else ""
                 definitions.append(
                     f"  {self._quote(item['column'], record.database_type)} "
-                    f"{item['type']}{suffix}"
+                    f"{item['type']}"
                 )
-            ddls.append(
+            selected_names = {item["column"] for item in columns}
+            indexes: dict[str, dict[str, Any]] = {}
+            for item in columns:
+                for index in item.get("indexes", []):
+                    indexes[str(index.get("name", ""))] = dict(index)
+            primary_columns = [
+                item["column"] for item in columns if item.get("primary_key")
+            ]
+            known_primary_index = next(
+                (
+                    index
+                    for index in indexes.values()
+                    if index.get("primary")
+                ),
+                None,
+            )
+            primary_index = next(
+                (
+                    index
+                    for index in indexes.values()
+                    if index.get("primary")
+                    and all(
+                        column.get("name") in selected_names
+                        and not column.get("unsupported_expression")
+                        for column in index.get("columns", [])
+                    )
+                ),
+                None,
+            )
+            if primary_index:
+                primary_columns = [
+                    column["name"]
+                    for column in primary_index["columns"]
+                ]
+            elif known_primary_index:
+                primary_columns = []
+            if primary_columns:
+                definitions.append(
+                    "  PRIMARY KEY ("
+                    + ", ".join(
+                        self._quote(name, record.database_type)
+                        for name in primary_columns
+                    )
+                    + ")"
+                )
+            ddl = (
                 f"CREATE TABLE {qualified} (\n"
                 + ",\n".join(definitions)
                 + "\n);"
             )
+            index_statements: list[str] = []
+            for index in sorted(
+                indexes.values(),
+                key=lambda item: str(item.get("name", "")),
+            ):
+                index_columns = index.get("columns", [])
+                if (
+                    index.get("primary")
+                    or not index_columns
+                    or any(
+                        column.get("unsupported_expression")
+                        or column.get("name") not in selected_names
+                        for column in index_columns
+                    )
+                ):
+                    continue
+                columns_sql = ", ".join(
+                    self._quote(column["name"], record.database_type)
+                    + (
+                        f" {column['direction']}"
+                        if column.get("direction") in {"ASC", "DESC"}
+                        else ""
+                    )
+                    for column in index_columns
+                )
+                unique = "UNIQUE " if index.get("unique") else ""
+                method = (
+                    f" USING {index['method']}"
+                    if record.database_type == "postgresql"
+                    and index.get("method")
+                    else ""
+                )
+                index_statements.append(
+                    f"CREATE {unique}INDEX "
+                    f"{self._quote(str(index['name']), record.database_type)} "
+                    f"ON {qualified}{method} ({columns_sql});"
+                )
+            if index_statements:
+                ddl += "\n" + "\n".join(index_statements)
+            ddls.append(ddl)
             table_comment = columns[0].get("table_comment", "")
             documents.append(
                 f"数据源“{record.display_name}”中的{table}表"
@@ -330,8 +580,14 @@ class DataSourceAssetPreparer:
             record.memory_path.parent
             / f".{record.memory_path.name}.candidate-{os.urandom(6).hex()}"
         )
-        metadata_backup: Path | None = None
-        memory_backup: Path | None = None
+        batch_id = f"{record.runtime_revision}-{time.time_ns()}"
+        memory_base_name = record.memory_path.name.split(".revision-", 1)[0]
+        published_memory_path = record.memory_path.with_name(
+            f"{memory_base_name}.revision-"
+            f"{record.runtime_revision + 1}-{time.time_ns()}"
+        )
+        backups: dict[Path, Path] = {}
+        installed: list[Path] = []
         try:
             candidate_metadata = candidate_root / target.name
             candidate_metadata.write_text(
@@ -401,42 +657,58 @@ class DataSourceAssetPreparer:
             finally:
                 self._close_memory(memory)
 
-            stamp = f"{record.runtime_revision}-{int(time.time())}"
-            if target.exists():
-                metadata_backup = target.with_name(
-                    f"{target.name}.backup-{stamp}"
-                )
-                os.replace(target, metadata_backup)
-            if record.memory_path.exists():
-                memory_backup = record.memory_path.with_name(
-                    f"{record.memory_path.name}.backup-{stamp}"
-                )
-                os.replace(record.memory_path, memory_backup)
-            try:
-                os.replace(candidate_metadata, target)
-                os.replace(candidate_memory, record.memory_path)
-                os.replace(
+            assets = (
+                (candidate_metadata, target),
+                (candidate_memory, published_memory_path),
+                (
                     candidate_root / "ddl_memories.json",
                     target.parent / "ddl_memories.json",
-                )
-                os.replace(
+                ),
+                (
                     candidate_root / "business_documents.json",
                     target.parent / "business_documents.json",
+                ),
+            )
+            try:
+                for _, final_path in assets:
+                    if final_path.exists():
+                        backup = final_path.with_name(
+                            f".{final_path.name}.backup-{batch_id}"
+                        )
+                        os.replace(final_path, backup)
+                        backups[final_path] = backup
+                for candidate_path, final_path in assets:
+                    os.replace(candidate_path, final_path)
+                    installed.append(final_path)
+                published = self.catalog.publish(
+                    source_id,
+                    routing_summary=routing_summary,
+                    memory_path=published_memory_path,
                 )
             except Exception:
-                if target.exists():
-                    target.unlink()
-                if metadata_backup is not None and metadata_backup.exists():
-                    os.replace(metadata_backup, target)
-                if record.memory_path.exists():
-                    shutil.rmtree(record.memory_path, ignore_errors=True)
-                if memory_backup is not None and memory_backup.exists():
-                    os.replace(memory_backup, record.memory_path)
+                rollback_errors: list[Exception] = []
+                for final_path in reversed(installed):
+                    try:
+                        self._remove_path(final_path)
+                    except Exception as exc:
+                        rollback_errors.append(exc)
+                for final_path, backup in backups.items():
+                    try:
+                        if backup.exists():
+                            os.replace(backup, final_path)
+                    except Exception as exc:
+                        rollback_errors.append(exc)
+                try:
+                    self.catalog.restore_publication_state(source_id, record)
+                except Exception as exc:
+                    rollback_errors.append(exc)
+                if rollback_errors:
+                    raise DataSourceCatalogError(
+                        "问数资产发布失败，旧资产补偿恢复不完整"
+                    ) from None
                 raise
-            published = self.catalog.publish(
-                source_id,
-                routing_summary=routing_summary,
-            )
+            for backup in backups.values():
+                self._cleanup_path(backup)
             return {
                 "source_id": source_id,
                 "metadata_records": len(metadata),
@@ -448,8 +720,25 @@ class DataSourceAssetPreparer:
                 "status": published.status,
             }
         finally:
-            shutil.rmtree(candidate_root, ignore_errors=True)
-            shutil.rmtree(candidate_memory, ignore_errors=True)
+            self._cleanup_path(candidate_root)
+            self._cleanup_path(candidate_memory)
+
+    @staticmethod
+    def _remove_path(path: Path) -> None:
+        if not path.exists():
+            return
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+    @classmethod
+    def _cleanup_path(cls, path: Path) -> None:
+        try:
+            cls._remove_path(path)
+        except Exception:
+            # 清理候选或本批次备份失败不能破坏已发布的正式资产。
+            pass
 
     @staticmethod
     def _close_memory(memory: Any) -> None:

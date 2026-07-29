@@ -16,12 +16,13 @@ from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from backend.mysql_tls import build_mysql_tls_settings
 from config.data_source_config import DataSourceConfig
 from config.settings import PROJECT_ROOT
 
 
 SCHEMA_COMPONENT = "data_source_catalog"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 VALID_DATABASE_TYPES = frozenset({"mysql", "postgresql"})
 VALID_STATUSES = frozenset(
     {
@@ -68,6 +69,10 @@ class DataSourceRecord:
     database_name: str
     schema_name: str
     ssl_mode: str
+    mysql_tls_mode: str
+    ssl_ca_path: str
+    ssl_cert_path: str
+    ssl_key_path: str
     connect_timeout: int
     credential_mode: str
     credential_reference: Mapping[str, str] = field(repr=False)
@@ -93,6 +98,19 @@ class DataSourceRecord:
     last_connection_test_at: int | None = None
     last_connection_test_status: str = ""
     last_error: str = ""
+
+    def safe_summary_dict(self) -> dict[str, Any]:
+        """普通工作台和 Widget 可见的最小安全摘要。"""
+        return {
+            "source_id": self.source_id,
+            "display_name": self.display_name,
+            "description": self.description,
+            "database_type": self.database_type,
+            "status": self.status,
+            "enabled_for_chat": self.enabled_for_chat,
+            "selected_tables_count": self.selected_tables_count,
+            "selected_columns_count": self.selected_columns_count,
+        }
 
     def public_dict(self, *, detail: bool = False) -> dict[str, Any]:
         payload = {
@@ -121,6 +139,10 @@ class DataSourceRecord:
                     "database_name": self.database_name,
                     "schema_name": self.schema_name,
                     "ssl_mode": self.ssl_mode,
+                    "mysql_tls_mode": self.mysql_tls_mode,
+                    "ssl_ca_path": self.ssl_ca_path,
+                    "ssl_cert_path": self.ssl_cert_path,
+                    "ssl_key_path": self.ssl_key_path,
                     "connect_timeout": self.connect_timeout,
                     "username": self.masked_username,
                     "has_password": bool(
@@ -295,6 +317,10 @@ class DataSourceCatalog:
                     database_name TEXT NOT NULL,
                     schema_name TEXT NOT NULL,
                     ssl_mode TEXT NOT NULL,
+                    mysql_tls_mode TEXT NOT NULL DEFAULT 'disabled',
+                    ssl_ca_path TEXT NOT NULL DEFAULT '',
+                    ssl_cert_path TEXT NOT NULL DEFAULT '',
+                    ssl_key_path TEXT NOT NULL DEFAULT '',
                     connect_timeout INTEGER NOT NULL,
                     credential_mode TEXT NOT NULL,
                     credential_reference_json TEXT NOT NULL,
@@ -322,6 +348,22 @@ class DataSourceCatalog:
                 );
                 """
             )
+            columns = {
+                item["name"]
+                for item in connection.execute(
+                    "PRAGMA table_info(data_sources)"
+                ).fetchall()
+            }
+            for name, definition in (
+                ("mysql_tls_mode", "TEXT NOT NULL DEFAULT 'disabled'"),
+                ("ssl_ca_path", "TEXT NOT NULL DEFAULT ''"),
+                ("ssl_cert_path", "TEXT NOT NULL DEFAULT ''"),
+                ("ssl_key_path", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE data_sources ADD COLUMN {name} {definition}"
+                    )
             now = int(time.time())
             connection.execute(
                 """
@@ -347,6 +389,7 @@ class DataSourceCatalog:
                 source_id, display_name, description, database_type,
                 connection_mode, status, enabled_for_chat, is_builtin,
                 host, port, database_name, schema_name, ssl_mode,
+                mysql_tls_mode, ssl_ca_path, ssl_cert_path, ssl_key_path,
                 connect_timeout, credential_mode, credential_reference_json,
                 encrypted_username, encrypted_password, metadata_path,
                 memory_path, runtime_revision, selected_tables_count,
@@ -356,7 +399,8 @@ class DataSourceCatalog:
                 last_connection_test_status, last_error
             ) VALUES (
                 ?, ?, ?, ?, 'direct_database', 'ready', 1, 1,
-                ?, ?, ?, ?, ?, ?, 'environment', ?, '', '', ?, ?,
+                ?, ?, ?, ?, ?, 'disabled', '', '', '', ?,
+                'environment', ?, '', '', ?, ?,
                 1, ?, ?, '[]', '[]', ?, ?, ?, ?, NULL, 'bootstrap', ''
             )
             """,
@@ -403,6 +447,10 @@ class DataSourceCatalog:
             database_name=row["database_name"],
             schema_name=row["schema_name"],
             ssl_mode=row["ssl_mode"],
+            mysql_tls_mode=row["mysql_tls_mode"],
+            ssl_ca_path=row["ssl_ca_path"],
+            ssl_cert_path=row["ssl_cert_path"],
+            ssl_key_path=row["ssl_key_path"],
             connect_timeout=row["connect_timeout"],
             credential_mode=row["credential_mode"],
             credential_reference=json.loads(row["credential_reference_json"]),
@@ -480,6 +528,10 @@ class DataSourceCatalog:
         database_name: str,
         schema_name: str = "",
         ssl_mode: str = "",
+        mysql_tls_mode: str = "disabled",
+        ssl_ca_path: str = "",
+        ssl_cert_path: str = "",
+        ssl_key_path: str = "",
         connect_timeout: int = 10,
         username: str,
         password: str,
@@ -496,6 +548,16 @@ class DataSourceCatalog:
             raise DataSourceCatalogError("端口和连接超时必须是正整数")
         if not username or not password:
             raise DataSourceCatalogError("用户名和密码不能为空")
+        if database_type == "mysql":
+            try:
+                build_mysql_tls_settings(
+                    mode=mysql_tls_mode,
+                    ca_path=ssl_ca_path,
+                    cert_path=ssl_cert_path,
+                    key_path=ssl_key_path,
+                )
+            except ValueError as exc:
+                raise DataSourceCatalogError(str(exc)) from None
         source_id = f"ds_{uuid.uuid4().hex}"
         root = PROJECT_ROOT / "agent_data" / "data_sources" / source_id
         now = int(time.time())
@@ -506,6 +568,7 @@ class DataSourceCatalog:
                     source_id, display_name, description, database_type,
                     connection_mode, status, enabled_for_chat, is_builtin,
                     host, port, database_name, schema_name, ssl_mode,
+                    mysql_tls_mode, ssl_ca_path, ssl_cert_path, ssl_key_path,
                     connect_timeout, credential_mode, credential_reference_json,
                     encrypted_username, encrypted_password, metadata_path,
                     memory_path, runtime_revision, selected_tables_count,
@@ -514,7 +577,7 @@ class DataSourceCatalog:
                     created_at, updated_at, last_connection_test_at,
                     last_connection_test_status, last_error
                 ) VALUES (?, ?, ?, ?, 'direct_database', 'draft', 0, 0,
-                    ?, ?, ?, ?, ?, ?, 'encrypted', '{}', ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'encrypted', '{}', ?, ?, ?, ?,
                     0, 0, 0, '[]', '[]', '', '[]', ?, ?, NULL, '', '')
                 """,
                 (
@@ -527,6 +590,10 @@ class DataSourceCatalog:
                     database_name.strip(),
                     schema_name.strip(),
                     ssl_mode.strip(),
+                    mysql_tls_mode.strip().lower(),
+                    ssl_ca_path.strip(),
+                    ssl_cert_path.strip(),
+                    ssl_key_path.strip(),
                     connect_timeout,
                     self._cipher.encrypt(username),
                     self._cipher.encrypt(password),
@@ -555,6 +622,10 @@ class DataSourceCatalog:
             "database_name",
             "schema_name",
             "ssl_mode",
+            "mysql_tls_mode",
+            "ssl_ca_path",
+            "ssl_cert_path",
+            "ssl_key_path",
             "connect_timeout",
         }
         unknown = set(changes) - allowed - {"username", "password"}
@@ -576,8 +647,11 @@ class DataSourceCatalog:
                 raise DataSourceCatalogError(f"{name} 必须是字符串")
             if name == "display_name" and not value.strip():
                 raise DataSourceCatalogError("显示名称不能为空")
+            normalized = value.strip() if isinstance(value, str) else value
+            if getattr(record, name) == normalized:
+                continue
             assignments.append(f"{name} = ?")
-            values.append(value.strip() if isinstance(value, str) else value)
+            values.append(normalized)
             connection_changed |= name not in {"display_name", "description"}
         for field_name, column_name in (
             ("username", "encrypted_username"),
@@ -593,6 +667,28 @@ class DataSourceCatalog:
             connection_changed = True
         if not assignments:
             return record
+        if record.database_type == "mysql" and any(
+            name in changes
+            for name in {
+                "mysql_tls_mode",
+                "ssl_ca_path",
+                "ssl_cert_path",
+                "ssl_key_path",
+            }
+        ):
+            try:
+                build_mysql_tls_settings(
+                    mode=str(
+                        changes.get("mysql_tls_mode", record.mysql_tls_mode)
+                    ),
+                    ca_path=str(changes.get("ssl_ca_path", record.ssl_ca_path)),
+                    cert_path=str(
+                        changes.get("ssl_cert_path", record.ssl_cert_path)
+                    ),
+                    key_path=str(changes.get("ssl_key_path", record.ssl_key_path)),
+                )
+            except ValueError as exc:
+                raise DataSourceCatalogError(str(exc)) from None
         if connection_changed:
             assignments.extend(
                 (
@@ -647,6 +743,14 @@ class DataSourceCatalog:
         }
         if record.database_type == "mysql":
             settings["charset"] = "utf8mb4"
+            settings.update(
+                build_mysql_tls_settings(
+                    mode=record.mysql_tls_mode,
+                    ca_path=record.ssl_ca_path,
+                    cert_path=record.ssl_cert_path,
+                    key_path=record.ssl_key_path,
+                )
+            )
         else:
             settings.update(
                 {
@@ -788,6 +892,7 @@ class DataSourceCatalog:
         source_id: str,
         *,
         routing_summary: str,
+        memory_path: Path | None = None,
     ) -> DataSourceRecord:
         now = int(time.time())
         with self._lock, self._connection(write=True) as connection:
@@ -804,10 +909,47 @@ class DataSourceCatalog:
                 UPDATE data_sources SET status = 'ready',
                     enabled_for_chat = 1,
                     runtime_revision = runtime_revision + 1,
-                    routing_summary = ?, last_error = '', updated_at = ?
+                    routing_summary = ?,
+                    memory_path = COALESCE(?, memory_path),
+                    last_error = '', updated_at = ?
                 WHERE source_id = ?
                 """,
-                (routing_summary, now, source_id),
+                (
+                    routing_summary,
+                    str(memory_path.resolve()) if memory_path else None,
+                    now,
+                    source_id,
+                ),
+            )
+        return self.require(source_id)
+
+    def restore_publication_state(
+        self,
+        source_id: str,
+        snapshot: DataSourceRecord,
+    ) -> DataSourceRecord:
+        """文件发布补偿失败时恢复目录中的发布相关字段。"""
+        if snapshot.source_id != source_id:
+            raise DataSourceCatalogError("发布快照与数据源不匹配")
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE data_sources SET status = ?,
+                    enabled_for_chat = ?, runtime_revision = ?,
+                    routing_summary = ?, memory_path = ?,
+                    updated_at = ?, last_error = ?
+                WHERE source_id = ?
+                """,
+                (
+                    snapshot.status,
+                    int(snapshot.enabled_for_chat),
+                    snapshot.runtime_revision,
+                    snapshot.routing_summary,
+                    str(snapshot.memory_path.resolve()),
+                    snapshot.updated_at,
+                    snapshot.last_error,
+                    source_id,
+                ),
             )
         return self.require(source_id)
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { ChatMessage, ChartData, RenderableChartType } from '../types';
+import type { ChatMessage, ChartData, DataSourceSummary, RenderableChartType } from '../types';
 import { MessageBubble } from './MessageBubble';
 import type { ReportResultData } from './ReportComponents';
 
@@ -28,7 +28,8 @@ interface Props {
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
   sourceLabel?: string;
-  sourceDisabled?: boolean;
+  sourceUnavailableReason?: string;
+  dataSources?: DataSourceSummary[];
   onDataSourceSuggestion?: (sourceId: string, question: string) => void;
 }
 
@@ -58,7 +59,8 @@ export function ChatArea({
   onReportGenerated,
   onReportPreview,
   sourceLabel,
-  sourceDisabled = false,
+  sourceUnavailableReason = '',
+  dataSources = [],
   onDataSourceSuggestion,
 }: Props) {
   const [input, setInput] = useState('');
@@ -71,7 +73,7 @@ export function ChatArea({
 
   const handleSubmit = () => {
     const text = input.trim();
-    if (!text || loading || disabled || sourceDisabled) return;
+    if (!text || loading || disabled || sourceUnavailableReason) return;
     setInput('');
     onSend(text);
   };
@@ -141,7 +143,7 @@ export function ChatArea({
                 <button
                   key={i}
                   onClick={() => { onSend(s); setInput(''); }}
-                  disabled={disabled || sourceDisabled}
+                  disabled={disabled || Boolean(sourceUnavailableReason)}
                   style={{
                     padding: '8px 16px',
                     border: '1px solid #e5e7eb',
@@ -174,6 +176,7 @@ export function ChatArea({
             onReportGenerated={onReportGenerated}
             onReportPreview={onReportPreview}
             onDataSourceSuggestion={onDataSourceSuggestion}
+            dataSources={dataSources}
           />
         ))}
         <div ref={messagesEndRef} />
@@ -198,8 +201,8 @@ export function ChatArea({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={sourceDisabled ? '当前数据源已停用或会话未绑定' : '输入问题... (Enter 发送，Shift+Enter 换行)'}
-            disabled={loading || disabled || sourceDisabled}
+            placeholder={sourceUnavailableReason || '输入问题... (Enter 发送，Shift+Enter 换行)'}
+            disabled={loading || disabled || Boolean(sourceUnavailableReason)}
             rows={compact ? 1 : 2}
             style={{
               flex: 1,
@@ -233,7 +236,7 @@ export function ChatArea({
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={!input.trim() || disabled || sourceDisabled}
+              disabled={!input.trim() || disabled || Boolean(sourceUnavailableReason)}
               style={{
                 padding: '10px 18px',
                 border: 'none',

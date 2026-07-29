@@ -120,7 +120,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         async def list_data_sources() -> list[dict[str, Any]]:
             if self.resources.catalog is not None:
                 return [
-                    record.public_dict()
+                    record.safe_summary_dict()
                     for record in self.resources.catalog.list()
                 ]
             return [
@@ -203,7 +203,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             principal = authorize_embed(authorization, parent_origin)
             if self.resources.catalog is not None:
                 return [
-                    record.public_dict()
+                    record.safe_summary_dict()
                     for record in self.resources.catalog.list(
                         status="ready",
                         enabled=True,

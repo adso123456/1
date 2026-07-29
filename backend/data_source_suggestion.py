@@ -5,20 +5,56 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from collections.abc import AsyncGenerator, Iterable
+from collections.abc import AsyncGenerator, Iterable, Mapping
 
 from backend.data_source_catalog import DataSourceCatalog, DataSourceRecord
 from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from vanna.servers.base import ChatRequest, ChatResponse, ChatStreamChunk
 
 
-REPORT_TERMS = re.compile(r"(?:生成|制作|导出|出一份).*(?:水质)?(?:日报|月报)")
-POSTGRES_TERMS = frozenset(
-    {"排污口", "排口", "整治", "溯源", "排污", "outlet"}
-)
-WATER_TERMS = frozenset(
-    {"水质", "断面", "监测站", "codmn", "高锰酸盐", "叶绿素", "氨氮"}
-)
+CURRENT_SOURCE_MAX_SCORE = 4
+CANDIDATE_MIN_SCORE = 6
+MINIMUM_LEAD_SCORE = 3
+CAPABILITY_SCORE = 100
+IDENTIFIER_SCORE = 5
+SEMANTIC_GROUP_SCORE = 4
+
+CAPABILITY_PATTERNS: Mapping[str, re.Pattern[str]] = {
+    "water_quality_daily_report": re.compile(
+        r"(?:生成|制作|导出|出一份).*(?:水质)?.*日报"
+    ),
+    "water_quality_monthly_report": re.compile(
+        r"(?:生成|制作|导出|出一份).*(?:水质)?.*月报"
+    ),
+}
+SEMANTIC_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "outlet": ("排污口", "排口", "排污", "整治", "溯源", "outlet"),
+    "water_quality": (
+        "水质",
+        "断面",
+        "监测站",
+        "氨氮",
+        "总磷",
+        "高锰酸盐",
+        "叶绿素",
+        "ph",
+        "codmn",
+    ),
+    "weather": (
+        "气象",
+        "天气",
+        "气温",
+        "温度",
+        "降雨",
+        "雨量",
+        "风速",
+        "湿度",
+        "weather",
+        "temperature",
+        "rainfall",
+    ),
+    "report": ("日报", "月报", "报表", "report"),
+}
 
 
 class DataSourceSuggestionService:
@@ -26,9 +62,65 @@ class DataSourceSuggestionService:
         self.catalog = catalog
 
     @staticmethod
-    def _contains(question: str, terms: Iterable[str]) -> int:
+    def _safe_text(record: DataSourceRecord) -> str:
+        parts = [
+            record.display_name,
+            record.description,
+            record.database_type,
+            record.routing_summary,
+            *record.capabilities,
+        ]
+        for item in record.selected_scope:
+            parts.extend(
+                str(item.get(name, ""))
+                for name in (
+                    "table",
+                    "table_comment",
+                    "column",
+                    "comment",
+                )
+            )
+        return " ".join(parts).lower().replace("_", " ")
+
+    @staticmethod
+    def _question_identifiers(question: str) -> set[str]:
+        return {
+            token.lower().replace("_", " ")
+            for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", question)
+        }
+
+    @classmethod
+    def _score(cls, question: str, record: DataSourceRecord) -> int:
         lowered = question.lower()
-        return sum(1 for term in terms if term.lower() in lowered)
+        safe_text = cls._safe_text(record)
+        score = 0
+        for identifier in cls._question_identifiers(question):
+            if identifier in safe_text:
+                score += IDENTIFIER_SCORE
+        for aliases in SEMANTIC_ALIASES.values():
+            question_matches = [
+                alias for alias in aliases if alias.lower() in lowered
+            ]
+            if not question_matches:
+                continue
+            source_matches = [
+                alias for alias in aliases if alias.lower() in safe_text
+            ]
+            if source_matches:
+                score += SEMANTIC_GROUP_SCORE
+                score += min(6, len(question_matches) * 2)
+        return score
+
+    @staticmethod
+    def _required_capability(question: str) -> str:
+        return next(
+            (
+                capability
+                for capability, pattern in CAPABILITY_PATTERNS.items()
+                if pattern.search(question)
+            ),
+            "",
+        )
 
     def suggest(
         self,
@@ -48,51 +140,43 @@ class DataSourceSuggestionService:
             (item for item in records if item.source_id == current_source_id),
             self.catalog.require(current_source_id),
         )
-        target: DataSourceRecord | None = None
-        reason = ""
-        if REPORT_TERMS.search(question):
-            target = next(
-                (
-                    item
-                    for item in records
-                    if "water_quality_daily_report" in item.capabilities
-                    or "water_quality_monthly_report" in item.capabilities
-                ),
-                None,
-            )
-            reason = "当前数据源不包含水质日报、月报所需数据"
-        else:
-            identifiers = {
-                token.lower()
-                for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", question)
-            }
-            if identifiers and any(
-                token in current.routing_summary.lower()
-                for token in identifiers
-            ):
-                return None
-        if target is None and self._contains(question, POSTGRES_TERMS) >= 1:
-            target = next(
-                (
-                    item
-                    for item in records
-                    if item.source_id == "postgresql-main"
-                ),
-                None,
-            )
-            reason = "问题明确属于排污口治理数据"
-        elif target is None and self._contains(question, WATER_TERMS) >= 2:
-            target = next(
-                (
-                    item
-                    for item in records
-                    if item.source_id == "mysql-lzh-monitor"
-                ),
-                None,
-            )
-            reason = "问题明确属于水质监测数据"
-        if target is None or target.source_id == current_source_id:
+        required_capability = self._required_capability(question)
+        if required_capability and required_capability in current.capabilities:
             return None
+        current_score = self._score(question, current)
+        if not required_capability and current_score > CURRENT_SOURCE_MAX_SCORE:
+            return None
+
+        scored: list[tuple[int, DataSourceRecord]] = []
+        for item in records:
+            if item.source_id == current_source_id:
+                continue
+            score = self._score(question, item)
+            if required_capability in item.capabilities:
+                score += CAPABILITY_SCORE
+            elif required_capability:
+                continue
+            scored.append((score, item))
+        scored.sort(key=lambda item: (-item[0], item[1].source_id))
+        if not scored:
+            return None
+        best_score, target = scored[0]
+        second_score = scored[1][0] if len(scored) > 1 else 0
+        minimum = (
+            CAPABILITY_SCORE
+            if required_capability
+            else CANDIDATE_MIN_SCORE
+        )
+        if (
+            best_score < minimum
+            or best_score - second_score < MINIMUM_LEAD_SCORE
+        ):
+            return None
+        reason = (
+            "当前数据源未注册该报表能力"
+            if required_capability
+            else "当前数据源与问题的表、字段或业务语义不匹配"
+        )
         return {
             "original_question": question,
             "current_source_id": current.source_id,

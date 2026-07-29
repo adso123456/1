@@ -36,6 +36,10 @@ class CreateDataSourceRequest(BaseModel):
     database_name: str
     schema_name: str = ""
     ssl_mode: str = ""
+    mysql_tls_mode: str = "disabled"
+    ssl_ca_path: str = ""
+    ssl_cert_path: str = ""
+    ssl_key_path: str = ""
     connect_timeout: int = Field(default=10, gt=0, le=120)
     username: str
     password: str
@@ -50,6 +54,10 @@ class UpdateDataSourceRequest(BaseModel):
     database_name: str | None = None
     schema_name: str | None = None
     ssl_mode: str | None = None
+    mysql_tls_mode: str | None = None
+    ssl_ca_path: str | None = None
+    ssl_cert_path: str | None = None
+    ssl_key_path: str | None = None
     connect_timeout: int | None = Field(default=None, gt=0, le=120)
     username: str | None = None
     password: str | None = None

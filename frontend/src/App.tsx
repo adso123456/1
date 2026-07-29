@@ -19,6 +19,7 @@ import {
   clearWorkspaceSessionParam,
   readWorkspaceSessionId,
 } from './appMode';
+import { dataSourceUnavailableReason } from './dataSourceState';
 
 type View = 'chat' | 'datasource' | 'dashboard' | 'assistant';
 
@@ -58,6 +59,7 @@ function App() {
     storageError,
     clearStorageError,
     dataSources,
+    refreshDataSources,
     currentSourceId,
     dataSourceError,
     sourceBound,
@@ -126,6 +128,10 @@ function App() {
   }, []);
 
   const currentSource = dataSources.find(source => source.source_id === currentSourceId);
+  const sourceUnavailable = dataSourceUnavailableReason(
+    currentSource,
+    sourceBound,
+  );
 
   useEffect(() => {
     if (!pendingQuestion || !sourceBound || !currentSourceId || messages.length > 0) return;
@@ -301,15 +307,18 @@ function App() {
               setReportPreview(result);
             }}
             onReportPreview={setReportPreview}
-            sourceLabel={currentSource ? `${currentSource.display_name} · ${currentSource.database_type.toUpperCase()}${currentSource.status === 'disabled' ? ' · 已停用' : ''}` : ''}
-            sourceDisabled={!sourceBound || !currentSource || currentSource.status === 'disabled'}
+            sourceLabel={currentSource ? `${currentSource.display_name} · ${currentSource.database_type.toUpperCase()} · ${currentSource.status}` : ''}
+            sourceUnavailableReason={sourceUnavailable}
+            dataSources={dataSources}
             onDataSourceSuggestion={async (sourceId, question) => {
               const ok = await createNewSession(sourceId);
               if (ok) setPendingQuestion(question);
             }}
           />
         )}
-        {currentView === 'datasource' && <DataSourcePage />}
+        {currentView === 'datasource' && (
+          <DataSourcePage onDataSourcesChanged={refreshDataSources} />
+        )}
         {currentView === 'dashboard' && (
           <DashboardView
             items={dashboardItems}

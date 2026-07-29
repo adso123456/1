@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { SSEEvent, ChatMessage, SessionMeta, DataSourceSummary, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
+import { canSendToDataSource } from '../dataSourceState';
 import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability } from '../chartRegistry';
 import { prepareChartV2All } from '../chartPipelineV2';
 import type { Row } from '../datasetProfilerV2';
@@ -719,6 +720,7 @@ export function useSSE(
   const lastDataRef = useRef<{ columns: string[]; rows: Array<Record<string, unknown>> } | null>(null);
   const lastConvIdRef = useRef<string>('');
   const dataVersionRef = useRef<number>(0);
+  const dataSourcesRequestRef = useRef(0);
 
   // localStorage 读写错误提示状态
   const [storageError, setStorageError] = useState<string | null>(
@@ -726,43 +728,52 @@ export function useSSE(
   );
   const clearStorageError = useCallback(() => setStorageError(null), []);
 
-  useEffect(() => {
+  const refreshDataSources = useCallback(async (): Promise<void> => {
     if (!requestsEnabled) return;
-    let active = true;
-    void fetch(dataSourcesEndpoint, {
+    const requestId = ++dataSourcesRequestRef.current;
+    try {
+      const response = await fetch(dataSourcesEndpoint, {
       headers: headersProvider?.(),
-    })
-      .then(async response => {
-        if (response.status === 401 || response.status === 403) {
-          onAuthorizationError?.();
-        }
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        return normalizeDataSources(await response.json());
-      })
-      .then(sources => {
-        if (!active) return;
-        setDataSources(sources);
-        if (sources.length === 0) {
-          setDataSourceError('当前没有可用数据源。');
-          return;
-        }
-        setDataSourceError(null);
-        setCurrentSourceId(current => {
-          if (sources.some(source => source.source_id === current)) {
-            return current;
-          }
-          const saved = storage.loadMeta()[storage.loadCurrentId()]?.sourceId;
-          return resolveSessionSourceId(saved, sources);
-        });
-      })
-      .catch(() => {
-        if (active) setDataSourceError('数据源列表加载失败，请稍后重试。');
       });
-    return () => {
-      active = false;
-    };
+      if (response.status === 401 || response.status === 403) {
+        onAuthorizationError?.();
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const sources = normalizeDataSources(await response.json());
+      if (requestId !== dataSourcesRequestRef.current) return;
+      setDataSources(sources);
+      if (sources.length === 0) {
+        setDataSourceError('当前没有可用数据源。');
+      } else {
+        setDataSourceError(null);
+      }
+
+      const names = new Map(
+        sources.map(source => [source.source_id, source.display_name]),
+      );
+      const allMeta = storage.loadMeta();
+      let changed = false;
+      for (const meta of Object.values(allMeta)) {
+        const latestName = meta.sourceId ? names.get(meta.sourceId) : undefined;
+        if (latestName && latestName !== meta.sourceDisplayName) {
+          meta.sourceDisplayName = latestName;
+          changed = true;
+        }
+      }
+      if (changed) storage.saveMeta(allMeta);
+      setSessionList(
+        Object.values(allMeta).sort((a, b) => b.updatedAt - a.updatedAt),
+      );
+      setCurrentSourceId(current => {
+        if (current) return current;
+        const saved = allMeta[storage.loadCurrentId()]?.sourceId;
+        return resolveSessionSourceId(saved, sources);
+      });
+    } catch {
+      if (requestId === dataSourcesRequestRef.current) {
+        setDataSourceError('数据源列表加载失败，请稍后重试。');
+      }
+    }
   }, [
     dataSourcesEndpoint,
     headersProvider,
@@ -770,6 +781,10 @@ export function useSSE(
     requestsEnabled,
     storage,
   ]);
+
+  useEffect(() => {
+    void refreshDataSources();
+  }, [refreshDataSources]);
 
   /** 流式结束后通过当前存储适配器保存会话 */
   useEffect(() => {
@@ -818,10 +833,14 @@ export function useSSE(
   /** 创建新会话并切换 */
   const createNewSession = useCallback(async (selectedSourceId?: string): Promise<boolean> => {
     if (loading) return false;
-    if (
-      selectedSourceId
-      && !dataSources.some(source => source.source_id === selectedSourceId)
-    ) {
+    const selectedSource = dataSources.find(
+      source => source.source_id === selectedSourceId,
+    );
+    if (selectedSourceId && (
+      !selectedSource
+      || selectedSource.status !== 'ready'
+      || !selectedSource.enabled_for_chat
+    )) {
       setDataSourceError('所选数据源已不可用，请刷新后重试。');
       return false;
     }
@@ -881,7 +900,6 @@ export function useSSE(
     setSourceBound(Boolean(selectedSourceId));
     storage.saveCurrentId(newId);
     if (selectedSourceId) {
-      const selected = dataSources.find(source => source.source_id === selectedSourceId);
       const latestMeta = storage.loadMeta();
       latestMeta[newId] = {
         id: newId,
@@ -889,7 +907,7 @@ export function useSSE(
         createdAt: Date.now(),
         updatedAt: Date.now(),
         sourceId: selectedSourceId,
-        sourceDisplayName: selected?.display_name,
+        sourceDisplayName: selectedSource?.display_name,
         sourceBound: true,
       };
       storage.saveMeta(latestMeta);
@@ -1033,11 +1051,13 @@ export function useSSE(
 
   const sendMessage = useCallback(async (userText: string) => {
     if (!requestsEnabled) return;
-    if (!currentSourceId) {
-      setDataSourceError('请先选择数据源。');
+    const currentSource = dataSources.find(
+      source => source.source_id === currentSourceId,
+    );
+    if (!canSendToDataSource(currentSource, sourceBound)) {
+      setDataSourceError('当前会话的数据源不可用于发送。');
       return;
     }
-    setSourceBound(true);
     const switchType = isPureChartSwitch(userText);
 
     // 纯图表切换：仅对单图消息生效
@@ -1408,10 +1428,12 @@ export function useSSE(
     chatEndpoint,
     currentSessionId,
     currentSourceId,
+    dataSources,
     headersProvider,
     messages,
     onAuthorizationError,
     requestsEnabled,
+    sourceBound,
   ]);
 
   const cancelRequest = useCallback(() => {
@@ -1483,6 +1505,7 @@ export function useSSE(
     storageError,
     clearStorageError,
     dataSources,
+    refreshDataSources,
     currentSourceId,
     selectDataSource,
     dataSourceError,

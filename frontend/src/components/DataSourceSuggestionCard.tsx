@@ -1,11 +1,13 @@
-import type { DataSourceSuggestion } from '../types';
+import type { DataSourceSuggestion, DataSourceSummary } from '../types';
 
 export function DataSourceSuggestionCard({
   suggestion,
   onOpen,
+  dataSources = [],
 }: {
   suggestion: DataSourceSuggestion;
   onOpen?: (sourceId: string, question: string) => void;
+  dataSources?: DataSourceSummary[];
 }) {
   return (
     <div style={{ border: '1px solid #bfdbfe', background: '#eff6ff', borderRadius: 9, padding: 14 }}>
@@ -15,15 +17,19 @@ export function DataSourceSuggestionCard({
       <div style={{ color: '#475569', fontSize: 13, marginBottom: 12 }}>
         {suggestion.reason}
       </div>
-      {suggestion.suggestions.map(source => (
+      {suggestion.suggestions.map(source => {
+        const latest = dataSources.find(
+          item => item.source_id === source.source_id,
+        );
+        return (
         <div key={source.source_id} style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: 12, background: '#fff', borderRadius: 7, padding: '10px 12px',
         }}>
           <span>
-            <strong>{source.display_name}</strong>
+            <strong>{latest?.display_name || source.display_name}</strong>
             <small style={{ color: '#64748b', marginLeft: 7 }}>
-              {source.database_type.toUpperCase()}
+              {(latest?.database_type || source.database_type).toUpperCase()}
             </small>
           </span>
           <button
@@ -36,7 +42,8 @@ export function DataSourceSuggestionCard({
             在该数据源中新建对话
           </button>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -1730,7 +1730,7 @@ B4 使用 `mysql-lzh-monitor` 固定只读数据源，实现确定性日报/月�
 
 # 38. B5 动态数据源管理与会话强绑定
 
-B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为 `agent_data/data_sources/catalog.sqlite3`，支持 `DATA_SOURCE_CATALOG_PATH` 覆盖，并以 schema version 1 事务迁移现有 `postgresql-main` 和 `mysql-lzh-monitor`。
+B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为 `agent_data/data_sources/catalog.sqlite3`，支持 `DATA_SOURCE_CATALOG_PATH` 覆盖，并以 schema version 2 事务迁移现有 `postgresql-main` 和 `mysql-lzh-monitor`；v2 增加 MySQL TLS 模式及证书路径。
 
 - `source_id` 是不可修改的内部永久身份；`display_name` 可重命名且不移动 Metadata、Chroma、Widget 授权、报表依赖或历史会话。
 - 内置源继续使用环境凭据引用；新建源使用 `DATA_SOURCE_CREDENTIAL_KEY` 驱动的 Fernet 加密，不经 API、日志或测试快照回显。
@@ -1738,6 +1738,12 @@ B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为
 - 新建直连源支持 PostgreSQL 和 MySQL；连接测试、Metadata 发现、表字段范围均为只读，不接受前端 SQL。
 - 新源按 `source_id` 生成隔离 Metadata、方言 DDL和确定性基础文档 Chroma；没有真实 SQL 示例时不编造 Tool Memory。
 - Runtime 缓存绑定 `runtime_revision`，候选验证后原子发布；构建失败和运行中请求不会使用半成品。
+- 主工作台使用共享数据源安全摘要刷新；管理操作后，新会话弹窗、标题、历史名称、建议卡和发送门禁无需刷新浏览器即可同步。
+- 发送必须同时满足会话已绑定、数据源 `ready` 且 `enabled_for_chat=true`，其余生命周期按具体原因禁用。
+- 错源推荐不再将业务词映射固定 ID；capability 精确匹配后，对所有授权动态源按安全 Metadata/路由摘要评分，并要求最低阈值和领先差值。
+- MySQL 支持 `disabled / required / verify_ca / verify_identity` TLS 模式，测试连接和正式 Runtime 共用参数构造；PostgreSQL `sslmode` 不变。
+- 发布对 Metadata、revision 版本 Memory、DDL、业务文档和 catalog 状态执行协调切换与失败补偿；故障注入验证哈希、状态和 revision 可恢复。
+- MySQL 与 PostgreSQL 均发现真实索引并保留主键、唯一性、复合顺序、方向和方法；表达式索引安全标记。
 - 侧栏数据源切换器已移除。“新对话”先选择 `ready/enabled` 数据源，确认后由后端 SQLite 永久绑定；同源幂等、改绑 409、清空消息不解除。
 - 明确错源在 Agent 前返回 `data_source_suggestion`；用户确认后在目标源创建新会话并重发，原会话不改变。
 - Widget 只看 `allowed_source_ids` 与可用状态，永远不显示管理入口或未授权名称。

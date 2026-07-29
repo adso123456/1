@@ -15,6 +15,10 @@ interface Source {
   database_name?: string;
   schema_name?: string;
   ssl_mode?: string;
+  mysql_tls_mode?: string;
+  ssl_ca_path?: string;
+  ssl_cert_path?: string;
+  ssl_key_path?: string;
   connect_timeout?: number;
   username?: string;
   has_password?: boolean;
@@ -78,6 +82,10 @@ function SourceForm({
     database_name: source?.database_name || '',
     schema_name: source?.schema_name || 'public',
     ssl_mode: source?.ssl_mode || '',
+    mysql_tls_mode: source?.mysql_tls_mode || 'disabled',
+    ssl_ca_path: source?.ssl_ca_path || '',
+    ssl_cert_path: source?.ssl_cert_path || '',
+    ssl_key_path: source?.ssl_key_path || '',
     connect_timeout: source?.connect_timeout || 10,
     username: '',
     password: '',
@@ -108,7 +116,14 @@ function SourceForm({
               port: Number(form.port),
               database_name: form.database_name,
               schema_name: form.schema_name,
-              ssl_mode: form.ssl_mode,
+              ...(form.database_type === 'postgresql' ? {
+                ssl_mode: form.ssl_mode,
+              } : {
+                mysql_tls_mode: form.mysql_tls_mode,
+                ssl_ca_path: form.ssl_ca_path,
+                ssl_cert_path: form.ssl_cert_path,
+                ssl_key_path: form.ssl_key_path,
+              }),
               connect_timeout: Number(form.connect_timeout),
               ...(form.username ? { username: form.username } : {}),
               ...(form.password ? { password: form.password } : {}),
@@ -152,7 +167,44 @@ function SourceForm({
           {form.database_type === 'postgresql' && <label>Schema<input value={form.schema_name} onChange={e => setForm({ ...form, schema_name: e.target.value })} /></label>}
           <label>用户名<input autoComplete="off" value={form.username} placeholder={source ? '留空保持原值' : ''} onChange={e => setForm({ ...form, username: e.target.value })} /></label>
           <label>密码<input type="password" autoComplete="new-password" value={form.password} placeholder={source ? '留空保持原密码' : ''} onChange={e => setForm({ ...form, password: e.target.value })} /></label>
-          <label>SSL 模式<input value={form.ssl_mode} placeholder="可选" onChange={e => setForm({ ...form, ssl_mode: e.target.value })} /></label>
+          {form.database_type === 'postgresql' ? (
+            <label>PostgreSQL SSL 模式
+              <select value={form.ssl_mode} onChange={e => setForm({ ...form, ssl_mode: e.target.value })}>
+                <option value="">使用驱动默认值</option>
+                <option value="disable">disable</option>
+                <option value="prefer">prefer</option>
+                <option value="require">require</option>
+                <option value="verify-ca">verify-ca</option>
+                <option value="verify-full">verify-full</option>
+              </select>
+            </label>
+          ) : (
+            <>
+              <label>MySQL TLS 模式
+                <select value={form.mysql_tls_mode} onChange={e => setForm({ ...form, mysql_tls_mode: e.target.value })}>
+                  <option value="disabled">disabled</option>
+                  <option value="required">required</option>
+                  <option value="verify_ca">verify_ca</option>
+                  <option value="verify_identity">verify_identity</option>
+                </select>
+              </label>
+              {(form.mysql_tls_mode === 'verify_ca' || form.mysql_tls_mode === 'verify_identity') && (
+                <label style={{ gridColumn: '1/-1' }}>CA 文件路径
+                  <input value={form.ssl_ca_path} onChange={e => setForm({ ...form, ssl_ca_path: e.target.value })} />
+                </label>
+              )}
+              {form.mysql_tls_mode !== 'disabled' && (
+                <>
+                  <label>客户端证书路径（可选）
+                    <input value={form.ssl_cert_path} onChange={e => setForm({ ...form, ssl_cert_path: e.target.value })} />
+                  </label>
+                  <label>客户端私钥路径（可选）
+                    <input value={form.ssl_key_path} onChange={e => setForm({ ...form, ssl_key_path: e.target.value })} />
+                  </label>
+                </>
+              )}
+            </>
+          )}
           <label>连接超时（秒）<input type="number" value={form.connect_timeout} onChange={e => setForm({ ...form, connect_timeout: Number(e.target.value) })} /></label>
         </>}
       </div>
@@ -281,7 +333,11 @@ function ScopeSelector({
   );
 }
 
-export function DataSourcePage() {
+export function DataSourcePage({
+  onDataSourcesChanged,
+}: {
+  onDataSourcesChanged: () => Promise<void>;
+}) {
   const [sources, setSources] = useState<Source[]>([]);
   const [search, setSearch] = useState('');
   const [databaseType, setDatabaseType] = useState('');
@@ -303,10 +359,13 @@ export function DataSourcePage() {
     }
   }, [databaseType, search, status]);
   useEffect(() => { void load(); }, [load]);
+  const refreshAll = useCallback(async () => {
+    await Promise.all([load(), onDataSourcesChanged()]);
+  }, [load, onDataSourcesChanged]);
 
   if (editing !== null) {
     return <div className="data-source-page" style={{ padding: 24, overflow: 'auto', height: '100%', background: '#f5f7fb' }}>
-      <SourceForm source={editing === 'new' ? null : editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); }} />
+      <SourceForm source={editing === 'new' ? null : editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); void refreshAll(); }} />
     </div>;
   }
 
@@ -334,17 +393,17 @@ export function DataSourcePage() {
               <div style={{ display: 'flex', gap: 7, alignItems: 'start', flexWrap: 'wrap', justifyContent: 'end' }}>
                 <button onClick={async () => setEditing(await api<Source>(`/api/data-source-management/${source.source_id}`))}>编辑</button>
                 <button onClick={() => setExpanded(expanded === source.source_id ? '' : source.source_id)}>{expanded === source.source_id ? '收起范围' : '连接与范围'}</button>
-                <button onClick={async () => { await api(`/api/data-source-management/${source.source_id}/${source.status === 'disabled' ? 'enable' : 'disable'}`, { method: 'POST' }); await load(); }}>{source.status === 'disabled' ? '启用' : '停用'}</button>
+                <button onClick={async () => { await api(`/api/data-source-management/${source.source_id}/${source.status === 'disabled' ? 'enable' : 'disable'}`, { method: 'POST' }); await refreshAll(); }}>{source.status === 'disabled' ? '启用' : '停用'}</button>
                 {!source.is_builtin && <button onClick={async () => {
                   if (!window.confirm(`确认删除“${source.display_name}”？存在依赖时后端将拒绝。`)) return;
                   try {
                     await api(`/api/data-source-management/${source.source_id}`, { method: 'DELETE', body: JSON.stringify({ confirmation: source.display_name, local_dependencies: [] }) });
-                    await load();
+                    await refreshAll();
                   } catch (caught) { setError(caught instanceof Error ? caught.message : '删除失败'); }
                 }} style={{ color: '#b91c1c' }}>删除</button>}
               </div>
             </div>
-            {expanded === source.source_id && <ScopeSelector source={source} onRefresh={load} />}
+            {expanded === source.source_id && <ScopeSelector source={source} onRefresh={refreshAll} />}
           </div>
         ))}
       </div>

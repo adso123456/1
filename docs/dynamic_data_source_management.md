@@ -8,7 +8,7 @@ B5 将 `config/data_sources.py` 降为首次迁移的 bootstrap。运行时事�
 
 ## 2. 数据模型与迁移
 
-schema 组件名为 `data_source_catalog`，当前版本为 1。`system_schema_versions` 记录版本；初始化使用 `BEGIN IMMEDIATE`、WAL、外键和 busy timeout。
+schema 组件名为 `data_source_catalog`，当前版本为 2。`system_schema_versions` 记录版本；初始化使用 `BEGIN IMMEDIATE`、WAL、外键和 busy timeout。v1→v2 迁移增加 MySQL TLS 模式和证书路径字段，旧目录幂等升级并保持默认非 TLS 行为。
 
 `data_sources` 保存身份与显示信息、数据库类型与连接模式、生命周期、连接参数、凭据模式、资产路径、运行时 revision、发现结果、选择范围、路由摘要、明确能力和审计状态。`conversation_source_bindings` 以 `conversation_id` 为主键，外键指向 `source_id`。
 
@@ -34,13 +34,17 @@ draft → connected → metadata_ready → training_required → ready ↔ disab
 
 发现只使用 `information_schema` 和 PostgreSQL 系统注释函数；查询参数固定，前端不能提交 SQL。PostgreSQL 自动排除 geometry。
 
+MySQL TLS 支持 `disabled / required / verify_ca / verify_identity`。CA、客户端证书和私钥只保存本机路径，证书与私钥必须成对；CA 验证模式要求文件存在，身份验证不能静默降级。测试连接和正式 `ReadOnlyMySQLRunner` 都使用同一个 TLS 参数构造器。PostgreSQL 继续使用原有 `sslmode`。
+
+索引发现从 MySQL `information_schema.statistics` 和 PostgreSQL `pg_index/pg_class/pg_namespace/pg_attribute/pg_am` 读取，保留唯一、主键、方法、字段顺序和方向。表达式索引标记为不可直接表示，不伪造成普通字段索引。
+
 ## 6. 范围、训练和发布
 
 范围项必须来自本次发现结果，至少包含一张表。未选择或排除字段不会进入 Metadata、DDL、路由摘要和 SQLGuard 白名单。
 
 准备流程按 `source_id` 生成方言正确的 Metadata、每表一条确定性 DDL Memory、每表一条基于真实注释的基础文档 Memory和安全路由摘要。不自动编造 SQL Tool Memory。
 
-候选 Chroma 在隔离目录写入并校验计数；发布时保留旧正式资产备份，候选失败不修改正式资产或目录 revision。
+候选 Chroma 在隔离目录写入并校验计数。Metadata、Memory、DDL、业务文档和 catalog 发布字段作为同一协调发布单元；任一步失败均补偿恢复全部旧文件、目录状态、路由摘要和 revision。Memory 使用 revision 版本路径发布，使 Windows 下仍被旧 Runtime 持有的 Chroma 不阻塞新版本切换；旧请求继续使用旧目录，新请求按新 revision 获取新目录。
 
 ## 7. Runtime 失效规则
 
@@ -70,9 +74,11 @@ Widget 不能调用管理 API。`/api/embed/data-sources` 只返回 Token 授权
 
 升级前有消息但没有 `sourceId` 的会话不猜测归属，只读展示；用户可选择数据源复制为新会话。
 
+主工作台由 `useSSE.refreshDataSources()` 维护共享安全摘要。管理页在创建、更新、测试、发现、保存范围、准备、启停和删除后主动刷新；新会话弹窗、标题、历史会话名称、建议卡和发送门禁立即使用最新值。发送必须同时满足已绑定、`status=ready`、`enabled_for_chat=true`，其他生命周期显示各自原因。
+
 ## 10. 错误源推荐
 
-推荐在 Agent 前执行，不自动切换或跨源查询。优先使用明确注册能力（日/月报），然后使用当前路由摘要中的显式表名和保守业务关键词。候选必须 `ready/enabled` 且对调用方可见；不确定时不推荐。
+推荐在 Agent 前执行，不自动切换或跨源查询。优先精确匹配目录中注册的 capability，再对所有授权且 `ready/enabled` 的动态源使用安全路由摘要、表字段、注释、描述和业务别名确定性评分。普通推荐要求当前源得分不高于 4、候选至少 6 分且领先第二名至少 3 分；不确定时不推荐。普通评分不依赖固定 `source_id`。
 
 结构化 `data_source_suggestion` 携带原问题和安全候选；点击后创建并绑定新会话，再重新发送原问题，原会话保持不变。
 
@@ -88,4 +94,6 @@ Widget 不能调用管理 API。`/api/embed/data-sources` 只返回 Token 授权
 - 不提供关系图、手工 JOIN、行级权限或在线 SQL 示例编辑；
 - 不定时刷新 Metadata；
 - 新源首版只训练 DDL 与确定性基础文档；
+- 当前不会主动回收仍可能被旧 Runtime 持有的历史 Memory revision 目录；
+- 本机 MySQL 未配置强制 TLS，TLS 验收覆盖参数构造和连接参数一致性，未声称完成真实云 TLS 握手；
 - 前端 localStorage 的全部依赖无法由服务端独立枚举，因此物理删除同时采用后端硬门禁。

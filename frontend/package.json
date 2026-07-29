@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test:reports": "node src/__tests__/reportPageContract.test.mjs",
+    "test:data-sources": "node src/__tests__/dataSourceIntegrationContract.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
