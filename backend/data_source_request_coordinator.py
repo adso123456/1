@@ -63,7 +63,25 @@ class DataSourceRequestCoordinator:
         self._bindings = (
             bindings
             if bindings is not None
-            else ConversationDataSourceBindings()
+            else ConversationDataSourceBindings(registry.catalog)
+        )
+
+    def bind(
+        self,
+        conversation_id: str,
+        source_id: str,
+    ) -> DataSourceRequestContext:
+        config = self._registry.require(source_id)
+        from backend.data_source_selection import ResolvedDataSource
+
+        binding = self._bindings.bind(
+            conversation_id,
+            ResolvedDataSource(source_id=source_id, config=config),
+        )
+        return DataSourceRequestContext(
+            conversation_id=binding.conversation_id,
+            source_id=binding.source_id,
+            config=config,
         )
 
     @property

@@ -27,6 +27,9 @@ interface Props {
   theme?: string;
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
+  sourceLabel?: string;
+  sourceDisabled?: boolean;
+  onDataSourceSuggestion?: (sourceId: string, question: string) => void;
 }
 
 const SUGGESTIONS = [
@@ -54,6 +57,9 @@ export function ChatArea({
   theme = '#2563eb',
   onReportGenerated,
   onReportPreview,
+  sourceLabel,
+  sourceDisabled = false,
+  onDataSourceSuggestion,
 }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -65,7 +71,7 @@ export function ChatArea({
 
   const handleSubmit = () => {
     const text = input.trim();
-    if (!text || loading || disabled) return;
+    if (!text || loading || disabled || sourceDisabled) return;
     setInput('');
     onSend(text);
   };
@@ -101,7 +107,7 @@ export function ChatArea({
             智能问答
           </h1>
           <p style={{ margin: '2px 0 0', fontSize: 12, color: '#9ca3af' }}>
-            {' '}
+            {sourceLabel ? `数据源：${sourceLabel}` : '历史会话未绑定数据源'}
           </p>
         </div>
         <button
@@ -135,7 +141,7 @@ export function ChatArea({
                 <button
                   key={i}
                   onClick={() => { onSend(s); setInput(''); }}
-                  disabled={disabled}
+                  disabled={disabled || sourceDisabled}
                   style={{
                     padding: '8px 16px',
                     border: '1px solid #e5e7eb',
@@ -167,6 +173,7 @@ export function ChatArea({
             workspaceUrl={workspaceUrl}
             onReportGenerated={onReportGenerated}
             onReportPreview={onReportPreview}
+            onDataSourceSuggestion={onDataSourceSuggestion}
           />
         ))}
         <div ref={messagesEndRef} />
@@ -191,8 +198,8 @@ export function ChatArea({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入问题... (Enter 发送，Shift+Enter 换行)"
-            disabled={loading || disabled}
+            placeholder={sourceDisabled ? '当前数据源已停用或会话未绑定' : '输入问题... (Enter 发送，Shift+Enter 换行)'}
+            disabled={loading || disabled || sourceDisabled}
             rows={compact ? 1 : 2}
             style={{
               flex: 1,
@@ -226,7 +233,7 @@ export function ChatArea({
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={!input.trim() || disabled}
+              disabled={!input.trim() || disabled || sourceDisabled}
               style={{
                 padding: '10px 18px',
                 border: 'none',

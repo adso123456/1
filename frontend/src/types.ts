@@ -137,6 +137,8 @@ export interface SessionMeta {
   updatedAt: number;
   /** 会话绑定的数据源；可选用于兼容升级前的本地数据。 */
   sourceId?: string;
+  /** 显示快照；实际路由始终使用 sourceId。 */
+  sourceDisplayName?: string;
   /** 首次发送后保持为 true；清空消息不会解除后端会话绑定。 */
   sourceBound?: boolean;
 }
@@ -145,6 +147,23 @@ export interface SessionMeta {
 export interface DataSourceSummary {
   source_id: string;
   database_type: string;
+  display_name: string;
+  description: string;
+  status: string;
+  enabled_for_chat: boolean;
+  selected_tables_count: number;
+}
+
+export interface DataSourceSuggestion {
+  original_question: string;
+  current_source_id: string;
+  current_source_name: string;
+  reason: string;
+  suggestions: Array<{
+    source_id: string;
+    display_name: string;
+    database_type: string;
+  }>;
 }
 
 /** 仪表板布局信息（拖拽和缩放后的位置和尺寸） */
@@ -215,4 +234,5 @@ export interface ChatMessage {
     type: 'report_config' | 'report_result';
     data: Record<string, unknown>;
   };
+  dataSourceSuggestion?: DataSourceSuggestion;
 }

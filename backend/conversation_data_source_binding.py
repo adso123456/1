@@ -36,12 +36,33 @@ class ConversationDataSourceBinding:
 class ConversationDataSourceBindings:
     """管理当前进程内显式建立的会话—数据源绑定。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        catalog: Any = None,
+    ) -> None:
         self._bindings: dict[str, ConversationDataSourceBinding] = {}
         self._lock = RLock()
+        self._catalog = catalog
 
     @property
     def bindings(self) -> Mapping[str, ConversationDataSourceBinding]:
+        if self._catalog is not None:
+            with self._catalog._connection() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT conversation_id, source_id
+                    FROM conversation_source_bindings
+                    ORDER BY conversation_id
+                    """
+                ).fetchall()
+            return MappingProxyType(
+                {
+                    row["conversation_id"]: ConversationDataSourceBinding(
+                        row["conversation_id"], row["source_id"]
+                    )
+                    for row in rows
+                }
+            )
         with self._lock:
             snapshot = {
                 conversation_id: self._bindings[conversation_id]
@@ -62,6 +83,15 @@ class ConversationDataSourceBindings:
             raise TypeError("resolved_data_source 必须是 ResolvedDataSource")
 
         requested_source_id = resolved_data_source.source_id
+        if self._catalog is not None:
+            try:
+                conversation_id, source_id = self._catalog.bind_conversation(
+                    conversation_id,
+                    requested_source_id,
+                )
+            except Exception as exc:
+                raise ValueError(str(exc)) from None
+            return ConversationDataSourceBinding(conversation_id, source_id)
         with self._lock:
             existing = self._bindings.get(conversation_id)
             if existing is not None:
@@ -84,6 +114,16 @@ class ConversationDataSourceBindings:
             "conversation_id",
             conversation_id,
         )
+        if self._catalog is not None:
+            try:
+                bound_id, source_id = self._catalog.require_binding(
+                    conversation_id
+                )
+            except Exception:
+                raise ValueError(
+                    f"会话 {conversation_id} 尚未绑定数据源"
+                ) from None
+            return ConversationDataSourceBinding(bound_id, source_id)
         with self._lock:
             try:
                 return self._bindings[conversation_id]
@@ -97,6 +137,8 @@ class ConversationDataSourceBindings:
             "conversation_id",
             conversation_id,
         )
+        if self._catalog is not None:
+            raise ValueError("持久化会话绑定不可解除")
         with self._lock:
             try:
                 return self._bindings.pop(conversation_id)

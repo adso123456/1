@@ -28,6 +28,10 @@ frontend/dist/
 vanna_data/
 data/system/*.sqlite3
 data/system/*.sqlite3-*
+agent_data/data_sources/catalog.sqlite3
+agent_data/data_sources/catalog.sqlite3-*
+agent_data/data_sources/*/candidate/
+agent_data/data_sources/ds_*/
 
 # Generated query results
 agent_data/**/query_results_*.csv

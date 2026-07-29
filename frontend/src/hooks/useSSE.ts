@@ -788,6 +788,9 @@ export function useSSE(
       createdAt: existing?.createdAt || Date.now(),
       updatedAt: Date.now(),
       sourceId: currentSourceId || existing?.sourceId,
+      sourceDisplayName: dataSources.find(
+        source => source.source_id === currentSourceId,
+      )?.display_name || existing?.sourceDisplayName,
       sourceBound: sourceBound || existing?.sourceBound || false,
     };
     const metaOk = storage.saveMeta(allMeta);
@@ -807,13 +810,21 @@ export function useSSE(
     loading,
     currentSessionId,
     currentSourceId,
+    dataSources,
     sourceBound,
     storage,
   ]);
 
   /** 创建新会话并切换 */
-  const createNewSession = useCallback(() => {
-    if (loading) return;
+  const createNewSession = useCallback(async (selectedSourceId?: string): Promise<boolean> => {
+    if (loading) return false;
+    if (
+      selectedSourceId
+      && !dataSources.some(source => source.source_id === selectedSourceId)
+    ) {
+      setDataSourceError('所选数据源已不可用，请刷新后重试。');
+      return false;
+    }
 
     // 保存当前会话
     const all = storage.loadSessions();
@@ -828,6 +839,9 @@ export function useSSE(
         createdAt: allMeta[currentSessionId]?.createdAt || Date.now(),
         updatedAt: Date.now(),
         sourceId: currentSourceId || allMeta[currentSessionId]?.sourceId,
+        sourceDisplayName: dataSources.find(
+          source => source.source_id === currentSourceId,
+        )?.display_name || allMeta[currentSessionId]?.sourceDisplayName,
         sourceBound: sourceBound || allMeta[currentSessionId]?.sourceBound || false,
       };
     }
@@ -837,21 +851,63 @@ export function useSSE(
       setStorageError(STORAGE_WRITE_ERROR);
     }
 
-    // 创建新会话
+    // 仅在确认数据源后创建新会话；Widget 保留首条消息兼容绑定。
     const newId = `s_${Date.now()}`;
+    const nextSourceId = selectedSourceId || (
+      dataSources.length === 1 ? dataSources[0].source_id : ''
+    );
+    if (selectedSourceId && !dataSourcesEndpoint.startsWith('/api/embed/')) {
+      try {
+        const response = await fetch(`/api/conversations/${encodeURIComponent(newId)}/source`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...headersProvider?.(),
+          },
+          body: JSON.stringify({ source_id: selectedSourceId }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { detail?: string } | null;
+          throw new Error(payload?.detail || `HTTP ${response.status}`);
+        }
+      } catch (error) {
+        setDataSourceError(error instanceof Error ? error.message : '会话绑定失败');
+        return false;
+      }
+    }
     setMessages([]);
     setCurrentSessionId(newId);
-    setSourceBound(false);
+    setCurrentSourceId(nextSourceId);
+    setSourceBound(Boolean(selectedSourceId));
     storage.saveCurrentId(newId);
+    if (selectedSourceId) {
+      const selected = dataSources.find(source => source.source_id === selectedSourceId);
+      const latestMeta = storage.loadMeta();
+      latestMeta[newId] = {
+        id: newId,
+        title: '新对话',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        sourceId: selectedSourceId,
+        sourceDisplayName: selected?.display_name,
+        sourceBound: true,
+      };
+      storage.saveMeta(latestMeta);
+    }
     lastDataRef.current = null;
     lastConvIdRef.current = '';
 
     setSessionList(
       Object.values(storage.loadMeta()).sort((a, b) => b.updatedAt - a.updatedAt),
     );
+    setDataSourceError(null);
+    return true;
   }, [
     currentSessionId,
     currentSourceId,
+    dataSources,
+    dataSourcesEndpoint,
+    headersProvider,
     messages,
     loading,
     sourceBound,
@@ -875,6 +931,9 @@ export function useSSE(
         createdAt: allMeta[currentSessionId]?.createdAt || Date.now(),
         updatedAt: Date.now(),
         sourceId: currentSourceId || allMeta[currentSessionId]?.sourceId,
+        sourceDisplayName: dataSources.find(
+          source => source.source_id === currentSourceId,
+        )?.display_name || allMeta[currentSessionId]?.sourceDisplayName,
         sourceBound: sourceBound || allMeta[currentSessionId]?.sourceBound || false,
       };
     }
@@ -1298,6 +1357,17 @@ export function useSSE(
                 prev.map(message =>
                   message.id === assistantMsgId
                     ? { ...message, reportComponent }
+                    : message
+                )
+              );
+            } else if (rich.type === 'data_source_suggestion') {
+              setMessages(prev =>
+                prev.map(message =>
+                  message.id === assistantMsgId
+                    ? {
+                        ...message,
+                        dataSourceSuggestion: rich.data as unknown as ChatMessage['dataSourceSuggestion'],
+                      }
                     : message
                 )
               );

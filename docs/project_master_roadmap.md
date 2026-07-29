@@ -1704,6 +1704,7 @@ B3 本身不包含日报月报；该能力已在后续独立 B4 板块完成。
 | 多数据源架构 | 已完成 | PostgreSQL / MySQL Runtime、Prompt、Guard、路由和隔离已验收 |
 | MySQL 训练 | 已完成 | 18表、48条 Memory、17/17 Agent/SSE 回归 |
 | 日报月报 | 已完成 | B4：确定性日报/月报、对话一句话生成、预览与 PDF 导出 |
+| 动态数据源与会话强绑定 | 已完成 | B5：SQLite 目录、直连管理、范围/资产、永久绑定与错源推荐 |
 | 外部网站机器人 | 已登记 | 自有 API 和报表稳定后 |
 | 生产化治理 | 已登记 | 最后阶段 |
 
@@ -1724,3 +1725,29 @@ B4 使用 `mysql-lzh-monitor` 固定只读数据源，实现确定性日报/月�
 - `POST /api/reports/water-quality/generate` 只计算一次并生成不可变 `report_id` 快照；预览与 PDF 均按同一 `report_id` 读取，避免不同指标、频次或回看范围相互覆盖。
 - 报表仅在对话中使用配置卡、紧凑结果卡和应用内预览层；完整长表仅在预览层 iframe 中展示，顶部始终提供当前快照的 PDF 导出。
 - 明确指标筛选中的未知或部分未知指标不会静默回退；安全别名、真实频次和并发隔离均已有定向回归覆盖。
+
+---
+
+# 38. B5 动态数据源管理与会话强绑定
+
+B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为 `agent_data/data_sources/catalog.sqlite3`，支持 `DATA_SOURCE_CATALOG_PATH` 覆盖，并以 schema version 1 事务迁移现有 `postgresql-main` 和 `mysql-lzh-monitor`。
+
+- `source_id` 是不可修改的内部永久身份；`display_name` 可重命名且不移动 Metadata、Chroma、Widget 授权、报表依赖或历史会话。
+- 内置源继续使用环境凭据引用；新建源使用 `DATA_SOURCE_CREDENTIAL_KEY` 驱动的 Fernet 加密，不经 API、日志或测试快照回显。
+- 生命周期统一为 `draft / connected / metadata_ready / training_required / ready / disabled / error`，只由后端动作转换。
+- 新建直连源支持 PostgreSQL 和 MySQL；连接测试、Metadata 发现、表字段范围均为只读，不接受前端 SQL。
+- 新源按 `source_id` 生成隔离 Metadata、方言 DDL和确定性基础文档 Chroma；没有真实 SQL 示例时不编造 Tool Memory。
+- Runtime 缓存绑定 `runtime_revision`，候选验证后原子发布；构建失败和运行中请求不会使用半成品。
+- 侧栏数据源切换器已移除。“新对话”先选择 `ready/enabled` 数据源，确认后由后端 SQLite 永久绑定；同源幂等、改绑 409、清空消息不解除。
+- 明确错源在 Agent 前返回 `data_source_suggestion`；用户确认后在目标源创建新会话并重发，原会话不改变。
+- Widget 只看 `allowed_source_ids` 与可用状态，永远不显示管理入口或未授权名称。
+- 内置源不可物理删除；存在会话、报表、Metadata、Memory 或本地工作台依赖时只允许停用。
+- `external_provider` 仅保留扩展点，首版未实现协议或 UI。
+
+正式设计与 API 见 `docs/dynamic_data_source_management.md`。
+
+# 39. 当前唯一动作
+
+```text
+B5 已完成；停止本板块，不自动开始后续新板块。
+```

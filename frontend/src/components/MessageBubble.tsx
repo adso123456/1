@@ -12,6 +12,7 @@ import {
   type ReportConfigData,
   type ReportResultData,
 } from './ReportComponents';
+import { DataSourceSuggestionCard } from './DataSourceSuggestionCard';
 
 interface Props {
   message: ChatMessage;
@@ -24,6 +25,7 @@ interface Props {
   workspaceUrl?: string;
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
+  onDataSourceSuggestion?: (sourceId: string, question: string) => void;
 }
 
 /** 去除图表注释标记及流式未闭合残片，避免显示在正文中 */
@@ -44,6 +46,7 @@ export function MessageBubble({
   workspaceUrl,
   onReportGenerated,
   onReportPreview,
+  onDataSourceSuggestion,
 }: Props) {
   const isUser = message.role === 'user';
   const hasSql = !!(message.sql && message.sql.trim());
@@ -117,6 +120,12 @@ export function MessageBubble({
               <ReportResultCard
                 result={message.reportComponent.data as unknown as ReportResultData}
                 onPreview={result => onReportPreview?.(result)}
+              />
+            )}
+            {message.dataSourceSuggestion && (
+              <DataSourceSuggestionCard
+                suggestion={message.dataSourceSuggestion}
+                onOpen={onDataSourceSuggestion}
               />
             )}
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
@@ -16,6 +17,19 @@ from backend.assistant_admin_api import (
     create_admin_router,
 )
 from backend.data_source_chat_handler import DataSourceChatHandler
+from backend.data_source_catalog import (
+    CredentialCipher,
+    DataSourceCatalog,
+    generate_local_credential_key,
+    resolve_catalog_path,
+)
+from backend.data_source_management_api import (
+    create_data_source_management_router,
+)
+from backend.data_source_suggestion import (
+    DataSourceSuggestionChatHandler,
+    DataSourceSuggestionService,
+)
 from backend.embed_access import (
     EmbedAccessError,
     bearer_token,
@@ -53,6 +67,7 @@ class ApplicationResources:
     coordinator: DataSourceRequestCoordinator
     runtime_manager: DataSourceRuntimeManager
     assistant_application_registry: AssistantApplicationRegistry | None = None
+    catalog: DataSourceCatalog | None = None
 
 
 class DataSourceVannaFastAPIServer(VannaFastAPIServer):
@@ -93,10 +108,21 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                         request.metadata,
                     ).source_id,
                 )
+        if self.resources.catalog is not None:
+            self.chat_handler = DataSourceSuggestionChatHandler(
+                self.chat_handler,
+                self.resources.coordinator,
+                DataSourceSuggestionService(self.resources.catalog),
+            )
         app = super().create_app()
 
         @app.get("/api/data-sources")
-        async def list_data_sources() -> list[dict[str, str]]:
+        async def list_data_sources() -> list[dict[str, Any]]:
+            if self.resources.catalog is not None:
+                return [
+                    record.public_dict()
+                    for record in self.resources.catalog.list()
+                ]
             return [
                 {
                     "source_id": source_id,
@@ -173,8 +199,17 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 default=None,
                 alias="X-Water-Agent-Parent-Origin",
             ),
-        ) -> list[dict[str, str]]:
+        ) -> list[dict[str, Any]]:
             principal = authorize_embed(authorization, parent_origin)
+            if self.resources.catalog is not None:
+                return [
+                    record.public_dict()
+                    for record in self.resources.catalog.list(
+                        status="ready",
+                        enabled=True,
+                    )
+                    if record.source_id in principal.allowed_source_ids
+                ]
             return [
                 {
                     "source_id": source_id,
@@ -218,7 +253,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     status_code=403,
                     detail="数据源未获授权",
                 )
-            safe_metadata = {"source_id": source_id}
+            safe_metadata = {
+                "source_id": source_id,
+                "_allowed_source_ids": list(principal.allowed_source_ids),
+            }
             chat_request.metadata = safe_metadata
             chat_request.request_context = RequestContext(
                 cookies={},
@@ -233,7 +271,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     else None
                 ),
                 query_params={},
-                metadata=safe_metadata,
+                metadata={"source_id": source_id},
             )
 
             async def generate() -> AsyncGenerator[str, None]:
@@ -284,7 +322,13 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 request: Request,
                 exc: RequestValidationError,
             ):
-                if request.url.path.startswith("/api/admin/"):
+                if (
+                    request.url.path.startswith("/api/admin/")
+                    or request.url.path.startswith(
+                        "/api/data-source-management"
+                    )
+                    or request.url.path.startswith("/api/conversations/")
+                ):
                     return JSONResponse(
                         status_code=422,
                         content={"detail": "管理请求格式无效"},
@@ -295,6 +339,15 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 create_admin_router(
                     application_registry=self.assistant_application_registry,
                     data_source_registry=self.resources.registry,
+                )
+            )
+
+        if self.resources.catalog is not None:
+            app.include_router(
+                create_data_source_management_router(
+                    catalog=self.resources.catalog,
+                    coordinator=self.resources.coordinator,
+                    runtime_manager=self.resources.runtime_manager,
                 )
             )
 
@@ -313,10 +366,87 @@ def create_application_resources(
     *,
     environ: Mapping[str, str] | None = None,
 ) -> ApplicationResources:
-    registry = build_current_data_source_registry(
-        environ=environ,
+    source = dict(os.environ if environ is None else environ)
+    if not source.get("DATA_SOURCE_CREDENTIAL_KEY", "").strip():
+        if environ is None:
+            source["DATA_SOURCE_CREDENTIAL_KEY"] = (
+                generate_local_credential_key()
+            )
+    cipher = (
+        CredentialCipher.from_environment(source)
+        if source.get("DATA_SOURCE_CREDENTIAL_KEY", "").strip()
+        else None
+    )
+    bootstrap_registry = build_current_data_source_registry(
+        environ=source,
         include_mysql=True,
     )
+    bootstrap: list[dict[str, Any]] = []
+    names = {
+        "postgresql-main": (
+            "排污口治理数据",
+            "排污口基础、监测、溯源与整治数据",
+        ),
+        "mysql-lzh-monitor": (
+            "梁子湖监测数据",
+            "梁子湖水质、水文、气象、污染源与预警数据",
+        ),
+    }
+    credential_refs = {
+        "postgresql-main": {
+            "username": "DB_USER",
+            "password": "DB_PASSWORD",
+        },
+        "mysql-lzh-monitor": {
+            "username": "MYSQL_USER",
+            "password": "MYSQL_PASSWORD",
+        },
+    }
+    for source_id in bootstrap_registry.source_ids:
+        config = bootstrap_registry.require(source_id)
+        display_name, description = names[source_id]
+        settings = config.connection_settings
+        try:
+            metadata = json.loads(config.metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            metadata = []
+        bootstrap.append(
+            {
+                "source_id": source_id,
+                "display_name": display_name,
+                "description": description,
+                "database_type": config.database_type,
+                "host": settings["host"],
+                "port": settings["port"],
+                "database_name": settings["database"],
+                "schema_name": "public" if config.database_type == "postgresql" else "",
+                "ssl_mode": settings.get("sslmode", ""),
+                "connect_timeout": settings["connect_timeout"],
+                "credential_reference": credential_refs[source_id],
+                "metadata_path": config.metadata_path,
+                "memory_path": config.memory_path,
+                "selected_tables_count": len(
+                    {item.get("table") for item in metadata}
+                ),
+                "selected_columns_count": len(metadata),
+                "routing_summary": description,
+                "capabilities": (
+                    [
+                        "water_quality_daily_report",
+                        "water_quality_monthly_report",
+                    ]
+                    if source_id == "mysql-lzh-monitor"
+                    else []
+                ),
+            }
+        )
+    catalog = DataSourceCatalog(
+        resolve_catalog_path(source),
+        cipher=cipher,
+        environ=source,
+    )
+    catalog.initialize(bootstrap)
+    registry = DataSourceRegistry.from_catalog(catalog)
     coordinator = DataSourceRequestCoordinator(registry)
     runtime_manager = DataSourceRuntimeManager(
         registry,
@@ -331,6 +461,7 @@ def create_application_resources(
     )
     assistant_application_registry.initialize()
     return ApplicationResources(
+        catalog=catalog,
         registry=registry,
         coordinator=coordinator,
         runtime_manager=runtime_manager,

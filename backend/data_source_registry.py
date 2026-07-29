@@ -5,8 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from config.data_source_config import DataSourceConfig
+
+if TYPE_CHECKING:
+    from backend.data_source_catalog import DataSourceCatalog
 
 
 class DataSourceRegistry:
@@ -15,6 +19,8 @@ class DataSourceRegistry:
     def __init__(
         self,
         configs: Iterable[DataSourceConfig] | Mapping[str, DataSourceConfig],
+        *,
+        catalog: "DataSourceCatalog | None" = None,
     ) -> None:
         if isinstance(configs, Mapping):
             snapshot = tuple(configs.values())
@@ -36,13 +42,35 @@ class DataSourceRegistry:
         }
         self._configs = MappingProxyType(ordered)
         self._source_ids = tuple(ordered)
+        self._catalog = catalog
+
+    @classmethod
+    def from_catalog(
+        cls,
+        catalog: "DataSourceCatalog",
+    ) -> "DataSourceRegistry":
+        from backend.data_source_catalog import DataSourceCatalog
+
+        if not isinstance(catalog, DataSourceCatalog):
+            raise TypeError("catalog 必须是 DataSourceCatalog")
+        configs = [catalog.runtime_config(item.source_id) for item in catalog.list()]
+        return cls(configs, catalog=catalog)
 
     @property
     def source_ids(self) -> tuple[str, ...]:
+        if self._catalog is not None:
+            return tuple(item.source_id for item in self._catalog.list())
         return self._source_ids
 
     @property
     def configs(self) -> Mapping[str, DataSourceConfig]:
+        if self._catalog is not None:
+            return MappingProxyType(
+                {
+                    source_id: self._catalog.runtime_config(source_id)
+                    for source_id in self.source_ids
+                }
+            )
         return self._configs
 
     def require(self, source_id: str) -> DataSourceConfig:
@@ -50,10 +78,19 @@ class DataSourceRegistry:
             raise ValueError("source_id 必须显式提供")
         if not isinstance(source_id, str) or not source_id.strip():
             raise ValueError("source_id 必须是非空字符串")
+        if self._catalog is not None:
+            try:
+                return self._catalog.runtime_config(source_id)
+            except Exception:
+                raise ValueError(f"未知或不可用 source_id: {source_id}") from None
         try:
             return self._configs[source_id]
         except KeyError:
             raise ValueError(f"未知 source_id: {source_id}") from None
+
+    @property
+    def catalog(self) -> "DataSourceCatalog | None":
+        return self._catalog
 
     def __repr__(self) -> str:
         return f"DataSourceRegistry(source_ids={self.source_ids!r})"

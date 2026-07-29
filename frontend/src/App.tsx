@@ -6,6 +6,8 @@ import { DashboardListPanel } from './components/DashboardListPanel';
 import { AddChartDialog } from './components/AddChartDialog';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { AssistantManagement } from './AdminApp';
+import { DataSourcePage } from './components/DataSourcePage';
+import { NewConversationSourceDialog } from './components/NewConversationSourceDialog';
 import {
   ReportPreviewModal,
   type ReportResultData,
@@ -18,7 +20,7 @@ import {
   readWorkspaceSessionId,
 } from './appMode';
 
-type View = 'chat' | 'dashboard' | 'assistant';
+type View = 'chat' | 'datasource' | 'dashboard' | 'assistant';
 
 /** 待添加到仪表板的图表上下文（点击"添加到仪表板"时暂存） */
 interface PendingAdd {
@@ -57,7 +59,6 @@ function App() {
     clearStorageError,
     dataSources,
     currentSourceId,
-    selectDataSource,
     dataSourceError,
     sourceBound,
   } = useSSE(requestedSessionId);
@@ -83,6 +84,8 @@ function App() {
   const [pendingAdd, setPendingAdd] = useState<PendingAdd | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [reportPreview, setReportPreview] = useState<ReportResultData | null>(null);
+  const [showSourceDialog, setShowSourceDialog] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -119,8 +122,28 @@ function App() {
   // 新建会话时自动切回对话视图
   const handleNewSession = useCallback(() => {
     setCurrentView('chat');
-    createNewSession();
-  }, [createNewSession]);
+    setShowSourceDialog(true);
+  }, []);
+
+  const currentSource = dataSources.find(source => source.source_id === currentSourceId);
+
+  useEffect(() => {
+    if (!pendingQuestion || !sourceBound || !currentSourceId || messages.length > 0) return;
+    const question = pendingQuestion;
+    setPendingQuestion(null);
+    void sendMessage(question);
+  }, [currentSourceId, messages.length, pendingQuestion, sendMessage, sourceBound]);
+
+  useEffect(() => {
+    if (
+      currentView === 'chat'
+      && dataSources.length > 0
+      && messages.length === 0
+      && !sourceBound
+    ) {
+      setShowSourceDialog(true);
+    }
+  }, [currentView, dataSources.length, messages.length, sourceBound]);
 
   // 添加项目到仪表板
   const handleAddItems = useCallback((items: DashboardItem[]) => {
@@ -222,11 +245,6 @@ function App() {
         onNewSession={handleNewSession}
         onSwitchSession={handleSwitchSession}
         onDeleteSession={deleteSession}
-        dataSources={dataSources}
-        currentSourceId={currentSourceId}
-        sourceLocked={sourceBound}
-        dataSourceError={dataSourceError}
-        onSelectDataSource={selectDataSource}
       />
       {currentView === 'dashboard' && (
         <DashboardListPanel
@@ -238,7 +256,7 @@ function App() {
       )}
       <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
         {/* Chat localStorage 读写失败提示（不影响 Dashboard Toast） */}
-        {currentView === 'chat' && storageError && (
+        {currentView === 'chat' && (storageError || dataSourceError) && (
           <div style={{
             backgroundColor: '#fef3c7',
             borderBottom: '1px solid #f59e0b',
@@ -250,7 +268,7 @@ function App() {
             alignItems: 'center',
             flexShrink: 0,
           }}>
-            <span>⚠ {storageError}</span>
+            <span>⚠ {storageError || dataSourceError}</span>
             <button
               onClick={clearStorageError}
               aria-label="关闭提示"
@@ -283,8 +301,15 @@ function App() {
               setReportPreview(result);
             }}
             onReportPreview={setReportPreview}
+            sourceLabel={currentSource ? `${currentSource.display_name} · ${currentSource.database_type.toUpperCase()}${currentSource.status === 'disabled' ? ' · 已停用' : ''}` : ''}
+            sourceDisabled={!sourceBound || !currentSource || currentSource.status === 'disabled'}
+            onDataSourceSuggestion={async (sourceId, question) => {
+              const ok = await createNewSession(sourceId);
+              if (ok) setPendingQuestion(question);
+            }}
           />
         )}
+        {currentView === 'datasource' && <DataSourcePage />}
         {currentView === 'dashboard' && (
           <DashboardView
             items={dashboardItems}
@@ -311,6 +336,14 @@ function App() {
         result={reportPreview}
         onClose={() => setReportPreview(null)}
       />
+
+      {showSourceDialog && (
+        <NewConversationSourceDialog
+          sources={dataSources.filter(source => source.status === 'ready' && source.enabled_for_chat)}
+          onConfirm={sourceId => createNewSession(sourceId)}
+          onClose={() => setShowSourceDialog(false)}
+        />
+      )}
 
       {/* 添加图表和表格弹窗 */}
       {showAddDialog && (

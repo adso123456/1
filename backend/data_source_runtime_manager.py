@@ -65,10 +65,11 @@ class DataSourceRuntimeManager:
         self._source_ids = registry.source_ids
         self._database_types = database_types
         self._runtimes: dict[str, DataSourceRuntime] = {}
+        self._runtime_revisions: dict[str, int] = {}
         self._state_lock = RLock()
-        self._build_locks = MappingProxyType(
-            {source_id: Lock() for source_id in self._source_ids}
-        )
+        self._build_locks: dict[str, Lock] = {
+            source_id: Lock() for source_id in self._source_ids
+        }
 
     @property
     def runtimes(self) -> Mapping[str, DataSourceRuntime]:
@@ -81,7 +82,7 @@ class DataSourceRuntimeManager:
 
     @property
     def source_ids(self) -> tuple[str, ...]:
-        return self._source_ids
+        return self._registry.source_ids
 
     @property
     def database_types(self) -> tuple[str, ...]:
@@ -89,16 +90,26 @@ class DataSourceRuntimeManager:
 
     def require(self, source_id: str) -> DataSourceRuntime:
         config = self._registry.require(source_id)
+        revision = 0
+        catalog = self._registry.catalog
+        if catalog is not None:
+            record = catalog.require(source_id)
+            if record.status != "ready" or not record.enabled_for_chat:
+                raise ValueError(f"数据源 {source_id} 当前不可用于问数")
+            revision = record.runtime_revision
         with self._state_lock:
             cached = self._runtimes.get(source_id)
-        if cached is not None:
+            cached_revision = self._runtime_revisions.get(source_id)
+        if cached is not None and cached_revision == revision:
             return cached
 
-        build_lock = self._build_locks[source_id]
+        with self._state_lock:
+            build_lock = self._build_locks.setdefault(source_id, Lock())
         with build_lock:
             with self._state_lock:
                 cached = self._runtimes.get(source_id)
-            if cached is not None:
+                cached_revision = self._runtime_revisions.get(source_id)
+            if cached is not None and cached_revision == revision:
                 return cached
 
             factory = self._factories[config.database_type]
@@ -107,7 +118,13 @@ class DataSourceRuntimeManager:
 
             with self._state_lock:
                 self._runtimes[source_id] = runtime
+                self._runtime_revisions[source_id] = revision
             return runtime
+
+    def invalidate(self, source_id: str) -> None:
+        """仅让后续请求重建；正在运行的请求继续持有原实例。"""
+        with self._state_lock:
+            self._runtime_revisions.pop(source_id, None)
 
     @staticmethod
     def _validate_runtime(
