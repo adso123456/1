@@ -476,6 +476,30 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             )
             assert resolved_conversations == ["report-chat-test"]
 
+            wrong_source_handler = WaterQualityReportChatHandler(
+                RejectFallback(),
+                artifact_store,
+                lambda request: "postgresql-main",
+            )
+
+            async def collect_wrong_source():
+                request = ChatRequest(
+                    message="生成2025年7月28日水质日报",
+                    conversation_id="wrong-source-report",
+                    metadata={"source_id": "postgresql-main"},
+                )
+                return [
+                    chunk
+                    async for chunk in wrong_source_handler.handle_stream(request)
+                ]
+
+            wrong_source = asyncio.run(collect_wrong_source())
+            assert wrong_source[0].rich["type"] == "data_source_suggestion"
+            assert wrong_source[0].simple is None
+            assert wrong_source[0].rich["data"]["suggestions"] == []
+            assert "postgresql-main" not in wrong_source[0].rich["data"]["reason"]
+            assert "切换数据源" not in wrong_source[0].rich["data"]["reason"]
+
             class NoDatabaseArtifact:
                 def options(self):
                     raise AssertionError("周期缺失不得访问数据库")

@@ -564,7 +564,11 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
             headers={"Authorization": "Bearer obsolete-management-token"},
         ).status_code == 200
         assert sources.json() == [
-            {"source_id": SOURCE_ID, "database_type": "offline"}
+            {
+                "source_id": SOURCE_ID,
+                "database_type": "offline",
+                "display_name": "offline",
+            }
         ]
         assert "private" not in sources.text
         assert client.get(

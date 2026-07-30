@@ -3,6 +3,7 @@ import type { AssistantAppearance } from './assistantAppearance';
 export interface AdminDataSource {
   source_id: string;
   database_type: string;
+  display_name: string;
 }
 
 export interface AssistantApplicationView extends AssistantAppearance {

@@ -198,11 +198,19 @@ def create_admin_router(
     dependencies = [Depends(authorize)]
 
     @router.get("/data-sources", dependencies=dependencies)
-    def list_data_sources() -> list[dict[str, str]]:
+    def list_data_sources() -> list[dict[str, Any]]:
+        if data_source_registry.catalog is not None:
+            return [
+                record.safe_summary_dict()
+                for record in data_source_registry.catalog.list()
+            ]
         return [
             {
                 "source_id": source_id,
                 "database_type": data_source_registry.require(
+                    source_id
+                ).database_type,
+                "display_name": data_source_registry.require(
                     source_id
                 ).database_type,
             }

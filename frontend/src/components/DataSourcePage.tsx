@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  formatDatabaseType,
+  formatDataSourceStatus,
+  sanitizeUserVisibleDataSourceText,
+} from '../dataSourcePresentation';
+import './DataSourcePage.css';
 
 interface Source {
   source_id: string;
@@ -39,15 +45,67 @@ interface MetadataColumn {
   ordinal_position: number;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: '待配置',
-  connected: '已连接',
-  metadata_ready: '范围已保存',
-  training_required: '需要刷新资产',
-  ready: '可问数',
-  disabled: '已停用',
-  error: '错误',
+const FILTER_STATUS = [
+  'draft',
+  'connected',
+  'metadata_ready',
+  'training_required',
+  'ready',
+  'disabled',
+  'error',
+];
+
+const STATUS_CLASS: Record<string, string> = {
+  ready: 'is-ready',
+  disabled: 'is-disabled',
+  error: 'is-error',
+  training_required: 'is-warning',
+  metadata_ready: 'is-progress',
+  connected: 'is-progress',
+  draft: 'is-muted',
 };
+
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4-4" />
+    </svg>
+  );
+}
+
+function TableIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18M9 4v16" />
+    </svg>
+  );
+}
+
+function DatabaseLogo({ type }: { type: Source['database_type'] }) {
+  if (type === 'mysql') {
+    return (
+      <span className="data-source-logo data-source-logo--mysql" aria-label="MySQL">
+        MY
+      </span>
+    );
+  }
+  return (
+    <span className="data-source-logo data-source-logo--postgresql" aria-label="PostgreSQL">
+      PG
+    </span>
+  );
+}
+
+function ChatToggleIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M20 15a3 3 0 0 1-3 3H9l-5 3v-6a3 3 0 0 1-1-2V7a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3z" />
+      <path d="M8 9h8M8 13h5" />
+    </svg>
+  );
+}
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -59,7 +117,9 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { detail?: string } | null;
-    throw new Error(payload?.detail || `请求失败（${response.status}）`);
+    throw new Error(sanitizeUserVisibleDataSourceText(
+      payload?.detail || `请求失败（${response.status}）`,
+    ));
   }
   return response.status === 204 ? undefined as T : response.json();
 }
@@ -150,9 +210,8 @@ function SourceForm({
   };
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20 }}>
+    <div className="data-source-form">
       <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>{source ? '编辑数据源' : '新建直连数据源'}</h2>
-      {source && <p style={{ margin: '0 0 16px', color: '#6b7280', fontSize: 12 }}>内部 ID：{source.source_id}（不可修改）</p>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12 }}>
         <label>显示名称<input value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} /></label>
         {!source && <label>数据库类型<select value={form.database_type} onChange={e => {
@@ -256,7 +315,7 @@ function ScopeSelector({
   };
 
   return (
-    <div style={{ marginTop: 16, borderTop: '1px solid #e5e7eb', paddingTop: 16 }}>
+    <div className="data-source-scope">
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button disabled={Boolean(busy)} onClick={() => action('test', () => api(`/api/data-source-management/${source.source_id}/test-connection`, { method: 'POST' }))}>{busy === 'test' ? '测试中…' : '测试连接'}</button>
         <button disabled={Boolean(busy)} onClick={() => action('discover', () => api(`/api/data-source-management/${source.source_id}/discover`, { method: 'POST' }))}>{busy === 'discover' ? '发现中…' : '读取表和字段'}</button>
@@ -363,63 +422,211 @@ export function DataSourcePage({
     await Promise.all([load(), onDataSourcesChanged()]);
   }, [load, onDataSourcesChanged]);
 
+  const openEditor = async (source: Source) => {
+    setError('');
+    try {
+      setEditing(await api<Source>(
+        `/api/data-source-management/${encodeURIComponent(source.source_id)}`,
+      ));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '加载数据源详情失败');
+    }
+  };
+
+  const removeSource = async (source: Source) => {
+    if (!window.confirm(`确认删除“${source.display_name}”？存在依赖时后端将拒绝。`)) return;
+    setError('');
+    try {
+      await api(`/api/data-source-management/${encodeURIComponent(source.source_id)}`, {
+        method: 'DELETE',
+        body: JSON.stringify({
+          confirmation: source.display_name,
+          local_dependencies: [],
+        }),
+      });
+      await refreshAll();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '删除失败');
+    }
+  };
+
+  const setChatEnabled = async (source: Source, enabled: boolean) => {
+    setError('');
+    try {
+      await api(
+        `/api/data-source-management/${encodeURIComponent(source.source_id)}/${enabled ? 'enable' : 'disable'}`,
+        { method: 'POST' },
+      );
+      await refreshAll();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '启停失败');
+    }
+  };
+
   if (editing !== null) {
-    return <div className="data-source-page" style={{ padding: 24, overflow: 'auto', height: '100%', background: '#f5f7fb' }}>
+    return <div className="data-source-page data-source-page--editing">
       <SourceForm source={editing === 'new' ? null : editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); void refreshAll(); }} />
     </div>;
   }
 
   return (
-    <div className="data-source-page" style={{ padding: 24, overflow: 'auto', height: '100%', background: '#f5f7fb', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 18 }}>
-        <div><h1 style={{ margin: 0, fontSize: 21 }}>数据源</h1><p style={{ color: '#6b7280', fontSize: 13, margin: '5px 0 0' }}>管理直连数据库、问数范围和独立运行资产</p></div>
-        <button onClick={() => setEditing('new')} style={{ background: '#2563eb', color: '#fff', borderColor: '#2563eb' }}>＋ 新建数据源</button>
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称或描述" />
-        <select value={databaseType} onChange={e => setDatabaseType(e.target.value)}><option value="">全部类型</option><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option></select>
-        <select value={status} onChange={e => setStatus(e.target.value)}><option value="">全部状态</option>{Object.entries(STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-      </div>
-      {error && <p style={{ color: '#b91c1c' }}>{error}</p>}
-      <div style={{ display: 'grid', gap: 12 }}>
+    <div className="data-source-page">
+      <header className="data-source-header">
+        <div className="data-source-heading">
+          <h1>数据源</h1>
+          <p>管理直连数据库、问数范围和独立运行资产</p>
+        </div>
+        <div className="data-source-toolbar">
+          <label className="data-source-search">
+            <SearchIcon />
+            <input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder="搜索数据源"
+              aria-label="搜索数据源"
+            />
+          </label>
+          <select
+            value={databaseType}
+            onChange={event => setDatabaseType(event.target.value)}
+            aria-label="筛选数据库类型"
+          >
+            <option value="">全部类型</option>
+            <option value="postgresql">PostgreSQL</option>
+            <option value="mysql">MySQL</option>
+          </select>
+          <select
+            value={status}
+            onChange={event => setStatus(event.target.value)}
+            aria-label="筛选数据源状态"
+          >
+            <option value="">全部状态</option>
+            {FILTER_STATUS.map(value => (
+              <option key={value} value={value}>
+                {formatDataSourceStatus(value, value === 'ready')}
+              </option>
+            ))}
+          </select>
+          <button className="data-source-new-button" onClick={() => setEditing('new')}>
+            <span aria-hidden="true">＋</span>
+            新建数据源
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="data-source-error" role="alert">
+          <span>!</span>
+          <p>{error}</p>
+          <button onClick={() => void load()}>重新加载</button>
+        </div>
+      )}
+
+      <div className="data-source-grid">
         {sources.map(source => (
-          <div key={source.source_id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 16 }}>{source.display_name} {source.is_builtin && <small style={{ color: '#2563eb' }}>内置</small>}</h2>
-                <p style={{ color: '#6b7280', fontSize: 13, margin: '5px 0' }}>{source.description || '暂无描述'}</p>
-                <small style={{ color: '#9ca3af' }}>{source.database_type.toUpperCase()} · {STATUS_LABEL[source.status] || source.status} · {source.selected_tables_count} 表 / {source.selected_columns_count} 字段</small>
+          <article
+            key={source.source_id}
+            className={`data-source-card ${expanded === source.source_id ? 'is-expanded' : ''}`}
+          >
+            <div className="data-source-card-main">
+              <div className="data-source-card-title">
+                <DatabaseLogo type={source.database_type} />
+                <div>
+                  <div className="data-source-name-row">
+                    <h2>{source.display_name}</h2>
+                    {source.is_builtin && <span className="data-source-builtin">内置</span>}
+                  </div>
+                  <p className="data-source-database">
+                    {formatDatabaseType(source.database_type)}
+                  </p>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 7, alignItems: 'start', flexWrap: 'wrap', justifyContent: 'end' }}>
-                <button onClick={async () => setEditing(await api<Source>(`/api/data-source-management/${source.source_id}`))}>编辑</button>
-                {source.status === 'draft' && <button onClick={async () => setEditing(await api<Source>(`/api/data-source-management/${source.source_id}`))}>继续配置</button>}
-                {source.status === 'error' && <button onClick={async () => setEditing(await api<Source>(`/api/data-source-management/${source.source_id}`))}>检查连接或重新配置</button>}
-                {!['draft', 'error'].includes(source.status) && <button onClick={() => setExpanded(expanded === source.source_id ? '' : source.source_id)}>
-                  {expanded === source.source_id
-                    ? '收起范围'
-                    : source.status === 'connected'
-                      ? '读取并选择范围'
-                      : source.status === 'metadata_ready'
-                        ? '生成问数资产'
-                        : source.status === 'training_required'
-                          ? '刷新问数资产'
-                          : '连接与范围'}
-                </button>}
-                {source.status === 'ready' && <button onClick={async () => { await api(`/api/data-source-management/${source.source_id}/disable`, { method: 'POST' }); await refreshAll(); }}>停用</button>}
-                {source.status === 'disabled' && <button onClick={async () => { await api(`/api/data-source-management/${source.source_id}/enable`, { method: 'POST' }); await refreshAll(); }}>启用</button>}
-                {!source.is_builtin && <button onClick={async () => {
-                  if (!window.confirm(`确认删除“${source.display_name}”？存在依赖时后端将拒绝。`)) return;
-                  try {
-                    await api(`/api/data-source-management/${source.source_id}`, { method: 'DELETE', body: JSON.stringify({ confirmation: source.display_name, local_dependencies: [] }) });
-                    await refreshAll();
-                  } catch (caught) { setError(caught instanceof Error ? caught.message : '删除失败'); }
-                }} style={{ color: '#b91c1c' }}>删除</button>}
+              <span className={`data-source-status ${STATUS_CLASS[source.status] || 'is-muted'}`}>
+                {formatDataSourceStatus(source.status, source.enabled_for_chat)}
+              </span>
+            </div>
+
+            <p className="data-source-description">
+              {source.description || '暂无描述'}
+            </p>
+
+            <div className="data-source-card-footer">
+              <div className="data-source-count" title="已选择的表和字段">
+                <TableIcon />
+                <span>{source.selected_tables_count} 表</span>
+                <i />
+                <span>{source.selected_columns_count} 字段</span>
+              </div>
+              <div className="data-source-card-actions">
+                {source.status === 'ready' && (
+                  <button
+                    className="data-source-chat-button is-active"
+                    onClick={() => void setChatEnabled(source, false)}
+                    title="点击停用问数"
+                  >
+                    <ChatToggleIcon />
+                    停用问数
+                  </button>
+                )}
+                {source.status === 'disabled' && (
+                  <button
+                    className="data-source-chat-button"
+                    onClick={() => void setChatEnabled(source, true)}
+                  >
+                    <ChatToggleIcon />
+                    启用问数
+                  </button>
+                )}
+                {source.status === 'draft' && (
+                  <button className="data-source-action-button" onClick={() => void openEditor(source)}>
+                    继续配置
+                  </button>
+                )}
+                {source.status === 'error' && (
+                  <button className="data-source-action-button is-danger" onClick={() => void openEditor(source)}>
+                    检查配置
+                  </button>
+                )}
+                {!['draft', 'error'].includes(source.status) && (
+                  <button
+                    className="data-source-action-button"
+                    onClick={() => setExpanded(expanded === source.source_id ? '' : source.source_id)}
+                  >
+                    {expanded === source.source_id
+                      ? '收起范围'
+                      : source.status === 'connected'
+                        ? '选择表和字段'
+                        : source.status === 'metadata_ready'
+                          ? '生成问数资产'
+                          : source.status === 'training_required'
+                            ? '刷新问数资产'
+                            : '连接与范围'}
+                  </button>
+                )}
+                <details className="data-source-menu">
+                  <summary aria-label={`管理${source.display_name}`}>•••</summary>
+                  <div>
+                    <button onClick={() => void openEditor(source)}>编辑</button>
+                    {!source.is_builtin && (
+                      <button className="is-danger" onClick={() => void removeSource(source)}>
+                        删除
+                      </button>
+                    )}
+                  </div>
+                </details>
               </div>
             </div>
             {expanded === source.source_id && <ScopeSelector source={source} onRefresh={refreshAll} />}
-          </div>
+          </article>
         ))}
       </div>
+      {!error && sources.length === 0 && (
+        <div className="data-source-empty">
+          <div><TableIcon /></div>
+          <h2>没有找到数据源</h2>
+          <p>调整筛选条件，或新建一个直连数据库。</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -159,8 +159,18 @@ class DataSourceSuggestionService:
             scored.append((score, item))
         scored.sort(key=lambda item: (-item[0], item[1].source_id))
         if not scored:
-            return None
-        best_score, target = scored[0]
+            if not required_capability:
+                return None
+            targets: list[DataSourceRecord] = []
+        else:
+            best_score, target = scored[0]
+            targets = [target]
+            if required_capability:
+                targets = [
+                    item
+                    for score, item in scored
+                    if score >= CAPABILITY_SCORE
+                ]
         second_score = scored[1][0] if len(scored) > 1 else 0
         minimum = (
             CAPABILITY_SCORE
@@ -168,12 +178,22 @@ class DataSourceSuggestionService:
             else CANDIDATE_MIN_SCORE
         )
         if (
-            best_score < minimum
-            or best_score - second_score < MINIMUM_LEAD_SCORE
+            scored
+            and (
+                best_score < minimum
+                or (
+                    not required_capability
+                    and best_score - second_score < MINIMUM_LEAD_SCORE
+                )
+            )
         ):
             return None
         reason = (
-            "当前数据源未注册该报表能力"
+            (
+                "当前数据源不包含该报表所需的数据"
+                if targets
+                else "当前数据源不包含该报表所需的数据，且暂时没有可用的建议数据源"
+            )
             if required_capability
             else "当前数据源与问题的表、字段或业务语义不匹配"
         )
@@ -184,10 +204,11 @@ class DataSourceSuggestionService:
             "reason": reason,
             "suggestions": [
                 {
-                    "source_id": target.source_id,
-                    "display_name": target.display_name,
-                    "database_type": target.database_type,
+                    "source_id": item.source_id,
+                    "display_name": item.display_name,
+                    "database_type": item.database_type,
                 }
+                for item in targets
             ],
         }
 

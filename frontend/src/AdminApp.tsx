@@ -19,6 +19,7 @@ import type {
   AssistantApplicationView,
   CreateAssistantApplication,
 } from './adminTypes';
+import { formatDatabaseType } from './dataSourcePresentation';
 import './AdminApp.css';
 
 interface FormState {
@@ -878,7 +879,11 @@ export function AssistantManagement({
                     <td data-label="授权范围">
                       <div className="admin-chip-group">
                         {application.allowed_source_ids.length
-                          ? application.allowed_source_ids.map(sourceId => (
+                          ? application.allowed_source_ids.map(sourceId => {
+                            const source = dataSources.find(
+                              item => item.source_id === sourceId,
+                            );
+                            return (
                             <span
                               className={
                                 knownSourceIds.has(sourceId)
@@ -887,12 +892,13 @@ export function AssistantManagement({
                               }
                               key={sourceId}
                             >
-                              <strong>{sourceId}</strong>
+                              <strong>{source?.display_name || '已失效的数据源'}</strong>
                               {!knownSourceIds.has(sourceId) && (
                                 <small>已失效</small>
                               )}
                             </span>
-                          ))
+                            );
+                          })
                           : <span className="admin-muted">无授权数据源</span>}
                       </div>
                       <div className="admin-origin-list">
@@ -1081,8 +1087,8 @@ export function AssistantManagement({
                         }}
                       />
                       <span>
-                        <strong>{source.source_id}</strong>
-                        <small>{source.database_type}</small>
+                        <strong>{source.display_name}</strong>
+                        <small>{formatDatabaseType(source.database_type)}</small>
                       </span>
                     </label>
                   ))}
@@ -1108,7 +1114,7 @@ export function AssistantManagement({
                           }}
                         />
                         <span>
-                          <strong>{sourceId}</strong>
+                          <strong>已失效的数据源</strong>
                           <small>当前数据源配置中不存在</small>
                         </span>
                       </label>

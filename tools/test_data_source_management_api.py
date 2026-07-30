@@ -187,11 +187,37 @@ def main() -> int:
         )
         assert report is not None
         assert report["suggestions"][0]["source_id"] == "mysql-lzh-monitor"
-        assert service.suggest(
+        assert "mysql-lzh-monitor" not in report["reason"]
+        assert "postgresql-main" not in report["reason"]
+        assert "切换数据源" not in report["reason"]
+        restricted = service.suggest(
             "生成2025年7月28日水质日报",
             "postgresql-main",
             allowed_source_ids=("postgresql-main",),
-        ) is None
+        )
+        assert restricted is not None
+        assert restricted["suggestions"] == []
+        assert "梁子湖" not in restricted["reason"]
+        renamed = catalog.update(
+            "mysql-lzh-monitor",
+            display_name="水质报告数据新名称",
+        )
+        renamed_report = service.suggest(
+            "生成2025年7月28日水质日报",
+            "postgresql-main",
+        )
+        assert renamed_report is not None
+        assert renamed_report["suggestions"][0]["display_name"] == renamed.display_name
+        renamed.metadata_path.write_text("[]\n", encoding="utf-8")
+        renamed.memory_path.mkdir(parents=True, exist_ok=True)
+        catalog.set_enabled("mysql-lzh-monitor", False)
+        unavailable = service.suggest(
+            "生成2025年7月28日水质日报",
+            "postgresql-main",
+        )
+        assert unavailable is not None
+        assert unavailable["suggestions"] == []
+        assert renamed.display_name not in unavailable["reason"]
         assert service.suggest("帮我看看数据", "postgresql-main") is None
         assert service.suggest(
             "查询排污口整治情况",

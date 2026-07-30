@@ -43,7 +43,7 @@ class ReportRepository:
         connection_factory: ConnectionFactory | None = None,
     ) -> None:
         if config.source_id != REPORT_SOURCE_ID or config.database_type != "mysql":
-            raise ValueError("水质报表仅允许使用 mysql-lzh-monitor")
+            raise ValueError("水质报表数据源配置不匹配")
         if config.read_only is not True:
             raise ValueError("水质报表数据源必须为只读")
         self.config = config

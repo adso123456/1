@@ -13,6 +13,7 @@ import {
   type ReportResultData,
 } from './ReportComponents';
 import { DataSourceSuggestionCard } from './DataSourceSuggestionCard';
+import { sanitizeUserVisibleDataSourceText } from '../dataSourcePresentation';
 
 interface Props {
   message: ChatMessage;
@@ -25,17 +26,20 @@ interface Props {
   workspaceUrl?: string;
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
-  onDataSourceSuggestion?: (sourceId: string, question: string) => void;
+  onDataSourceSuggestion?: (
+    sourceId: string,
+    question: string,
+  ) => Promise<boolean> | boolean;
   dataSources?: DataSourceSummary[];
 }
 
 /** 去除图表注释标记及流式未闭合残片，避免显示在正文中 */
 function cleanMarkdown(text: string): string {
-  return text
+  return sanitizeUserVisibleDataSourceText(text
     .replace(/<!--\s*chart_spec:\s*[\s\S]*?\s*-->/gi, '')
     .replace(/<!--\s*chart_type:\s*\w*\s*-->/gi, '')
     .replace(/<!--[\s\S]*$/, '')
-    .trimEnd();
+    .trimEnd());
 }
 
 export function MessageBubble({

@@ -133,11 +133,7 @@ def main() -> int:
 
         conflict = _expect_error(
             lambda: bindings.bind("conversation-main", second_resolved),
-            (
-                "conversation-main",
-                "postgresql-main",
-                "postgresql-archive",
-            ),
+            ("不能修改绑定",),
         )
         results.append(
             (
@@ -424,9 +420,10 @@ def main() -> int:
                     for binding in cross_successes
                 )
                 and all(
-                    cross_final.conversation_id in message
-                    and cross_final.source_id in message
-                    and losing_source_id in message
+                    "不能修改绑定" in message
+                    and cross_final.conversation_id not in message
+                    and cross_final.source_id not in message
+                    and losing_source_id not in message
                     for message in cross_conflicts
                 )
                 and len(cross_source_bindings.bindings) == 1,

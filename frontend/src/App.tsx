@@ -20,6 +20,10 @@ import {
   readWorkspaceSessionId,
 } from './appMode';
 import { dataSourceUnavailableReason } from './dataSourceState';
+import {
+  formatDatabaseType,
+  formatDataSourceStatus,
+} from './dataSourcePresentation';
 
 type View = 'chat' | 'datasource' | 'dashboard' | 'assistant';
 
@@ -307,12 +311,15 @@ function App() {
               setReportPreview(result);
             }}
             onReportPreview={setReportPreview}
-            sourceLabel={currentSource ? `${currentSource.display_name} · ${currentSource.database_type.toUpperCase()} · ${currentSource.status}` : ''}
+            sourceLabel={currentSource
+              ? `${currentSource.display_name} · ${formatDatabaseType(currentSource.database_type)} · ${formatDataSourceStatus(currentSource.status, currentSource.enabled_for_chat)}`
+              : ''}
             sourceUnavailableReason={sourceUnavailable}
             dataSources={dataSources}
             onDataSourceSuggestion={async (sourceId, question) => {
               const ok = await createNewSession(sourceId);
               if (ok) setPendingQuestion(question);
+              return ok;
             }}
           />
         )}

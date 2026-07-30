@@ -167,9 +167,16 @@ class WaterQualityReportChatHandler:
             else request.metadata.get("source_id")
         )
         if source_id != "mysql-lzh-monitor":
-            yield self._text_chunk(
+            yield self._structured_chunk(
                 request,
-                "水质日报、月报固定使用 `mysql-lzh-monitor`，请切换数据源后重试。",
+                "data_source_suggestion",
+                {
+                    "original_question": request.message,
+                    "current_source_id": source_id,
+                    "current_source_name": "当前数据源",
+                    "reason": "当前数据源不包含水质报表所需的数据",
+                    "suggestions": [],
+                },
             )
             return
 

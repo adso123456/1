@@ -229,8 +229,9 @@ def main() -> int:
             results.append(
                 (
                     "同会话切换 source_id 被拒绝",
-                    "source-a" in switched_source.text
-                    and "source-b" in switched_source.text
+                    r"\u4e0d\u80fd\u4fee\u6539\u7ed1\u5b9a" in switched_source.text
+                    and "source-a" not in switched_source.text
+                    and "source-b" not in switched_source.text
                     and before_calls == after_calls,
                     switched_source.text,
                 )

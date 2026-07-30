@@ -30,7 +30,10 @@ interface Props {
   sourceLabel?: string;
   sourceUnavailableReason?: string;
   dataSources?: DataSourceSummary[];
-  onDataSourceSuggestion?: (sourceId: string, question: string) => void;
+  onDataSourceSuggestion?: (
+    sourceId: string,
+    question: string,
+  ) => Promise<boolean> | boolean;
 }
 
 const SUGGESTIONS = [

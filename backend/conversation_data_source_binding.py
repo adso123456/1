@@ -97,10 +97,7 @@ class ConversationDataSourceBindings:
             if existing is not None:
                 if existing.source_id == requested_source_id:
                     return existing
-                raise ValueError(
-                    f"会话 {conversation_id} 已绑定 {existing.source_id}，"
-                    f"不能切换到 {requested_source_id}"
-                )
+                raise ValueError("当前会话已绑定其他数据源，不能修改绑定")
 
             binding = ConversationDataSourceBinding(
                 conversation_id=conversation_id,

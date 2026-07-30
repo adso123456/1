@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { DataSourceSummary } from '../types';
+import {
+  formatDatabaseType,
+  formatDataSourceStatus,
+} from '../dataSourcePresentation';
 
 interface Props {
   sources: DataSourceSummary[];
@@ -82,7 +86,11 @@ export function NewConversationSourceDialog({
                   {source.display_name}
                 </strong>
                 <span style={{ color: '#6b7280', fontSize: 12 }}>
-                  {source.database_type.toUpperCase()} · {source.selected_tables_count} 张表
+                  {formatDatabaseType(source.database_type)}
+                  {' · '}
+                  {formatDataSourceStatus(source.status, source.enabled_for_chat)}
+                  {' · '}
+                  {source.selected_tables_count} 张表
                 </span>
                 {source.description && (
                   <span style={{ display: 'block', color: '#9ca3af', fontSize: 12, marginTop: 3 }}>

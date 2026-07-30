@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { SSEEvent, ChatMessage, SessionMeta, DataSourceSummary, DataFrameData, ChartData, ChartSpec, ChartType, RenderableChartType } from '../types';
 import { canSendToDataSource } from '../dataSourceState';
+import { sanitizeUserVisibleDataSourceText } from '../dataSourcePresentation';
 import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability } from '../chartRegistry';
 import { prepareChartV2All } from '../chartPipelineV2';
 import type { Row } from '../datasetProfilerV2';
@@ -833,7 +834,24 @@ export function useSSE(
   /** 创建新会话并切换 */
   const createNewSession = useCallback(async (selectedSourceId?: string): Promise<boolean> => {
     if (loading) return false;
-    const selectedSource = dataSources.find(
+    let latestSources = dataSources;
+    if (selectedSourceId) {
+      try {
+        const response = await fetch(dataSourcesEndpoint, {
+          headers: headersProvider?.(),
+        });
+        if (response.status === 401 || response.status === 403) {
+          onAuthorizationError?.();
+        }
+        if (!response.ok) throw new Error();
+        latestSources = normalizeDataSources(await response.json());
+        setDataSources(latestSources);
+      } catch {
+        setDataSourceError('建议的数据源当前不可用，请重新选择可用数据源。');
+        return false;
+      }
+    }
+    const selectedSource = latestSources.find(
       source => source.source_id === selectedSourceId,
     );
     if (selectedSourceId && (
@@ -841,7 +859,7 @@ export function useSSE(
       || selectedSource.status !== 'ready'
       || !selectedSource.enabled_for_chat
     )) {
-      setDataSourceError('所选数据源已不可用，请刷新后重试。');
+      setDataSourceError('建议的数据源当前不可用，请重新选择可用数据源。');
       return false;
     }
 
@@ -873,7 +891,7 @@ export function useSSE(
     // 仅在确认数据源后创建新会话；Widget 保留首条消息兼容绑定。
     const newId = `s_${Date.now()}`;
     const nextSourceId = selectedSourceId || (
-      dataSources.length === 1 ? dataSources[0].source_id : ''
+      latestSources.length === 1 ? latestSources[0].source_id : ''
     );
     if (selectedSourceId && !dataSourcesEndpoint.startsWith('/api/embed/')) {
       try {
@@ -890,7 +908,9 @@ export function useSSE(
           throw new Error(payload?.detail || `HTTP ${response.status}`);
         }
       } catch (error) {
-        setDataSourceError(error instanceof Error ? error.message : '会话绑定失败');
+        setDataSourceError(sanitizeUserVisibleDataSourceText(
+          error instanceof Error ? error.message : '会话绑定失败',
+        ));
         return false;
       }
     }
@@ -926,6 +946,7 @@ export function useSSE(
     dataSources,
     dataSourcesEndpoint,
     headersProvider,
+    onAuthorizationError,
     messages,
     loading,
     sourceBound,

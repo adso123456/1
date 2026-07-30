@@ -34,6 +34,10 @@ import {
   normalizeAssistantAppearance,
   type AssistantAppearance,
 } from './assistantAppearance';
+import {
+  formatDatabaseType,
+  formatDataSourceStatus,
+} from './dataSourcePresentation';
 
 type DashboardTarget =
   | { mode: 'existing'; dashboardId: string }
@@ -229,6 +233,7 @@ export function WidgetChat({
     useState<WidgetDashboardPayload | null>(null);
   const [notice, setNotice] =
     useState<{ ok: boolean; message: string } | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
 
   useEffect(() => {
     if (!notice?.ok) return;
@@ -242,6 +247,16 @@ export function WidgetChat({
   const workspaceUrl = workspaceEnabled
     ? buildWorkspaceUrl(window.location.origin, currentSessionId)
     : undefined;
+  const currentSource = dataSources.find(
+    source => source.source_id === currentSourceId,
+  );
+
+  useEffect(() => {
+    if (!pendingQuestion || !sourceBound || !currentSourceId || messages.length > 0) return;
+    const question = pendingQuestion;
+    setPendingQuestion(null);
+    void sendMessage(question);
+  }, [currentSourceId, messages.length, pendingQuestion, sendMessage, sourceBound]);
 
   const handleRequestAddToDashboard = useCallback(
     (payload: WidgetDashboardPayload) => {
@@ -328,13 +343,16 @@ export function WidgetChat({
               <option value="">请选择</option>
               {dataSources.map(source => (
                 <option key={source.source_id} value={source.source_id}>
-                  {source.source_id}
+                  {source.display_name || formatDatabaseType(source.database_type)}
                 </option>
               ))}
             </select>
           ) : (
             <span className="widget-source-badge">
-              {currentSourceId || '加载中'}
+              {currentSource?.display_name
+                || (currentSource
+                  ? formatDatabaseType(currentSource.database_type)
+                  : '加载中')}
             </span>
           )}
         </label>
@@ -364,6 +382,15 @@ export function WidgetChat({
           welcome={applicationConfig.welcome}
           welcomeDescription={applicationConfig.welcome_description}
           theme={applicationConfig.theme}
+          sourceLabel={currentSource
+            ? `${currentSource.display_name || formatDatabaseType(currentSource.database_type)} · ${formatDatabaseType(currentSource.database_type)} · ${formatDataSourceStatus(currentSource.status, currentSource.enabled_for_chat)}`
+            : ''}
+          dataSources={dataSources}
+          onDataSourceSuggestion={async (sourceId, question) => {
+            const ok = await createNewSession(sourceId);
+            if (ok) setPendingQuestion(question);
+            return ok;
+          }}
         />
       </div>
 
