@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import sys
@@ -266,8 +267,6 @@ def test_service() -> tuple[dict, dict]:
 
 
 def expand_rows(report: dict, count: int = 32) -> dict:
-    import copy
-
     cloned = copy.deepcopy(report)
     rows = cloned["monitoring"]["rows"]
     template = rows[0]
@@ -305,6 +304,24 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             assert monthly_path.name == "梁子湖流域自动站水质月报_202507.pdf"
             assert len(PdfReader(daily_path).pages) > 1
             assert len(PdfReader(monthly_path).pages) > 1
+            long_daily = copy.deepcopy(daily)
+            long_daily["options"]["recent_days"] = 7
+            long_status = "、".join(
+                f"指标{index:02d}（00-20时缺测）"
+                for index in range(1, 49)
+            )
+            long_daily["monitoring"]["rows"][0]["recent_three_days"] = [
+                {
+                    "date": f"2025-07-{day:02d}",
+                    "status": long_status,
+                }
+                for day in range(22, 29)
+            ]
+            long_path = renderer.render(
+                long_daily,
+                target_path=Path(temp_name) / "近7日长行分页.pdf",
+            )
+            assert len(PdfReader(long_path).pages) > 1
             with ThreadPoolExecutor(max_workers=4) as executor:
                 concurrent_paths = list(
                     executor.map(lambda _: renderer.render(daily), range(4))

@@ -269,6 +269,7 @@ class WaterQualityPdfRenderer:
             colWidths=widths,
             repeatRows=1,
             splitByRow=1,
+            splitInRow=1,
             hAlign="CENTER",
         )
         table.setStyle(
