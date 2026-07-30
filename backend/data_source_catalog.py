@@ -22,7 +22,7 @@ from config.settings import PROJECT_ROOT
 
 
 SCHEMA_COMPONENT = "data_source_catalog"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 VALID_DATABASE_TYPES = frozenset({"mysql", "postgresql"})
 VALID_STATUSES = frozenset(
     {
@@ -345,6 +345,16 @@ class DataSourceCatalog:
                     conversation_id TEXT PRIMARY KEY,
                     source_id TEXT NOT NULL REFERENCES data_sources(source_id),
                     created_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS pending_asset_cleanup (
+                    source_id TEXT NOT NULL REFERENCES data_sources(source_id)
+                        ON DELETE CASCADE,
+                    path TEXT NOT NULL,
+                    asset_type TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (source_id, path)
                 );
                 """
             )
@@ -954,19 +964,130 @@ class DataSourceCatalog:
         return self.require(source_id)
 
     def set_enabled(self, source_id: str, enabled: bool) -> DataSourceRecord:
-        record = self.require(source_id)
-        if enabled and record.runtime_revision <= 0:
-            raise DataSourceCatalogError("数据源尚未准备问数资产")
-        status = "ready" if enabled else "disabled"
+        expected_status = "disabled" if enabled else "ready"
+        next_status = "ready" if enabled else "disabled"
+        with self._lock, self._connection(write=True) as connection:
+            row = connection.execute(
+                """
+                SELECT status, runtime_revision, metadata_path, memory_path
+                FROM data_sources WHERE source_id = ?
+                """,
+                (source_id,),
+            ).fetchone()
+            if row is None:
+                raise DataSourceNotFound("数据源不存在")
+            if row["status"] != expected_status:
+                action = "启用" if enabled else "停用"
+                raise DataSourceCatalogError(
+                    f"仅允许对 {expected_status} 状态的数据源执行{action}"
+                )
+            if row["runtime_revision"] <= 0:
+                raise DataSourceCatalogError("数据源尚未完成问数资产发布")
+            asset_paths = (
+                Path(row["metadata_path"]).expanduser().resolve(),
+                Path(row["memory_path"]).expanduser().resolve(),
+            )
+            if not all(path.exists() for path in asset_paths):
+                raise DataSourceCatalogError("当前正式 Metadata 或 Memory 不存在")
+            result = connection.execute(
+                """
+                UPDATE data_sources SET status = ?, enabled_for_chat = ?,
+                    updated_at = ?
+                WHERE source_id = ? AND status = ?
+                """,
+                (
+                    next_status,
+                    int(enabled),
+                    int(time.time()),
+                    source_id,
+                    expected_status,
+                ),
+            )
+            if result.rowcount != 1:
+                raise DataSourceCatalogError("数据源状态已变化，请刷新后重试")
+        return self.require(source_id)
+
+    def register_pending_cleanup(
+        self,
+        source_id: str,
+        path: Path,
+        asset_type: str,
+        error: str = "",
+    ) -> None:
+        self.require(source_id)
         with self._lock, self._connection(write=True) as connection:
             connection.execute(
                 """
-                UPDATE data_sources SET status = ?, enabled_for_chat = ?,
-                    updated_at = ? WHERE source_id = ?
+                INSERT INTO pending_asset_cleanup(
+                    source_id, path, asset_type, created_at,
+                    retry_count, last_error
+                ) VALUES (?, ?, ?, ?, 0, ?)
+                ON CONFLICT(source_id, path) DO UPDATE SET
+                    asset_type = excluded.asset_type,
+                    retry_count = pending_asset_cleanup.retry_count + 1,
+                    last_error = excluded.last_error
                 """,
-                (status, int(enabled), int(time.time()), source_id),
+                (
+                    source_id,
+                    str(path.expanduser().resolve()),
+                    asset_type,
+                    int(time.time()),
+                    error[:1000],
+                ),
             )
-        return self.require(source_id)
+
+    def pending_cleanups(
+        self,
+        source_id: str | None = None,
+    ) -> tuple[Mapping[str, Any], ...]:
+        parameters: tuple[str, ...] = ()
+        where = ""
+        if source_id is not None:
+            self.require(source_id)
+            where = " WHERE source_id = ?"
+            parameters = (source_id,)
+        with self._lock, self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT source_id, path, asset_type, created_at,
+                    retry_count, last_error
+                FROM pending_asset_cleanup
+                """
+                + where
+                + " ORDER BY created_at, source_id, path",
+                parameters,
+            ).fetchall()
+        return tuple(dict(row) for row in rows)
+
+    def complete_pending_cleanup(self, source_id: str, path: Path) -> None:
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                DELETE FROM pending_asset_cleanup
+                WHERE source_id = ? AND path = ?
+                """,
+                (source_id, str(path.expanduser().resolve())),
+            )
+
+    def fail_pending_cleanup(
+        self,
+        source_id: str,
+        path: Path,
+        error: str,
+    ) -> None:
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE pending_asset_cleanup
+                SET retry_count = retry_count + 1, last_error = ?
+                WHERE source_id = ? AND path = ?
+                """,
+                (
+                    error[:1000],
+                    source_id,
+                    str(path.expanduser().resolve()),
+                ),
+            )
 
     def bind_conversation(
         self,

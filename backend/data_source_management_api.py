@@ -131,7 +131,9 @@ def create_data_source_management_router(
     runtime_manager: DataSourceRuntimeManager,
 ) -> APIRouter:
     connector = DirectDatabaseConnector(catalog)
-    preparer = DataSourceAssetPreparer(catalog)
+    preparer = DataSourceAssetPreparer(catalog, runtime_manager)
+    runtime_manager.add_release_callback(preparer.asset_cleaner.retry_pending_cleanup)
+    preparer.asset_cleaner.retry_pending_cleanup()
     router = APIRouter(prefix="/api")
 
     def authorize(
@@ -229,9 +231,7 @@ def create_data_source_management_router(
         dependencies=protected,
     )
     def prepare(source_id: str) -> dict[str, Any]:
-        result = _safe(lambda: preparer.prepare(source_id))
-        runtime_manager.invalidate(source_id)
-        return result
+        return _safe(lambda: preparer.prepare(source_id))
 
     @router.post(
         "/data-source-management/{source_id}/enable",
@@ -245,8 +245,11 @@ def create_data_source_management_router(
         dependencies=protected,
     )
     def disable(source_id: str) -> dict[str, Any]:
+        result = _safe(
+            lambda: catalog.set_enabled(source_id, False).public_dict()
+        )
         runtime_manager.invalidate(source_id)
-        return _safe(lambda: catalog.set_enabled(source_id, False).public_dict())
+        return result
 
     @router.get(
         "/data-source-management/{source_id}/dependencies",

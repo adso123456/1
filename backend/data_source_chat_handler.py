@@ -43,11 +43,10 @@ class DataSourceChatHandler:
             conversation_id,
             request.metadata,
         )
-        runtime = self._runtime_manager.require(context.source_id)
-        handler = ChatHandler(runtime.agent)
-
-        async for chunk in handler.handle_stream(request):
-            yield chunk
+        with self._runtime_manager.acquire(context.source_id) as runtime:
+            handler = ChatHandler(runtime.agent)
+            async for chunk in handler.handle_stream(request):
+                yield chunk
 
     async def handle_poll(self, request: ChatRequest) -> ChatResponse:
         chunks = []

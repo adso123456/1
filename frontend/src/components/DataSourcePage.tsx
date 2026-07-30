@@ -392,8 +392,21 @@ export function DataSourcePage({
               </div>
               <div style={{ display: 'flex', gap: 7, alignItems: 'start', flexWrap: 'wrap', justifyContent: 'end' }}>
                 <button onClick={async () => setEditing(await api<Source>(`/api/data-source-management/${source.source_id}`))}>编辑</button>
-                <button onClick={() => setExpanded(expanded === source.source_id ? '' : source.source_id)}>{expanded === source.source_id ? '收起范围' : '连接与范围'}</button>
-                <button onClick={async () => { await api(`/api/data-source-management/${source.source_id}/${source.status === 'disabled' ? 'enable' : 'disable'}`, { method: 'POST' }); await refreshAll(); }}>{source.status === 'disabled' ? '启用' : '停用'}</button>
+                {source.status === 'draft' && <button onClick={async () => setEditing(await api<Source>(`/api/data-source-management/${source.source_id}`))}>继续配置</button>}
+                {source.status === 'error' && <button onClick={async () => setEditing(await api<Source>(`/api/data-source-management/${source.source_id}`))}>检查连接或重新配置</button>}
+                {!['draft', 'error'].includes(source.status) && <button onClick={() => setExpanded(expanded === source.source_id ? '' : source.source_id)}>
+                  {expanded === source.source_id
+                    ? '收起范围'
+                    : source.status === 'connected'
+                      ? '读取并选择范围'
+                      : source.status === 'metadata_ready'
+                        ? '生成问数资产'
+                        : source.status === 'training_required'
+                          ? '刷新问数资产'
+                          : '连接与范围'}
+                </button>}
+                {source.status === 'ready' && <button onClick={async () => { await api(`/api/data-source-management/${source.source_id}/disable`, { method: 'POST' }); await refreshAll(); }}>停用</button>}
+                {source.status === 'disabled' && <button onClick={async () => { await api(`/api/data-source-management/${source.source_id}/enable`, { method: 'POST' }); await refreshAll(); }}>启用</button>}
                 {!source.is_builtin && <button onClick={async () => {
                   if (!window.confirm(`确认删除“${source.display_name}”？存在依赖时后端将拒绝。`)) return;
                   try {

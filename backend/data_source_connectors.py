@@ -10,10 +10,14 @@ import hashlib
 import gc
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend.data_source_catalog import DataSourceCatalog, DataSourceCatalogError
 from backend.mysql_tls import build_mysql_tls_settings
+from config.settings import PROJECT_ROOT
+
+if TYPE_CHECKING:
+    from backend.data_source_runtime_manager import DataSourceRuntimeManager
 
 
 def _group_mysql_indexes(
@@ -405,11 +409,151 @@ class DirectDatabaseConnector:
                     pass
 
 
+class DataSourceAssetCleaner:
+    """仅清理动态数据源受管目录内、已不再引用的发布资产。"""
+
+    def __init__(
+        self,
+        catalog: DataSourceCatalog,
+        runtime_manager: "DataSourceRuntimeManager | None" = None,
+    ) -> None:
+        self.catalog = catalog
+        self.runtime_manager = runtime_manager
+
+    @staticmethod
+    def _asset_type(path: Path) -> str | None:
+        name = path.name
+        if name.startswith("candidate-") or ".candidate-" in name:
+            return "candidate"
+        if name.startswith(".") and ".backup-" in name:
+            return "backup"
+        if ".revision-" in name:
+            return "memory_revision"
+        return None
+
+    @staticmethod
+    def _managed_root(source_id: str, record: Any) -> Path | None:
+        if record.is_builtin:
+            return None
+        expected = (
+            PROJECT_ROOT / "agent_data" / "data_sources" / source_id
+        ).resolve()
+        if (
+            record.metadata_path.resolve().parent != expected
+            or record.memory_path.resolve().parent != expected
+        ):
+            return None
+        return expected
+
+    def cleanup_superseded_assets(self, source_id: str) -> dict[str, int]:
+        record = self.catalog.require(source_id)
+        root = self._managed_root(source_id, record)
+        if root is None:
+            return {"deleted": 0, "pending": 0, "skipped": 0}
+        protected = {
+            record.metadata_path.resolve(),
+            record.memory_path.resolve(),
+            (record.metadata_path.parent / "ddl_memories.json").resolve(),
+            (
+                record.metadata_path.parent / "business_documents.json"
+            ).resolve(),
+        }
+        active = (
+            self.runtime_manager.active_asset_paths(source_id)
+            if self.runtime_manager is not None
+            else frozenset()
+        )
+        paths: dict[Path, str] = {}
+        if root.is_dir():
+            for path in root.iterdir():
+                asset_type = self._asset_type(path)
+                if asset_type is not None:
+                    paths[path.resolve()] = asset_type
+        for item in self.catalog.pending_cleanups(source_id):
+            paths[Path(str(item["path"])).resolve()] = str(item["asset_type"])
+
+        deleted = pending = skipped = 0
+        for path, asset_type in paths.items():
+            if (
+                path == root
+                or path.parent != root
+                or path in protected
+                or self._asset_type(path) is None
+            ):
+                skipped += 1
+                continue
+            if asset_type == "memory_revision" and self.runtime_manager is None:
+                self.catalog.register_pending_cleanup(
+                    source_id,
+                    path,
+                    asset_type,
+                    "缺少 Runtime Manager，无法证明旧资产已释放",
+                )
+                pending += 1
+                continue
+            if path in active:
+                self.catalog.register_pending_cleanup(
+                    source_id,
+                    path,
+                    asset_type,
+                    "旧 Runtime 仍在使用该资产",
+                )
+                pending += 1
+                continue
+            try:
+                DataSourceAssetPreparer._remove_path(path)
+            except Exception as exc:
+                self.catalog.register_pending_cleanup(
+                    source_id,
+                    path,
+                    asset_type,
+                    f"{type(exc).__name__}: {exc}",
+                )
+                pending += 1
+            else:
+                self.catalog.complete_pending_cleanup(source_id, path)
+                deleted += 1
+        return {"deleted": deleted, "pending": pending, "skipped": skipped}
+
+    def retry_pending_cleanup(self, source_id: str | None = None) -> None:
+        source_ids = (
+            (source_id,)
+            if source_id is not None
+            else tuple(
+                sorted(
+                    {
+                        str(item["source_id"])
+                        for item in self.catalog.pending_cleanups()
+                    }
+                )
+            )
+        )
+        for pending_source_id in source_ids:
+            try:
+                self.cleanup_superseded_assets(pending_source_id)
+            except Exception:
+                for item in self.catalog.pending_cleanups(pending_source_id):
+                    self.catalog.fail_pending_cleanup(
+                        pending_source_id,
+                        Path(str(item["path"])),
+                        "待清理重试失败",
+                    )
+
+
 class DataSourceAssetPreparer:
     """生成隔离候选 Metadata/DDL/基础文档并原子发布。"""
 
-    def __init__(self, catalog: DataSourceCatalog) -> None:
+    def __init__(
+        self,
+        catalog: DataSourceCatalog,
+        runtime_manager: "DataSourceRuntimeManager | None" = None,
+    ) -> None:
         self.catalog = catalog
+        self.runtime_manager = runtime_manager
+        self.asset_cleaner = DataSourceAssetCleaner(
+            catalog,
+            runtime_manager,
+        )
 
     @staticmethod
     def _quote(name: str, dialect: str) -> str:
@@ -427,6 +571,14 @@ class DataSourceAssetPreparer:
                 (item.get("schema", ""), item["table"]),
                 [],
             ).append(item)
+        table_indexes: dict[
+            tuple[str, str], dict[str, dict[str, Any]]
+        ] = {}
+        for item in record.discovered_metadata:
+            table_key = (item.get("schema", ""), item["table"])
+            indexes = table_indexes.setdefault(table_key, {})
+            for index in item.get("indexes", []):
+                indexes[str(index.get("name", ""))] = dict(index)
         ddls: list[str] = []
         documents: list[str] = []
         for (schema, table), columns in sorted(grouped.items()):
@@ -443,7 +595,7 @@ class DataSourceAssetPreparer:
                     f"{item['type']}"
                 )
             selected_names = {item["column"] for item in columns}
-            indexes: dict[str, dict[str, Any]] = {}
+            indexes = dict(table_indexes.get((schema, table), {}))
             for item in columns:
                 for index in item.get("indexes", []):
                     indexes[str(index.get("name", ""))] = dict(index)
@@ -685,6 +837,9 @@ class DataSourceAssetPreparer:
                     routing_summary=routing_summary,
                     memory_path=published_memory_path,
                 )
+                if self.runtime_manager is not None:
+                    self.runtime_manager.invalidate(source_id)
+                    self.runtime_manager.require(source_id)
             except Exception:
                 rollback_errors: list[Exception] = []
                 for final_path in reversed(installed):
@@ -702,6 +857,13 @@ class DataSourceAssetPreparer:
                     self.catalog.restore_publication_state(source_id, record)
                 except Exception as exc:
                     rollback_errors.append(exc)
+                if self.runtime_manager is not None:
+                    try:
+                        self.runtime_manager.invalidate(source_id)
+                        if record.status == "ready" and record.enabled_for_chat:
+                            self.runtime_manager.require(source_id)
+                    except Exception as exc:
+                        rollback_errors.append(exc)
                 if rollback_errors:
                     raise DataSourceCatalogError(
                         "问数资产发布失败，旧资产补偿恢复不完整"
@@ -709,6 +871,14 @@ class DataSourceAssetPreparer:
                 raise
             for backup in backups.values():
                 self._cleanup_path(backup)
+                if backup.exists():
+                    self.catalog.register_pending_cleanup(
+                        source_id,
+                        backup,
+                        "backup",
+                        "发布成功后备份清理失败",
+                    )
+            self.asset_cleaner.cleanup_superseded_assets(source_id)
             return {
                 "source_id": source_id,
                 "metadata_records": len(metadata),
@@ -722,6 +892,17 @@ class DataSourceAssetPreparer:
         finally:
             self._cleanup_path(candidate_root)
             self._cleanup_path(candidate_memory)
+            for path, asset_type in (
+                (candidate_root, "candidate"),
+                (candidate_memory, "candidate"),
+            ):
+                if path.exists():
+                    self.catalog.register_pending_cleanup(
+                        source_id,
+                        path,
+                        asset_type,
+                        "候选资产清理失败",
+                    )
 
     @staticmethod
     def _remove_path(path: Path) -> None:

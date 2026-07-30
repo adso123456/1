@@ -133,6 +133,26 @@ def main() -> int:
             )
             assert renamed.status_code == 200
             assert renamed.json()["source_id"] == source_id
+            for action in ("enable", "disable"):
+                rejected = client.post(
+                    f"/api/data-source-management/{source_id}/{action}"
+                )
+                assert rejected.status_code == 400
+            assert client.get(
+                f"/api/data-source-management/{source_id}"
+            ).json()["status"] == "draft"
+
+            (root / "pg.json").write_text("[]\n", encoding="utf-8")
+            (root / "pg-memory").mkdir()
+            disabled = client.post(
+                "/api/data-source-management/postgresql-main/disable"
+            )
+            enabled = client.post(
+                "/api/data-source-management/postgresql-main/enable"
+            )
+            assert disabled.status_code == enabled.status_code == 200
+            assert disabled.json()["status"] == "disabled"
+            assert enabled.json()["status"] == "ready"
 
             first = client.post(
                 "/api/conversations/api-conversation/source",
@@ -181,6 +201,7 @@ def main() -> int:
     print("[PASS] 管理 API 不回显凭据、source_id 不变")
     print("[PASS] 会话绑定幂等、改绑 409、重启目录可恢复")
     print("[PASS] 管理 API 仅允许本机调用")
+    print("[PASS] 管理 API 拒绝 draft 启停且允许 ready/disabled 合法转换")
     print("[PASS] 明确错源推荐、Widget 授权过滤、模糊问题不推荐")
     return 0
 

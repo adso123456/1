@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from pathlib import Path
 from threading import Lock, RLock
 from types import MappingProxyType
 from typing import Any
@@ -66,6 +68,9 @@ class DataSourceRuntimeManager:
         self._database_types = database_types
         self._runtimes: dict[str, DataSourceRuntime] = {}
         self._runtime_revisions: dict[str, int] = {}
+        self._active_requests: dict[str, int] = {}
+        self._retired_runtimes: dict[str, list[DataSourceRuntime]] = {}
+        self._release_callbacks: list[Callable[[str], None]] = []
         self._state_lock = RLock()
         self._build_locks: dict[str, Lock] = {
             source_id: Lock() for source_id in self._source_ids
@@ -116,15 +121,138 @@ class DataSourceRuntimeManager:
             runtime = factory(config)
             self._validate_runtime(source_id, config, runtime)
 
+            retired: DataSourceRuntime | None = None
             with self._state_lock:
+                retired = self._runtimes.get(source_id)
                 self._runtimes[source_id] = runtime
                 self._runtime_revisions[source_id] = revision
+                if retired is not None and retired is not runtime:
+                    if self._active_requests.get(source_id, 0):
+                        self._retired_runtimes.setdefault(
+                            source_id, []
+                        ).append(retired)
+                        retired = None
+            if retired is not None:
+                self._close_runtime(retired)
             return runtime
 
     def invalidate(self, source_id: str) -> None:
-        """仅让后续请求重建；正在运行的请求继续持有原实例。"""
+        """移除旧缓存；有请求持有时延迟到租约释放后关闭。"""
+        retired: DataSourceRuntime | None = None
         with self._state_lock:
+            retired = self._runtimes.pop(source_id, None)
             self._runtime_revisions.pop(source_id, None)
+            if retired is not None and self._active_requests.get(source_id, 0):
+                self._retired_runtimes.setdefault(source_id, []).append(retired)
+                retired = None
+        if retired is not None:
+            self._close_runtime(retired)
+            self._notify_released(source_id)
+
+    @contextmanager
+    def acquire(self, source_id: str) -> Iterator[DataSourceRuntime]:
+        while True:
+            runtime = self.require(source_id)
+            with self._state_lock:
+                if self._runtimes.get(source_id) is runtime:
+                    self._active_requests[source_id] = (
+                        self._active_requests.get(source_id, 0) + 1
+                    )
+                    break
+        try:
+            yield runtime
+        finally:
+            retired: list[DataSourceRuntime] = []
+            with self._state_lock:
+                remaining = self._active_requests.get(source_id, 0) - 1
+                if remaining > 0:
+                    self._active_requests[source_id] = remaining
+                else:
+                    self._active_requests.pop(source_id, None)
+                    retired = self._retired_runtimes.pop(source_id, [])
+            for item in retired:
+                self._close_runtime(item)
+            if retired:
+                self._notify_released(source_id)
+
+    def add_release_callback(self, callback: Callable[[str], None]) -> None:
+        if not callable(callback):
+            raise TypeError("release callback 必须可调用")
+        with self._state_lock:
+            self._release_callbacks.append(callback)
+
+    def active_asset_paths(self, source_id: str) -> frozenset[Path]:
+        with self._state_lock:
+            runtimes = [
+                runtime
+                for runtime in (
+                    self._runtimes.get(source_id),
+                    *self._retired_runtimes.get(source_id, []),
+                )
+                if runtime is not None
+            ]
+        return frozenset(
+            runtime.config.memory_path.expanduser().resolve()
+            for runtime in runtimes
+        )
+
+    def _notify_released(self, source_id: str) -> None:
+        with self._state_lock:
+            callbacks = tuple(self._release_callbacks)
+        for callback in callbacks:
+            try:
+                callback(source_id)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _close_runtime(runtime: DataSourceRuntime) -> None:
+        resources = (
+            runtime.agent,
+            runtime.metadata_retriever,
+            runtime.sql_guard,
+            runtime.runner,
+            runtime.memory,
+        )
+        seen: set[int] = set()
+        for resource in resources:
+            if id(resource) in seen:
+                continue
+            seen.add(id(resource))
+            for method_name in ("close", "shutdown"):
+                method = getattr(resource, method_name, None)
+                if callable(method):
+                    try:
+                        method()
+                    except TypeError:
+                        try:
+                            method(wait=True)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    break
+        memory = runtime.memory
+        for attribute in ("_executor", "_client"):
+            resource = getattr(memory, attribute, None)
+            if resource is None or id(resource) in seen:
+                continue
+            seen.add(id(resource))
+            method = getattr(
+                resource,
+                "shutdown" if attribute == "_executor" else "close",
+                None,
+            )
+            if callable(method):
+                try:
+                    method(wait=True) if attribute == "_executor" else method()
+                except TypeError:
+                    try:
+                        method()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
     @staticmethod
     def _validate_runtime(

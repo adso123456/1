@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -20,11 +21,14 @@ if str(ROOT) not in sys.path:
 
 from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
 from backend.data_source_connectors import (
+    DataSourceAssetCleaner,
     DataSourceAssetPreparer,
     DirectDatabaseConnector,
     _group_mysql_indexes,
     _group_postgresql_indexes,
 )
+from backend.data_source_registry import DataSourceRegistry
+from backend.data_source_runtime import DataSourceRuntime
 from backend.data_source_suggestion import DataSourceSuggestionService
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.mysql_tls import (
@@ -120,7 +124,10 @@ def _add_ready_source(
     catalog.mark_connection_test(record.source_id, success=True)
     catalog.save_discovery(record.source_id, metadata)
     catalog.save_scope(record.source_id, metadata)
-    catalog.publish(record.source_id, routing_summary=routing_summary)
+    published = catalog.publish(record.source_id, routing_summary=routing_summary)
+    published.metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    published.metadata_path.write_text("[]\n", encoding="utf-8")
+    published.memory_path.mkdir(parents=True, exist_ok=True)
     return record.source_id
 
 
@@ -169,6 +176,14 @@ class _FakeMemory:
 
     def _get_collection(self):
         return self.collection
+
+
+class _ClosableResource:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def test_tls_and_migration(root: Path) -> None:
@@ -541,6 +556,234 @@ def test_index_grouping() -> None:
     )
 
 
+def test_ddl_key_integrity(root: Path) -> None:
+    catalog = _catalog(root)
+    import backend.memory as memory_module
+
+    for source_id in ("postgresql-main", "mysql-lzh-monitor"):
+        primary_name = (
+            "measurement_pkey"
+            if source_id == "postgresql-main"
+            else "PRIMARY"
+        )
+        metadata = [
+            {
+                "schema": "public" if source_id == "postgresql-main" else "",
+                "table": "measurement",
+                "object_type": "table",
+                "table_comment": "复合键测试",
+                "column": name,
+                "type": "bigint",
+                "comment": "",
+                "nullable": False,
+                "primary_key": name in {"station_id", "monitor_time"},
+                "ordinal_position": position,
+                "indexes": indexes,
+            }
+            for position, (name, indexes) in enumerate(
+                (
+                    (
+                        "station_id",
+                        [
+                            {
+                                "name": primary_name,
+                                "unique": True,
+                                "primary": True,
+                                "method": "btree",
+                                "columns": [
+                                    {
+                                        "name": "station_id",
+                                        "position": 1,
+                                        "direction": "ASC",
+                                    },
+                                    {
+                                        "name": "monitor_time",
+                                        "position": 2,
+                                        "direction": "ASC",
+                                    },
+                                ],
+                            }
+                        ],
+                    ),
+                    ("monitor_time", []),
+                    (
+                        "region_id",
+                        [
+                            {
+                                "name": "uq_region_metric",
+                                "unique": True,
+                                "primary": False,
+                                "method": "btree",
+                                "columns": [
+                                    {
+                                        "name": "region_id",
+                                        "position": 1,
+                                        "direction": "ASC",
+                                    },
+                                    {
+                                        "name": "metric_id",
+                                        "position": 2,
+                                        "direction": "ASC",
+                                    },
+                                ],
+                            }
+                        ],
+                    ),
+                    ("metric_id", []),
+                ),
+                start=1,
+            )
+        ]
+        schema_name = "public" if source_id == "postgresql-main" else ""
+        metadata.extend(
+            [
+                {
+                    "schema": schema_name,
+                    "table": "single_key",
+                    "object_type": "table",
+                    "table_comment": "单列键测试",
+                    "column": name,
+                    "type": "bigint",
+                    "comment": "",
+                    "nullable": False,
+                    "primary_key": name == "single_id",
+                    "ordinal_position": position,
+                    "indexes": (
+                        [
+                            {
+                                "name": (
+                                    "single_key_pkey"
+                                    if source_id == "postgresql-main"
+                                    else "PRIMARY"
+                                ),
+                                "unique": True,
+                                "primary": True,
+                                "method": "btree",
+                                "columns": [
+                                    {
+                                        "name": "single_id",
+                                        "position": 1,
+                                        "direction": "ASC",
+                                    }
+                                ],
+                            }
+                        ]
+                        if name == "single_id"
+                        else []
+                    ),
+                }
+                for position, name in enumerate(
+                    ("single_id", "single_value"),
+                    start=1,
+                )
+            ]
+        )
+        triple_columns = ("pk_a", "pk_b", "pk_c")
+        metadata.extend(
+            [
+                {
+                    "schema": schema_name,
+                    "table": "triple_key",
+                    "object_type": "table",
+                    "table_comment": "三列键测试",
+                    "column": name,
+                    "type": "bigint",
+                    "comment": "",
+                    "nullable": False,
+                    "primary_key": True,
+                    "ordinal_position": position,
+                    "indexes": (
+                        [
+                            {
+                                "name": (
+                                    "triple_key_pkey"
+                                    if source_id == "postgresql-main"
+                                    else "PRIMARY"
+                                ),
+                                "unique": True,
+                                "primary": True,
+                                "method": "btree",
+                                "columns": [
+                                    {
+                                        "name": column,
+                                        "position": index,
+                                        "direction": "ASC",
+                                    }
+                                    for index, column in enumerate(
+                                        triple_columns,
+                                        start=1,
+                                    )
+                                ],
+                            }
+                        ]
+                        if name == "pk_a"
+                        else []
+                    ),
+                }
+                for position, name in enumerate(triple_columns, start=1)
+            ]
+        )
+        catalog.save_discovery(source_id, metadata)
+        preparer = DataSourceAssetPreparer(catalog)
+
+        def prepare_columns(*names: str) -> str:
+            selected = [
+                item for name in names
+                for item in metadata
+                if item["column"] == name
+            ]
+            catalog.save_scope(source_id, selected)
+            with patch.object(
+                memory_module,
+                "create_memory",
+                side_effect=_FakeMemory,
+            ):
+                preparer.prepare(source_id)
+            return "\n".join(json.loads((
+                catalog.require(source_id).metadata_path.parent
+                / "ddl_memories.json"
+            ).read_text(encoding="utf-8")))
+
+        first_only = prepare_columns("station_id")
+        second_only = prepare_columns("monitor_time")
+        full_reversed = prepare_columns("monitor_time", "station_id")
+        partial_unique = prepare_columns("region_id")
+        full_unique = prepare_columns("metric_id", "region_id")
+        single_selected = prepare_columns("single_id")
+        single_unselected = prepare_columns("single_value")
+        triple_partial = prepare_columns("pk_a", "pk_b")
+        quote = '"' if source_id == "postgresql-main" else "`"
+        check(
+            "PRIMARY KEY" in single_selected
+            and "PRIMARY KEY" not in single_unselected,
+            f"{source_id} 单列主键仅在该字段被选择时生成",
+        )
+        check(
+            "PRIMARY KEY" not in first_only
+            and "PRIMARY KEY" not in second_only,
+            f"{source_id} 复合主键任一部分选择均不生成伪主键",
+        )
+        check(
+            f"PRIMARY KEY ({quote}station_id{quote}, "
+            f"{quote}monitor_time{quote})" in full_reversed,
+            f"{source_id} 完整复合主键按数据库真实顺序生成",
+        )
+        check(
+            "uq_region_metric" not in partial_unique,
+            f"{source_id} 部分复合唯一索引不生成缩短索引",
+        )
+        check(
+            "uq_region_metric" in full_unique
+            and full_unique.index(f"{quote}region_id{quote}")
+            < full_unique.index(f"{quote}metric_id{quote}"),
+            f"{source_id} 完整复合唯一索引保持数据库顺序",
+        )
+        check(
+            "PRIMARY KEY" not in triple_partial,
+            f"{source_id} 三列复合主键缺任一字段均不生成",
+        )
+
+
 def test_publish_compensation(root: Path) -> None:
     catalog = _catalog(root)
     metadata = [
@@ -751,14 +994,145 @@ def test_publish_compensation(root: Path) -> None:
             side_effect=fail_candidate_cleanup,
         ):
             published = preparer.prepare(source_id)
+        current = catalog.require(source_id)
         check(
             published["runtime_revision"] == previous_revision + 1
-            and all(path.exists() for path in paths)
-            and catalog.require(source_id).memory_path.exists(),
+            and current.metadata_path.exists()
+            and current.memory_path.exists()
+            and (
+                current.metadata_path.parent / "ddl_memories.json"
+            ).exists()
+            and (
+                current.metadata_path.parent / "business_documents.json"
+            ).exists(),
             "候选清理失败不破坏成功发布且 revision 只增加一次",
         )
         for candidate in before.metadata_path.parent.glob("candidate-*"):
             original_remove(candidate)
+
+
+def test_asset_cleanup_and_runtime_release(root: Path) -> None:
+    catalog = _catalog(root)
+    metadata = [
+        {
+            "schema": "public",
+            "table": "safe_table",
+            "object_type": "table",
+            "table_comment": "安全表",
+            "column": "id",
+            "type": "bigint",
+            "comment": "主键",
+            "nullable": False,
+            "primary_key": True,
+            "ordinal_position": 1,
+            "indexes": [],
+        }
+    ]
+    source_id = _add_ready_source(
+        catalog,
+        name="资产清理源",
+        description="资产清理",
+        metadata=metadata,
+        routing_summary="旧资产",
+    )
+    import backend.memory as memory_module
+
+    with patch.object(
+        memory_module,
+        "create_memory",
+        side_effect=_FakeMemory,
+    ):
+        DataSourceAssetPreparer(catalog).prepare(source_id)
+    runtimes: list[DataSourceRuntime] = []
+
+    def factory(config):
+        resources = [_ClosableResource() for _ in range(5)]
+        runtime = DataSourceRuntime(
+            config=config,
+            runner=resources[0],
+            memory=resources[1],
+            metadata_retriever=resources[2],
+            sql_guard=resources[3],
+            agent=resources[4],
+        )
+        runtimes.append(runtime)
+        return runtime
+
+    manager = DataSourceRuntimeManager(
+        DataSourceRegistry.from_catalog(catalog),
+        {"postgresql": factory, "mysql": factory},
+    )
+    preparer = DataSourceAssetPreparer(catalog, manager)
+    manager.add_release_callback(
+        preparer.asset_cleaner.retry_pending_cleanup
+    )
+    old_record = catalog.require(source_id)
+    old_memory_path = old_record.memory_path
+    old_runtime = manager.require(source_id)
+
+    with manager.acquire(source_id):
+        catalog.save_scope(source_id, metadata)
+        with patch.object(
+            memory_module,
+            "create_memory",
+            side_effect=_FakeMemory,
+        ):
+            result = preparer.prepare(source_id)
+        new_record = catalog.require(source_id)
+        check(
+            result["runtime_revision"] == old_record.runtime_revision + 1
+            and new_record.memory_path != old_memory_path
+            and runtimes[-1].config.memory_path == new_record.memory_path,
+            "prepare 仅递增一次 revision 且新 Runtime 使用新 Memory",
+        )
+        check(
+            old_memory_path.exists()
+            and any(
+                Path(str(item["path"])) == old_memory_path
+                for item in catalog.pending_cleanups(source_id)
+            ),
+            "旧 Runtime 持有 Memory 时保留资产并登记 pending cleanup",
+        )
+
+    check(
+        not old_memory_path.exists()
+        and not catalog.pending_cleanups(source_id)
+        and old_runtime.memory.closed,
+        "请求释放后关闭旧 Runtime 并重试清理旧 revision",
+    )
+    current = catalog.require(source_id)
+    check(
+        current.metadata_path.exists()
+        and current.memory_path.exists()
+        and (
+            current.metadata_path.parent / "ddl_memories.json"
+        ).exists()
+        and (
+            current.metadata_path.parent / "business_documents.json"
+        ).exists(),
+        "Catalog 当前引用的四类正式资产始终受保护",
+    )
+    check(
+        not list(current.metadata_path.parent.glob("candidate-*"))
+        and not list(current.metadata_path.parent.glob(".*.candidate-*"))
+        and not list(current.metadata_path.parent.glob(".*.backup-*")),
+        "成功发布后的候选与本批次备份均已清理",
+    )
+
+    outside = root / "outside.revision-1-protected"
+    outside.mkdir(parents=True)
+    catalog.register_pending_cleanup(
+        source_id,
+        outside,
+        "memory_revision",
+    )
+    DataSourceAssetCleaner(catalog, manager).cleanup_superseded_assets(source_id)
+    check(
+        outside.exists(),
+        "受管根目录外路径即使命名匹配也不会删除",
+    )
+    catalog.complete_pending_cleanup(source_id, outside)
+    shutil.rmtree(current.metadata_path.parent)
 
 
 def main() -> int:
@@ -767,7 +1141,9 @@ def main() -> int:
         test_tls_and_migration(root / "tls")
         test_dynamic_suggestions(root / "suggestions")
         test_index_grouping()
+        test_ddl_key_integrity(root / "ddl-keys")
         test_publish_compensation(root / "publish")
+        test_asset_cleanup_and_runtime_release(root / "cleanup")
     print("dynamic data source integration gaps: all checks passed")
     return 0
 

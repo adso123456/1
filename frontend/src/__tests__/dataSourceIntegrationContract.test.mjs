@@ -19,6 +19,8 @@ const checks = [
   ['发送门禁检查 enabled', state.includes('source.enabled_for_chat === true')],
   ['会话必须绑定', state.includes('sourceBound')],
   ['状态原因区分', ['draft', 'connected', 'metadata_ready', 'training_required', 'disabled', 'error'].every(value => state.includes(`${value}:`))],
+  ['启停按钮仅对应 ready/disabled', page.includes("source.status === 'ready'") && page.includes("source.status === 'disabled'") && !page.includes("source.status === 'disabled' ? 'enable' : 'disable'")],
+  ['中间状态显示专用动作', ['继续配置', '读取并选择范围', '生成问数资产', '刷新问数资产', '检查连接或重新配置'].every(value => page.includes(value))],
   ['动态名称刷新历史会话', hook.includes('meta.sourceDisplayName = latestName')],
   ['Widget 使用授权摘要端点', widget.includes("dataSourcesEndpoint: '/api/embed/data-sources'")],
   ['Widget 无管理导航', !widget.includes("<DataSourcePage")],

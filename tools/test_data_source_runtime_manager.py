@@ -818,6 +818,8 @@ def main() -> int:
         allowed_imports = {
             "__future__",
             "collections.abc",
+            "contextlib",
+            "pathlib",
             "threading",
             "types",
             "typing",

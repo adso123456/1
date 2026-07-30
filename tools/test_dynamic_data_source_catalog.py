@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 from backend.data_source_catalog import (
     CredentialCipher,
     DataSourceCatalog,
+    DataSourceCatalogError,
     DataSourceConflict,
 )
 
@@ -181,10 +182,99 @@ def main() -> int:
             "未选择字段不进入问数范围",
         )
         ready = catalog.publish(created.source_id, routing_summary="安全测试表 主键")
+        ready.metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        ready.metadata_path.write_text("[]\n", encoding="utf-8")
+        ready.memory_path.mkdir(parents=True, exist_ok=True)
         check(
             ready.runtime_revision == 1 and ready.status == "ready",
             "原子发布递增 runtime_revision",
         )
+        disabled = catalog.set_enabled(created.source_id, False)
+        check(
+            disabled.status == "disabled" and not disabled.enabled_for_chat,
+            "ready 仅可转换为 disabled",
+        )
+        enabled = catalog.set_enabled(created.source_id, True)
+        check(
+            enabled.status == "ready" and enabled.enabled_for_chat,
+            "disabled 仅可转换为 ready",
+        )
+
+        for illegal_status in (
+            "draft",
+            "connected",
+            "metadata_ready",
+            "training_required",
+            "error",
+        ):
+            with catalog._lock, catalog._connection(write=True) as connection:
+                connection.execute(
+                    """
+                    UPDATE data_sources SET status = ?, enabled_for_chat = 0
+                    WHERE source_id = ?
+                    """,
+                    (illegal_status, created.source_id),
+                )
+            for flag in (False, True):
+                try:
+                    catalog.set_enabled(created.source_id, flag)
+                except DataSourceCatalogError:
+                    pass
+                else:
+                    raise AssertionError(
+                        f"{illegal_status} 不应允许启停操作"
+                    )
+                check(
+                    catalog.require(created.source_id).status == illegal_status,
+                    f"{illegal_status} 非法启停不改变目录状态",
+                )
+
+        with catalog._lock, catalog._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE data_sources SET status = 'ready', enabled_for_chat = 1
+                WHERE source_id = ?
+                """,
+                (created.source_id,),
+            )
+        changed_scope = catalog.save_scope(created.source_id, metadata[:1])
+        check(
+            changed_scope.status == "training_required"
+            and not changed_scope.enabled_for_chat,
+            "ready 修改范围后进入 training_required",
+        )
+        for flag in (False, True):
+            try:
+                catalog.set_enabled(created.source_id, flag)
+            except DataSourceCatalogError:
+                pass
+            else:
+                raise AssertionError(
+                    "training_required 不应通过启停绕过 prepare"
+                )
+        check(
+            catalog.require(created.source_id).status == "training_required",
+            "training_required 无法通过 disable/enable 绕过",
+        )
+        ready = catalog.publish(
+            created.source_id,
+            routing_summary="安全测试表 主键",
+        )
+        def concurrent_disable(_: int) -> str:
+            try:
+                catalog.set_enabled(created.source_id, False)
+            except DataSourceCatalogError:
+                return "rejected"
+            return "disabled"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            transitions = list(executor.map(concurrent_disable, range(2)))
+        check(
+            sorted(transitions) == ["disabled", "rejected"]
+            and catalog.require(created.source_id).status == "disabled",
+            "并发停用仅有一个条件更新成功且不形成非法状态",
+        )
+        catalog.set_enabled(created.source_id, True)
 
         first = catalog.bind_conversation("conversation-b5", created.source_id)
         second = catalog.bind_conversation("conversation-b5", created.source_id)
