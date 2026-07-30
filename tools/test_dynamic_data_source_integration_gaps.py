@@ -9,7 +9,9 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 from pathlib import Path
+from threading import Barrier, Event, Thread
 from unittest.mock import patch
 
 from cryptography.fernet import Fernet
@@ -19,7 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
+from backend.data_source_catalog import (
+    CredentialCipher,
+    DataSourceCatalog,
+    DataSourceCatalogError,
+    DataSourceConflict,
+)
 from backend.data_source_connectors import (
     DataSourceAssetCleaner,
     DataSourceAssetPreparer,
@@ -410,6 +417,8 @@ def test_dynamic_suggestions(root: Path) -> None:
         == renamed.display_name,
         "停用源退出候选且推荐显示最新名称",
     )
+    for source_id in (weather_id, second_id):
+        shutil.rmtree(catalog.require(source_id).metadata_path.parent)
 
 
 def test_index_grouping() -> None:
@@ -783,6 +792,85 @@ def test_ddl_key_integrity(root: Path) -> None:
             f"{source_id} 三列复合主键缺任一字段均不生成",
         )
 
+        for legacy_columns in (("legacy_id",), ("legacy_a", "legacy_b")):
+            legacy_metadata = [
+                {
+                    "schema": schema_name,
+                    "table": "legacy_key",
+                    "object_type": "table",
+                    "table_comment": "旧格式主键",
+                    "column": name,
+                    "type": "bigint",
+                    "comment": "",
+                    "nullable": False,
+                    "primary_key": True,
+                    "ordinal_position": position,
+                    "indexes": [],
+                }
+                for position, name in enumerate(legacy_columns, start=1)
+            ]
+            catalog.save_discovery(source_id, legacy_metadata)
+            catalog.save_scope(source_id, legacy_metadata)
+            before = catalog.require(source_id)
+            asset_paths = (
+                before.metadata_path,
+                before.memory_path,
+                before.metadata_path.parent / "ddl_memories.json",
+                before.metadata_path.parent / "business_documents.json",
+            )
+            hashes = tuple(_hash_path(path) for path in asset_paths)
+            try:
+                preparer.prepare(source_id)
+            except DataSourceCatalogError as exc:
+                check(
+                    "重新执行“读取表和字段”" in str(exc),
+                    f"{source_id} 旧格式主键提示重新发现元数据",
+                )
+            else:
+                raise AssertionError("旧格式主键元数据未被拒绝")
+            after = catalog.require(source_id)
+            check(
+                after.runtime_revision == before.runtime_revision
+                and tuple(_hash_path(path) for path in asset_paths) == hashes,
+                f"{source_id} 旧格式主键拒绝后 revision 与正式资产不变",
+            )
+
+        no_primary_metadata = [
+            {
+                "schema": schema_name,
+                "table": "legacy_no_key",
+                "object_type": "table",
+                "table_comment": "旧格式无主键表",
+                "column": "value",
+                "type": "bigint",
+                "comment": "",
+                "nullable": True,
+                "primary_key": False,
+                "ordinal_position": 1,
+                "indexes": [],
+            }
+        ]
+        catalog.save_discovery(source_id, no_primary_metadata)
+        catalog.save_scope(source_id, no_primary_metadata)
+        with patch.object(
+            memory_module,
+            "create_memory",
+            side_effect=_FakeMemory,
+        ):
+            preparer.prepare(source_id)
+        no_primary_ddl = "\n".join(
+            json.loads(
+                (
+                    catalog.require(source_id).metadata_path.parent
+                    / "ddl_memories.json"
+                ).read_text(encoding="utf-8")
+            )
+        )
+        check(
+            "PRIMARY KEY" not in no_primary_ddl,
+            f"{source_id} 旧格式无主键表可正常生成无主键 DDL",
+        )
+
 
 def test_publish_compensation(root: Path) -> None:
     catalog = _catalog(root)
@@ -1009,6 +1097,7 @@ def test_publish_compensation(root: Path) -> None:
         )
         for candidate in before.metadata_path.parent.glob("candidate-*"):
             original_remove(candidate)
+    shutil.rmtree(catalog.require(source_id).metadata_path.parent)
 
 
 def test_asset_cleanup_and_runtime_release(root: Path) -> None:
@@ -1025,7 +1114,21 @@ def test_asset_cleanup_and_runtime_release(root: Path) -> None:
             "nullable": False,
             "primary_key": True,
             "ordinal_position": 1,
-            "indexes": [],
+            "indexes": [
+                {
+                    "name": "safe_table_pkey",
+                    "unique": True,
+                    "primary": True,
+                    "method": "btree",
+                    "columns": [
+                        {
+                            "name": "id",
+                            "position": 1,
+                            "direction": "ASC",
+                        }
+                    ],
+                }
+            ],
         }
     ]
     source_id = _add_ready_source(
@@ -1044,8 +1147,11 @@ def test_asset_cleanup_and_runtime_release(root: Path) -> None:
     ):
         DataSourceAssetPreparer(catalog).prepare(source_id)
     runtimes: list[DataSourceRuntime] = []
+    fail_runtime_build = False
 
     def factory(config):
+        if fail_runtime_build:
+            raise RuntimeError("injected runtime build failure")
         resources = [_ClosableResource() for _ in range(5)]
         runtime = DataSourceRuntime(
             config=config,
@@ -1069,6 +1175,77 @@ def test_asset_cleanup_and_runtime_release(root: Path) -> None:
     old_record = catalog.require(source_id)
     old_memory_path = old_record.memory_path
     old_runtime = manager.require(source_id)
+    formal_paths = (
+        old_record.metadata_path,
+        old_record.memory_path,
+        old_record.metadata_path.parent / "ddl_memories.json",
+        old_record.metadata_path.parent / "business_documents.json",
+    )
+    formal_hashes = tuple(_hash_path(path) for path in formal_paths)
+
+    fail_runtime_build = True
+    with patch.object(
+        memory_module,
+        "create_memory",
+        side_effect=_FakeMemory,
+    ):
+        try:
+            preparer.prepare(source_id)
+        except RuntimeError as exc:
+            check(
+                "injected runtime build failure" in str(exc),
+                "新 Runtime 构建故障被确定性注入",
+            )
+        else:
+            raise AssertionError("新 Runtime 构建故障未传播")
+    failed_record = catalog.require(source_id)
+    check(
+        failed_record.runtime_revision == old_record.runtime_revision
+        and failed_record.memory_path == old_memory_path
+        and old_memory_path.exists()
+        and tuple(_hash_path(path) for path in formal_paths) == formal_hashes,
+        "空闲旧 Runtime 场景回滚 Catalog 并保留四类正式资产",
+    )
+    check(
+        manager.runtimes[source_id] is old_runtime
+        and not old_runtime.memory.closed
+        and manager.require(source_id) is old_runtime,
+        "新 Runtime 失败时空闲旧 Runtime 保持缓存且未关闭",
+    )
+    check(
+        all(
+            Path(str(item["path"])) != old_memory_path
+            for item in catalog.pending_cleanups(source_id)
+        ),
+        "新 Runtime 失败未将旧 Memory 登记为待清理",
+    )
+
+    with manager.acquire(source_id) as leased_runtime:
+        with patch.object(
+            memory_module,
+            "create_memory",
+            side_effect=_FakeMemory,
+        ):
+            try:
+                preparer.prepare(source_id)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("活跃租约场景 Runtime 故障未传播")
+        check(
+            leased_runtime is old_runtime
+            and manager.runtimes[source_id] is old_runtime
+            and old_memory_path.exists()
+            and not old_runtime.memory.closed,
+            "新 Runtime 失败时活跃请求继续使用旧 Runtime 和旧 Memory",
+        )
+    check(
+        manager.runtimes[source_id] is old_runtime
+        and old_memory_path.exists()
+        and not old_runtime.memory.closed,
+        "失败回滚后租约释放不触发旧 Runtime 或旧 Memory 清理",
+    )
+    fail_runtime_build = False
 
     with manager.acquire(source_id):
         catalog.save_scope(source_id, metadata)
@@ -1135,6 +1312,308 @@ def test_asset_cleanup_and_runtime_release(root: Path) -> None:
     shutil.rmtree(current.metadata_path.parent)
 
 
+def test_prepare_coordination(root: Path) -> None:
+    catalog = _catalog(root)
+    metadata = [
+        {
+            "schema": "public",
+            "table": "coordinated_table",
+            "object_type": "table",
+            "table_comment": "并发准备测试",
+            "column": "id",
+            "type": "bigint",
+            "comment": "主键",
+            "nullable": False,
+            "primary_key": True,
+            "ordinal_position": 1,
+            "indexes": [
+                {
+                    "name": "coordinated_table_pkey",
+                    "unique": True,
+                    "primary": True,
+                    "method": "btree",
+                    "columns": [
+                        {
+                            "name": "id",
+                            "position": 1,
+                            "direction": "ASC",
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+    first_source = _add_ready_source(
+        catalog,
+        name="并发源一",
+        description="并发准备一",
+        metadata=metadata,
+        routing_summary="并发一",
+    )
+    second_source = _add_ready_source(
+        catalog,
+        name="并发源二",
+        description="并发准备二",
+        metadata=metadata,
+        routing_summary="并发二",
+    )
+    import backend.memory as memory_module
+
+    entered = Event()
+    release = Event()
+
+    class BlockingCollection(_FakeCollection):
+        def add(self, *, ids, documents, metadatas) -> None:
+            entered.set()
+            if not release.wait(10):
+                raise TimeoutError("候选构建等待超时")
+            super().add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+            )
+
+    class BlockingMemory(_FakeMemory):
+        def __init__(self, path: Path) -> None:
+            path.mkdir(parents=True, exist_ok=True)
+            self.collection = BlockingCollection(path)
+            self._executor = type(
+                "Executor",
+                (),
+                {"shutdown": lambda self, wait: None},
+            )()
+            self._client = None
+            self._collection = self.collection
+
+    first_revision = catalog.require(first_source).runtime_revision
+    thread_errors: list[Exception] = []
+
+    def run_first_prepare() -> None:
+        try:
+            DataSourceAssetPreparer(catalog).prepare(first_source)
+        except Exception as exc:
+            thread_errors.append(exc)
+
+    with patch.object(
+        memory_module,
+        "create_memory",
+        side_effect=BlockingMemory,
+    ):
+        first_thread = Thread(target=run_first_prepare)
+        first_thread.start()
+        check(entered.wait(10), "请求 A 已创建活动候选并暂停")
+        active = catalog.active_asset_batches(first_source)
+        active_candidate = Path(str(active[0]["candidate_root"]))
+        check(
+            len(active) == 1
+            and active_candidate.exists()
+            and active_candidate in catalog.active_asset_paths(first_source),
+            "活动批次登记包含候选目录并实时保护",
+        )
+        try:
+            DataSourceAssetPreparer(catalog).prepare(first_source)
+        except DataSourceConflict as exc:
+            check(
+                "正在生成问数资产" in str(exc),
+                "同一 source_id 的第二个 prepare 明确返回冲突",
+            )
+        else:
+            raise AssertionError("同源重复 prepare 未被拒绝")
+        DataSourceAssetCleaner(catalog).retry_pending_cleanup(first_source)
+        check(
+            active_candidate.exists(),
+            "Runtime release 回调式 pending 重试不扫描活动 candidate",
+        )
+        release.set()
+        first_thread.join(10)
+    check(
+        not first_thread.is_alive() and not thread_errors,
+        "请求 A 在并发拒绝后正常完成",
+    )
+    with patch.object(
+        memory_module,
+        "create_memory",
+        side_effect=_FakeMemory,
+    ):
+        DataSourceAssetPreparer(catalog).prepare(first_source)
+    check(
+        catalog.require(first_source).runtime_revision == first_revision + 2,
+        "同源后续 prepare 可执行且 revision 按成功次数递增",
+    )
+
+    barrier = Barrier(2)
+    parallel_errors: list[Exception] = []
+
+    class BarrierCollection(_FakeCollection):
+        def add(self, *, ids, documents, metadatas) -> None:
+            barrier.wait(10)
+            super().add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+            )
+
+    class BarrierMemory(_FakeMemory):
+        def __init__(self, path: Path) -> None:
+            path.mkdir(parents=True, exist_ok=True)
+            self.collection = BarrierCollection(path)
+            self._executor = type(
+                "Executor",
+                (),
+                {"shutdown": lambda self, wait: None},
+            )()
+            self._client = None
+            self._collection = self.collection
+
+    parallel_start = {
+        source_id: catalog.require(source_id).runtime_revision
+        for source_id in (first_source, second_source)
+    }
+
+    def run_parallel(source_id: str) -> None:
+        try:
+            DataSourceAssetPreparer(catalog).prepare(source_id)
+        except Exception as exc:
+            parallel_errors.append(exc)
+
+    with patch.object(
+        memory_module,
+        "create_memory",
+        side_effect=BarrierMemory,
+    ):
+        threads = [
+            Thread(target=run_parallel, args=(source_id,))
+            for source_id in (first_source, second_source)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(15)
+    check(
+        all(not thread.is_alive() for thread in threads)
+        and not parallel_errors
+        and all(
+            catalog.require(source_id).runtime_revision
+            == parallel_start[source_id] + 1
+            for source_id in (first_source, second_source)
+        ),
+        "不同 source_id 可并行构建且 revision、资产互不干扰",
+    )
+
+    changed_entered = Event()
+    changed_release = Event()
+
+    class ScopeChangeCollection(_FakeCollection):
+        def add(self, *, ids, documents, metadatas) -> None:
+            changed_entered.set()
+            if not changed_release.wait(10):
+                raise TimeoutError("范围变更等待超时")
+            super().add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+            )
+
+    class ScopeChangeMemory(_FakeMemory):
+        def __init__(self, path: Path) -> None:
+            path.mkdir(parents=True, exist_ok=True)
+            self.collection = ScopeChangeCollection(path)
+            self._executor = type(
+                "Executor",
+                (),
+                {"shutdown": lambda self, wait: None},
+            )()
+            self._client = None
+            self._collection = self.collection
+
+    changed_errors: list[Exception] = []
+    before_change = catalog.require(first_source)
+    protected_paths = (
+        before_change.metadata_path,
+        before_change.memory_path,
+        before_change.metadata_path.parent / "ddl_memories.json",
+        before_change.metadata_path.parent / "business_documents.json",
+    )
+    protected_hashes = tuple(_hash_path(path) for path in protected_paths)
+
+    def run_changed_prepare() -> None:
+        try:
+            DataSourceAssetPreparer(catalog).prepare(first_source)
+        except Exception as exc:
+            changed_errors.append(exc)
+
+    with patch.object(
+        memory_module,
+        "create_memory",
+        side_effect=ScopeChangeMemory,
+    ):
+        changed_thread = Thread(target=run_changed_prepare)
+        changed_thread.start()
+        check(changed_entered.wait(10), "旧批次已在发布前暂停")
+        catalog.save_scope(first_source, metadata)
+        changed_release.set()
+        changed_thread.join(10)
+    check(
+        len(changed_errors) == 1
+        and isinstance(changed_errors[0], DataSourceConflict)
+        and catalog.require(first_source).runtime_revision
+        == before_change.runtime_revision
+        and tuple(_hash_path(path) for path in protected_paths)
+        == protected_hashes
+        and not catalog.active_asset_batches(first_source),
+        "scope/status 变化后旧批次拒绝发布并清理自身候选",
+    )
+
+    cleaner = DataSourceAssetCleaner(catalog)
+    managed_root = catalog.require(second_source).metadata_path.parent
+    fresh_candidate = managed_root / "candidate-fresh-orphan"
+    fresh_memory = managed_root / ".memory.candidate-fresh-orphan"
+    fresh_revision = managed_root / "memory.revision-fresh-orphan"
+    fresh_candidate.mkdir()
+    fresh_memory.mkdir()
+    fresh_revision.mkdir()
+    catalog.begin_asset_batch(
+        second_source,
+        batch_id="fresh-orphan",
+        candidate_root=fresh_candidate,
+        candidate_memory=fresh_memory,
+        published_memory_path=fresh_revision,
+    )
+    cleaner.cleanup_stale_batches(grace_seconds=600)
+    check(
+        fresh_candidate.exists()
+        and catalog.active_asset_batches(second_source),
+        "宽限期内的异常活动批次不会被启动清理删除",
+    )
+    catalog.finish_asset_batch(second_source, "fresh-orphan")
+    stale_candidate = managed_root / "candidate-stale-orphan"
+    stale_memory = managed_root / ".memory.candidate-stale-orphan"
+    stale_revision = managed_root / "memory.revision-stale-orphan"
+    stale_candidate.mkdir()
+    stale_memory.mkdir()
+    stale_revision.mkdir()
+    catalog.begin_asset_batch(
+        second_source,
+        batch_id="stale-orphan",
+        candidate_root=stale_candidate,
+        candidate_memory=stale_memory,
+        published_memory_path=stale_revision,
+        started_at=int(time.time()) - 601,
+    )
+    cleaner.cleanup_stale_batches(grace_seconds=600)
+    check(
+        not stale_candidate.exists()
+        and not stale_memory.exists()
+        and not stale_revision.exists()
+        and not catalog.active_asset_batches(second_source),
+        "超过宽限期且无引用的崩溃遗留批次可安全清理",
+    )
+    for path in (fresh_candidate, fresh_memory, fresh_revision):
+        shutil.rmtree(path)
+    for source_id in (first_source, second_source):
+        shutil.rmtree(catalog.require(source_id).metadata_path.parent)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="b5-integration-gaps-") as directory:
         root = Path(directory)
@@ -1144,6 +1623,7 @@ def main() -> int:
         test_ddl_key_integrity(root / "ddl-keys")
         test_publish_compensation(root / "publish")
         test_asset_cleanup_and_runtime_release(root / "cleanup")
+        test_prepare_coordination(root / "coordination")
     print("dynamic data source integration gaps: all checks passed")
     return 0
 

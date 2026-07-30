@@ -133,6 +133,7 @@ def create_data_source_management_router(
     connector = DirectDatabaseConnector(catalog)
     preparer = DataSourceAssetPreparer(catalog, runtime_manager)
     runtime_manager.add_release_callback(preparer.asset_cleaner.retry_pending_cleanup)
+    preparer.asset_cleaner.cleanup_stale_batches()
     preparer.asset_cleaner.retry_pending_cleanup()
     router = APIRouter(prefix="/api")
 

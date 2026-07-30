@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -22,7 +23,7 @@ from config.settings import PROJECT_ROOT
 
 
 SCHEMA_COMPONENT = "data_source_catalog"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 VALID_DATABASE_TYPES = frozenset({"mysql", "postgresql"})
 VALID_STATUSES = frozenset(
     {
@@ -36,6 +37,16 @@ VALID_STATUSES = frozenset(
     }
 )
 CONNECTION_MODES = frozenset({"direct_database", "external_provider"})
+
+
+def selected_scope_fingerprint(scope: Iterable[Mapping[str, Any]]) -> str:
+    payload = json.dumps(
+        [dict(item) for item in scope],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 class DataSourceCatalogError(RuntimeError):
@@ -355,6 +366,17 @@ class DataSourceCatalog:
                     retry_count INTEGER NOT NULL DEFAULT 0,
                     last_error TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY (source_id, path)
+                );
+                CREATE TABLE IF NOT EXISTS active_asset_batches (
+                    source_id TEXT PRIMARY KEY REFERENCES data_sources(source_id)
+                        ON DELETE CASCADE,
+                    batch_id TEXT NOT NULL,
+                    candidate_root TEXT NOT NULL,
+                    candidate_memory TEXT NOT NULL,
+                    published_memory_path TEXT NOT NULL,
+                    backup_paths_json TEXT NOT NULL DEFAULT '[]',
+                    phase TEXT NOT NULL,
+                    started_at INTEGER NOT NULL
                 );
                 """
             )
@@ -903,17 +925,40 @@ class DataSourceCatalog:
         *,
         routing_summary: str,
         memory_path: Path | None = None,
+        expected_runtime_revision: int | None = None,
+        expected_scope_fingerprint: str | None = None,
+        expected_status: str | None = None,
     ) -> DataSourceRecord:
         now = int(time.time())
         with self._lock, self._connection(write=True) as connection:
             row = connection.execute(
-                "SELECT selected_tables_count FROM data_sources WHERE source_id = ?",
+                """
+                SELECT selected_tables_count, runtime_revision,
+                    selected_scope_json, status
+                FROM data_sources WHERE source_id = ?
+                """,
                 (source_id,),
             ).fetchone()
             if row is None:
                 raise DataSourceNotFound("数据源不存在")
             if row["selected_tables_count"] <= 0:
                 raise DataSourceCatalogError("尚未选择问数范围")
+            if (
+                expected_runtime_revision is not None
+                and row["runtime_revision"] != expected_runtime_revision
+            ) or (
+                expected_scope_fingerprint is not None
+                and selected_scope_fingerprint(
+                    json.loads(row["selected_scope_json"])
+                )
+                != expected_scope_fingerprint
+            ) or (
+                expected_status is not None
+                and row["status"] != expected_status
+            ):
+                raise DataSourceConflict(
+                    "数据源范围已变化，请重新生成问数资产"
+                )
             connection.execute(
                 """
                 UPDATE data_sources SET status = 'ready',
@@ -1035,6 +1080,127 @@ class DataSourceCatalog:
                     error[:1000],
                 ),
             )
+
+    def begin_asset_batch(
+        self,
+        source_id: str,
+        *,
+        batch_id: str,
+        candidate_root: Path,
+        candidate_memory: Path,
+        published_memory_path: Path,
+        started_at: int | None = None,
+    ) -> None:
+        self.require(source_id)
+        try:
+            with self._lock, self._connection(write=True) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO active_asset_batches(
+                        source_id, batch_id, candidate_root,
+                        candidate_memory, published_memory_path,
+                        backup_paths_json, phase, started_at
+                    ) VALUES (?, ?, ?, ?, ?, '[]', 'building', ?)
+                    """,
+                    (
+                        source_id,
+                        batch_id,
+                        str(candidate_root.expanduser().resolve()),
+                        str(candidate_memory.expanduser().resolve()),
+                        str(published_memory_path.expanduser().resolve()),
+                        started_at if started_at is not None else int(time.time()),
+                    ),
+                )
+        except sqlite3.IntegrityError:
+            raise DataSourceConflict(
+                "该数据源正在生成问数资产，请稍后重试"
+            ) from None
+
+    def update_asset_batch(
+        self,
+        source_id: str,
+        batch_id: str,
+        *,
+        phase: str,
+        backup_paths: Iterable[Path] = (),
+    ) -> None:
+        paths = [
+            str(path.expanduser().resolve()) for path in backup_paths
+        ]
+        with self._lock, self._connection(write=True) as connection:
+            result = connection.execute(
+                """
+                UPDATE active_asset_batches
+                SET phase = ?, backup_paths_json = ?
+                WHERE source_id = ? AND batch_id = ?
+                """,
+                (
+                    phase,
+                    json.dumps(paths, ensure_ascii=False),
+                    source_id,
+                    batch_id,
+                ),
+            )
+            if result.rowcount != 1:
+                raise DataSourceConflict("问数资产生成批次已失效")
+
+    def finish_asset_batch(self, source_id: str, batch_id: str) -> None:
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                DELETE FROM active_asset_batches
+                WHERE source_id = ? AND batch_id = ?
+                """,
+                (source_id, batch_id),
+            )
+
+    def active_asset_batches(
+        self,
+        source_id: str | None = None,
+    ) -> tuple[Mapping[str, Any], ...]:
+        parameters: tuple[str, ...] = ()
+        where = ""
+        if source_id is not None:
+            where = " WHERE source_id = ?"
+            parameters = (source_id,)
+        with self._lock, self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT source_id, batch_id, candidate_root,
+                    candidate_memory, published_memory_path,
+                    backup_paths_json, phase, started_at
+                FROM active_asset_batches
+                """
+                + where
+                + " ORDER BY started_at, source_id",
+                parameters,
+            ).fetchall()
+        return tuple(
+            {
+                **dict(row),
+                "backup_paths": tuple(
+                    json.loads(row["backup_paths_json"])
+                ),
+            }
+            for row in rows
+        )
+
+    def active_asset_paths(self, source_id: str) -> frozenset[Path]:
+        paths: set[Path] = set()
+        for item in self.active_asset_batches(source_id):
+            paths.update(
+                Path(str(item[name])).expanduser().resolve()
+                for name in (
+                    "candidate_root",
+                    "candidate_memory",
+                    "published_memory_path",
+                )
+            )
+            paths.update(
+                Path(str(path)).expanduser().resolve()
+                for path in item["backup_paths"]
+            )
+        return frozenset(paths)
 
     def pending_cleanups(
         self,

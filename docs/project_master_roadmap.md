@@ -1730,7 +1730,7 @@ B4 使用 `mysql-lzh-monitor` 固定只读数据源，实现确定性日报/月�
 
 # 38. B5 动态数据源管理与会话强绑定
 
-B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为 `agent_data/data_sources/catalog.sqlite3`，支持 `DATA_SOURCE_CATALOG_PATH` 覆盖，并以 schema version 3 事务迁移现有 `postgresql-main` 和 `mysql-lzh-monitor`；v2 增加 MySQL TLS 模式及证书路径，v3 增加幂等的 pending asset cleanup 登记。
+B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为 `agent_data/data_sources/catalog.sqlite3`，支持 `DATA_SOURCE_CATALOG_PATH` 覆盖，并以 schema version 4 事务迁移现有 `postgresql-main` 和 `mysql-lzh-monitor`；v2 增加 MySQL TLS 模式及证书路径，v3 增加幂等的 pending asset cleanup 登记，v4 增加不含凭据的 active asset batch 协调登记。
 
 - `source_id` 是不可修改的内部永久身份；`display_name` 可重命名且不移动 Metadata、Chroma、Widget 授权、报表依赖或历史会话。
 - 内置源继续使用环境凭据引用；新建源使用 `DATA_SOURCE_CREDENTIAL_KEY` 驱动的 Fernet 加密，不经 API、日志或测试快照回显。
@@ -1738,14 +1738,15 @@ B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为
 - `ready/disabled` 修改范围后强制进入 `training_required`，不能借启停绕过；重新 prepare、候选验证、原子发布和 revision 递增是恢复 `ready` 的唯一流程。
 - 新建直连源支持 PostgreSQL 和 MySQL；连接测试、Metadata 发现、表字段范围均为只读，不接受前端 SQL。
 - 新源按 `source_id` 生成隔离 Metadata、方言 DDL和确定性基础文档 Chroma；没有真实 SQL 示例时不编造 Tool Memory。
-- Runtime 缓存绑定 `runtime_revision`，请求以租约持有旧 Runtime；失效后待最后一个请求释放再关闭资源，构建失败和运行中请求不会使用半成品。
+- Runtime 缓存绑定 `runtime_revision`，请求以租约持有旧 Runtime；prepare 不预先 invalidate，只有新 Runtime 构建和验证成功后才原子切换缓存。构建失败时旧 Runtime/revision、旧 Memory 和四类正式资产完整保留，活跃请求及后续 require 继续使用旧实例。
 - 主工作台使用共享数据源安全摘要刷新；管理操作后，新会话弹窗、标题、历史名称、建议卡和发送门禁无需刷新浏览器即可同步。
 - 发送必须同时满足会话已绑定、数据源 `ready` 且 `enabled_for_chat=true`，其余生命周期按具体原因禁用。
 - 错源推荐不再将业务词映射固定 ID；capability 精确匹配后，对所有授权动态源按安全 Metadata/路由摘要评分，并要求最低阈值和领先差值。
 - MySQL 支持 `disabled / required / verify_ca / verify_identity` TLS 模式，测试连接和正式 Runtime 共用参数构造；PostgreSQL `sslmode` 不变。
-- 发布对 Metadata、revision 版本 Memory、DDL、业务文档和 catalog 状态执行协调切换与失败补偿；新 Runtime 可构建后才清理候选、本批次备份和不再引用的旧 revision。
-- 清理器只处理动态源自己的受管根目录并保护 catalog 当前四类正式资产；旧 Runtime 或文件锁占用时登记 pending cleanup，在请求释放或下次启动重试。内置 B3、B4、其他源和目录外资产不清理。
-- MySQL 与 PostgreSQL 均发现真实索引并保留主键、唯一性、复合顺序、方向和方法；只有完整复合键/索引进入 DDL，部分选择和表达式索引安全跳过。
+- 发布对 Metadata、revision 版本 Memory、DDL、业务文档和 catalog 状态执行协调切换与失败补偿；同源 prepare 共享锁并返回 409，异源可并行，活动批次由 Catalog 保护，scope hash/status/revision 在安装前及发布事务内乐观校验。
+- 清理器只处理动态源自己的受管根目录并保护 catalog 当前四类正式资产、当前/retired Runtime 和活动批次路径；Runtime 释放回调只重试明确 pending，不再扫描目录。启动孤儿清理仅处理超过 10 分钟宽限期的登记批次；内置 B3、B4、其他源和目录外资产不清理。
+- MySQL 与 PostgreSQL 均发现真实索引并保留主键、唯一性、复合顺序、方向和方法；`PRIMARY KEY` 只来源于完整 `primary=true` 索引，部分选择和表达式索引安全跳过。旧 Metadata 仅有 `primary_key=true` 字段标记时拒绝 prepare 并要求重新 discover，无主键旧表不受影响。
+- SQLGuard 执行链既有 6/7 是未固定 `deterministic_candidate_tables` 时 Retriever 召回导致的非确定测试契约，不属于 B5 回归；本次未修改 SQLGuard、Retriever 或 GuardedRunSqlTool。
 - 侧栏数据源切换器已移除。“新对话”先选择 `ready/enabled` 数据源，确认后由后端 SQLite 永久绑定；同源幂等、改绑 409、清空消息不解除。
 - 明确错源在 Agent 前返回 `data_source_suggestion`；用户确认后在目标源创建新会话并重发，原会话不改变。
 - Widget 只看 `allowed_source_ids` 与可用状态，永远不显示管理入口或未授权名称。
