@@ -16,6 +16,12 @@ interface Source {
   is_builtin: boolean;
   selected_tables_count: number;
   selected_columns_count: number;
+  discovered_tables_count?: number;
+  discovered_columns_count?: number;
+  included_tables_count?: number;
+  included_columns_count?: number;
+  excluded_tables_count?: number;
+  pending_confirmation_count?: number;
   host?: string;
   port?: number;
   database_name?: string;
@@ -327,6 +333,13 @@ function ScopeSelector({
           });
         })}>{busy === 'scope' ? '保存中…' : `保存范围（${selected.size} 字段）`}</button>
         <button disabled={Boolean(busy) || detail.selected_tables_count === 0} onClick={() => action('prepare', () => api(`/api/data-source-management/${source.source_id}/prepare`, { method: 'POST' }))}>{busy === 'prepare' ? '准备中…' : '生成问数资产'}</button>
+      </div>
+      <div className="data-source-scope-stats" aria-label="问数范围统计">
+        <span>已发现<strong>{detail.discovered_tables_count ?? grouped.size}</strong>表</span>
+        <span>已纳入问数<strong>{detail.included_tables_count ?? detail.selected_tables_count}</strong>表</span>
+        <span>已排除<strong>{detail.excluded_tables_count ?? Math.max(grouped.size - detail.selected_tables_count, 0)}</strong>表</span>
+        <span>待确认<strong>{detail.pending_confirmation_count ?? 0}</strong>表</span>
+        <span>已纳入字段<strong>{detail.included_columns_count ?? detail.selected_columns_count}</strong>个</span>
       </div>
       {error && <p style={{ color: '#b91c1c', fontSize: 13 }}>{error}</p>}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>

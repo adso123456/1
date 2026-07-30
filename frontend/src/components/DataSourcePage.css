@@ -491,6 +491,30 @@
   border-top: 1px solid #e7ebef;
 }
 
+.data-source-scope-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.data-source-scope-stats span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 9px;
+  border: 1px solid #e1e7ec;
+  border-radius: 8px;
+  background: #f8fafb;
+  color: #66727d;
+  font-size: 12px;
+}
+
+.data-source-scope-stats strong {
+  color: #26323d;
+  font-size: 13px;
+}
+
 .data-source-scope details {
   background: #fbfcfd;
 }

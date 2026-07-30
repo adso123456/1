@@ -29,13 +29,22 @@ from tools.regression_service_harness import (
 )
 
 
-SERVER_URL = "http://127.0.0.1:8000"
+SERVER_PORT = int(os.getenv("VANNA_TEST_SERVER_PORT", "8000"))
+SERVER_URL = f"http://127.0.0.1:{SERVER_PORT}"
 SOURCE_ID = "mysql-lzh-monitor"
 SUITE_PATH = (
     PROJECT_ROOT / "training" / "mysql_lzh_monitor" / "regression_suite.json"
 )
-RESULT_PATH = (
-    PROJECT_ROOT / "training" / "mysql_lzh_monitor" / "regression_result.json"
+RESULT_PATH = Path(
+    os.getenv(
+        "MYSQL_B3_RESULT_PATH",
+        str(
+            PROJECT_ROOT
+            / "training"
+            / "mysql_lzh_monitor"
+            / "regression_result.json"
+        ),
+    )
 )
 METADATA_PATH = (
     PROJECT_ROOT / "agent_data" / SOURCE_ID / "column_metadata_index.json"
@@ -45,12 +54,14 @@ METADATA_PATH = (
 def _port_open() -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(1)
-        return sock.connect_ex(("127.0.0.1", 8000)) == 0
+        return sock.connect_ex(("127.0.0.1", SERVER_PORT)) == 0
 
 
 def _start_server() -> tuple[subprocess.Popen[str], list[str]]:
     if _port_open():
-        raise RuntimeError("8000 端口已占用，无法证明本分支服务")
+        raise RuntimeError(
+            f"{SERVER_PORT} 端口已占用，无法证明本分支服务"
+        )
     required = (
         "DEEPSEEK_API_KEY",
         "DB_USER",
@@ -76,10 +87,14 @@ def _start_server() -> tuple[subprocess.Popen[str], list[str]]:
             "VANNA_REQUEST_TRACE_DIR": str(
                 Path(r"E:\3\_runtime\mysql-lzh-monitor-sse-traces")
             ),
+            "VANNA_SERVER_PORT": str(SERVER_PORT),
         }
     )
     process = subprocess.Popen(
-        [sys.executable, "step4_server.py"],
+        [
+            os.getenv("VANNA_TEST_PYTHON", sys.executable),
+            "step4_server.py",
+        ],
         cwd=PROJECT_ROOT,
         env=env,
         stdout=subprocess.PIPE,
@@ -176,6 +191,23 @@ def _post_sse(
     return {
         "http_status": status,
         "event_count": len(events),
+        "event_types": [
+            str(
+                event.get("type")
+                or (event.get("rich") or {}).get("type")
+                or ""
+            )
+            for event in events
+        ],
+        "report_results": [
+            event.get("data") or (event.get("rich") or {}).get("data")
+            for event in events
+            if (
+                event.get("type")
+                or (event.get("rich") or {}).get("type")
+            )
+            == "report_result"
+        ],
         "errors": errors,
         "dataframes": dataframe_events,
         "final_text": final_text,

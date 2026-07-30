@@ -44,6 +44,24 @@ class MySQLSQLGuard(SQLGuard):
                 candidate_mismatch=[],
                 reason="仅允许单条 SQL，禁止多语句",
             )
+        if re.search(
+            r"\b(?:monitor_time|sampling_time|record_time|create_time|"
+            r"update_time|predictiontime|datadate)\b\s*"
+            r"(?:<=|between\b)",
+            sql,
+            flags=re.I,
+        ):
+            return SQLGuardResult(
+                passed=False,
+                severity="error",
+                used_tables=[],
+                used_columns=[],
+                unknown_tables=[],
+                unknown_columns=[],
+                forbidden_operations=[],
+                candidate_mismatch=[],
+                reason="时间范围必须使用 >= 起点且 < 终点的半开区间",
+            )
         return super().validate(sql=sql, query=query, **kwargs)
 
     def _is_possible_column_identifier(self, identifier: str) -> bool:

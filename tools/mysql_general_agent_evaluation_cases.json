@@ -1,0 +1,286 @@
+{
+  "schema_version": "1.0",
+  "source_id": "mysql-lzh-monitor",
+  "domain_count": 15,
+  "domains": [
+    {
+      "domain": "其他业务",
+      "representative_table": "rs_aquatic_pwxs_records",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询水产养殖污染源记录表的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计水产养殖污染源记录表的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询水产养殖污染源记录表最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "巡查调查",
+      "representative_table": "dc_survey_task",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询巡查任务表的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计巡查任务表的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询巡查任务表最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "指标与字典",
+      "representative_table": "ad_dict",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询数据字典的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计数据字典的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询数据字典最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "模型计算",
+      "representative_table": "model_result_records",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询model_result_records的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计model_result_records的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询model_result_records最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "气象监测",
+      "representative_table": "wh_meteorological_day_records",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询气象日记录表的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计气象日记录表的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询气象日记录表最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "水体与空间地理",
+      "representative_table": "wm_water_source",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询水源地（新）的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计水源地（新）的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询水源地（新）最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "水文监测",
+      "representative_table": "wh_hydrological_day_records",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询水文日记录表的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计水文日记录表的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询水文日记录表最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "水生态",
+      "representative_table": "we_sediment_records",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询沉积物-综合污染指数的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计沉积物-综合污染指数的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询沉积物-综合污染指数最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "水质监测",
+      "representative_table": "we_ecologyquality_records",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询水生态环境质量状况指数的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计水生态环境质量状况指数的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询水生态环境质量状况指数最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "污染源与排放",
+      "representative_table": "rs_pollutant_plastics",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询微塑料-调查数据的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计微塑料-调查数据的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询微塑料-调查数据最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "社会经济",
+      "representative_table": "se_gdp",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询国民经济和社会发展指标的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计国民经济和社会发展指标的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询国民经济和社会发展指标最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "视频与设备",
+      "representative_table": "wm_camera_underwater",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询水下摄像头信息表的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计水下摄像头信息表的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询水下摄像头信息表最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "遥感监测",
+      "representative_table": "wm_raster_inversion",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询遥感反演结果表（合并版）的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计遥感反演结果表（合并版）的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询遥感反演结果表（合并版）最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "项目与防治任务",
+      "representative_table": "rs_emergency_directory",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询水污染防治行动计划目录的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计水污染防治行动计划目录的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询水污染防治行动计划目录最近一段时间的变化趋势"
+        }
+      ]
+    },
+    {
+      "domain": "预警告警",
+      "representative_table": "rs_warn_records",
+      "questions": [
+        {
+          "kind": "detail",
+          "question": "查询污染预警消息通知的明细，最多返回20条"
+        },
+        {
+          "kind": "aggregate",
+          "question": "统计污染预警消息通知的记录数量"
+        },
+        {
+          "kind": "trend",
+          "question": "查询污染预警消息通知最近一段时间的变化趋势"
+        }
+      ]
+    }
+  ],
+  "required_output_types": [
+    "text",
+    "table",
+    "bar",
+    "line",
+    "pie",
+    "sql",
+    "dashboard"
+  ]
+}

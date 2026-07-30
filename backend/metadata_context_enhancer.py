@@ -45,6 +45,7 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
     ) -> str:
         table_lines = []
         column_lines = []
+        table_column_lines = []
         seen_columns: set[tuple[str, str]] = set()
 
         for index, candidate in enumerate(candidates, start=1):
@@ -68,6 +69,15 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
                     f"({column['column_type']}): {column['column_comment']} | "
                     f"matched_by={', '.join(column['matched_by'])}"
                 )
+            if index <= 3:
+                rendered = "、".join(
+                    f"{column['column_name']}"
+                    f"({column['column_comment']})"
+                    for column in candidate.get("columns", [])
+                )
+                table_column_lines.append(
+                    f"- {candidate['table_name']}: {rendered}"
+                )
 
         if not column_lines:
             column_lines.append("- No deterministic column match. Use table priority first.")
@@ -87,5 +97,8 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
                 "",
                 "Candidate columns:",
                 "\n".join(column_lines[:20]),
+                "",
+                "Full columns for the top 3 relevant tables:",
+                "\n".join(table_column_lines),
             ]
         )

@@ -152,6 +152,13 @@ export interface DataSourceSummary {
   status: string;
   enabled_for_chat: boolean;
   selected_tables_count: number;
+  selected_columns_count?: number;
+  discovered_tables_count?: number;
+  discovered_columns_count?: number;
+  included_tables_count?: number;
+  included_columns_count?: number;
+  excluded_tables_count?: number;
+  pending_confirmation_count?: number;
 }
 
 export interface DataSourceSuggestion {
