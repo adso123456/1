@@ -13,20 +13,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.data_source_catalog import DataSourceCatalog
+from backend.data_source_catalog import DataSourceCatalog, resolve_catalog_path
 from backend.data_source_connectors import DataSourceAssetPreparer
 from backend.data_source_registry import DataSourceRegistry
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 
 SOURCE_ID = "mysql-lzh-monitor"
-DEFAULT_CATALOG = Path(r"E:\3\posgresql\1\agent_data\data_sources\catalog.sqlite3")
 DEFAULT_INVENTORY = PROJECT_ROOT / "config" / "mysql_full_schema_inventory.json"
 DEFAULT_SCOPE = PROJECT_ROOT / "config" / "mysql_general_agent_scope.json"
 
 
-def _args() -> argparse.Namespace:
+def _args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="发布 MySQL 通用问数范围")
-    parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
+    parser.add_argument(
+        "--catalog",
+        type=Path,
+        help="目标 Catalog 路径；--apply 时必须显式提供",
+    )
     parser.add_argument("--inventory", type=Path, default=DEFAULT_INVENTORY)
     parser.add_argument("--scope", type=Path, default=DEFAULT_SCOPE)
     parser.add_argument(
@@ -34,7 +37,12 @@ def _args() -> argparse.Namespace:
         action="store_true",
         help="实际更新 Catalog 并执行 crash-safe 发布；默认只做 Plan",
     )
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.apply and args.catalog is None:
+        parser.error("--apply 必须显式提供 --catalog，拒绝写入默认 Catalog")
+    if args.catalog is None:
+        args.catalog = resolve_catalog_path()
+    return args
 
 
 def _load(path: Path) -> Any:
@@ -190,9 +198,11 @@ def _verify_published(
     }
 
 
-def main() -> int:
-    args = _args()
+def main(argv: list[str] | None = None) -> int:
+    args = _args(argv)
     environ = dict(os.environ)
+    print(f"MODE: {'APPLY' if args.apply else 'PLAN'}")
+    print(f"CATALOG: {args.catalog.resolve()}")
     catalog = DataSourceCatalog(args.catalog, environ=environ)
     record = catalog.require(SOURCE_ID)
     inventory = _load(args.inventory)
@@ -204,8 +214,6 @@ def main() -> int:
     )
     table_count = len({item["table"] for item in selected})
     column_count = len(selected)
-    print(f"MODE: {'APPLY' if args.apply else 'PLAN'}")
-    print(f"CATALOG: {args.catalog.resolve()}")
     print(f"CURRENT_REVISION: {record.runtime_revision}")
     print(f"CURRENT_TABLES: {record.selected_tables_count}")
     print(f"CURRENT_COLUMNS: {record.selected_columns_count}")

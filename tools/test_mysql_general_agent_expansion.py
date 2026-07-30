@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -18,9 +20,7 @@ from backend.mysql_sql_guard import MySQLSQLGuard
 INVENTORY = ROOT / "config" / "mysql_full_schema_inventory.json"
 SCOPE = ROOT / "config" / "mysql_general_agent_scope.json"
 EVALUATION = ROOT / "tools" / "mysql_general_agent_evaluation_cases.json"
-DEFAULT_METADATA = Path(
-    r"E:\3\posgresql\1\agent_data\mysql-lzh-monitor\column_metadata_index.json"
-)
+SOURCE_ID = "mysql-lzh-monitor"
 
 
 def _load(path: Path) -> Any:
@@ -33,37 +33,160 @@ def _sql(table: dict[str, Any]) -> str:
     return f"SELECT {rendered} FROM `{table['table']}` LIMIT 1"
 
 
-def _args() -> argparse.Namespace:
+def _args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--metadata", type=Path, default=DEFAULT_METADATA)
+    parser.add_argument(
+        "--metadata",
+        type=Path,
+        help="待验收 Metadata；--live 时必须显式提供",
+    )
+    parser.add_argument(
+        "--revision",
+        type=int,
+        help="存在 asset_manifest.json 时用于校验 runtime revision",
+    )
+    parser.add_argument(
+        "--scope-fingerprint",
+        help="存在 asset_manifest.json 时用于校验 scope fingerprint",
+    )
     parser.add_argument("--live", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.live and args.metadata is None:
+        parser.error("--live 必须显式提供 --metadata，拒绝读取默认正式资产")
+    return args
 
 
-def main() -> int:
-    args = _args()
-    inventory = _load(INVENTORY)
-    scope = _load(SCOPE)
-    evaluation = _load(EVALUATION)
-    metadata = _load(args.metadata)
+def build_candidate_metadata(
+    inventory: dict[str, Any],
+    scope: dict[str, Any],
+) -> list[dict[str, Any]]:
+    inventory_tables = {
+        item["table_name"]: item for item in inventory["tables"]
+    }
+    metadata = []
+    for table_scope in scope["tables"]:
+        table = inventory_tables[table_scope["table"]]
+        columns = {item["name"]: item for item in table["columns"]}
+        first_column = table_scope["included_columns"][0]
+        for column_name in table_scope["included_columns"]:
+            column = columns[column_name]
+            metadata.append(
+                {
+                    "schema": table["schema"],
+                    "table": table["table_name"],
+                    "table_comment": table["table_comment"],
+                    "column": column_name,
+                    "type": column["type"],
+                    "mysql_type": column["type"],
+                    "nullable": column["nullable"],
+                    "default": column["default"],
+                    "comment": column["comment"],
+                    "ordinal_position": column["ordinal_position"],
+                    "primary_key": column["key"] == "PRI",
+                    "indexes": table["indexes"],
+                    "logical_relations": (
+                        table_scope["relationships"]
+                        if column_name == first_column
+                        else []
+                    ),
+                    "object_type": (
+                        "view"
+                        if table["table_type"] == "VIEW"
+                        else "table"
+                    ),
+                    "dialect": "mysql",
+                    "domain": table_scope["domain"],
+                    "grain": table_scope["grain"],
+                    "time_column": table_scope["time_column"],
+                    "valid_row_rules": table_scope["valid_row_rules"],
+                    "confidence": table_scope["confidence"],
+                }
+            )
+    return metadata
+
+
+def validate_metadata_scope(
+    metadata: list[dict[str, Any]],
+    scope: dict[str, Any],
+) -> None:
+    expected = {
+        (table["table"], column)
+        for table in scope["tables"]
+        for column in table["included_columns"]
+    }
+    actual_rows = [
+        (str(item.get("table") or ""), str(item.get("column") or ""))
+        for item in metadata
+    ]
+    actual = set(actual_rows)
+    if len(scope["tables"]) != 147 or len(expected) != 3085:
+        raise RuntimeError("Scope 不是预期的 147 表 / 3085 字段")
+    if len(actual_rows) != len(actual):
+        raise RuntimeError("Metadata 存在重复表字段")
+    if actual != expected:
+        missing = len(expected - actual)
+        unexpected = len(actual - expected)
+        raise RuntimeError(
+            f"Metadata 与 scope 不一致：缺少 {missing}，多出 {unexpected}"
+        )
+    excluded = set(scope["excluded_columns"])
+    leaked = {
+        f"{table}.{column}"
+        for table, column in actual
+        if f"{table}.{column}" in excluded
+    }
+    if leaked:
+        raise RuntimeError(
+            "Metadata 包含排除字段：" + ", ".join(sorted(leaked))
+        )
+
+
+def validate_manifest(
+    metadata_path: Path,
+    expected_revision: int | None,
+    expected_scope_fingerprint: str | None,
+) -> None:
+    manifest_path = metadata_path.parent / "asset_manifest.json"
+    if not manifest_path.is_file():
+        return
+    if expected_revision is None or not expected_scope_fingerprint:
+        raise RuntimeError(
+            "发现 asset_manifest.json，必须显式提供 "
+            "--revision 和 --scope-fingerprint"
+        )
+    manifest = _load(manifest_path)
+    if manifest.get("source_id") != SOURCE_ID:
+        raise RuntimeError("Manifest source_id 不一致")
+    if manifest.get("scope_fingerprint") != expected_scope_fingerprint:
+        raise RuntimeError("Manifest scope fingerprint 不一致")
+    metadata_hash = hashlib.sha256(metadata_path.read_bytes()).hexdigest()
+    if manifest.get("metadata_hash") != metadata_hash:
+        raise RuntimeError("Manifest Metadata hash 不一致")
+    if manifest.get("runtime_revision") != expected_revision:
+        raise RuntimeError("Manifest revision 不一致")
+
+
+def _run(
+    args: argparse.Namespace,
+    inventory: dict[str, Any],
+    scope: dict[str, Any],
+    evaluation: dict[str, Any],
+    metadata_path: Path,
+    metadata: list[dict[str, Any]],
+) -> int:
+    validate_metadata_scope(metadata, scope)
+    validate_manifest(
+        metadata_path,
+        args.revision,
+        args.scope_fingerprint,
+    )
     metadata_keys = {
         (item["table"], item["column"]) for item in metadata
     }
-    guard = MySQLSQLGuard(args.metadata)
+    guard = MySQLSQLGuard(metadata_path)
     failures = []
     queries = []
     for table in scope["tables"]:
-        if not table["included_columns"]:
-            failures.append(f"{table['table']}: no columns")
-            continue
-        missing = [
-            column
-            for column in table["included_columns"]
-            if (table["table"], column) not in metadata_keys
-        ]
-        if missing:
-            failures.append(f"{table['table']}: metadata missing")
-            continue
         sql = _sql(table)
         result = guard.validate(sql, query=f"查询{table['table']}明细")
         if not result.passed:
@@ -104,9 +227,7 @@ def main() -> int:
             inventory["investigated_previous_unselected_count"] == 289
         ),
         "scope_tables": len(scope["tables"]) == 147,
-        "scope_columns": sum(
-            len(item["included_columns"]) for item in scope["tables"]
-        ) == 3085,
+        "scope_columns": len(metadata_keys) == 3085,
         "domain_matrix": (
             evaluation["domain_count"]
             == len(inventory["included_domain_counts"])
@@ -123,6 +244,41 @@ def main() -> int:
     if failures:
         print("FAILURE_DETAILS=" + json.dumps(failures, ensure_ascii=False))
     return 0 if all(checks.values()) else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _args(argv)
+    inventory = _load(INVENTORY)
+    scope = _load(SCOPE)
+    evaluation = _load(EVALUATION)
+    if args.metadata is not None:
+        metadata_path = args.metadata.resolve()
+        metadata = _load(metadata_path)
+        return _run(
+            args,
+            inventory,
+            scope,
+            evaluation,
+            metadata_path,
+            metadata,
+        )
+    metadata = build_candidate_metadata(inventory, scope)
+    with tempfile.TemporaryDirectory(
+        prefix="mysql-general-agent-metadata-"
+    ) as temp_dir:
+        metadata_path = Path(temp_dir) / "column_metadata_index.json"
+        metadata_path.write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return _run(
+            args,
+            inventory,
+            scope,
+            evaluation,
+            metadata_path,
+            metadata,
+        )
 
 
 if __name__ == "__main__":
