@@ -19,11 +19,19 @@ from backend.data_source_connectors import (
 )
 from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
+from backend.data_source_scope_stats import scope_statistics
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 logger = logging.getLogger(__name__)
+
+
+def _public_record(record: Any, *, detail: bool = False) -> dict[str, Any]:
+    return {
+        **record.public_dict(detail=detail),
+        **scope_statistics(record),
+    }
 
 
 class CreateDataSourceRequest(BaseModel):
@@ -153,7 +161,7 @@ def create_data_source_management_router(
         enabled: bool | None = Query(default=None),
     ) -> list[dict[str, Any]]:
         return [
-            record.public_dict()
+            _public_record(record)
             for record in catalog.list(
                 search=search,
                 database_type=database_type,
@@ -177,7 +185,7 @@ def create_data_source_management_router(
         dependencies=protected,
     )
     def get_source(source_id: str) -> dict[str, Any]:
-        return _safe(lambda: catalog.require(source_id).public_dict(detail=True))
+        return _safe(lambda: _public_record(catalog.require(source_id), detail=True))
 
     @router.patch(
         "/data-source-management/{source_id}",
@@ -188,10 +196,13 @@ def create_data_source_management_router(
         body: UpdateDataSourceRequest,
     ) -> dict[str, Any]:
         return _safe(
-            lambda: catalog.update(
-                source_id,
-                **body.model_dump(exclude_unset=True),
-            ).public_dict(detail=True)
+            lambda: _public_record(
+                catalog.update(
+                    source_id,
+                    **body.model_dump(exclude_unset=True),
+                ),
+                detail=True,
+            )
         )
 
     @router.post(
@@ -218,13 +229,16 @@ def create_data_source_management_router(
         body: SaveScopeRequest,
     ) -> dict[str, Any]:
         return _safe(
-            lambda: catalog.save_scope(
-                source_id,
-                [
-                    item.model_dump(by_alias=True)
-                    for item in body.items
-                ],
-            ).public_dict(detail=True)
+            lambda: _public_record(
+                catalog.save_scope(
+                    source_id,
+                    [
+                        item.model_dump(by_alias=True)
+                        for item in body.items
+                    ],
+                ),
+                detail=True,
+            )
         )
 
     @router.post(

@@ -30,6 +30,11 @@ class OptimizedSystemPromptBuilder(DefaultSystemPromptBuilder):
    - Generate MySQL 8 compatible SQL.
    - Use MySQL date functions and backtick identifiers when needed.
    - Do not generate PostgreSQL-only functions or syntax.
+   - Every time range MUST be half-open: time_column >= start AND
+     time_column < end. Never use BETWEEN or <= for the upper time bound.
+   - Apply del_flag/DELETED_FLAG filters only when the retrieved Metadata
+     explicitly lists that valid-row rule.
+   - JOIN only relationships explicitly listed as reliable in Metadata.
 """,
             )
         return (

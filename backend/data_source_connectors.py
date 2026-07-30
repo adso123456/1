@@ -1008,6 +1008,118 @@ class DataSourceAssetPreparer:
         quote = "`" if dialect == "mysql" else '"'
         return quote + name.replace(quote, quote * 2) + quote
 
+    @staticmethod
+    def _domain_documents(
+        grouped: dict[tuple[str, str], list[dict[str, Any]]],
+        *,
+        chunk_size: int = 8,
+    ) -> list[str]:
+        """按领域分块生成确定性业务文档，避免把全库 DDL 塞入单次 Prompt。"""
+        domains: dict[str, list[str]] = {}
+        for (_, table), columns in sorted(grouped.items()):
+            first = columns[0]
+            domain = str(first.get("domain") or "其他业务")
+            time_column = str(first.get("time_column") or "")
+            grain = str(first.get("grain") or "未确认")
+            rules = list(first.get("valid_row_rules") or [])
+            relations = list(first.get("logical_relations") or [])
+            summary = (
+                f"{table}"
+                f"{'（' + str(first.get('table_comment')) + '）' if first.get('table_comment') else ''}"
+                f"；粒度：{grain}"
+                f"{'；时间字段：' + time_column if time_column else ''}"
+                f"{'；有效记录：' + '、'.join(map(str, rules)) if rules else ''}"
+                f"{'；可靠关系：' + '、'.join(str(item.get('column')) + '→' + str(item.get('target')) for item in relations) if relations else ''}"
+            )
+            domains.setdefault(domain, []).append(summary)
+        documents = []
+        for domain, tables in sorted(domains.items()):
+            for offset in range(0, len(tables), chunk_size):
+                chunk = tables[offset : offset + chunk_size]
+                documents.append(
+                    f"业务领域：{domain}。可回答该领域的明细、聚合、"
+                    "排名和有时间字段时的趋势问题。主要表："
+                    + "；".join(chunk)
+                    + "。只允许使用文中列出的可靠关系；不得因同名 id/name "
+                    "自动 JOIN，不得跨小时/日/月粒度直接拼接。"
+                )
+        return documents
+
+    @staticmethod
+    def _preserved_sql_tool_payload(
+        *,
+        source_id: str,
+        memory_path: Path,
+        metadata_path: Path,
+        database_type: str,
+    ) -> list[tuple[str, str, dict[str, Any]]]:
+        """从旧正式 Memory 复制并重新校验已验证 SQL Tool Memory。"""
+        ids: list[str] = []
+        documents: list[str] = []
+        metadatas: list[dict[str, Any]] = []
+        if memory_path.exists():
+            from backend.memory import create_memory
+
+            memory = create_memory(memory_path)
+            try:
+                collection = memory._get_collection()
+                getter = getattr(collection, "get", None)
+                if callable(getter):
+                    result = getter(
+                        where={"category": "sql_example"},
+                        include=["documents", "metadatas"],
+                    )
+                    ids = list(result.get("ids") or [])
+                    documents = list(result.get("documents") or [])
+                    metadatas = list(result.get("metadatas") or [])
+            finally:
+                if not DataSourceAssetPreparer._close_memory(memory):
+                    raise DataSourceCatalogError("旧正式 Memory 资源释放失败")
+        if not ids and source_id == "mysql-lzh-monitor":
+            from training.mysql_lzh_monitor_training import build_tool_records
+
+            records, validation = build_tool_records()
+            if not validation.get("valid"):
+                raise DataSourceCatalogError("冻结 SQL Tool Memory 校验失败")
+            ids = [item.record_id for item in records]
+            documents = [item.document for item in records]
+            metadatas = [dict(item.metadata) for item in records]
+        if not (len(ids) == len(documents) == len(metadatas)):
+            raise DataSourceCatalogError("旧 SQL Tool Memory 结构不完整")
+        guard = None
+        if database_type == "mysql":
+            from backend.mysql_sql_guard import MySQLSQLGuard
+
+            guard = MySQLSQLGuard(index_path=metadata_path)
+        payload = []
+        for record_id, document, metadata in zip(
+            ids, documents, metadatas, strict=True
+        ):
+            item = dict(metadata or {})
+            if item.get("source_id") not in {None, "", source_id}:
+                raise DataSourceCatalogError("SQL Tool Memory 数据源不匹配")
+            if item.get("tool_name") != "run_sql":
+                raise DataSourceCatalogError("仅允许保留 run_sql Tool Memory")
+            if guard is not None:
+                try:
+                    args = json.loads(str(item["args_json"]))
+                    sql = str(args["sql"])
+                except (KeyError, TypeError, ValueError):
+                    raise DataSourceCatalogError(
+                        "SQL Tool Memory 参数不可解析"
+                    ) from None
+                result = guard.validate(
+                    sql=sql,
+                    query=str(item.get("question") or document),
+                )
+                if not result.passed:
+                    raise DataSourceCatalogError(
+                        "既有 SQL Tool Memory 未通过新范围 SQLGuard"
+                    )
+            item["source_id"] = source_id
+            payload.append((str(record_id), str(document), item))
+        return payload
+
     def prepare(self, source_id: str) -> dict[str, Any]:
         lock = _prepare_lock(source_id)
         if not lock.acquire(blocking=False):
@@ -1047,7 +1159,6 @@ class DataSourceAssetPreparer:
             for index in item.get("indexes", []):
                 indexes[str(index.get("name", ""))] = dict(index)
         ddls: list[str] = []
-        documents: list[str] = []
         for (schema, table), columns in sorted(grouped.items()):
             columns.sort(key=lambda item: item.get("ordinal_position", 0))
             qualified = (
@@ -1165,18 +1276,7 @@ class DataSourceAssetPreparer:
             if index_statements:
                 ddl += "\n" + "\n".join(index_statements)
             ddls.append(ddl)
-            table_comment = columns[0].get("table_comment", "")
-            documents.append(
-                f"数据源“{record.display_name}”中的{table}表"
-                f"{'（' + table_comment + '）' if table_comment else ''}；"
-                "字段包括："
-                + "、".join(
-                    f"{item['column']}"
-                    f"{'（' + item['comment'] + '）' if item.get('comment') else ''}"
-                    for item in columns
-                )
-                + "。"
-            )
+        documents = self._domain_documents(grouped)
         routing_summary = "\n".join(
             [
                 record.display_name,
@@ -1196,10 +1296,15 @@ class DataSourceAssetPreparer:
                 "nullable": item.get("nullable", True),
                 "primary_key": item.get("primary_key", False),
                 "indexes": item.get("indexes", []),
-                "logical_relations": [],
+                "logical_relations": item.get("logical_relations", []),
                 "object_type": item.get("object_type", "table"),
                 "schema": item.get("schema", ""),
                 "dialect": record.database_type,
+                "domain": item.get("domain", ""),
+                "grain": item.get("grain", ""),
+                "time_column": item.get("time_column", ""),
+                "valid_row_rules": item.get("valid_row_rules", []),
+                "confidence": item.get("confidence", ""),
             }
             for item in scope
         ]
@@ -1333,6 +1438,7 @@ class DataSourceAssetPreparer:
             asset_plan=plan,
         )
         self._inject("after_batch_registered")
+        sql_tool_payload: list[tuple[str, str, dict[str, Any]]] = []
         try:
             candidate_root.mkdir()
             candidate_paths["metadata"].write_text(
@@ -1350,6 +1456,12 @@ class DataSourceAssetPreparer:
                 encoding="utf-8",
             )
             self._inject("after_candidate_documentation")
+            sql_tool_payload = self._preserved_sql_tool_payload(
+                source_id=source_id,
+                memory_path=record.memory_path,
+                metadata_path=candidate_paths["metadata"],
+                database_type=record.database_type,
+            )
             from backend.memory import create_memory
 
             memory = create_memory(candidate_memory)
@@ -1383,16 +1495,26 @@ class DataSourceAssetPreparer:
                         for document in documents
                     ],
                 ]
+                payload_ids = [
+                    "b5-"
+                    + hashlib.sha256(
+                        f"{source_id}|{item_metadata['memory_type']}|{document}".encode(
+                            "utf-8"
+                        )
+                    ).hexdigest()
+                    for document, item_metadata in payload
+                ]
+                payload.extend(
+                    (document, metadata)
+                    for _, document, metadata in sql_tool_payload
+                )
+                payload_ids.extend(
+                    record_id for record_id, _, _ in sql_tool_payload
+                )
+                if len(payload_ids) != len(set(payload_ids)):
+                    raise DataSourceCatalogError("候选 Memory 记录 ID 重复")
                 collection.add(
-                    ids=[
-                        "b5-"
-                        + hashlib.sha256(
-                            f"{source_id}|{item_metadata['memory_type']}|{document}".encode(
-                                "utf-8"
-                            )
-                        ).hexdigest()
-                        for document, item_metadata in payload
-                    ],
+                    ids=payload_ids,
                     documents=[document for document, _ in payload],
                     metadatas=[item_metadata for _, item_metadata in payload],
                 )
@@ -1578,8 +1700,8 @@ class DataSourceAssetPreparer:
             "metadata_records": len(metadata),
             "ddl_count": len(ddls),
             "documentation_count": len(documents),
-            "sql_tool_memory_count": 0,
-            "memory_count": len(ddls) + len(documents),
+            "sql_tool_memory_count": len(sql_tool_payload),
+            "memory_count": len(ddls) + len(documents) + len(sql_tool_payload),
             "runtime_revision": published.runtime_revision,
             "status": published.status,
         }

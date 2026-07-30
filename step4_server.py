@@ -30,6 +30,7 @@ from backend.data_source_suggestion import (
     DataSourceSuggestionChatHandler,
     DataSourceSuggestionService,
 )
+from backend.data_source_scope_stats import scope_statistics
 from backend.embed_access import (
     EmbedAccessError,
     bearer_token,
@@ -120,7 +121,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         async def list_data_sources() -> list[dict[str, Any]]:
             if self.resources.catalog is not None:
                 return [
-                    record.safe_summary_dict()
+                    {
+                        **record.safe_summary_dict(),
+                        **scope_statistics(record),
+                    }
                     for record in self.resources.catalog.list()
                 ]
             return [
@@ -203,7 +207,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             principal = authorize_embed(authorization, parent_origin)
             if self.resources.catalog is not None:
                 return [
-                    record.safe_summary_dict()
+                    {
+                        **record.safe_summary_dict(),
+                        **scope_statistics(record),
+                    }
                     for record in self.resources.catalog.list(
                         status="ready",
                         enabled=True,
@@ -483,7 +490,10 @@ def create_server(
 
 def main() -> None:
     server = create_server()
-    server.run(host="0.0.0.0", port=8000)
+    server.run(
+        host="0.0.0.0",
+        port=int(os.getenv("VANNA_SERVER_PORT", "8000")),
+    )
 
 
 if __name__ == "__main__":

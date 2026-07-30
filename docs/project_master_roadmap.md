@@ -1762,3 +1762,21 @@ B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为
 ```text
 B5 已完成；停止本板块，不自动开始后续新板块。
 ```
+
+---
+
+# 40. MySQL 全库业务语义梳理与通用智能问数扩展（2026-07-30）
+
+已完成全库 307 个对象、6113 个字段的只读逐表调查。最终选择 147 张表、3085 个安全字段进入通用问数，明确排除 155 张表，5 张表等待业务确认；原 B3 的 18 张表和 18 条 SQL Tool Memory 全部保留。
+
+- 正式 Metadata/Memory 已通过 B5 crash-safe 流程发布为 revision 3：147 条 DDL、24 条领域文档、18 条 SQL 示例，共 189 条 Memory。
+- Agent 检索已增加领域、实体、粒度和时间意图约束；普通问题继续使用真实 `run_sql`，水质日报/月报保持独立确定性附加能力。
+- 数据源管理页展示发现、纳入、排除、待确认对象数，API 只增加兼容性统计字段。
+- 全库一致性、147/147 只读可达性、B5 故障恢复、MySQL/PostgreSQL Runtime、路由会话、报表和前端契约回归均已完成。
+- 详细结论见 `docs/mysql_general_agent_expansion.md`、`docs/mysql_full_schema_inventory.md` 和 `docs/mysql_verified_relationships.md`。
+
+## 40.1 当前唯一动作
+
+```text
+由业务人员确认 5 张待定表；未取得可靠语义证据前不扩入 Agent。
+```

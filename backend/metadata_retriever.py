@@ -15,6 +15,30 @@ from config.settings import (
 
 
 DEFAULT_INDEX_PATH = DEFAULT_METADATA_INDEX_PATH
+DOMAIN_KEYWORDS = {
+    "水质监测": ("水质", "氨氮", "总磷", "总氮", "ph", "溶解氧", "叶绿素"),
+    "水文监测": ("水文", "水位", "流量", "流速"),
+    "气象监测": ("气象", "降雨", "降水", "气温", "风速", "风向", "湿度"),
+    "污染源与排放": (
+        "污染源",
+        "排污",
+        "排放",
+        "污水",
+        "工业企业",
+        "养殖",
+        "农业种植",
+    ),
+    "预警告警": ("预警", "告警", "报警"),
+    "水生态": ("水生态", "鱼类", "浮游", "底栖", "沉积物", "营养状态"),
+    "模型计算": ("模型", "模拟", "预测结果"),
+    "巡查调查": ("巡查", "巡检", "调查", "轨迹"),
+    "视频与设备": ("摄像头", "视频", "无人机", "无人船", "设备"),
+    "遥感监测": ("遥感", "反演", "高光谱", "影像"),
+    "水体与空间地理": ("水体", "流域", "河流", "湖泊", "行政区域", "区域"),
+    "项目与防治任务": ("项目", "防治任务", "行动计划", "考核目标"),
+    "社会经济": ("人口", "gdp", "社会经济"),
+    "指标与字典": ("字典", "指标配置", "阈值", "标准", "最低检出限"),
+}
 
 
 def resolve_index_path(index_path: str | Path | None = None) -> Path:
@@ -137,6 +161,8 @@ class DeterministicMetadataRetriever:
                 {
                     "table_name": table_name,
                     "table_comment": _clean_text(row.get("table_comment")),
+                    "domain": _clean_text(row.get("domain")),
+                    "grain": _clean_text(row.get("grain")),
                     "columns": [],
                 },
             )
@@ -218,6 +244,17 @@ class DeterministicMetadataRetriever:
                 matched_by.append(method)
             reason_parts.append(reason)
 
+        query_domains = {
+            domain
+            for domain, keywords in DOMAIN_KEYWORDS.items()
+            if any(keyword.lower() in query_compact for keyword in keywords)
+        }
+        table_domain = table.get("domain", "")
+        if query_domains and table_domain in query_domains:
+            add(6200, "domain_intent", f"业务领域命中：{table_domain}")
+        elif query_domains and table_domain:
+            add(-2200, "domain_conflict", f"业务领域不匹配：{table_domain}")
+
         if query_name == table_name_text:
             add(10000, "exact_table_name", "精确命中表名")
         elif query_name and (
@@ -284,7 +321,9 @@ class DeterministicMetadataRetriever:
             "score": max(score, 0),
             "matched_by": matched_by,
             "matched_columns": matched_columns,
+            "columns": table["columns"],
             "table_comment": table_comment,
+            "domain": table_domain,
             "conflict_family": conflict_family,
             "risk_level": risk_level,
             "reason": "；".join(reason_parts) if reason_parts else "未命中",
@@ -562,6 +601,88 @@ class DeterministicMetadataRetriever:
 
         if "水文站" in query_compact and table_name == "wm_hydrological_info":
             add(5200, "hydrological_station_intent", "水文站问题优先水文站基础信息表")
+
+        is_meteorological_analysis = (
+            any(word in query_compact for word in ("气象", "降雨", "降水"))
+            and "预报" not in query_compact
+        )
+        if is_meteorological_analysis:
+            if table_name == "wh_meteorological_day_records":
+                add(
+                    7600,
+                    "meteorological_day_fact_intent",
+                    "气象累计和按月统计优先真实气象日记录",
+                )
+            elif table_name == "wm_meteorological_info":
+                add(
+                    6400,
+                    "meteorological_station_master_intent",
+                    "气象站名称关联使用气象监测站主数据",
+                )
+            elif table_name == "wm_weather_station":
+                add(
+                    -3600,
+                    "meteorological_station_negative_guard",
+                    "真实气象记录不默认关联缺少已验证关系的备用气象站表",
+                )
+            elif "predict" in table_name:
+                add(
+                    -4200,
+                    "meteorological_forecast_negative_guard",
+                    "非预报问题降低气象预报表优先级",
+                )
+
+        is_pollutant_type_count = (
+            "污染源" in query_compact
+            and any(word in query_compact for word in ("类型", "类别", "种类"))
+            and any(word in query_compact for word in ("统计", "数量", "占比"))
+        )
+        if is_pollutant_type_count and table_name == "rs_pollutant_info":
+            add(
+                9000,
+                "pollutant_type_master_intent",
+                "污染源类型统计优先污染源主数据及 pollutant_type 字段",
+            )
+        elif is_pollutant_type_count and (
+            table_name.startswith("model_")
+            or table_name.endswith("_records")
+        ):
+            add(
+                -4200,
+                "pollutant_type_fact_negative_guard",
+                "污染源类型统计降低模型和单类事实记录表优先级",
+            )
+
+        pollutant_indicators = ("氨氮", "总磷", "总氮", "cod", "ph", "流量")
+        is_pollutant_monitoring = (
+            "污染源" in query_compact
+            and any(word in query_compact for word in ("监测站", "站id", "站点"))
+            and any(word in query_compact for word in pollutant_indicators)
+        )
+        if is_pollutant_monitoring:
+            target = (
+                "rs_pollutant_hour_records"
+                if "小时" in query_compact
+                else "rs_pollutant_day_records"
+            )
+            if table_name == target:
+                add(
+                    12500,
+                    "pollutant_monitoring_granularity",
+                    "污染源监测站指标问题命中污染源日/小时事实表",
+                )
+            elif table_name.startswith("wm_waterquality_"):
+                add(
+                    -7600,
+                    "pollutant_waterquality_negative_guard",
+                    "污染源监测站指标不得误用水质站事实表",
+                )
+            elif table_name == "rs_industrypollutant_records":
+                add(
+                    -4200,
+                    "pollutant_remote_record_negative_guard",
+                    "污染源站点监测降低工业遥感记录优先级",
+                )
 
         is_source_intake_route = "水源地取水口" in query_compact
         is_ordinary_intake = (
