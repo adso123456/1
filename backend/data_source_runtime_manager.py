@@ -70,6 +70,7 @@ class DataSourceRuntimeManager:
         self._runtime_revisions: dict[str, int] = {}
         self._active_requests: dict[str, int] = {}
         self._retired_runtimes: dict[str, list[DataSourceRuntime]] = {}
+        self._failed_close_runtimes: dict[str, list[DataSourceRuntime]] = {}
         self._release_callbacks: list[Callable[[str], None]] = []
         self._state_lock = RLock()
         self._build_locks: dict[str, Lock] = {
@@ -92,6 +93,10 @@ class DataSourceRuntimeManager:
     @property
     def database_types(self) -> tuple[str, ...]:
         return self._database_types
+
+    def runtime_revision(self, source_id: str) -> int | None:
+        with self._state_lock:
+            return self._runtime_revisions.get(source_id)
 
     def require(self, source_id: str) -> DataSourceRuntime:
         config = self._registry.require(source_id)
@@ -119,7 +124,25 @@ class DataSourceRuntimeManager:
 
             factory = self._factories[config.database_type]
             runtime = factory(config)
-            self._validate_runtime(source_id, config, runtime)
+            try:
+                self._validate_runtime(source_id, config, runtime)
+            except Exception:
+                if isinstance(runtime, DataSourceRuntime):
+                    self._close_runtime(runtime)
+                raise
+            if catalog is not None:
+                current = catalog.require(source_id)
+                if (
+                    current.runtime_revision != revision
+                    or runtime.config.memory_path.resolve()
+                    != current.memory_path.resolve()
+                    or current.status != "ready"
+                    or not current.enabled_for_chat
+                ):
+                    self._close_runtime(runtime)
+                    raise ValueError(
+                        f"source_id {source_id} 的 Runtime 与 Catalog 版本不一致"
+                    )
 
             retired: DataSourceRuntime | None = None
             with self._state_lock:
@@ -133,7 +156,13 @@ class DataSourceRuntimeManager:
                         ).append(retired)
                         retired = None
             if retired is not None:
-                self._close_runtime(retired)
+                if self._close_runtime(retired):
+                    self._notify_released(source_id)
+                else:
+                    with self._state_lock:
+                        self._failed_close_runtimes.setdefault(
+                            source_id, []
+                        ).append(retired)
             return runtime
 
     def invalidate(self, source_id: str) -> None:
@@ -146,8 +175,13 @@ class DataSourceRuntimeManager:
                 self._retired_runtimes.setdefault(source_id, []).append(retired)
                 retired = None
         if retired is not None:
-            self._close_runtime(retired)
-            self._notify_released(source_id)
+            if self._close_runtime(retired):
+                self._notify_released(source_id)
+            else:
+                with self._state_lock:
+                    self._failed_close_runtimes.setdefault(
+                        source_id, []
+                    ).append(retired)
 
     @contextmanager
     def acquire(self, source_id: str) -> Iterator[DataSourceRuntime]:
@@ -170,9 +204,16 @@ class DataSourceRuntimeManager:
                 else:
                     self._active_requests.pop(source_id, None)
                     retired = self._retired_runtimes.pop(source_id, [])
+            released = []
+            failed = []
             for item in retired:
-                self._close_runtime(item)
-            if retired:
+                (released if self._close_runtime(item) else failed).append(item)
+            if failed:
+                with self._state_lock:
+                    self._failed_close_runtimes.setdefault(
+                        source_id, []
+                    ).extend(failed)
+            if released:
                 self._notify_released(source_id)
 
     def add_release_callback(self, callback: Callable[[str], None]) -> None:
@@ -188,6 +229,7 @@ class DataSourceRuntimeManager:
                 for runtime in (
                     self._runtimes.get(source_id),
                     *self._retired_runtimes.get(source_id, []),
+                    *self._failed_close_runtimes.get(source_id, []),
                 )
                 if runtime is not None
             ]
@@ -195,6 +237,23 @@ class DataSourceRuntimeManager:
             runtime.config.memory_path.expanduser().resolve()
             for runtime in runtimes
         )
+
+    def retry_failed_closes(self, source_id: str) -> bool:
+        with self._state_lock:
+            failed = self._failed_close_runtimes.pop(source_id, [])
+        if not failed:
+            return True
+        remaining = [
+            runtime for runtime in failed if not self._close_runtime(runtime)
+        ]
+        if remaining:
+            with self._state_lock:
+                self._failed_close_runtimes.setdefault(
+                    source_id, []
+                ).extend(remaining)
+            return False
+        self._notify_released(source_id)
+        return True
 
     def _notify_released(self, source_id: str) -> None:
         with self._state_lock:
@@ -206,7 +265,7 @@ class DataSourceRuntimeManager:
                 pass
 
     @staticmethod
-    def _close_runtime(runtime: DataSourceRuntime) -> None:
+    def _close_runtime(runtime: DataSourceRuntime) -> bool:
         resources = (
             runtime.agent,
             runtime.metadata_retriever,
@@ -215,6 +274,7 @@ class DataSourceRuntimeManager:
             runtime.memory,
         )
         seen: set[int] = set()
+        succeeded = True
         for resource in resources:
             if id(resource) in seen:
                 continue
@@ -228,11 +288,16 @@ class DataSourceRuntimeManager:
                         try:
                             method(wait=True)
                         except Exception:
-                            pass
+                            succeeded = False
                     except Exception:
-                        pass
+                        succeeded = False
                     break
         memory = runtime.memory
+        if hasattr(memory, "_collection"):
+            try:
+                memory._collection = None
+            except Exception:
+                succeeded = False
         for attribute in ("_executor", "_client"):
             resource = getattr(memory, attribute, None)
             if resource is None or id(resource) in seen:
@@ -250,9 +315,15 @@ class DataSourceRuntimeManager:
                     try:
                         method()
                     except Exception:
-                        pass
+                        succeeded = False
                 except Exception:
-                    pass
+                    succeeded = False
+            if attribute == "_client":
+                try:
+                    memory._client = None
+                except Exception:
+                    succeeded = False
+        return succeeded
 
     @staticmethod
     def _validate_runtime(

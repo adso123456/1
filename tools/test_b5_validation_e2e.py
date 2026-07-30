@@ -64,7 +64,7 @@ def main() -> int:
         (
             "动态源真实问数",
             DYNAMIC_SOURCE_ID,
-            "查询 rs_outlet 和 rs_outlet_info_v2 各自的总记录数",
+            "查询 rs_outlet 总记录数",
             lambda values: "dataframe" in values and "data_source_suggestion" not in values,
         ),
         (

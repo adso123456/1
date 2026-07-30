@@ -23,7 +23,7 @@ from config.settings import PROJECT_ROOT
 
 
 SCHEMA_COMPONENT = "data_source_catalog"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 VALID_DATABASE_TYPES = frozenset({"mysql", "postgresql"})
 VALID_STATUSES = frozenset(
     {
@@ -47,6 +47,23 @@ def selected_scope_fingerprint(scope: Iterable[Mapping[str, Any]]) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _published_asset_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    if path.is_file():
+        digest.update(path.read_bytes())
+        return digest.hexdigest()
+    identity = path / ".asset_identity.json"
+    if identity.is_file():
+        digest.update(identity.read_bytes())
+        return digest.hexdigest()
+    if not path.is_dir():
+        return ""
+    for item in sorted(value for value in path.rglob("*") if value.is_file()):
+        digest.update(str(item.relative_to(path)).encode("utf-8"))
+        digest.update(item.read_bytes())
+    return digest.hexdigest()
 
 
 class DataSourceCatalogError(RuntimeError):
@@ -375,8 +392,15 @@ class DataSourceCatalog:
                     candidate_memory TEXT NOT NULL,
                     published_memory_path TEXT NOT NULL,
                     backup_paths_json TEXT NOT NULL DEFAULT '[]',
+                    snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    asset_plan_json TEXT NOT NULL DEFAULT '[]',
+                    backed_up_assets_json TEXT NOT NULL DEFAULT '[]',
+                    installed_assets_json TEXT NOT NULL DEFAULT '[]',
                     phase TEXT NOT NULL,
-                    started_at INTEGER NOT NULL
+                    started_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL DEFAULT 0,
+                    owner_pid INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT NOT NULL DEFAULT ''
                 );
                 """
             )
@@ -395,6 +419,25 @@ class DataSourceCatalog:
                 if name not in columns:
                     connection.execute(
                         f"ALTER TABLE data_sources ADD COLUMN {name} {definition}"
+                    )
+            batch_columns = {
+                item["name"]
+                for item in connection.execute(
+                    "PRAGMA table_info(active_asset_batches)"
+                ).fetchall()
+            }
+            for name, definition in (
+                ("snapshot_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("asset_plan_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("backed_up_assets_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("installed_assets_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
+                ("owner_pid", "INTEGER NOT NULL DEFAULT 0"),
+                ("last_error", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if name not in batch_columns:
+                    connection.execute(
+                        f"ALTER TABLE active_asset_batches ADD COLUMN {name} {definition}"
                     )
             now = int(time.time())
             connection.execute(
@@ -1008,13 +1051,29 @@ class DataSourceCatalog:
             )
         return self.require(source_id)
 
+    def mark_recovery_failed(self, source_id: str, error: str) -> DataSourceRecord:
+        """一致性无法证明时关闭问数入口，但保留批次与全部恢复证据。"""
+        with self._lock, self._connection(write=True) as connection:
+            result = connection.execute(
+                """
+                UPDATE data_sources SET status = 'error',
+                    enabled_for_chat = 0, last_error = ?, updated_at = ?
+                WHERE source_id = ?
+                """,
+                (error[:1000], int(time.time()), source_id),
+            )
+            if result.rowcount != 1:
+                raise DataSourceNotFound("数据源不存在")
+        return self.require(source_id)
+
     def set_enabled(self, source_id: str, enabled: bool) -> DataSourceRecord:
         expected_status = "disabled" if enabled else "ready"
         next_status = "ready" if enabled else "disabled"
         with self._lock, self._connection(write=True) as connection:
             row = connection.execute(
                 """
-                SELECT status, runtime_revision, metadata_path, memory_path
+                SELECT source_id, status, runtime_revision, metadata_path,
+                    memory_path, is_builtin
                 FROM data_sources WHERE source_id = ?
                 """,
                 (source_id,),
@@ -1034,6 +1093,43 @@ class DataSourceCatalog:
             )
             if not all(path.exists() for path in asset_paths):
                 raise DataSourceCatalogError("当前正式 Metadata 或 Memory 不存在")
+            if (
+                enabled
+                and not bool(row["is_builtin"])
+                and (asset_paths[1] / ".asset_identity.json").is_file()
+            ):
+                root = asset_paths[0].parent
+                manifest_path = root / "asset_manifest.json"
+                ddl_path = root / "ddl_memories.json"
+                documents_path = root / "business_documents.json"
+                try:
+                    manifest = json.loads(
+                        manifest_path.read_text(encoding="utf-8")
+                    )
+                except Exception:
+                    raise DataSourceCatalogError(
+                        "当前正式资产 manifest 不存在或不可读"
+                    ) from None
+                expected_hashes = {
+                    "metadata_hash": _published_asset_hash(asset_paths[0]),
+                    "memory_identity_hash": _published_asset_hash(asset_paths[1]),
+                    "ddl_hash": _published_asset_hash(ddl_path),
+                    "business_documents_hash": _published_asset_hash(
+                        documents_path
+                    ),
+                }
+                if (
+                    manifest.get("source_id") != row["source_id"]
+                    or int(manifest.get("runtime_revision", -1))
+                    != int(row["runtime_revision"])
+                    or any(
+                        manifest.get(name) != value
+                        for name, value in expected_hashes.items()
+                    )
+                ):
+                    raise DataSourceCatalogError(
+                        "当前正式资产与 Catalog 版本不一致"
+                    )
             result = connection.execute(
                 """
                 UPDATE data_sources SET status = ?, enabled_for_chat = ?,
@@ -1089,9 +1185,13 @@ class DataSourceCatalog:
         candidate_root: Path,
         candidate_memory: Path,
         published_memory_path: Path,
+        snapshot: Mapping[str, Any] | None = None,
+        asset_plan: Iterable[Mapping[str, Any]] = (),
+        phase: str = "prepared",
         started_at: int | None = None,
     ) -> None:
         self.require(source_id)
+        now = started_at if started_at is not None else int(time.time())
         try:
             with self._lock, self._connection(write=True) as connection:
                 connection.execute(
@@ -1099,8 +1199,10 @@ class DataSourceCatalog:
                     INSERT INTO active_asset_batches(
                         source_id, batch_id, candidate_root,
                         candidate_memory, published_memory_path,
-                        backup_paths_json, phase, started_at
-                    ) VALUES (?, ?, ?, ?, ?, '[]', 'building', ?)
+                        backup_paths_json, snapshot_json, asset_plan_json,
+                        backed_up_assets_json, installed_assets_json,
+                        phase, started_at, updated_at, owner_pid, last_error
+                    ) VALUES (?, ?, ?, ?, ?, '[]', ?, ?, '[]', '[]', ?, ?, ?, ?, '')
                     """,
                     (
                         source_id,
@@ -1108,7 +1210,15 @@ class DataSourceCatalog:
                         str(candidate_root.expanduser().resolve()),
                         str(candidate_memory.expanduser().resolve()),
                         str(published_memory_path.expanduser().resolve()),
-                        started_at if started_at is not None else int(time.time()),
+                        json.dumps(dict(snapshot or {}), ensure_ascii=False),
+                        json.dumps(
+                            [dict(item) for item in asset_plan],
+                            ensure_ascii=False,
+                        ),
+                        phase,
+                        now,
+                        now,
+                        os.getpid(),
                     ),
                 )
         except sqlite3.IntegrityError:
@@ -1121,22 +1231,62 @@ class DataSourceCatalog:
         source_id: str,
         batch_id: str,
         *,
-        phase: str,
-        backup_paths: Iterable[Path] = (),
+        phase: str | None = None,
+        backup_paths: Iterable[Path] | None = None,
+        backed_up_assets: Iterable[str] | None = None,
+        installed_assets: Iterable[str] | None = None,
+        last_error: str | None = None,
     ) -> None:
-        paths = [
-            str(path.expanduser().resolve()) for path in backup_paths
-        ]
+        assignments = ["updated_at = ?"]
+        values: list[Any] = [int(time.time())]
+        if phase is not None:
+            assignments.append("phase = ?")
+            values.append(phase)
+        if backup_paths is not None:
+            assignments.append("backup_paths_json = ?")
+            values.append(json.dumps(
+                [str(path.expanduser().resolve()) for path in backup_paths],
+                ensure_ascii=False,
+            ))
+        if backed_up_assets is not None:
+            assignments.append("backed_up_assets_json = ?")
+            values.append(json.dumps(list(backed_up_assets), ensure_ascii=False))
+        if installed_assets is not None:
+            assignments.append("installed_assets_json = ?")
+            values.append(json.dumps(list(installed_assets), ensure_ascii=False))
+        if last_error is not None:
+            assignments.append("last_error = ?")
+            values.append(last_error[:1000])
+        values.extend((source_id, batch_id))
+        with self._lock, self._connection(write=True) as connection:
+            result = connection.execute(
+                "UPDATE active_asset_batches SET "
+                + ", ".join(assignments)
+                + " WHERE source_id = ? AND batch_id = ?",
+                tuple(values),
+            )
+            if result.rowcount != 1:
+                raise DataSourceConflict("问数资产生成批次已失效")
+
+    def replace_asset_batch_plan(
+        self,
+        source_id: str,
+        batch_id: str,
+        asset_plan: Iterable[Mapping[str, Any]],
+    ) -> None:
         with self._lock, self._connection(write=True) as connection:
             result = connection.execute(
                 """
                 UPDATE active_asset_batches
-                SET phase = ?, backup_paths_json = ?
+                SET asset_plan_json = ?, updated_at = ?
                 WHERE source_id = ? AND batch_id = ?
                 """,
                 (
-                    phase,
-                    json.dumps(paths, ensure_ascii=False),
+                    json.dumps(
+                        [dict(item) for item in asset_plan],
+                        ensure_ascii=False,
+                    ),
+                    int(time.time()),
                     source_id,
                     batch_id,
                 ),
@@ -1168,7 +1318,9 @@ class DataSourceCatalog:
                 """
                 SELECT source_id, batch_id, candidate_root,
                     candidate_memory, published_memory_path,
-                    backup_paths_json, phase, started_at
+                    backup_paths_json, snapshot_json, asset_plan_json,
+                    backed_up_assets_json, installed_assets_json,
+                    phase, started_at, updated_at, owner_pid, last_error
                 FROM active_asset_batches
                 """
                 + where
@@ -1180,6 +1332,14 @@ class DataSourceCatalog:
                 **dict(row),
                 "backup_paths": tuple(
                     json.loads(row["backup_paths_json"])
+                ),
+                "snapshot": json.loads(row["snapshot_json"]),
+                "asset_plan": tuple(json.loads(row["asset_plan_json"])),
+                "backed_up_assets": tuple(
+                    json.loads(row["backed_up_assets_json"])
+                ),
+                "installed_assets": tuple(
+                    json.loads(row["installed_assets_json"])
                 ),
             }
             for row in rows
@@ -1196,6 +1356,11 @@ class DataSourceCatalog:
                     "published_memory_path",
                 )
             )
+            for asset in item["asset_plan"]:
+                for name in ("candidate", "formal", "backup"):
+                    value = str(asset.get(name, "")).strip()
+                    if value:
+                        paths.add(Path(value).expanduser().resolve())
             paths.update(
                 Path(str(path)).expanduser().resolve()
                 for path in item["backup_paths"]

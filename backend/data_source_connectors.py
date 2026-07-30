@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gc
 import hashlib
 import json
 import os
@@ -10,6 +9,8 @@ import shutil
 import time
 from pathlib import Path
 from threading import Lock, RLock
+from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from backend.data_source_catalog import (
@@ -27,6 +28,10 @@ if TYPE_CHECKING:
 
 _PREPARE_LOCKS_GUARD = RLock()
 _PREPARE_LOCKS: dict[str, Lock] = {}
+
+
+class SimulatedProcessCrash(BaseException):
+    """仅供确定性故障注入使用；绕过进程内补偿以模拟进程消失。"""
 
 
 def _prepare_lock(source_id: str) -> Lock:
@@ -430,9 +435,11 @@ class DataSourceAssetCleaner:
         self,
         catalog: DataSourceCatalog,
         runtime_manager: "DataSourceRuntimeManager | None" = None,
+        fault_injector: Callable[[str], None] | None = None,
     ) -> None:
         self.catalog = catalog
         self.runtime_manager = runtime_manager
+        self.fault_injector = fault_injector
 
     @staticmethod
     def _asset_type(path: Path) -> str | None:
@@ -471,6 +478,7 @@ class DataSourceAssetCleaner:
             (
                 record.metadata_path.parent / "business_documents.json"
             ).resolve(),
+            (record.metadata_path.parent / "asset_manifest.json").resolve(),
         }
         active = (
             self.runtime_manager.active_asset_paths(source_id)
@@ -531,6 +539,8 @@ class DataSourceAssetCleaner:
         return {"deleted": deleted, "pending": pending, "skipped": skipped}
 
     def retry_pending_cleanup(self, source_id: str | None = None) -> None:
+        if self.runtime_manager is not None and source_id is not None:
+            self.runtime_manager.retry_failed_closes(source_id)
         pending_items = self.catalog.pending_cleanups(source_id)
         for item in pending_items:
             pending_source_id = str(item["source_id"])
@@ -547,6 +557,9 @@ class DataSourceAssetCleaner:
                     (
                         record.metadata_path.parent
                         / "business_documents.json"
+                    ).resolve(),
+                    (
+                        record.metadata_path.parent / "asset_manifest.json"
                     ).resolve(),
                 }
                 active = self.catalog.active_asset_paths(pending_source_id)
@@ -580,66 +593,392 @@ class DataSourceAssetCleaner:
                     f"{type(exc).__name__}: {exc}",
                 )
 
-    def cleanup_stale_batches(self, grace_seconds: int = 600) -> None:
-        cutoff = int(time.time()) - grace_seconds
-        for item in self.catalog.active_asset_batches():
-            if int(item["started_at"]) > cutoff:
-                continue
-            source_id = str(item["source_id"])
-            batch_id = str(item["batch_id"])
-            paths = [
-                Path(str(item[name])).resolve()
-                for name in (
-                    "candidate_root",
-                    "candidate_memory",
-                    "published_memory_path",
-                )
-            ]
-            paths.extend(
-                Path(str(path)).resolve()
-                for path in item["backup_paths"]
-            )
+    @staticmethod
+    def _path_hash(path: Path) -> str:
+        digest = hashlib.sha256()
+        if path.is_file():
+            digest.update(path.read_bytes())
+            return digest.hexdigest()
+        if not path.is_dir():
+            return ""
+        identity = path / ".asset_identity.json"
+        if identity.is_file():
+            digest.update(identity.read_bytes())
+            return digest.hexdigest()
+        for item in sorted(value for value in path.rglob("*") if value.is_file()):
+            digest.update(str(item.relative_to(path)).encode("utf-8"))
+            digest.update(item.read_bytes())
+        return digest.hexdigest()
+
+    def _inject(self, point: str) -> None:
+        if self.fault_injector is not None:
+            self.fault_injector(point)
+
+    @staticmethod
+    def _process_is_alive(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        if pid == os.getpid():
+            return True
+        if os.name == "nt":
+            import ctypes
+
+            process = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not process:
+                # 无权限查询时不能把仍存活的其他服务实例误判为崩溃。
+                if ctypes.GetLastError() == 5:
+                    return True
+                return False
             try:
-                record = self.catalog.require(source_id)
-                root = self._managed_root(source_id, record)
-                protected = {
-                    record.metadata_path.resolve(),
-                    record.memory_path.resolve(),
-                    (
-                        record.metadata_path.parent / "ddl_memories.json"
+                exit_code = ctypes.c_ulong()
+                if not ctypes.windll.kernel32.GetExitCodeProcess(
+                    process, ctypes.byref(exit_code)
+                ):
+                    return False
+                return exit_code.value == 259
+            finally:
+                ctypes.windll.kernel32.CloseHandle(process)
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return False
+        return True
+
+    def _safe_plan(
+        self,
+        item: Any,
+        root: Path,
+    ) -> list[dict[str, Any]]:
+        plan = [dict(asset) for asset in item["asset_plan"]]
+        expected_names = {
+            "metadata",
+            "memory",
+            "ddl",
+            "documentation",
+            "manifest",
+        }
+        names = [str(asset.get("name", "")) for asset in plan]
+        if len(names) != len(expected_names) or set(names) != expected_names:
+            raise DataSourceCatalogError("活动发布批次缺少可恢复资产计划")
+
+        candidate_root = Path(str(item["candidate_root"])).expanduser().resolve()
+        if (
+            candidate_root.parent != root
+            or self._asset_type(candidate_root) != "candidate"
+        ):
+            raise DataSourceCatalogError("活动发布批次包含越界候选目录")
+
+        snapshot = dict(item["snapshot"])
+        target_memory = Path(
+            str(snapshot.get("target_memory_path", ""))
+        ).expanduser().resolve()
+        if (
+            target_memory.parent != root
+            or self._asset_type(target_memory) != "memory_revision"
+            or Path(str(item["candidate_memory"])).expanduser().resolve()
+            != target_memory
+            or Path(
+                str(item["published_memory_path"])
+            ).expanduser().resolve()
+            != target_memory
+        ):
+            raise DataSourceCatalogError("活动发布批次包含非法目标 Memory")
+
+        record = self.catalog.require(str(item["source_id"]))
+        expected_formals = {
+            "metadata": record.metadata_path.resolve(),
+            "memory": target_memory,
+            "ddl": (root / "ddl_memories.json").resolve(),
+            "documentation": (root / "business_documents.json").resolve(),
+            "manifest": (root / "asset_manifest.json").resolve(),
+        }
+        batch_id = str(item["batch_id"])
+        for asset in plan:
+            name = str(asset["name"])
+            for field in ("candidate", "formal", "backup"):
+                value = str(asset.get(field, "")).strip()
+                if not value:
+                    raise DataSourceCatalogError("活动发布批次包含空资产路径")
+                path = Path(value).expanduser().resolve()
+                formal = expected_formals[name]
+                expected = {
+                    "candidate": (
+                        target_memory
+                        if name == "memory"
+                        else (candidate_root / formal.name).resolve()
+                    ),
+                    "formal": formal,
+                    "backup": formal.with_name(
+                        f".{formal.name}.backup-{batch_id}"
                     ).resolve(),
-                    (
-                        record.metadata_path.parent
-                        / "business_documents.json"
-                    ).resolve(),
-                }
-                active = (
-                    self.runtime_manager.active_asset_paths(source_id)
-                    if self.runtime_manager is not None
-                    else frozenset()
-                )
-                self.catalog.finish_asset_batch(source_id, batch_id)
-                for path in paths:
-                    if (
-                        root is None
-                        or path == root
-                        or path.parent != root
-                        or path in protected
-                        or path in active
-                        or self._asset_type(path) is None
-                    ):
-                        continue
+                }[field]
+                if path != expected:
+                    raise DataSourceCatalogError("活动发布批次包含越界资产路径")
+                asset[field] = str(path)
+        return plan
+
+    def _rollback_batch(self, item: Any) -> None:
+        source_id = str(item["source_id"])
+        batch_id = str(item["batch_id"])
+        record = self.catalog.require(source_id)
+        root = self._managed_root(source_id, record)
+        if root is None:
+            raise DataSourceCatalogError("活动发布批次不在动态数据源受管目录")
+        plan = self._safe_plan(item, root)
+        snapshot = dict(item["snapshot"])
+        required = {
+            "base_runtime_revision",
+            "base_status",
+            "base_enabled_for_chat",
+            "base_routing_summary",
+            "base_memory_path",
+            "base_scope_fingerprint",
+            "base_updated_at",
+            "base_last_error",
+            "target_runtime_revision",
+        }
+        if not required <= snapshot.keys():
+            raise DataSourceCatalogError("活动发布批次缺少完整 Catalog 快照")
+        self.catalog.update_asset_batch(
+            source_id,
+            batch_id,
+            phase="rolling_back",
+            last_error="",
+        )
+        for index, asset in enumerate(reversed(plan)):
+            formal = Path(asset["formal"])
+            backup = Path(asset["backup"])
+            base_existed = bool(asset.get("base_existed"))
+            base_hash = str(asset.get("base_hash", ""))
+            target_hash = str(asset.get("target_hash", ""))
+            if backup.exists():
+                if formal.exists():
+                    DataSourceAssetPreparer._remove_path(formal)
+                os.replace(backup, formal)
+            elif base_existed:
+                if not formal.exists() or self._path_hash(formal) != base_hash:
+                    raise DataSourceCatalogError("旧版正式资产无法完整恢复")
+            elif formal.exists():
+                if target_hash and self._path_hash(formal) != target_hash:
+                    raise DataSourceCatalogError("发现无法判定归属的正式资产")
+                DataSourceAssetPreparer._remove_path(formal)
+            self._inject(f"during_recovery_after_asset_{index + 1}")
+
+        current = self.catalog.require(source_id)
+        base_revision = int(snapshot["base_runtime_revision"])
+        target_revision = int(snapshot["target_runtime_revision"])
+        if current.runtime_revision not in {base_revision, target_revision}:
+            raise DataSourceCatalogError("Catalog revision 已被其他发布修改")
+        base_memory_path = Path(str(snapshot["base_memory_path"])).resolve()
+        target_memory_path = Path(str(snapshot["target_memory_path"])).resolve()
+        catalog_was_published = (
+            current.runtime_revision == target_revision
+            and current.memory_path.resolve() == target_memory_path
+        )
+        recovering_error_state = (
+            current.runtime_revision == base_revision
+            and current.memory_path.resolve() == base_memory_path
+            and current.status == "error"
+            and str(item["phase"]) == "rollback_failed"
+        )
+        if catalog_was_published or recovering_error_state:
+            publication_state_unchanged = (
+                current.status == "ready" and current.enabled_for_chat
+            )
+            restored_snapshot = replace(
+                current,
+                status=(
+                    str(snapshot["base_status"])
+                    if publication_state_unchanged or recovering_error_state
+                    else current.status
+                ),
+                enabled_for_chat=(
+                    bool(snapshot["base_enabled_for_chat"])
+                    if publication_state_unchanged or recovering_error_state
+                    else current.enabled_for_chat
+                ),
+                runtime_revision=base_revision,
+                routing_summary=str(snapshot["base_routing_summary"]),
+                memory_path=base_memory_path,
+                updated_at=(
+                    int(snapshot["base_updated_at"])
+                    if publication_state_unchanged or recovering_error_state
+                    else current.updated_at
+                ),
+                last_error=(
+                    str(snapshot["base_last_error"])
+                    if publication_state_unchanged or recovering_error_state
+                    else current.last_error
+                ),
+            )
+            self.catalog.restore_publication_state(source_id, restored_snapshot)
+        elif current.memory_path.resolve() != base_memory_path:
+            raise DataSourceCatalogError("Catalog memory_path 已被其他操作修改")
+        for asset in plan:
+            formal = Path(asset["formal"])
+            if bool(asset.get("base_existed")):
+                if (
+                    not formal.exists()
+                    or self._path_hash(formal) != str(asset.get("base_hash", ""))
+                ):
+                    raise DataSourceCatalogError("回滚后的旧版资产哈希不一致")
+            elif formal.exists():
+                raise DataSourceCatalogError("回滚后仍残留新版正式资产")
+        self._finish_recovered_batch(item, plan)
+
+    def _validate_new_assets(self, item: Any, plan: list[dict[str, Any]]) -> None:
+        snapshot = dict(item["snapshot"])
+        manifest_asset = next(
+            (asset for asset in plan if asset.get("name") == "manifest"),
+            None,
+        )
+        if manifest_asset is None:
+            raise DataSourceCatalogError("发布批次缺少资产 manifest")
+        for asset in plan:
+            formal = Path(asset["formal"])
+            if (
+                not formal.exists()
+                or self._path_hash(formal) != str(asset.get("target_hash", ""))
+            ):
+                raise DataSourceCatalogError("新版正式资产哈希不一致")
+        manifest = json.loads(
+            Path(manifest_asset["formal"]).read_text(encoding="utf-8")
+        )
+        if (
+            manifest.get("source_id") != item["source_id"]
+            or int(manifest.get("runtime_revision", -1))
+            != int(snapshot["target_runtime_revision"])
+            or manifest.get("scope_fingerprint")
+            != snapshot["base_scope_fingerprint"]
+            or manifest.get("batch_id") != item["batch_id"]
+        ):
+            raise DataSourceCatalogError("资产 manifest 与发布批次不一致")
+
+    def _finish_recovered_batch(
+        self,
+        item: Any,
+        plan: list[dict[str, Any]],
+    ) -> None:
+        source_id = str(item["source_id"])
+        batch_id = str(item["batch_id"])
+        for asset in plan:
+            for field in ("candidate", "backup"):
+                path = Path(asset[field])
+                if (
+                    field == "candidate"
+                    and path.resolve() == Path(asset["formal"]).resolve()
+                ):
+                    continue
+                if path.exists():
                     try:
                         DataSourceAssetPreparer._remove_path(path)
                     except Exception as exc:
                         self.catalog.register_pending_cleanup(
                             source_id,
                             path,
-                            self._asset_type(path) or "candidate",
+                            "backup" if field == "backup" else "candidate",
                             f"{type(exc).__name__}: {exc}",
                         )
-            except Exception:
+        candidate_root = Path(str(item["candidate_root"])).resolve()
+        if candidate_root.exists():
+            try:
+                DataSourceAssetPreparer._remove_path(candidate_root)
+            except Exception as exc:
+                self.catalog.register_pending_cleanup(
+                    source_id,
+                    candidate_root,
+                    "candidate",
+                    f"{type(exc).__name__}: {exc}",
+                )
+        self._inject("before_batch_finish")
+        self.catalog.finish_asset_batch(source_id, batch_id)
+
+    def _roll_forward_batch(self, item: Any) -> None:
+        source_id = str(item["source_id"])
+        batch_id = str(item["batch_id"])
+        record = self.catalog.require(source_id)
+        root = self._managed_root(source_id, record)
+        if root is None:
+            raise DataSourceCatalogError("活动发布批次不在动态数据源受管目录")
+        plan = self._safe_plan(item, root)
+        snapshot = dict(item["snapshot"])
+        self._validate_new_assets(item, plan)
+        if (
+            record.runtime_revision != int(snapshot["target_runtime_revision"])
+            or record.memory_path.resolve()
+            != Path(str(snapshot["target_memory_path"])).resolve()
+        ):
+            raise DataSourceCatalogError("Catalog 与新版发布批次不一致")
+        if self.runtime_manager is None:
+            raise DataSourceCatalogError("缺少 Runtime Manager，无法验证新版")
+        runtime = self.runtime_manager.require(source_id)
+        if (
+            runtime.config.memory_path.resolve() != record.memory_path.resolve()
+            or self.runtime_manager.runtime_revision(source_id)
+            != record.runtime_revision
+        ):
+            raise DataSourceCatalogError("Runtime 与 Catalog 版本不一致")
+        self.catalog.update_asset_batch(
+            source_id, batch_id, phase="runtime_validated"
+        )
+        self.catalog.update_asset_batch(source_id, batch_id, phase="committed")
+        self._finish_recovered_batch(item, plan)
+
+    def recover_incomplete_batches(
+        self,
+        source_id: str | None = None,
+        *,
+        grace_seconds: int = 0,
+    ) -> None:
+        for item in self.catalog.active_asset_batches(source_id):
+            owner_pid = int(item.get("owner_pid") or 0)
+            owner_alive = self._process_is_alive(owner_pid)
+            # 有宽限策略的生产恢复绝不能接管仍存活进程的批次，即使一次
+            # Chroma 构建超过宽限时间；grace_seconds=0 仅用于显式强制恢复。
+            if grace_seconds > 0 and owner_alive:
                 continue
+            batch_source_id = str(item["source_id"])
+            batch_id = str(item["batch_id"])
+            try:
+                snapshot = dict(item["snapshot"])
+                current = self.catalog.require(batch_source_id)
+                catalog_is_target = (
+                    snapshot
+                    and current.runtime_revision
+                    == int(snapshot.get("target_runtime_revision", -1))
+                    and current.memory_path.resolve()
+                    == Path(str(snapshot.get("target_memory_path", ""))).resolve()
+                )
+                if catalog_is_target:
+                    try:
+                        self._roll_forward_batch(item)
+                    except SimulatedProcessCrash:
+                        raise
+                    except Exception:
+                        self._rollback_batch(item)
+                else:
+                    self._rollback_batch(item)
+            except SimulatedProcessCrash:
+                raise
+            except Exception as exc:
+                safe_error = f"{type(exc).__name__}: 发布恢复失败"
+                try:
+                    self.catalog.update_asset_batch(
+                        batch_source_id,
+                        batch_id,
+                        phase="rollback_failed",
+                        last_error=safe_error,
+                    )
+                    self.catalog.mark_recovery_failed(
+                        batch_source_id,
+                        "数据源发布恢复失败，请在管理页重试恢复",
+                    )
+                except Exception:
+                    pass
+
+    def cleanup_stale_batches(self, grace_seconds: int = 600) -> None:
+        """兼容旧调用；过期批次必须恢复，不能按垃圾直接删除。"""
+        self.recover_incomplete_batches(grace_seconds=grace_seconds)
 
 
 class DataSourceAssetPreparer:
@@ -649,13 +988,20 @@ class DataSourceAssetPreparer:
         self,
         catalog: DataSourceCatalog,
         runtime_manager: "DataSourceRuntimeManager | None" = None,
+        fault_injector: Callable[[str], None] | None = None,
     ) -> None:
         self.catalog = catalog
         self.runtime_manager = runtime_manager
+        self.fault_injector = fault_injector
         self.asset_cleaner = DataSourceAssetCleaner(
             catalog,
             runtime_manager,
+            fault_injector,
         )
+
+    def _inject(self, point: str) -> None:
+        if self.fault_injector is not None:
+            self.fault_injector(point)
 
     @staticmethod
     def _quote(name: str, dialect: str) -> str:
@@ -857,54 +1203,159 @@ class DataSourceAssetPreparer:
             }
             for item in scope
         ]
-        target = record.metadata_path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        record.memory_path.parent.mkdir(parents=True, exist_ok=True)
+        return self._publish_assets(
+            source_id=source_id,
+            record=record,
+            metadata=metadata,
+            ddls=ddls,
+            documents=documents,
+            routing_summary=routing_summary,
+            expected_runtime_revision=expected_runtime_revision,
+            expected_scope_fingerprint=expected_scope_fingerprint,
+            expected_status=expected_status,
+        )
+
+    def _publish_assets(
+        self,
+        *,
+        source_id: str,
+        record: Any,
+        metadata: list[dict[str, Any]],
+        ddls: list[str],
+        documents: list[str],
+        routing_summary: str,
+        expected_runtime_revision: int,
+        expected_scope_fingerprint: str,
+        expected_status: str,
+    ) -> dict[str, Any]:
+        return self._publish_assets_crash_safe(
+            source_id=source_id,
+            record=record,
+            metadata=metadata,
+            ddls=ddls,
+            documents=documents,
+            routing_summary=routing_summary,
+            expected_runtime_revision=expected_runtime_revision,
+            expected_scope_fingerprint=expected_scope_fingerprint,
+            expected_status=expected_status,
+        )
+
+    def _publish_assets_crash_safe(
+        self,
+        *,
+        source_id: str,
+        record: Any,
+        metadata: list[dict[str, Any]],
+        ddls: list[str],
+        documents: list[str],
+        routing_summary: str,
+        expected_runtime_revision: int,
+        expected_scope_fingerprint: str,
+        expected_status: str,
+    ) -> dict[str, Any]:
+        target = record.metadata_path.resolve()
+        root = target.parent
+        root.mkdir(parents=True, exist_ok=True)
+        if self.catalog.active_asset_batches(source_id):
+            self.asset_cleaner.recover_incomplete_batches(
+                source_id, grace_seconds=600
+            )
+            if self.catalog.active_asset_batches(source_id):
+                raise DataSourceConflict(
+                    "该数据源正在生成问数资产，请稍后重试"
+                )
         batch_id = (
             f"{record.runtime_revision}-{time.time_ns()}-"
             f"{os.urandom(4).hex()}"
         )
-        candidate_root = target.parent / f"candidate-{batch_id}"
-        candidate_memory = (
-            record.memory_path.parent
-            / f".{record.memory_path.name}.candidate-{batch_id}"
-        )
+        candidate_root = root / f"candidate-{batch_id}"
         memory_base_name = record.memory_path.name.split(".revision-", 1)[0]
-        published_memory_path = record.memory_path.with_name(
+        published_memory_path = root / (
             f"{memory_base_name}.revision-"
             f"{record.runtime_revision + 1}-{batch_id}"
         )
-        backups: dict[Path, Path] = {}
-        installed: list[Path] = []
+        # Chroma 在 Windows 上会持有目录句柄；直接写入唯一目标 revision，
+        # 在 Catalog 发布前由 active batch 保护，避免重命名带锁目录。
+        candidate_memory = published_memory_path
+        candidate_paths = {
+            "metadata": candidate_root / target.name,
+            "memory": candidate_memory,
+            "ddl": candidate_root / "ddl_memories.json",
+            "documentation": candidate_root / "business_documents.json",
+            "manifest": candidate_root / "asset_manifest.json",
+        }
+        formal_paths = {
+            "metadata": target,
+            "memory": published_memory_path,
+            "ddl": root / "ddl_memories.json",
+            "documentation": root / "business_documents.json",
+            "manifest": root / "asset_manifest.json",
+        }
+        plan = []
+        for name in ("metadata", "memory", "ddl", "documentation", "manifest"):
+            formal = formal_paths[name]
+            plan.append(
+                {
+                    "name": name,
+                    "candidate": str(candidate_paths[name]),
+                    "formal": str(formal),
+                    "backup": str(
+                        formal.with_name(f".{formal.name}.backup-{batch_id}")
+                    ),
+                    "base_existed": formal.exists(),
+                    "base_hash": (
+                        self.asset_cleaner._path_hash(formal)
+                        if formal.exists()
+                        else ""
+                    ),
+                    "target_hash": "",
+                }
+            )
+        snapshot = {
+            "base_runtime_revision": record.runtime_revision,
+            "target_runtime_revision": record.runtime_revision + 1,
+            "base_status": record.status,
+            "base_enabled_for_chat": record.enabled_for_chat,
+            "base_routing_summary": record.routing_summary,
+            "base_memory_path": str(record.memory_path.resolve()),
+            "target_memory_path": str(published_memory_path),
+            "base_scope_fingerprint": expected_scope_fingerprint,
+            "base_updated_at": record.updated_at,
+            "base_last_error": record.last_error,
+        }
         self.catalog.begin_asset_batch(
             source_id,
             batch_id=batch_id,
             candidate_root=candidate_root,
             candidate_memory=candidate_memory,
             published_memory_path=published_memory_path,
+            snapshot=snapshot,
+            asset_plan=plan,
         )
+        self._inject("after_batch_registered")
         try:
             candidate_root.mkdir()
-            candidate_metadata = candidate_root / target.name
-            candidate_metadata.write_text(
+            candidate_paths["metadata"].write_text(
                 json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-            (candidate_root / "ddl_memories.json").write_text(
+            self._inject("after_candidate_metadata")
+            candidate_paths["ddl"].write_text(
                 json.dumps(ddls, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-            (candidate_root / "business_documents.json").write_text(
+            self._inject("after_candidate_ddl")
+            candidate_paths["documentation"].write_text(
                 json.dumps(documents, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-            json.loads(candidate_metadata.read_text(encoding="utf-8"))
+            self._inject("after_candidate_documentation")
             from backend.memory import create_memory
 
             memory = create_memory(candidate_memory)
             try:
                 collection = memory._get_collection()
-                documents_payload = [
+                payload = [
                     *[
                         (
                             f"DDL\n{ddl}",
@@ -934,37 +1385,68 @@ class DataSourceAssetPreparer:
                 ]
                 collection.add(
                     ids=[
-                        "b5-" + hashlib.sha256(
-                            f"{source_id}|{metadata['memory_type']}|{document}".encode(
+                        "b5-"
+                        + hashlib.sha256(
+                            f"{source_id}|{item_metadata['memory_type']}|{document}".encode(
                                 "utf-8"
                             )
                         ).hexdigest()
-                        for document, metadata in documents_payload
+                        for document, item_metadata in payload
                     ],
-                    documents=[
-                        document for document, _ in documents_payload
-                    ],
-                    metadatas=[
-                        metadata for _, metadata in documents_payload
-                    ],
+                    documents=[document for document, _ in payload],
+                    metadatas=[item_metadata for _, item_metadata in payload],
                 )
-                if collection.count() != len(documents_payload):
+                if collection.count() != len(payload):
                     raise DataSourceCatalogError("候选 Memory 验证失败")
             finally:
-                self._close_memory(memory)
-
-            assets = (
-                (candidate_metadata, target),
-                (candidate_memory, published_memory_path),
-                (
-                    candidate_root / "ddl_memories.json",
-                    target.parent / "ddl_memories.json",
-                ),
-                (
-                    candidate_root / "business_documents.json",
-                    target.parent / "business_documents.json",
-                ),
+                if not self._close_memory(memory):
+                    raise DataSourceCatalogError("候选 Memory 资源释放失败")
+            (candidate_memory / ".asset_identity.json").write_text(
+                json.dumps(
+                    {
+                        "source_id": source_id,
+                        "runtime_revision": record.runtime_revision + 1,
+                        "scope_fingerprint": expected_scope_fingerprint,
+                        "batch_id": batch_id,
+                        "memory_count": len(payload),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
             )
+            self._inject("after_candidate_memory")
+            content_hashes = {
+                name: self.asset_cleaner._path_hash(candidate_paths[name])
+                for name in ("metadata", "memory", "ddl", "documentation")
+            }
+            candidate_paths["manifest"].write_text(
+                json.dumps(
+                    {
+                        "source_id": source_id,
+                        "runtime_revision": record.runtime_revision + 1,
+                        "scope_fingerprint": expected_scope_fingerprint,
+                        "metadata_hash": content_hashes["metadata"],
+                        "memory_identity_hash": content_hashes["memory"],
+                        "ddl_hash": content_hashes["ddl"],
+                        "business_documents_hash": content_hashes[
+                            "documentation"
+                        ],
+                        "created_at": int(time.time()),
+                        "batch_id": batch_id,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            for asset in plan:
+                asset["target_hash"] = self.asset_cleaner._path_hash(
+                    Path(asset["candidate"])
+                )
+            self.catalog.replace_asset_batch_plan(source_id, batch_id, plan)
             current = self.catalog.require(source_id)
             if (
                 current.runtime_revision != expected_runtime_revision
@@ -975,136 +1457,132 @@ class DataSourceAssetPreparer:
                 raise DataSourceConflict(
                     "数据源范围已变化，请重新生成问数资产"
                 )
-            backups = {
-                final_path: final_path.with_name(
-                    f".{final_path.name}.backup-{batch_id}"
-                )
-                for _, final_path in assets
-                if final_path.exists()
-            }
+            backups = [
+                Path(asset["backup"])
+                for asset in plan
+                if bool(asset["base_existed"])
+            ]
             self.catalog.update_asset_batch(
                 source_id,
                 batch_id,
-                phase="installing",
-                backup_paths=backups.values(),
+                phase="backing_up",
+                backup_paths=backups,
             )
-            catalog_published = False
-            try:
-                for final_path, backup in backups.items():
-                    os.replace(final_path, backup)
-                for candidate_path, final_path in assets:
-                    os.replace(candidate_path, final_path)
-                    installed.append(final_path)
-                published = self.catalog.publish(
+            backed_up = []
+            for asset in plan:
+                if not asset["base_existed"]:
+                    continue
+                os.replace(asset["formal"], asset["backup"])
+                backed_up.append(asset["name"])
+                self.catalog.update_asset_batch(
                     source_id,
-                    routing_summary=routing_summary,
-                    memory_path=published_memory_path,
-                    expected_runtime_revision=expected_runtime_revision,
-                    expected_scope_fingerprint=(
-                        expected_scope_fingerprint
-                    ),
-                    expected_status=expected_status,
+                    batch_id,
+                    backed_up_assets=backed_up,
                 )
-                catalog_published = True
-                if self.runtime_manager is not None:
-                    self.runtime_manager.require(source_id)
-            except Exception:
-                rollback_errors: list[Exception] = []
-                for final_path in reversed(installed):
-                    try:
-                        self._remove_path(final_path)
-                    except Exception as exc:
-                        rollback_errors.append(exc)
-                for final_path, backup in backups.items():
-                    try:
-                        if backup.exists():
-                            os.replace(backup, final_path)
-                    except Exception as exc:
-                        rollback_errors.append(exc)
-                publication_must_be_restored = catalog_published
-                if not publication_must_be_restored:
-                    try:
-                        current = self.catalog.require(source_id)
-                        publication_must_be_restored = (
-                            current.runtime_revision
-                            == expected_runtime_revision + 1
-                            and current.memory_path.resolve()
-                            == published_memory_path.resolve()
-                        )
-                    except Exception:
-                        publication_must_be_restored = False
-                if publication_must_be_restored:
-                    try:
-                        self.catalog.restore_publication_state(
-                            source_id,
-                            record,
-                        )
-                    except Exception as exc:
-                        rollback_errors.append(exc)
-                if rollback_errors:
+                self._inject(f"after_backup_{asset['name']}")
+            self.catalog.update_asset_batch(
+                source_id, batch_id, phase="installing"
+            )
+            installed = []
+            for asset in plan:
+                if Path(asset["candidate"]).resolve() != Path(
+                    asset["formal"]
+                ).resolve():
+                    os.replace(asset["candidate"], asset["formal"])
+                installed.append(asset["name"])
+                self.catalog.update_asset_batch(
+                    source_id,
+                    batch_id,
+                    installed_assets=installed,
+                )
+                self._inject(f"after_install_{asset['name']}")
+            self._inject("before_catalog_publish")
+            published = self.catalog.publish(
+                source_id,
+                routing_summary=routing_summary,
+                memory_path=published_memory_path,
+                expected_runtime_revision=expected_runtime_revision,
+                expected_scope_fingerprint=expected_scope_fingerprint,
+                expected_status=expected_status,
+            )
+            self.catalog.update_asset_batch(
+                source_id, batch_id, phase="catalog_published"
+            )
+            self._inject("after_catalog_publish")
+            if self.runtime_manager is not None:
+                runtime = self.runtime_manager.require(source_id)
+                self._inject("after_runtime_build")
+                if (
+                    runtime.config.memory_path.resolve()
+                    != published.memory_path.resolve()
+                    or self.runtime_manager.runtime_revision(source_id)
+                    != published.runtime_revision
+                ):
                     raise DataSourceCatalogError(
-                        "问数资产发布失败，旧资产补偿恢复不完整"
-                    ) from None
-                raise
-            for backup in backups.values():
-                self._cleanup_path(backup)
-                if backup.exists():
-                    self.catalog.register_pending_cleanup(
-                        source_id,
-                        backup,
-                        "backup",
-                        "发布成功后备份清理失败",
+                        "新 Runtime 与 Catalog 版本不一致"
                     )
-            previous_memory_path = record.memory_path.resolve()
-            if (
-                previous_memory_path != published_memory_path.resolve()
-                and self.asset_cleaner._asset_type(previous_memory_path)
-                == "memory_revision"
-            ):
-                self.catalog.register_pending_cleanup(
-                    source_id,
-                    previous_memory_path,
-                    "memory_revision",
-                    "等待旧 Runtime 确认释放",
-                )
-                self.asset_cleaner.retry_pending_cleanup(source_id)
-            active_runtime_paths = (
-                self.runtime_manager.active_asset_paths(source_id)
-                if self.runtime_manager is not None
-                else frozenset()
+                self._inject("after_runtime_swap")
+            self.catalog.update_asset_batch(
+                source_id, batch_id, phase="runtime_validated"
             )
-            if (
-                self.runtime_manager is None
-                or previous_memory_path not in active_runtime_paths
-            ):
-                self.asset_cleaner.cleanup_superseded_assets(source_id)
-            return {
-                "source_id": source_id,
-                "metadata_records": len(metadata),
-                "ddl_count": len(ddls),
-                "documentation_count": len(documents),
-                "sql_tool_memory_count": 0,
-                "memory_count": len(ddls) + len(documents),
-                "runtime_revision": published.runtime_revision,
-                "status": published.status,
-            }
-        finally:
-            self._cleanup_path(candidate_root)
-            self._cleanup_path(candidate_memory)
-            for path, asset_type in (
-                (candidate_root, "candidate"),
-                (candidate_memory, "candidate"),
-            ):
-                if path.exists():
-                    self.catalog.register_pending_cleanup(
+            self.catalog.update_asset_batch(
+                source_id, batch_id, phase="committed"
+            )
+            self._inject("before_backup_cleanup")
+            latest = self.catalog.active_asset_batches(source_id)[0]
+            self.asset_cleaner._finish_recovered_batch(latest, plan)
+        except SimulatedProcessCrash:
+            raise
+        except Exception:
+            batches = self.catalog.active_asset_batches(source_id)
+            if batches:
+                try:
+                    self.asset_cleaner._rollback_batch(batches[0])
+                except SimulatedProcessCrash:
+                    raise
+                except Exception as rollback_error:
+                    self.catalog.update_asset_batch(
                         source_id,
-                        path,
-                        asset_type,
-                        "候选资产清理失败",
+                        batch_id,
+                        phase="rollback_failed",
+                        last_error=(
+                            f"{type(rollback_error).__name__}: "
+                            "发布回滚失败"
+                        ),
                     )
-                else:
-                    self.catalog.complete_pending_cleanup(source_id, path)
-            self.catalog.finish_asset_batch(source_id, batch_id)
+                    self.catalog.mark_recovery_failed(
+                        source_id,
+                        "数据源发布回滚失败，请重启服务执行恢复",
+                    )
+                    raise DataSourceCatalogError(
+                        "问数资产发布失败，旧版恢复尚未完成"
+                    ) from None
+            raise
+
+        previous_memory_path = record.memory_path.resolve()
+        if (
+            previous_memory_path != published_memory_path.resolve()
+            and self.asset_cleaner._asset_type(previous_memory_path)
+            == "memory_revision"
+        ):
+            self.catalog.register_pending_cleanup(
+                source_id,
+                previous_memory_path,
+                "memory_revision",
+                "等待旧 Runtime 确认释放",
+            )
+            self.asset_cleaner.retry_pending_cleanup(source_id)
+        self.asset_cleaner.cleanup_superseded_assets(source_id)
+        return {
+            "source_id": source_id,
+            "metadata_records": len(metadata),
+            "ddl_count": len(ddls),
+            "documentation_count": len(documents),
+            "sql_tool_memory_count": 0,
+            "memory_count": len(ddls) + len(documents),
+            "runtime_revision": published.runtime_revision,
+            "status": published.status,
+        }
 
     @staticmethod
     def _remove_path(path: Path) -> None:
@@ -1124,22 +1602,26 @@ class DataSourceAssetPreparer:
             pass
 
     @staticmethod
-    def _close_memory(memory: Any) -> None:
+    def _close_memory(memory: Any) -> bool:
+        """通过客户端引用计数释放本实例，不直接停止 Chroma 共享系统。"""
+        succeeded = True
         try:
             memory._executor.shutdown(wait=True)
         except Exception:
-            pass
+            succeeded = False
         try:
-            if memory._client is not None:
-                memory._client._system.stop()
+            memory._collection = None
         except Exception:
-            pass
-        memory._collection = None
-        memory._client = None
-        gc.collect()
+            succeeded = False
+        client = getattr(memory, "_client", None)
+        close = getattr(client, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                succeeded = False
         try:
-            from chromadb.api.client import SharedSystemClient
-
-            SharedSystemClient.clear_system_cache()
+            memory._client = None
         except Exception:
-            pass
+            succeeded = False
+        return succeeded

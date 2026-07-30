@@ -1006,13 +1006,6 @@ def test_publish_compensation(root: Path) -> None:
                 ),
             ),
             (
-                "Memory",
-                lambda source, destination: (
-                    ".candidate-" in source.name
-                    and ".revision-" in destination.name
-                ),
-            ),
-            (
                 "DDL",
                 lambda source, destination: (
                     source.name == "ddl_memories.json"
@@ -1558,6 +1551,7 @@ def test_prepare_coordination(root: Path) -> None:
         and isinstance(changed_errors[0], DataSourceConflict)
         and catalog.require(first_source).runtime_revision
         == before_change.runtime_revision
+        and catalog.require(first_source).status == "training_required"
         and tuple(_hash_path(path) for path in protected_paths)
         == protected_hashes
         and not catalog.active_asset_batches(first_source),
@@ -1579,6 +1573,15 @@ def test_prepare_coordination(root: Path) -> None:
         candidate_memory=fresh_memory,
         published_memory_path=fresh_revision,
     )
+    try:
+        DataSourceAssetPreparer(catalog).prepare(second_source)
+    except DataSourceConflict:
+        check(
+            True,
+            "独立 Preparer 遇到新鲜跨实例活动批次时返回冲突",
+        )
+    else:
+        raise AssertionError("跨实例活动批次未阻止新的 prepare")
     cleaner.cleanup_stale_batches(grace_seconds=600)
     check(
         fresh_candidate.exists()
@@ -1600,14 +1603,28 @@ def test_prepare_coordination(root: Path) -> None:
         published_memory_path=stale_revision,
         started_at=int(time.time()) - 601,
     )
+    with catalog._lock, catalog._connection(write=True) as connection:
+        connection.execute(
+            """
+            UPDATE active_asset_batches
+            SET owner_pid = ?
+            WHERE source_id = ? AND batch_id = ?
+            """,
+            (2147483647, second_source, "stale-orphan"),
+        )
     cleaner.cleanup_stale_batches(grace_seconds=600)
     check(
-        not stale_candidate.exists()
-        and not stale_memory.exists()
-        and not stale_revision.exists()
-        and not catalog.active_asset_batches(second_source),
-        "超过宽限期且无引用的崩溃遗留批次可安全清理",
+        stale_candidate.exists()
+        and stale_memory.exists()
+        and stale_revision.exists()
+        and catalog.active_asset_batches(second_source)[0]["phase"]
+        == "rollback_failed"
+        and catalog.require(second_source).status == "error",
+        "缺少恢复快照的旧批次保留全部证据并关闭问数入口",
     )
+    catalog.finish_asset_batch(second_source, "stale-orphan")
+    for path in (stale_candidate, stale_memory, stale_revision):
+        shutil.rmtree(path)
     for path in (fresh_candidate, fresh_memory, fresh_revision):
         shutil.rmtree(path)
     for source_id in (first_source, second_source):

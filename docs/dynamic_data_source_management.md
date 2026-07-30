@@ -8,7 +8,7 @@ B5 将 `config/data_sources.py` 降为首次迁移的 bootstrap。运行时事�
 
 ## 2. 数据模型与迁移
 
-schema 组件名为 `data_source_catalog`，当前版本为 4。`system_schema_versions` 记录版本；初始化使用 `BEGIN IMMEDIATE`、WAL、外键和 busy timeout。v1→v2 迁移增加 MySQL TLS 模式和证书路径字段；v3 增加不含凭据的 `pending_asset_cleanup`；v4 增加 `active_asset_batches`，登记批次 ID、候选/目标 Memory、备份路径、阶段和开始时间。旧目录可幂等升级并保持默认非 TLS 行为。
+schema 组件名为 `data_source_catalog`，当前版本为 5。`system_schema_versions` 记录版本；初始化使用 `BEGIN IMMEDIATE`、WAL、外键和 busy timeout。v1→v2 迁移增加 MySQL TLS 模式和证书路径字段；v3 增加不含凭据的 `pending_asset_cleanup`；v4 增加 `active_asset_batches`；v5 将批次扩展为完整快照、资产计划、逐项进度、owner、更新时间和错误摘要。旧目录可幂等升级并保持默认非 TLS 行为。
 
 `data_sources` 保存身份与显示信息、数据库类型与连接模式、生命周期、连接参数、凭据模式、资产路径、运行时 revision、发现结果、选择范围、路由摘要、明确能力和审计状态。`conversation_source_bindings` 以 `conversation_id` 为主键，外键指向 `source_id`。`pending_asset_cleanup` 只保存受管资产清理重试信息；`active_asset_batches` 是跨 Preparer 实例和进程边界的活动批次保护登记，不保存凭据。
 
@@ -46,13 +46,13 @@ MySQL TLS 支持 `disabled / required / verify_ca / verify_identity`。CA、客�
 
 准备流程按 `source_id` 生成方言正确的 Metadata、每表一条确定性 DDL Memory、每表一条基于真实注释的基础文档 Memory和安全路由摘要。不自动编造 SQL Tool Memory。同一 `source_id` 使用所有 Preparer 实例共享的进程内锁并明确拒绝重复 prepare，不同数据源可以并行；SQLite 活动批次唯一登记提供多进程重复发布门禁。prepare 开始时记录 runtime revision、状态和选择范围确定性哈希，文件安装前复查，并由 `catalog.publish` 在同一写事务内再次做乐观校验，变化时拒绝旧批次发布。
 
-候选 Chroma 在隔离目录写入并校验计数。Metadata、Memory、DDL、业务文档和 catalog 发布字段作为同一协调发布单元；任一步失败均补偿恢复全部旧文件、目录状态、路由摘要和 revision。Memory 使用 revision 版本路径发布，使 Windows 下仍被旧 Runtime 持有的 Chroma 不阻塞新版本切换；旧请求继续使用旧目录，新请求按新 revision 获取新目录。
+候选 Chroma 在隔离目录写入并校验计数。Metadata、Memory、DDL、业务文档、asset manifest 和 Catalog 发布字段作为同一协调发布单元；任一步失败均按持久化状态机恢复完整旧版或完整新版。Memory 使用 revision 版本路径发布，使 Windows 下仍被旧 Runtime 持有的 Chroma 不阻塞新版本切换；旧请求继续使用旧目录，新请求按新 revision 获取新目录。
 
-清理提交点位于候选完整验证、四类资产安装、catalog 发布、revision 更新以及新 Runtime 成功构建和缓存切换之后。当前 catalog 四类正式资产、当前/retired Runtime Memory 和全部活动批次路径均进入保护集合。Runtime 释放回调只重试 `pending_asset_cleanup` 明确登记的路径，不扫描目录；成功 prepare 才在批次协调保护内扫描本源过期资产。启动时仅处理超过 10 分钟宽限期的活动批次遗留路径，然后重试明确 pending。当前部署按单服务实例运行，Catalog 唯一批次登记和发布乐观校验仍防止跨进程重复覆盖。目录外路径、内置 B3 资产、B4 报表和其他数据源永不进入清理范围。
+清理提交点位于候选完整验证、五类资产安装、Catalog 发布、revision 更新以及新 Runtime 成功构建和缓存切换之后。当前 Catalog 五类正式资产、当前/retired/关闭失败 Runtime Memory 和全部活动批次路径均进入保护集合。Runtime 释放回调只重试 `pending_asset_cleanup` 明确登记的路径，不扫描目录；成功 prepare 才在批次协调保护内扫描本源过期资产。启动时依据 owner 存活、阶段、快照、manifest 和实际文件执行恢复，不再直接删除活动批次。目录外路径、内置 B3 资产、B4 报表和其他数据源永不进入清理范围。
 
 ## 7. Runtime 失效规则
 
-`DataSourceRuntimeManager` 的缓存键为 `source_id + runtime_revision`。prepare 发布新 revision 后不先 invalidate：管理器保留旧缓存，构建并验证新 Runtime，成功后才在锁内原子替换 Runtime 与 revision。旧实例有租约时进入 retired，无租约时立即安全关闭；最后一个租约释放并完成关闭后才触发明确 pending 清理。新 Runtime factory 或校验失败时，缓存 Runtime/revision 不变，旧实例不关闭、不进入 retired、不触发释放回调；prepare 随后恢复 Catalog 和四类文件并删除新失败 revision，旧 Memory 完整保留。`disabled/error` 拒绝新请求。
+`DataSourceRuntimeManager` 的缓存键为 `source_id + runtime_revision`。prepare 发布新 revision 后不先 invalidate：管理器保留旧缓存，构建并验证新 Runtime，成功后才在锁内原子替换 Runtime 与 revision。旧实例有租约时进入 retired，无租约时立即安全关闭；最后一个租约释放且关闭成功后才触发明确 pending 清理。关闭失败的 Runtime 继续保护其 Memory 并等待重试。新 Runtime factory 或校验失败时，缓存 Runtime/revision 不变，旧实例不关闭、不进入 retired、不触发释放回调；prepare 随后恢复 Catalog 和五类文件并删除新失败 revision，旧 Memory 完整保留。`disabled/error` 拒绝新请求。
 
 MySQL/PostgreSQL 继续使用既有各自 Runner、Metadata Retriever、Chroma、Prompt 和 SQLGuard，不跨源共享 Agent 或方言。
 
@@ -92,7 +92,45 @@ Widget 不能调用管理 API。`/api/embed/data-sources` 只返回 Token 授权
 
 目录回滚可停止服务后恢复 SQLite 备份；资产发布失败由代码自动恢复旧 Metadata/Memory。不得用回滚删除既有正式 Chroma。
 
-## 12. 已知限制
+## 12. 崩溃安全发布与恢复
+
+目录 schema 当前为 v5。`active_asset_batches` 的 `source_id` 唯一约束同时承担跨进程发布门禁；批次保存 `owner_pid`、开始/更新时间、完整旧 Catalog 快照、目标 revision/Memory、五类资产计划、每项正式/候选/备份路径、旧版与目标哈希、已完成备份/安装集合、阶段及安全错误摘要，不保存凭据或连接串。
+
+发布阶段为：
+
+```text
+prepared
+  → backing_up
+  → installing
+  → catalog_published
+  → runtime_validated
+  → committed
+
+任一未提交阶段失败
+  → rolling_back
+  → 完成后删除批次
+  → 无法证明一致时 rollback_failed
+```
+
+每次文件移动后先把完成集合提交到 SQLite，再进行下一项。发布单元包含 `column_metadata_index.json`、revision Memory、`ddl_memories.json`、`business_documents.json`、`asset_manifest.json`、Catalog 发布字段和 Runtime 缓存。manifest 记录 source、revision、scope fingerprint、批次 ID、创建时间以及四类内容哈希；Memory 使用目录内不可变 `.asset_identity.json` 作为版本身份，避免 Chroma 运行时文件变化造成误判。
+
+启动恢复不再把活动批次当作垃圾删除。owner 仍存活的批次始终返回冲突，避免长时间 Chroma 构建被其他实例误接管；owner 已退出的批次按实际 Catalog 状态恢复：
+
+| 状态 | 恢复决策 |
+|---|---|
+| Catalog 仍是旧 revision | 按逐项备份记录恢复完整旧版 |
+| Catalog 已是目标 revision | 校验 manifest 和全部目标哈希，再重建并验证 Runtime；成功则前滚提交 |
+| 新 Runtime 无法重建 | 恢复旧 Catalog 与全部旧资产 |
+| 路径越界、快照缺失或哈希无法证明 | 保留 batch/backup，标记 `rollback_failed`，关闭该源问数 |
+| `runtime_validated` / `committed` 遗留 | 重新校验目标资产和 Runtime 后只做提交后清理 |
+
+恢复操作幂等：备份已被移回时以旧哈希确认，目标已删除时直接继续；恢复中再次崩溃后，下次启动从现存文件和持久化集合继续。恢复前会重新推导并严格核对五类正式、候选和备份路径；任何空路径、目录越界或路径篡改都保留证据并进入 `rollback_failed`，不会执行清理。backup 只在完整回滚验证成功或完整新版验证成功后删除，active batch 是最后删除项之一。清理失败只登记精确 pending 路径，不撤销已提交发布。
+
+Runtime factory 或 validate 失败不会修改旧缓存。新 Runtime 成功后，runtime 对象与 revision 在同一临界区替换；旧 Runtime 有租约时进入 retired，无租约时关闭。关闭失败的 Runtime 继续保护旧 Memory，只有重试关闭成功后才触发 release callback。候选 Memory 关闭仅停止自身 executor 并通过客户端引用计数释放，不调用 Chroma SharedSystem 的 `stop()` 或全局 cache clear；候选客户端释放失败会阻断发布并进入恢复，避免带锁继续安装。
+
+并发修改范围或停用时，旧批次会在发布前乐观校验失败；回滚只撤销本批次拥有的发布字段，不覆盖并发产生的 `training_required` 或 `disabled` 状态。主键规则保持不变：仅完整、顺序明确的 `primary=true` 索引可以生成 `PRIMARY KEY`，字段级 `primary_key=true` 不能作为回退。
+
+## 13. 已知限制
 
 - 不支持外部接口、文件数据源、其他数据库、ETL、跨源 JOIN 和写入；
 - 不提供关系图、手工 JOIN、行级权限或在线 SQL 示例编辑；
