@@ -17,6 +17,9 @@
 .report-card__title { margin-bottom: 10px; color: #1e3a8a; font-weight: 600; }
 .report-result-card { display: grid; gap: 6px; font-size: 13px; }
 .report-result-card .report-primary { width: fit-content; margin-top: 5px; }
+.report-result-card__actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 5px; }
+.report-result-card__actions .report-primary { margin-top: 0; }
+.report-secondary { border: 1px solid #bfdbfe; border-radius: 6px; background: #fff; color: #1d4ed8; padding: 8px 14px; cursor: pointer; font-size: 12px; }
 .report-preview-overlay { position: fixed; z-index: 1000; inset: 0; padding: 24px; background: rgb(15 23 42 / 60%); }
 .report-preview-modal { display: flex; width: min(1180px, 100%); height: 100%; margin: 0 auto; flex-direction: column; overflow: hidden; border-radius: 10px; background: #fff; }
 .report-preview-modal header { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 16px; padding: 0 18px; border-bottom: 1px solid #e2e8f0; background: #fff; }

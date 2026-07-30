@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test:reports": "node src/__tests__/reportPageContract.test.mjs",
+    "test:reports": "node src/__tests__/reportPageContract.test.mjs && node src/__tests__/reportComponentsContract.test.mjs",
     "test:data-sources": "node src/__tests__/dataSourceIntegrationContract.test.mjs",
     "preview": "vite preview"
   },

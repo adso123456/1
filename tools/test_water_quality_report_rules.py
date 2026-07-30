@@ -210,6 +210,15 @@ def test_rules() -> None:
     )
     assert monthly_intent is not None
     assert monthly_intent.period == date(2025, 7, 1)
+    generic_intent = parse_report_intent(
+        "生成报表",
+        today=date(2025, 8, 1),
+    )
+    assert generic_intent is not None
+    assert generic_intent.report_type == "daily"
+    assert generic_intent.report_type_selectable is True
+    assert parse_report_intent("日报数据有多少条") is None
+    assert parse_report_intent("月报表中有哪些字段") is None
     assert parse_report_intent("查询7月水质数据") is None
 
 
@@ -448,7 +457,14 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
                     raise AssertionError("报表指令不得进入普通 Agent")
                     yield
 
-            artifact_store = ReportArtifactStore(StubService, renderer)
+            class ConfirmFirstArtifactStore(ReportArtifactStore):
+                generate_calls = 0
+
+                def generate(self, **kwargs):
+                    self.generate_calls += 1
+                    raise AssertionError("聊天报表请求不得直接生成")
+
+            artifact_store = ConfirmFirstArtifactStore(StubService, renderer)
             resolved_conversations: list[str | None] = []
             handler = WaterQualityReportChatHandler(
                 RejectFallback(),
@@ -460,21 +476,62 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             )
             handler._renderer = renderer
 
-            async def collect_report_chunks():
+            async def collect_report_chunks(message):
                 request = ChatRequest(
-                    message="生成2025年7月28日水质日报，只看水温",
+                    message=message,
                     conversation_id="report-chat-test",
                     metadata={"source_id": "mysql-lzh-monitor"},
                 )
                 return [chunk async for chunk in handler.handle_stream(request)]
 
-            chunks = asyncio.run(collect_report_chunks())
-            assert chunks[0].rich["type"] == "report_result"
-            assert chunks[0].rich["data"]["indicator_names"] == ["水温"]
-            assert chunks[0].rich["data"]["preview_url"].startswith(
-                "/api/reports/water-quality/artifacts/"
-            )
-            assert resolved_conversations == ["report-chat-test"]
+            chunks = asyncio.run(collect_report_chunks(
+                "生成2025年7月28日水质日报"
+            ))
+            assert chunks[0].rich["type"] == "report_config"
+            config = chunks[0].rich["data"]
+            assert config["default_date"] == "2025-07-28"
+            assert config["recent_days"] == 3
+            assert config["selected_indicators"] == [0, 5, 7]
+            assert artifact_store.generate_calls == 0
+
+            prefilled = asyncio.run(collect_report_chunks(
+                "生成2025年7月28日水质日报，只看氨氮和总磷，近5日"
+            ))[0].rich["data"]
+            assert prefilled["selected_indicators"] == [5, 7]
+            assert prefilled["recent_days"] == 5
+
+            frequency = asyncio.run(collect_report_chunks(
+                "生成日报，只看氨氮，4小时1次"
+            ))[0].rich["data"]
+            assert frequency["frequency_hours"] == {"5": 4}
+
+            monthly_config = asyncio.run(collect_report_chunks(
+                "生成2025年7月水质月报"
+            ))[0].rich["data"]
+            assert monthly_config["report_type"] == "monthly"
+            assert monthly_config["default_month"] == "2025-07"
+
+            generic_config = asyncio.run(collect_report_chunks(
+                "生成报表"
+            ))[0].rich["data"]
+            assert generic_config["report_type"] == "daily"
+            assert generic_config["report_type_selectable"] is True
+
+            unknown_config = asyncio.run(collect_report_chunks(
+                "生成日报，只看氨氮和不存在指标"
+            ))[0].rich["data"]
+            assert unknown_config["selected_indicators"] == [5]
+            assert "不存在指标" in unknown_config["error"]
+
+            for invalid_range in ("生成日报，近1日", "生成日报，近8日"):
+                invalid_config = asyncio.run(
+                    collect_report_chunks(invalid_range)
+                )[0].rich["data"]
+                assert invalid_config["recent_days"] == 3
+                assert invalid_config["error"] == "回看范围只能选择近2日至近7日。"
+
+            assert artifact_store.generate_calls == 0
+            assert resolved_conversations == ["report-chat-test"] * 8
 
             wrong_source_handler = WaterQualityReportChatHandler(
                 RejectFallback(),
@@ -500,16 +557,16 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             assert "postgresql-main" not in wrong_source[0].rich["data"]["reason"]
             assert "切换数据源" not in wrong_source[0].rich["data"]["reason"]
 
-            class NoDatabaseArtifact:
+            class OptionsOnlyArtifact:
                 def options(self):
-                    raise AssertionError("周期缺失不得访问数据库")
+                    return StubService().options()
 
                 def generate(self, **kwargs):
-                    raise AssertionError("周期缺失不得生成报告")
+                    raise AssertionError("聊天请求不得生成报告")
 
             vague_handler = WaterQualityReportChatHandler(
                 RejectFallback(),
-                NoDatabaseArtifact(),
+                OptionsOnlyArtifact(),
             )
 
             async def collect_vague():
@@ -523,6 +580,39 @@ def test_pdf_and_api(daily: dict, monthly: dict) -> None:
             vague = asyncio.run(collect_vague())
             assert vague[0].rich["type"] == "report_config"
             assert vague[0].rich["data"]["report_type"] == "monthly"
+
+            class RecordingFallback:
+                def __init__(self):
+                    self.messages = []
+
+                async def handle_stream(self, request):
+                    self.messages.append(request.message)
+                    yield WaterQualityReportChatHandler._text_chunk(
+                        request,
+                        "fallback",
+                    )
+
+            fallback = RecordingFallback()
+            fallback_handler = WaterQualityReportChatHandler(
+                fallback,
+                artifact_store,
+                lambda request: "mysql-lzh-monitor",
+            )
+
+            async def collect_question():
+                request = ChatRequest(
+                    message="查询2025年7月28日水质数据",
+                    conversation_id="normal-question",
+                    metadata={"source_id": "mysql-lzh-monitor"},
+                )
+                return [
+                    chunk
+                    async for chunk in fallback_handler.handle_stream(request)
+                ]
+
+            normal = asyncio.run(collect_question())
+            assert fallback.messages == ["查询2025年7月28日水质数据"]
+            assert normal[0].rich["type"] == "text"
 
             available = StubService().options()["indicators"]
             selected, unknown, explicit = resolve_indicators(

@@ -17,9 +17,11 @@ export interface ReportOptions {
 
 export interface ReportConfigData {
   report_type: ReportType;
+  report_type_selectable: boolean;
   default_date?: string | null;
   default_month?: string | null;
   recent_days: number;
+  available_recent_days: number[];
   available_indicators: IndicatorOption[];
   selected_indicators: number[];
   frequency_hours: Record<string, number>;
@@ -255,9 +257,11 @@ export function ReportConfigCard({
 export function ReportResultCard({
   result,
   onPreview,
+  onReconfigure,
 }: {
   result: ReportResultData;
   onPreview: (result: ReportResultData) => void;
+  onReconfigure?: (result: ReportResultData) => void;
 }) {
   return (
     <div className="report-card report-result-card">
@@ -265,9 +269,20 @@ export function ReportResultCard({
       <div>报告{result.report_type === 'daily' ? '日期' : '月份'}：{result.period}</div>
       <div>监测指标：{result.indicator_names?.join('、') || '已选择指标'}</div>
       {result.report_type === 'daily' && <div>回看范围：近{result.recent_days}日</div>}
-      <button type="button" className="report-primary" onClick={() => onPreview(result)}>
-        预览报告
-      </button>
+      <div className="report-result-card__actions">
+        <button type="button" className="report-primary" onClick={() => onPreview(result)}>
+          预览报告
+        </button>
+        {onReconfigure && (
+          <button
+            type="button"
+            className="report-secondary"
+            onClick={() => onReconfigure(result)}
+          >
+            修改配置重新生成
+          </button>
+        )}
+      </div>
     </div>
   );
 }

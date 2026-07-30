@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ChatMessage, ChartData, DataSourceSummary, RenderableChartType } from '../types';
 import { MessageBubble } from './MessageBubble';
-import type { ReportResultData } from './ReportComponents';
+import type {
+  ReportConfigData,
+  ReportResultData,
+} from './ReportComponents';
+import { ReportComposerPanel } from './ReportComposerPanel';
 
 interface Props {
   messages: ChatMessage[];
@@ -27,6 +31,12 @@ interface Props {
   theme?: string;
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
+  onReportReconfigure?: (result: ReportResultData) => void;
+  pendingReportConfig?: ReportConfigData | null;
+  onReportConfigChange?: (config: ReportConfigData) => void;
+  onReportConfigCancel?: () => void;
+  onReportConfigGenerated?: (result: ReportResultData) => void;
+  reportRequestHeaders?: () => Record<string, string>;
   sourceLabel?: string;
   sourceUnavailableReason?: string;
   dataSources?: DataSourceSummary[];
@@ -61,6 +71,12 @@ export function ChatArea({
   theme = '#2563eb',
   onReportGenerated,
   onReportPreview,
+  onReportReconfigure,
+  pendingReportConfig,
+  onReportConfigChange,
+  onReportConfigCancel,
+  onReportConfigGenerated,
+  reportRequestHeaders,
   sourceLabel,
   sourceUnavailableReason = '',
   dataSources = [],
@@ -178,6 +194,7 @@ export function ChatArea({
             workspaceUrl={workspaceUrl}
             onReportGenerated={onReportGenerated}
             onReportPreview={onReportPreview}
+            onReportReconfigure={onReportReconfigure}
             onDataSourceSuggestion={onDataSourceSuggestion}
             dataSources={dataSources}
           />
@@ -192,6 +209,17 @@ export function ChatArea({
         borderTop: '1px solid #e5e7eb',
         flexShrink: 0,
       }}>
+        {pendingReportConfig && onReportConfigChange && onReportConfigCancel && onReportConfigGenerated && (
+          <ReportComposerPanel
+            config={pendingReportConfig}
+            compact={compact}
+            theme={theme}
+            onChange={onReportConfigChange}
+            onCancel={onReportConfigCancel}
+            onGenerated={onReportConfigGenerated}
+            requestHeaders={reportRequestHeaders}
+          />
+        )}
         <div style={{
           display: 'flex',
           gap: 10,

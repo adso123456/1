@@ -13,10 +13,7 @@ from typing import Any
 from vanna.components import RichTextComponent
 from vanna.servers.base import ChatRequest, ChatResponse, ChatStreamChunk
 
-from backend.water_quality_reports.artifacts import (
-    ReportArtifactError,
-    ReportArtifactStore,
-)
+from backend.water_quality_reports.artifacts import ReportArtifactStore
 from backend.water_quality_reports.repository import ReportDataSourceError
 
 
@@ -26,6 +23,8 @@ class ReportChatIntent:
     period: date | None
     recent_days: int = 3
     frequency_hours: int | None = None
+    report_type_selectable: bool = False
+    error: str | None = None
 
 
 _SAFE_ALIASES = {
@@ -46,13 +45,17 @@ def parse_report_intent(
     *,
     today: date | None = None,
 ) -> ReportChatIntent | None:
-    """识别明确报表意图；周期缺失时保留为空以触发配置卡。"""
+    """识别明确的报表生成意图，不拦截普通问数。"""
     compact = re.sub(r"\s+", "", message)
     is_daily = "日报" in compact
     is_monthly = "月报" in compact
-    if not (is_daily or is_monthly):
+    is_generic = "报表" in compact and not (is_daily or is_monthly)
+    if not (is_daily or is_monthly or is_generic):
         return None
-    if not any(word in compact for word in ("生成", "导出", "制作", "出一份", "给我")):
+    if not any(
+        word in compact
+        for word in ("生成", "导出", "制作", "出一份", "给我", "创建")
+    ):
         return None
 
     current = today or date.today()
@@ -60,38 +63,67 @@ def parse_report_intent(
     frequency_hours = int(frequency_match.group(1)) if frequency_match else None
     recent_match = re.search(r"近(\d+)日", compact)
     recent_days = int(recent_match.group(1)) if recent_match else 3
+    error = None
+    if recent_match and not 2 <= recent_days <= 7:
+        recent_days = 3
+        error = "回看范围只能选择近2日至近7日。"
 
-    if is_daily:
+    if is_daily or is_generic:
         matched = re.search(
             r"(?P<year>\d{4})(?:年|-|/)(?P<month>\d{1,2})(?:月|-|/)"
             r"(?P<day>\d{1,2})日?",
             compact,
         )
         if matched:
-            period = date(
-                int(matched.group("year")),
-                int(matched.group("month")),
-                int(matched.group("day")),
-            )
+            try:
+                period = date(
+                    int(matched.group("year")),
+                    int(matched.group("month")),
+                    int(matched.group("day")),
+                )
+            except ValueError:
+                period = current
+                error = "报告日期无效。"
         elif "昨日日报" in compact or "昨天" in compact or "昨日" in compact:
             period = current - timedelta(days=1)
         elif "今日日报" in compact or "今天" in compact or "今日" in compact:
             period = current
         else:
-            period = None
-        return ReportChatIntent("daily", period, recent_days, frequency_hours)
+            period = current
+        return ReportChatIntent(
+            "daily",
+            period,
+            recent_days,
+            frequency_hours,
+            report_type_selectable=is_generic,
+            error=error,
+        )
 
     matched = re.search(
         r"(?P<year>\d{4})(?:年|-|/)(?P<month>\d{1,2})月?",
         compact,
     )
     if matched:
-        period = date(int(matched.group("year")), int(matched.group("month")), 1)
+        try:
+            period = date(
+                int(matched.group("year")),
+                int(matched.group("month")),
+                1,
+            )
+        except ValueError:
+            period = current.replace(day=1)
+            error = "报告月份无效。"
     elif "本月" in compact:
         period = current.replace(day=1)
     else:
-        period = None
-    return ReportChatIntent("monthly", period, 3, frequency_hours)
+        period = current.replace(day=1)
+    return ReportChatIntent(
+        "monthly",
+        period,
+        3,
+        frequency_hours,
+        error=error,
+    )
 
 
 def extract_indicator_filter(message: str) -> tuple[bool, list[str]]:
@@ -135,7 +167,7 @@ def resolve_indicators(
 
 
 class WaterQualityReportChatHandler:
-    """报表指令走固定快照服务，其余请求原样委托给现有 Agent。"""
+    """报表指令只返回待确认配置，其余请求原样委托给现有 Agent。"""
 
     def __init__(
         self,
@@ -151,11 +183,7 @@ class WaterQualityReportChatHandler:
         self,
         request: ChatRequest,
     ) -> AsyncGenerator[ChatStreamChunk, None]:
-        try:
-            intent = parse_report_intent(request.message)
-        except ValueError as exc:
-            yield self._text_chunk(request, f"报表参数无效：{exc}")
-            return
+        intent = parse_report_intent(request.message)
         if intent is None:
             async for chunk in self._fallback_handler.handle_stream(request):
                 yield chunk
@@ -180,21 +208,13 @@ class WaterQualityReportChatHandler:
             )
             return
 
-        if intent.period is None:
-            yield self._structured_chunk(
-                request,
-                "report_config",
-                self._config_payload(intent, source_id),
-            )
-            return
-
         try:
             options = self._artifacts.options()
             selected, unknown, explicit = resolve_indicators(
                 request.message,
                 options["indicators"],
             )
-            error: str | None = None
+            error = intent.error
             if explicit and unknown:
                 error = f"未匹配指标：{'、'.join(unknown)}"
             elif explicit and not selected:
@@ -212,40 +232,46 @@ class WaterQualityReportChatHandler:
                         f"{'、'.join(invalid)}不存在"
                         f"{intent.frequency_hours}小时1次的真实配置"
                     )
-            if error is not None:
-                yield self._structured_chunk(
-                    request,
-                    "report_config",
-                    self._config_payload(
-                        intent,
-                        source_id,
-                        available=options["indicators"],
-                        error=error,
-                    ),
-                )
-                return
-
-            codes = tuple(int(item["code"]) for item in selected) or None
+            selected_items = (
+                selected
+                if explicit
+                else options["indicators"]
+            )
+            selected_codes = [
+                int(item["code"])
+                for item in selected_items
+            ]
             overrides = (
-                {code: intent.frequency_hours for code in codes}
-                if codes is not None and intent.frequency_hours is not None
+                {
+                    str(code): intent.frequency_hours
+                    for code in selected_codes
+                }
+                if intent.frequency_hours is not None and explicit
                 else {}
             )
-            result = self._artifacts.generate(
-                report_type=intent.report_type,
-                period=intent.period,
-                indicator_codes=codes,
-                frequency_overrides=overrides,
-                recent_days=intent.recent_days,
+            yield self._structured_chunk(
+                request,
+                "report_config",
+                self._config_payload(
+                    intent,
+                    source_id,
+                    available=options["indicators"],
+                    selected=selected_codes,
+                    frequency_hours=overrides,
+                    available_recent_days=options.get("recent_days"),
+                    error=error,
+                ),
             )
-            result["indicator_names"] = (
-                [str(item["name"]) for item in selected]
-                if selected
-                else ["全部真实配置指标"]
+        except (ReportDataSourceError, ValueError) as exc:
+            yield self._structured_chunk(
+                request,
+                "report_config",
+                self._config_payload(
+                    intent,
+                    source_id,
+                    error=f"筛选项加载失败：{exc}",
+                ),
             )
-            yield self._structured_chunk(request, "report_result", result)
-        except (ReportDataSourceError, ReportArtifactError, ValueError) as exc:
-            yield self._text_chunk(request, f"报告生成失败：{exc}")
 
     async def handle_poll(self, request: ChatRequest) -> ChatResponse:
         chunks = [chunk async for chunk in self.handle_stream(request)]
@@ -257,6 +283,9 @@ class WaterQualityReportChatHandler:
         source_id: str,
         *,
         available: list[dict[str, Any]] | None = None,
+        selected: list[int] | None = None,
+        frequency_hours: dict[str, int] | None = None,
+        available_recent_days: list[int] | None = None,
         error: str | None = None,
     ) -> dict[str, Any]:
         current = date.today()
@@ -265,14 +294,16 @@ class WaterQualityReportChatHandler:
         )
         return {
             "report_type": intent.report_type,
+            "report_type_selectable": intent.report_type_selectable,
             "default_date": period.isoformat() if intent.report_type == "daily" else None,
             "default_month": period.strftime("%Y-%m") if intent.report_type == "monthly" else None,
             "recent_days": intent.recent_days,
+            "available_recent_days": available_recent_days or [2, 3, 4, 5, 6, 7],
             "available_indicators": available or [],
-            "selected_indicators": [],
-            "frequency_hours": {},
+            "selected_indicators": selected or [],
+            "frequency_hours": frequency_hours or {},
             "source_id": source_id,
-            "missing_fields": ["period"] if intent.period is None else [],
+            "missing_fields": [],
             "error": error,
         }
 
