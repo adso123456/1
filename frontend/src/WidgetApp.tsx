@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
 } from 'react';
@@ -31,10 +30,11 @@ import {
   isWidgetMessage,
   postWidgetAppearanceMessage,
   postWidgetMessage,
-  readWidgetAuthMessage,
   readWidgetEmbedContext,
   type WidgetEmbedContext,
 } from './widgetMessageProtocol';
+import { WidgetRpcClient } from './widgetRpcClient';
+import type { ReportRequest } from './components/ReportComponents';
 import {
   DEFAULT_ASSISTANT_APPEARANCE,
   normalizeAssistantAppearance,
@@ -93,6 +93,7 @@ interface WidgetChatProps {
   dashboard?: DashboardActions;
   workspaceEnabled: boolean;
   applicationConfig?: WidgetApplicationConfigInput;
+  reportRequest?: ReportRequest;
 }
 
 function requestWidgetMinimize(context: WidgetEmbedContext | null): void {
@@ -188,8 +189,8 @@ export function WidgetAccessView({
   const message = status === 'invalid'
     ? '无效的嵌入访问入口'
     : status === 'error'
-      ? '嵌入访问验证失败，请联系系统管理员。'
-      : '正在验证嵌入访问权限';
+      ? '嵌入服务加载失败，请联系系统管理员。'
+      : '正在加载嵌入服务';
   return (
     <div className="widget-shell">
       <WidgetHeader
@@ -213,6 +214,7 @@ export function WidgetChat({
   workspaceEnabled,
   applicationConfig: applicationConfigInput =
     DEFAULT_WIDGET_APPLICATION_CONFIG,
+  reportRequest,
 }: WidgetChatProps) {
   const applicationConfig = normalizeWidgetApplicationConfig(
     applicationConfigInput,
@@ -236,7 +238,6 @@ export function WidgetChat({
     storageError,
     dataSources,
     currentSourceId,
-    selectDataSource,
     dataSourceError,
     sourceBound,
   } = useSSE(undefined, requestOptions);
@@ -310,16 +311,18 @@ export function WidgetChat({
     result: ReportResultData,
   ) => {
     try {
-      const response = await fetch('/api/reports/water-quality/options', {
-        headers: requestOptions?.headersProvider?.(),
-      });
+      const response = reportRequest
+        ? await reportRequest('report-options')
+        : await fetch('/api/reports/water-quality/options', {
+            headers: requestOptions?.headersProvider?.(),
+          });
       if (!response.ok) throw new Error();
       const options = await response.json() as ReportOptions;
       updatePendingReportConfig(configFromReportResult(result, options));
     } catch {
       setNotice({ ok: false, message: '最新报表筛选项加载失败，请稍后重试。' });
     }
-  }, [requestOptions, updatePendingReportConfig]);
+  }, [reportRequest, requestOptions, updatePendingReportConfig]);
 
   return (
     <div
@@ -366,7 +369,11 @@ export function WidgetChat({
               aria-label="选择数据源"
               value={currentSourceId}
               disabled={loading || sourceBound}
-              onChange={event => selectDataSource(event.target.value)}
+              onChange={event => {
+                if (event.target.value) {
+                  void createNewSession(event.target.value);
+                }
+              }}
             >
               <option value="">请选择</option>
               {dataSources.map(source => (
@@ -418,6 +425,7 @@ export function WidgetChat({
             setReportPreview(result);
           }}
           reportRequestHeaders={requestOptions?.headersProvider}
+          reportRequest={reportRequest}
           onAddToDashboard={
             dashboard ? handleRequestAddToDashboard : undefined
           }
@@ -467,6 +475,7 @@ export function WidgetChat({
       <ReportPreviewModal
         result={reportPreview}
         onClose={() => setReportPreview(null)}
+        reportRequest={reportRequest}
       />
     </div>
   );
@@ -508,55 +517,51 @@ function DevelopmentWidgetChat({
   );
 }
 
-function ProtectedWidgetGate({
+function BridgedWidgetChat({
   embedContext,
 }: {
   embedContext: WidgetEmbedContext;
 }) {
-  const [embedAuth, setEmbedAuth] = useState<{
-    status: 'waiting' | 'authorized' | 'error';
-    token: string;
-    expiresAt: number;
-  }>({
-    status: 'waiting',
-    token: '',
-    expiresAt: 0,
-  });
-  const [authGeneration, setAuthGeneration] = useState(0);
-  const authRequiredSentRef = useRef(false);
-
-  const handleAuthorizationError = useCallback(() => {
-    setEmbedAuth({ status: 'error', token: '', expiresAt: 0 });
-    if (authRequiredSentRef.current) return;
-    authRequiredSentRef.current = true;
-    postWidgetMessage(
-      window.parent,
-      embedContext,
-      'water-agent-widget:auth-required',
-    );
-  }, [embedContext]);
+  const [applicationConfig, setApplicationConfig] =
+    useState(DEFAULT_WIDGET_APPLICATION_CONFIG);
+  const [loadError, setLoadError] = useState(false);
+  const rpcClient = useMemo(
+    () => new WidgetRpcClient(embedContext),
+    [embedContext],
+  );
+  const requestOptions = useMemo<UseSSERequestOptions>(() => ({
+    enabled: true,
+    dataSourcesEndpoint: 'widget-rpc:data-sources',
+    chatEndpoint: 'widget-rpc:chat',
+    persistenceMode: 'memory',
+    bindConversationOnCreate: false,
+    fetcher: (url, init) => {
+      if (url === 'widget-rpc:data-sources') {
+        return rpcClient.request(
+          'data-sources',
+          undefined,
+          init?.signal ?? undefined,
+        );
+      }
+      if (url === 'widget-rpc:chat') {
+        const payload = typeof init?.body === 'string'
+          ? JSON.parse(init.body)
+          : init?.body;
+        return rpcClient.request('chat', payload, init?.signal ?? undefined);
+      }
+      throw new Error(`Widget RPC 不支持请求：${url}`);
+    },
+  }), [rpcClient]);
+  const reportRequest = useCallback<ReportRequest>(
+    (operation, payload, signal) =>
+      rpcClient.request(operation, payload, signal),
+    [rpcClient],
+  );
 
   useEffect(() => {
+    const controller = new AbortController();
+    rpcClient.connect();
     const handleWidgetMessage = (event: MessageEvent) => {
-      const auth = readWidgetAuthMessage(
-        event,
-        embedContext,
-        window.parent,
-      );
-      if (auth) {
-        if (auth.expiresAt <= Math.floor(Date.now() / 1000)) {
-          handleAuthorizationError();
-        } else {
-          authRequiredSentRef.current = false;
-          setAuthGeneration(current => current + 1);
-          setEmbedAuth({
-            status: 'authorized',
-            token: auth.token,
-            expiresAt: auth.expiresAt,
-          });
-        }
-        return;
-      }
       if (
         isWidgetMessage(
           event,
@@ -570,88 +575,8 @@ function ProtectedWidgetGate({
     };
     window.addEventListener('message', handleWidgetMessage);
     postWidgetMessage(window.parent, embedContext, 'water-agent-widget:ready');
-    return () => {
-      window.removeEventListener('message', handleWidgetMessage);
-    };
-  }, [embedContext, handleAuthorizationError]);
-
-  useEffect(() => {
-    if (embedAuth.status !== 'authorized') return;
-    const delay = Math.max(0, embedAuth.expiresAt * 1000 - Date.now());
-    const timer = window.setTimeout(handleAuthorizationError, delay);
-    return () => window.clearTimeout(timer);
-  }, [
-    embedAuth.expiresAt,
-    embedAuth.status,
-    handleAuthorizationError,
-  ]);
-
-  const requestOptions = useMemo<UseSSERequestOptions>(() => ({
-    enabled: true,
-    dataSourcesEndpoint: '/api/embed/data-sources',
-    chatEndpoint: '/api/embed/vanna/v2/chat_sse',
-    headersProvider: () => ({
-      Authorization: `Bearer ${embedAuth.token}`,
-      'X-Water-Agent-Parent-Origin': embedContext.parentOrigin,
-    }),
-    onAuthorizationError: handleAuthorizationError,
-    persistenceMode: 'memory',
-  }), [
-    embedAuth.token,
-    embedContext.parentOrigin,
-    handleAuthorizationError,
-  ]);
-
-  if (embedAuth.status !== 'authorized') {
-    return (
-      <WidgetAccessView
-        embedContext={embedContext}
-        status={embedAuth.status}
-      />
-    );
-  }
-
-  return (
-    <ProtectedWidgetChat
-      key={authGeneration}
-      embedContext={embedContext}
-      token={embedAuth.token}
-      requestOptions={requestOptions}
-      onAuthorizationError={handleAuthorizationError}
-    />
-  );
-}
-
-function ProtectedWidgetChat({
-  embedContext,
-  token,
-  requestOptions,
-  onAuthorizationError,
-}: {
-  embedContext: WidgetEmbedContext;
-  token: string;
-  requestOptions: UseSSERequestOptions;
-  onAuthorizationError: () => void;
-}) {
-  const [applicationConfig, setApplicationConfig] =
-    useState(DEFAULT_WIDGET_APPLICATION_CONFIG);
-  const { parentOrigin, instanceId } = embedContext;
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void fetch('/api/embed/application', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-Water-Agent-Parent-Origin': parentOrigin,
-      },
-      signal: controller.signal,
-    })
+    void rpcClient.request('application', undefined, controller.signal)
       .then(async response => {
-        if (response.status === 401 || response.status === 403) {
-          onAuthorizationError();
-          return null;
-        }
         if (!response.ok) {
           throw new Error(`应用配置请求失败：${response.status}`);
         }
@@ -663,9 +588,10 @@ function ProtectedWidgetChat({
           setApplicationConfig(normalized);
           postWidgetAppearanceMessage(
             window.parent,
-            { parentOrigin, instanceId },
+            embedContext,
             normalized,
           );
+          setLoadError(false);
         }
       })
       .catch(error => {
@@ -674,16 +600,20 @@ function ProtectedWidgetChat({
           && !(error instanceof DOMException && error.name === 'AbortError')
         ) {
           setApplicationConfig(DEFAULT_WIDGET_APPLICATION_CONFIG);
+          setLoadError(true);
         }
       });
 
-    return () => controller.abort();
-  }, [
-    instanceId,
-    onAuthorizationError,
-    parentOrigin,
-    token,
-  ]);
+    return () => {
+      controller.abort();
+      window.removeEventListener('message', handleWidgetMessage);
+      rpcClient.destroy();
+    };
+  }, [embedContext, rpcClient]);
+
+  if (loadError) {
+    return <WidgetAccessView embedContext={embedContext} status="error" />;
+  }
 
   return (
     <WidgetChat
@@ -691,6 +621,7 @@ function ProtectedWidgetChat({
       requestOptions={requestOptions}
       workspaceEnabled={false}
       applicationConfig={applicationConfig}
+      reportRequest={reportRequest}
     />
   );
 }
@@ -720,5 +651,5 @@ export function WidgetApp() {
   if (widgetAccessMode === 'local-development') {
     return <DevelopmentWidgetChat embedContext={embedContext} />;
   }
-  return <ProtectedWidgetGate embedContext={embedContext} />;
+  return <BridgedWidgetChat embedContext={embedContext} />;
 }

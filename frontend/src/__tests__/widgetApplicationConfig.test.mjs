@@ -8,6 +8,10 @@ const widgetSource = fs.readFileSync(
   path.join(frontendRoot, 'src', 'WidgetApp.tsx'),
   'utf8',
 );
+const rpcSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'widgetRpcClient.ts'),
+  'utf8',
+);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -15,30 +19,29 @@ function assert(condition, message) {
 
 const checks = [
   [
-    widgetSource.includes("fetch('/api/embed/application'"),
-    'protected Widget 未使用 Embed 应用信息接口',
+    widgetSource.includes("rpcClient.request('application'"),
+    'Widget 未通过父页面 RPC 读取应用配置',
   ],
   [
-    widgetSource.includes('Authorization: `Bearer ${token}`'),
-    '应用信息请求未携带 Token',
+    widgetSource.includes("dataSourcesEndpoint: 'widget-rpc:data-sources'"),
+    'Widget 数据源请求未切换到父页面 RPC',
   ],
   [
-    widgetSource.includes(
-      "'X-Water-Agent-Parent-Origin': embedContext.parentOrigin",
-    ),
-    '应用信息请求未携带父页面 Origin',
+    widgetSource.includes("chatEndpoint: 'widget-rpc:chat'"),
+    'Widget 聊天请求未切换到父页面 RPC',
   ],
   [
-    widgetSource.includes(
-      'response.status === 401 || response.status === 403',
-    ) && widgetSource.includes('onAuthorizationError();'),
-    '应用信息鉴权失败未保持失败关闭',
+    widgetSource.includes("persistenceMode: 'memory'"),
+    '跨域 Widget 会话未使用内存隔离',
   ],
   [
-    widgetSource.includes(
-      'setApplicationConfig(DEFAULT_WIDGET_APPLICATION_CONFIG)',
-    ),
-    '应用信息接口普通失败未回退安全默认显示',
+    widgetSource.includes('reportRequest={reportRequest}'),
+    'Widget 报表请求未透传父页面 RPC',
+  ],
+  [
+    !widgetSource.includes('Authorization')
+      && !widgetSource.includes(['X-Water-Agent', 'Parent-Origin'].join('-')),
+    'Widget 仍自行构造鉴权或父 Origin Header',
   ],
   [
     !widgetSource.includes('dangerouslySetInnerHTML'),
@@ -54,23 +57,16 @@ const checks = [
     'Widget 未复用统一外观默认值与规范化',
   ],
   [
-    widgetSource.includes(
-      "'--widget-header-color': applicationConfig.header_font_color",
-    ),
-    '标题文字色未应用到 Widget',
-  ],
-  [
     widgetSource.includes('postWidgetAppearanceMessage('),
     'Widget 成功加载配置后未发送外观快照',
   ],
   [
-    widgetSource.includes("persistenceMode: 'memory'"),
-    '受保护 Widget 会话不再使用内存隔离',
+    rpcSource.includes('event.source === expectedSource')
+      || rpcSource.includes('isWidgetRpcMessage('),
+    'RPC 响应未复用严格消息校验',
   ],
 ];
 
-for (const [passed, message] of checks) {
-  assert(passed, message);
-}
+for (const [passed, message] of checks) assert(passed, message);
 
 console.log(`widget application config: ${checks.length} checks passed`);

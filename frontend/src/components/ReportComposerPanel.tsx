@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type {
   ReportConfigData,
+  ReportRequest,
   ReportResultData,
   ReportType,
 } from './ReportComponents';
@@ -20,6 +21,7 @@ interface Props {
   onCancel: () => void;
   onGenerated: (result: ReportResultData) => void;
   requestHeaders?: () => Record<string, string>;
+  reportRequest?: ReportRequest;
 }
 
 function localDateValue(): string {
@@ -47,6 +49,7 @@ export function ReportComposerPanel({
   onCancel,
   onGenerated,
   requestHeaders,
+  reportRequest,
 }: Props) {
   const [indicatorOpen, setIndicatorOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
@@ -135,24 +138,27 @@ export function ReportComposerPanel({
     setLoading(true);
     update({ error: null });
     try {
-      const response = await fetch('/api/reports/water-quality/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...requestHeaders?.(),
-        },
-        body: JSON.stringify({
-          report_type: config.report_type,
-          ...(config.report_type === 'daily'
-            ? {
-                date: config.default_date,
-                recent_days: config.recent_days,
-              }
-            : { month: config.default_month }),
-          indicators: config.selected_indicators,
-          frequency_hours: config.frequency_hours,
-        }),
-      });
+      const payload = {
+        report_type: config.report_type,
+        ...(config.report_type === 'daily'
+          ? {
+              date: config.default_date,
+              recent_days: config.recent_days,
+            }
+          : { month: config.default_month }),
+        indicators: config.selected_indicators,
+        frequency_hours: config.frequency_hours,
+      };
+      const response = reportRequest
+        ? await reportRequest('report-generate', payload)
+        : await fetch('/api/reports/water-quality/generate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...requestHeaders?.(),
+            },
+            body: JSON.stringify(payload),
+          });
       if (!response.ok) throw new Error(await responseError(response));
       onGenerated(await response.json() as ReportResultData);
     } catch (reason) {

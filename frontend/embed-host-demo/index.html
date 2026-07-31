@@ -92,7 +92,7 @@
     </header>
     <main>
       <section class="hero">
-        <small>LOCAL CROSS-ORIGIN HOST DEMO · 127.0.0.1:5174</small>
+        <small>LOCAL CROSS-ORIGIN HOST DEMO · 127.0.0.1:15174</small>
         <h1>今日河湖运行概览</h1>
         <p>该静态页面独立运行，仅通过跨域脚本加载智能问数浮窗。</p>
       </section>
@@ -120,12 +120,13 @@
       </section>
     </main>
     <script
-      src="http://127.0.0.1:5173/water-agent-widget.js"
+      src="http://127.0.0.1:15175/water-agent-widget.js"
       data-auto-init="false"
     ></script>
     <script>
       WaterAgentWidget.init({
-        agentUrl: 'http://127.0.0.1:5173',
+        agentUrl: 'http://127.0.0.1:15175',
+        apiUrl: 'http://127.0.0.1:18012',
         appId: 'water-platform-demo',
       });
     </script>

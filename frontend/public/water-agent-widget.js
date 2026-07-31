@@ -12,13 +12,11 @@
     widgetOrigin: '',
     parentOrigin: '',
     instanceId: '',
+    appId: '',
+    apiBaseUrl: '',
     ready: false,
     loadTimer: null,
-    getToken: null,
-    token: '',
-    tokenExpiresAt: 0,
-    authPromise: null,
-    authRetryUsed: false,
+    requests: Object.create(null),
     appearance: {
       theme: '#1677ff',
       float_icon_url: '',
@@ -334,9 +332,6 @@
         },
         state.widgetOrigin,
       );
-      if (state.ready && tokenNeedsRefresh()) {
-        void provideAuth(false);
-      }
     }
   }
 
@@ -363,71 +358,208 @@
     ].join('-');
   }
 
-  function tokenNeedsRefresh() {
+  function postToFrame(message) {
+    if (!state.iframe || !state.iframe.contentWindow) return;
+    state.iframe.contentWindow.postMessage(message, state.widgetOrigin);
+  }
+
+  function validRequestId(value) {
     return (
-      !state.token
-      || state.tokenExpiresAt <= Math.floor(Date.now() / 1000) + 60
+      typeof value === 'string'
+      && /^[A-Za-z0-9_-]{1,128}$/.test(value)
     );
   }
 
-  function sendAuth() {
-    if (!state.iframe || !state.iframe.contentWindow || !state.token) return;
-    state.iframe.contentWindow.postMessage(
-      {
-        type: 'water-agent-widget:auth',
-        instanceId: state.instanceId,
-        token: state.token,
-        expiresAt: state.tokenExpiresAt,
-      },
-      state.widgetOrigin,
+  function validReportId(value) {
+    return (
+      typeof value === 'string'
+      && /^wqr-[0-9a-f]{32}$/.test(value)
     );
   }
 
-  function provideAuth(forceRefresh) {
-    if (!state.getToken) {
-      if (state.parentOrigin === state.widgetOrigin) {
-        if (state.loading) state.loading.hidden = true;
-        return Promise.resolve();
+  function requestDefinition(operation, payload) {
+    var base = (
+      state.apiBaseUrl
+      + '/api/embed/apps/'
+      + encodeURIComponent(state.appId)
+    );
+    if (operation === 'application') {
+      return { url: base + '/application', method: 'GET' };
+    }
+    if (operation === 'data-sources') {
+      return { url: base + '/data-sources', method: 'GET' };
+    }
+    if (operation === 'chat') {
+      return {
+        url: base + '/chat_sse',
+        method: 'POST',
+        body: payload,
+        stream: true,
+      };
+    }
+    if (operation === 'report-options') {
+      return { url: base + '/reports/options', method: 'GET' };
+    }
+    if (operation === 'report-generate') {
+      return {
+        url: base + '/reports/generate',
+        method: 'POST',
+        body: payload,
+      };
+    }
+    if (
+      (operation === 'report-preview' || operation === 'report-pdf')
+      && payload
+      && validReportId(payload.reportId)
+    ) {
+      return {
+        url: (
+          base
+          + '/reports/artifacts/'
+          + encodeURIComponent(payload.reportId)
+          + (operation === 'report-preview' ? '/preview' : '/pdf')
+        ),
+        method: 'GET',
+        preview: operation === 'report-preview',
+        download: operation === 'report-pdf',
+      };
+    }
+    return null;
+  }
+
+  function responseFilename(response) {
+    var disposition = response.headers.get('Content-Disposition') || '';
+    var match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return 'water-quality-report.pdf';
       }
-      showLoadError('嵌入访问验证失败，请联系系统管理员。');
-      return Promise.resolve();
     }
-    if (!forceRefresh && !tokenNeedsRefresh()) {
-      sendAuth();
-      return Promise.resolve();
-    }
-    if (state.authPromise) return state.authPromise;
-    if (state.loading) {
-      state.loading.hidden = false;
-      state.loading.textContent = '正在验证嵌入访问权限';
-    }
-    state.authPromise = Promise.resolve()
-      .then(function () {
-        return state.getToken();
-      })
-      .then(function (payload) {
-        if (
-          !payload
-          || typeof payload.token !== 'string'
-          || !payload.token
-          || typeof payload.expires_at !== 'number'
-        ) {
-          throw new Error('Token 响应无效');
-        }
-        state.token = payload.token;
-        state.tokenExpiresAt = payload.expires_at;
-        sendAuth();
-        if (state.loading) state.loading.hidden = true;
-      })
-      .catch(function () {
-        state.token = '';
-        state.tokenExpiresAt = 0;
-        showLoadError('嵌入访问验证失败，请联系系统管理员。');
-      })
-      .then(function () {
-        state.authPromise = null;
+    return 'water-quality-report.pdf';
+  }
+
+  async function handleRpcRequest(message) {
+    var requestId = message.requestId;
+    if (!validRequestId(requestId) || state.requests[requestId]) return;
+    var definition = requestDefinition(message.operation, message.payload);
+    if (!definition) {
+      postToFrame({
+        type: 'water-agent-widget:rpc-error',
+        instanceId: state.instanceId,
+        requestId: requestId,
+        status: 400,
+        message: '不支持的 Widget 请求',
       });
-    return state.authPromise;
+      return;
+    }
+    var controller = new AbortController();
+    state.requests[requestId] = controller;
+    try {
+      var response = await fetch(definition.url, {
+        method: definition.method,
+        credentials: 'omit',
+        headers: definition.body === undefined
+          ? { Accept: definition.stream ? 'text/event-stream' : 'application/json' }
+          : {
+              Accept: definition.stream
+                ? 'text/event-stream'
+                : 'application/json',
+              'Content-Type': 'application/json',
+            },
+        body: definition.body === undefined
+          ? undefined
+          : JSON.stringify(definition.body),
+        signal: controller.signal,
+      });
+      var contentType = response.headers.get('Content-Type') || '';
+      if (definition.stream && response.ok && response.body) {
+        postToFrame({
+          type: 'water-agent-widget:rpc-response',
+          instanceId: state.instanceId,
+          requestId: requestId,
+          status: response.status,
+          contentType: contentType,
+        });
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        while (true) {
+          var result = await reader.read();
+          if (result.done) break;
+          postToFrame({
+            type: 'water-agent-widget:rpc-chunk',
+            instanceId: state.instanceId,
+            requestId: requestId,
+            chunk: decoder.decode(result.value, { stream: true }),
+          });
+        }
+        var tail = decoder.decode();
+        if (tail) {
+          postToFrame({
+            type: 'water-agent-widget:rpc-chunk',
+            instanceId: state.instanceId,
+            requestId: requestId,
+            chunk: tail,
+          });
+        }
+        postToFrame({
+          type: 'water-agent-widget:rpc-end',
+          instanceId: state.instanceId,
+          requestId: requestId,
+        });
+        return;
+      }
+      if (definition.download && response.ok) {
+        var blob = await response.blob();
+        var objectUrl = URL.createObjectURL(blob);
+        var anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = responseFilename(response);
+        anchor.hidden = true;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+        postToFrame({
+          type: 'water-agent-widget:rpc-response',
+          instanceId: state.instanceId,
+          requestId: requestId,
+          status: response.status,
+          contentType: 'application/json',
+          body: { downloaded: true },
+        });
+        return;
+      }
+      var text = await response.text();
+      var body = text;
+      if (contentType.indexOf('application/json') !== -1 && text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = { detail: '服务响应格式无效' };
+        }
+      }
+      postToFrame({
+        type: 'water-agent-widget:rpc-response',
+        instanceId: state.instanceId,
+        requestId: requestId,
+        status: response.status,
+        contentType: definition.preview ? 'text/html' : contentType,
+        body: body,
+      });
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+      postToFrame({
+        type: 'water-agent-widget:rpc-error',
+        instanceId: state.instanceId,
+        requestId: requestId,
+        status: 502,
+        message: '父页面请求后端失败',
+      });
+    } finally {
+      delete state.requests[requestId];
+    }
   }
 
   function init(options) {
@@ -442,24 +574,32 @@
       options.widgetPath || '/?mode=widget',
       agentUrl,
     );
+    var apiUrl = new URL(
+      options.apiUrl || agentUrl.origin,
+      global.location.href,
+    );
+    var appId = typeof options.appId === 'string'
+      ? options.appId.trim()
+      : '';
+    if (
+      (apiUrl.protocol !== 'http:' && apiUrl.protocol !== 'https:')
+      || !/^[A-Za-z0-9_-]{3,64}$/.test(appId)
+    ) {
+      throw new Error('Widget 必须配置有效的 apiUrl 和公开 appId');
+    }
     state.parentOrigin = global.location.origin;
     state.widgetOrigin = widgetUrl.origin;
+    state.apiBaseUrl = apiUrl.origin;
+    state.appId = appId;
     state.instanceId = createInstanceId();
     state.ready = false;
-    state.getToken = (
-      typeof options.getToken === 'function'
-        ? options.getToken
-        : null
-    );
-    state.token = '';
-    state.tokenExpiresAt = 0;
-    state.authPromise = null;
-    state.authRetryUsed = false;
+    state.requests = Object.create(null);
     state.dragPosition = null;
     state.pointer = null;
     state.suppressClick = false;
     widgetUrl.searchParams.set('parentOrigin', state.parentOrigin);
     widgetUrl.searchParams.set('instanceId', state.instanceId);
+    widgetUrl.searchParams.set('appId', state.appId);
 
     var root = createElement('div');
     root.id = 'water-agent-widget-root';
@@ -647,8 +787,20 @@
       if (event.data.type === 'water-agent-widget:ready') {
         state.ready = true;
         clearLoadTimer();
-        void provideAuth(true);
+        if (state.loading) state.loading.hidden = true;
         if (!panel.hidden) setOpen(true);
+        return;
+      }
+      if (event.data.type === 'water-agent-widget:rpc-request') {
+        void handleRpcRequest(event.data);
+        return;
+      }
+      if (
+        event.data.type === 'water-agent-widget:rpc-cancel'
+        && validRequestId(event.data.requestId)
+      ) {
+        var requestController = state.requests[event.data.requestId];
+        if (requestController) requestController.abort();
         return;
       }
       if (event.data.type === 'water-agent-widget:appearance') {
@@ -662,14 +814,6 @@
       ) {
         setOpen(false);
         return;
-      }
-      if (event.data.type === 'water-agent-widget:auth-required') {
-        if (state.getToken && !state.authRetryUsed) {
-          state.authRetryUsed = true;
-          void provideAuth(true);
-        } else {
-          showLoadError('嵌入访问验证失败，请联系系统管理员。');
-        }
       }
     };
     trigger.addEventListener('click', state.triggerHandler);
@@ -686,9 +830,6 @@
 
   function open() {
     setOpen(true);
-    if (state.ready && tokenNeedsRefresh()) {
-      void provideAuth(true);
-    }
   }
 
   function close() {
@@ -727,12 +868,13 @@
     state.loading = null;
     state.parentOrigin = '';
     state.instanceId = '';
+    state.appId = '';
+    state.apiBaseUrl = '';
     state.ready = false;
-    state.getToken = null;
-    state.token = '';
-    state.tokenExpiresAt = 0;
-    state.authPromise = null;
-    state.authRetryUsed = false;
+    Object.keys(state.requests).forEach(function (requestId) {
+      state.requests[requestId].abort();
+    });
+    state.requests = Object.create(null);
     state.appearance = {
       theme: '#1677ff',
       float_icon_url: '',
@@ -762,6 +904,8 @@
     var start = function () {
       init({
         agentUrl: script && script.dataset.agentUrl,
+        apiUrl: script && script.dataset.apiUrl,
+        appId: script && script.dataset.appId,
         widgetPath: script && script.dataset.widgetPath,
       });
     };

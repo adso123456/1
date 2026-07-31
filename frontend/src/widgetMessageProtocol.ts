@@ -1,28 +1,46 @@
 import type { AssistantAppearance } from './assistantAppearance';
 
+export type WidgetRpcOperation =
+  | 'application'
+  | 'data-sources'
+  | 'chat'
+  | 'report-options'
+  | 'report-generate'
+  | 'report-preview'
+  | 'report-pdf';
+
 export type WidgetParentMessageType =
   | 'water-agent-widget:opened'
-  | 'water-agent-widget:auth';
+  | 'water-agent-widget:rpc-response'
+  | 'water-agent-widget:rpc-chunk'
+  | 'water-agent-widget:rpc-end'
+  | 'water-agent-widget:rpc-error';
+
 export type WidgetFrameMessageType =
   | 'water-agent-widget:ready'
   | 'water-agent-widget:close'
   | 'water-agent-widget:minimize'
-  | 'water-agent-widget:auth-required'
-  | 'water-agent-widget:appearance';
+  | 'water-agent-widget:appearance'
+  | 'water-agent-widget:rpc-request'
+  | 'water-agent-widget:rpc-cancel';
 
 export interface WidgetEmbedContext {
   parentOrigin: string;
   instanceId: string;
+  appId: string;
 }
 
-interface WidgetMessage {
+export interface WidgetMessage {
   type: WidgetParentMessageType | WidgetFrameMessageType;
   instanceId: string;
+  requestId?: string;
 }
 
-export interface WidgetAuthMessage {
-  token: string;
-  expiresAt: number;
+export interface WidgetRpcRequestMessage extends WidgetMessage {
+  type: 'water-agent-widget:rpc-request';
+  requestId: string;
+  operation: WidgetRpcOperation;
+  payload?: unknown;
 }
 
 export type WidgetLoaderAppearance = Pick<
@@ -53,10 +71,15 @@ export function readWidgetEmbedContext(
     url.searchParams.get('parentOrigin') || '',
   );
   const instanceId = url.searchParams.get('instanceId')?.trim() || '';
-  if (!parentOrigin || !/^[A-Za-z0-9_-]{1,128}$/.test(instanceId)) {
+  const appId = url.searchParams.get('appId')?.trim() || '';
+  if (
+    !parentOrigin
+    || !/^[A-Za-z0-9_-]{1,128}$/.test(instanceId)
+    || !/^[A-Za-z0-9_-]{3,64}$/.test(appId)
+  ) {
     return null;
   }
-  return { parentOrigin, instanceId };
+  return { parentOrigin, instanceId, appId };
 }
 
 export function isWidgetMessage(
@@ -71,6 +94,21 @@ export function isWidgetMessage(
     && event.origin === context.parentOrigin
     && data?.type === type
     && data.instanceId === context.instanceId
+  );
+}
+
+export function isWidgetRpcMessage(
+  event: MessageEvent,
+  context: WidgetEmbedContext,
+  expectedSource: Window,
+): event is MessageEvent<WidgetMessage & { requestId: string }> {
+  const data = event.data as Partial<WidgetMessage> | null;
+  return (
+    event.source === expectedSource
+    && event.origin === context.parentOrigin
+    && data?.instanceId === context.instanceId
+    && typeof data.requestId === 'string'
+    && /^[A-Za-z0-9_-]{1,128}$/.test(data.requestId)
   );
 }
 
@@ -106,30 +144,4 @@ export function postWidgetAppearanceMessage(
     },
     context.parentOrigin,
   );
-}
-
-export function readWidgetAuthMessage(
-  event: MessageEvent,
-  context: WidgetEmbedContext,
-  expectedSource: Window,
-): WidgetAuthMessage | null {
-  if (
-    !isWidgetMessage(
-      event,
-      context,
-      'water-agent-widget:auth',
-      expectedSource,
-    )
-  ) {
-    return null;
-  }
-  const data = event.data as Partial<WidgetAuthMessage>;
-  if (
-    typeof data.token !== 'string'
-    || !data.token
-    || typeof data.expiresAt !== 'number'
-  ) {
-    return null;
-  }
-  return { token: data.token, expiresAt: data.expiresAt };
 }

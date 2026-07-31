@@ -3,6 +3,7 @@ import type { ChatMessage, ChartData, DataSourceSummary, RenderableChartType } f
 import { MessageBubble } from './MessageBubble';
 import type {
   ReportConfigData,
+  ReportRequest,
   ReportResultData,
 } from './ReportComponents';
 import { ReportComposerPanel } from './ReportComposerPanel';
@@ -37,6 +38,7 @@ interface Props {
   onReportConfigCancel?: () => void;
   onReportConfigGenerated?: (result: ReportResultData) => void;
   reportRequestHeaders?: () => Record<string, string>;
+  reportRequest?: ReportRequest;
   sourceLabel?: string;
   sourceUnavailableReason?: string;
   dataSources?: DataSourceSummary[];
@@ -77,6 +79,7 @@ export function ChatArea({
   onReportConfigCancel,
   onReportConfigGenerated,
   reportRequestHeaders,
+  reportRequest,
   sourceLabel,
   sourceUnavailableReason = '',
   dataSources = [],
@@ -195,6 +198,7 @@ export function ChatArea({
             onReportGenerated={onReportGenerated}
             onReportPreview={onReportPreview}
             onReportReconfigure={onReportReconfigure}
+            reportRequest={reportRequest}
             onDataSourceSuggestion={onDataSourceSuggestion}
             dataSources={dataSources}
           />
@@ -218,6 +222,7 @@ export function ChatArea({
             onCancel={onReportConfigCancel}
             onGenerated={onReportConfigGenerated}
             requestHeaders={reportRequestHeaders}
+            reportRequest={reportRequest}
           />
         )}
         <div style={{

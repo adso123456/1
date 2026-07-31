@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
@@ -44,15 +45,30 @@ from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
 from backend.mysql_runtime_factory import create_mysql_runtime
-from backend.water_quality_reports.api import create_report_router
-from backend.water_quality_reports.artifacts import ReportArtifactStore
+from backend.water_quality_reports.api import (
+    GenerateReportRequest,
+    _parse_date,
+    _parse_month,
+    create_report_router,
+)
+from backend.water_quality_reports.artifacts import (
+    ReportArtifactError,
+    ReportArtifactNotFound,
+    ReportArtifactStore,
+)
 from backend.water_quality_reports.chat_handler import WaterQualityReportChatHandler
 from backend.water_quality_reports.repository import ReportRepository
 from backend.water_quality_reports.service import WaterQualityReportService
-from fastapi import FastAPI, Header, HTTPException, Request
+from backend.water_quality_reports.template import render_report_html
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
 from vanna.core.user.request_context import RequestContext
 from vanna.servers.fastapi.app import VannaFastAPIServer
 from vanna.servers.base import ChatRequest
@@ -60,6 +76,10 @@ from vanna.servers.base import ChatRequest
 logger = logging.getLogger(__name__)
 EMBED_SAFE_ERROR_MESSAGE = "嵌入问数执行失败，请稍后重试。"
 EMBED_SAFE_CONTEXT_HEADERS = ("user-agent", "accept-language")
+EMBED_PATH_PATTERN = re.compile(r"^/api/embed/apps/([^/]+)(?:/|$)")
+EMBED_ALLOWED_METHODS = "GET, POST, OPTIONS"
+EMBED_ALLOWED_HEADERS = "Accept, Content-Type"
+REPORT_SOURCE_ID = "mysql-lzh-monitor"
 
 
 @dataclass(frozen=True)
@@ -94,6 +114,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
 
     def create_app(self) -> FastAPI:
         report_service_factory = None
+        report_artifact_store = None
         if "mysql-lzh-monitor" in self.resources.registry.source_ids:
             report_config = self.resources.registry.require("mysql-lzh-monitor")
             report_service_factory = lambda: WaterQualityReportService(
@@ -138,18 +159,14 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             ]
 
         def authorize_embed(
-            app_id: str | None,
+            app_id: str,
             origin: str | None,
             *,
             source_id: str | None = None,
         ):
             """用浏览器真实 Origin 请求头校验嵌入访问。"""
             try:
-                safe_app_id = (
-                    app_id.strip()
-                    if isinstance(app_id, str) and app_id.strip()
-                    else None
-                )
+                safe_app_id = app_id.strip()
                 if not safe_app_id:
                     raise EmbedAccessError(400, "缺少 app_id")
                 if not origin or not origin.strip():
@@ -166,13 +183,55 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     detail=exc.safe_message,
                 ) from None
 
-        @app.get("/api/embed/application")
+        def embed_cors_headers(origin: str) -> dict[str, str]:
+            return {
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": EMBED_ALLOWED_METHODS,
+                "Access-Control-Allow-Headers": EMBED_ALLOWED_HEADERS,
+                "Access-Control-Expose-Headers": (
+                    "Content-Disposition, Content-Type"
+                ),
+                "Vary": "Origin",
+            }
+
+        @app.middleware("http")
+        async def dynamic_embed_cors(request: Request, call_next):
+            match = EMBED_PATH_PATTERN.match(request.url.path)
+            if match is None:
+                return await call_next(request)
+            origin = request.headers.get("Origin")
+            try:
+                principal = authorize_embed_origin(
+                    app_id=match.group(1),
+                    origin=origin,
+                    registry=self.assistant_application_registry,
+                )
+            except EmbedAccessError as exc:
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.safe_message},
+                    headers={"Vary": "Origin"},
+                )
+            headers = embed_cors_headers(principal.parent_origin)
+            if request.method == "OPTIONS":
+                return Response(
+                    status_code=204,
+                    headers=headers,
+                )
+            response = await call_next(request)
+            for name, value in headers.items():
+                if name == "Vary" and response.headers.get("Vary"):
+                    existing = response.headers["Vary"]
+                    if "origin" not in existing.lower():
+                        response.headers["Vary"] = f"{existing}, Origin"
+                else:
+                    response.headers[name] = value
+            return response
+
+        @app.get("/api/embed/apps/{app_id}/application")
         async def get_embed_application(
             request: Request,
-            app_id: str | None = Header(
-                default=None,
-                alias="X-Water-Agent-App-Id",
-            ),
+            app_id: str,
         ) -> dict[str, object]:
             origin = request.headers.get("Origin")
             principal = authorize_embed(app_id, origin)
@@ -192,26 +251,12 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 "float_y_anchor": application.float_y_anchor,
                 "float_y_offset": application.float_y_offset,
                 "show_history": application.show_history,
-                "application_links": [
-                    {
-                        "link_id": link.link_id,
-                        "name": link.name,
-                        "url": link.url,
-                        "open_mode": link.open_mode,
-                        "enabled": link.enabled,
-                        "sort_order": link.sort_order,
-                    }
-                    for link in application.application_links
-                ],
             }
 
-        @app.get("/api/embed/data-sources")
+        @app.get("/api/embed/apps/{app_id}/data-sources")
         async def list_embed_data_sources(
             request: Request,
-            app_id: str | None = Header(
-                default=None,
-                alias="X-Water-Agent-App-Id",
-            ),
+            app_id: str,
         ) -> list[dict[str, Any]]:
             origin = request.headers.get("Origin")
             principal = authorize_embed(app_id, origin)
@@ -238,8 +283,9 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 if source_id in principal.application.allowed_source_ids
             ]
 
-        @app.post("/api/embed/vanna/v2/chat_sse")
+        @app.post("/api/embed/apps/{app_id}/chat_sse")
         async def embed_chat_sse(
+            app_id: str,
             chat_request: ChatRequest,
             http_request: Request,
         ) -> StreamingResponse:
@@ -249,12 +295,6 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 raise HTTPException(
                     status_code=400,
                     detail="metadata 必须显式提供",
-                )
-            app_id = metadata.get("app_id")
-            if not isinstance(app_id, str) or not app_id.strip():
-                raise HTTPException(
-                    status_code=400,
-                    detail="app_id 必须显式提供",
                 )
             source_id = metadata.get("source_id")
             if not isinstance(source_id, str) or not source_id.strip():
@@ -268,7 +308,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     detail="未知 source_id",
                 )
             principal = authorize_embed(
-                app_id.strip(),
+                app_id,
                 origin,
                 source_id=source_id,
             )
@@ -334,6 +374,122 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     "Connection": "keep-alive",
                     "X-Accel-Buffering": "no",
                 },
+            )
+
+        def require_report_store(
+            app_id: str,
+            request: Request,
+        ) -> ReportArtifactStore:
+            authorize_embed(
+                app_id,
+                request.headers.get("Origin"),
+                source_id=REPORT_SOURCE_ID,
+            )
+            if report_artifact_store is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="报告服务当前不可用",
+                )
+            return report_artifact_store
+
+        @app.get("/api/embed/apps/{app_id}/reports/options")
+        def get_embed_report_options(app_id: str, request: Request):
+            store = require_report_store(app_id, request)
+            try:
+                return store.options()
+            except Exception:
+                raise HTTPException(
+                    status_code=503,
+                    detail="报表筛选项加载失败",
+                ) from None
+
+        @app.post("/api/embed/apps/{app_id}/reports/generate")
+        def generate_embed_report(
+            app_id: str,
+            payload: GenerateReportRequest,
+            request: Request,
+        ):
+            store = require_report_store(app_id, request)
+            if payload.report_type == "daily":
+                if payload.date is None or payload.month is not None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="日报必须且只能提供 date",
+                    )
+                period = _parse_date(payload.date)
+            else:
+                if payload.month is None or payload.date is not None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="月报必须且只能提供 month",
+                    )
+                period = _parse_month(payload.month)
+            try:
+                return store.generate(
+                    report_type=payload.report_type,
+                    period=period,
+                    indicator_codes=tuple(dict.fromkeys(payload.indicators)),
+                    frequency_overrides={
+                        int(code): hours
+                        for code, hours in payload.frequency_hours.items()
+                    },
+                    recent_days=payload.recent_days,
+                )
+            except ReportArtifactError:
+                raise HTTPException(
+                    status_code=422,
+                    detail="报表生成失败，请检查报表参数",
+                ) from None
+
+        @app.get(
+            "/api/embed/apps/{app_id}/reports/artifacts/{report_id}/preview",
+            response_class=HTMLResponse,
+        )
+        def preview_embed_report(
+            app_id: str,
+            report_id: str,
+            request: Request,
+        ):
+            store = require_report_store(app_id, request)
+            try:
+                return HTMLResponse(render_report_html(store.load(report_id)))
+            except ReportArtifactNotFound:
+                raise HTTPException(status_code=404, detail="报告不存在") from None
+            except ReportArtifactError:
+                raise HTTPException(
+                    status_code=500,
+                    detail="报告预览加载失败",
+                ) from None
+
+        @app.get(
+            "/api/embed/apps/{app_id}/reports/artifacts/{report_id}/pdf"
+        )
+        def download_embed_report(
+            app_id: str,
+            report_id: str,
+            request: Request,
+        ):
+            store = require_report_store(app_id, request)
+            try:
+                report = store.load(report_id)
+                path = store.pdf_path(report_id)
+            except ReportArtifactNotFound:
+                raise HTTPException(status_code=404, detail="报告不存在") from None
+            except ReportArtifactError:
+                raise HTTPException(
+                    status_code=500,
+                    detail="报告文件生成失败",
+                ) from None
+            suffix = (
+                report["report_date"].replace("-", "")
+                if report["report_type"] == "daily"
+                else report["report_month"].replace("-", "")
+            )
+            report_name = "日报" if report["report_type"] == "daily" else "月报"
+            return FileResponse(
+                path,
+                media_type="application/pdf",
+                filename=f"梁子湖流域自动站水质{report_name}_{suffix}.pdf",
             )
 
         if self.assistant_application_registry is not None:

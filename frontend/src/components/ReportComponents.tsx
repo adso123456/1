@@ -45,6 +45,13 @@ export interface ReportResultData {
   status: string;
 }
 
+export type ReportRequest = (
+  operation: 'report-options' | 'report-generate'
+    | 'report-preview' | 'report-pdf',
+  payload?: unknown,
+  signal?: AbortSignal,
+) => Promise<Response>;
+
 function localDateValue(): string {
   const value = new Date();
   const year = value.getFullYear();
@@ -70,6 +77,7 @@ interface ParameterProps {
   compact?: boolean;
   submitLabel?: string;
   onGenerated: (result: ReportResultData) => void;
+  reportRequest?: ReportRequest;
 }
 
 export function ReportParameterForm({
@@ -80,6 +88,7 @@ export function ReportParameterForm({
   compact = false,
   submitLabel = '生成预览',
   onGenerated,
+  reportRequest,
 }: ParameterProps) {
   const [options, setOptions] = useState<ReportOptions | null>(null);
   const [period, setPeriod] = useState(
@@ -95,7 +104,12 @@ export function ReportParameterForm({
 
   useEffect(() => {
     let active = true;
-    fetch('/api/reports/water-quality/options')
+    const controller = new AbortController();
+    (reportRequest
+      ? reportRequest('report-options', undefined, controller.signal)
+      : fetch('/api/reports/water-quality/options', {
+          signal: controller.signal,
+        }))
       .then(async response => {
         if (!response.ok) throw new Error(await responseError(response));
         return response.json() as Promise<ReportOptions>;
@@ -108,8 +122,11 @@ export function ReportParameterForm({
       .catch(reason => {
         if (active) setError(reason instanceof Error ? reason.message : '筛选项加载失败。');
       });
-    return () => { active = false; };
-  }, []);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [reportRequest]);
 
   const requestBody = useMemo(() => {
     const frequencyHours = Object.fromEntries(
@@ -133,11 +150,13 @@ export function ReportParameterForm({
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/reports/water-quality/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
+      const response = reportRequest
+        ? await reportRequest('report-generate', requestBody)
+        : await fetch('/api/reports/water-quality/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+          });
       if (!response.ok) throw new Error(await responseError(response));
       onGenerated(await response.json() as ReportResultData);
     } catch (reason) {
@@ -232,9 +251,11 @@ export function ReportParameterForm({
 export function ReportConfigCard({
   config,
   onGenerated,
+  reportRequest,
 }: {
   config: ReportConfigData;
   onGenerated: (result: ReportResultData) => void;
+  reportRequest?: ReportRequest;
 }) {
   return (
     <div className="report-card">
@@ -249,6 +270,7 @@ export function ReportConfigCard({
         initialMonth={config.default_month}
         initialRecentDays={config.recent_days}
         onGenerated={onGenerated}
+        reportRequest={reportRequest}
       />
     </div>
   );
@@ -290,10 +312,42 @@ export function ReportResultCard({
 export function ReportPreviewModal({
   result,
   onClose,
+  reportRequest,
 }: {
   result: ReportResultData | null;
   onClose: () => void;
+  reportRequest?: ReportRequest;
 }) {
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewError, setPreviewError] = useState('');
+
+  useEffect(() => {
+    if (!result || !reportRequest) {
+      setPreviewHtml('');
+      setPreviewError('');
+      return;
+    }
+    const controller = new AbortController();
+    reportRequest(
+      'report-preview',
+      { reportId: result.report_id },
+      controller.signal,
+    )
+      .then(async response => {
+        if (!response.ok) throw new Error(await responseError(response));
+        setPreviewHtml(await response.text());
+        setPreviewError('');
+      })
+      .catch(reason => {
+        if (
+          !(reason instanceof DOMException && reason.name === 'AbortError')
+        ) {
+          setPreviewError('报告预览加载失败。');
+        }
+      });
+    return () => controller.abort();
+  }, [reportRequest, result]);
+
   if (!result) return null;
   return (
     <div className="report-preview-overlay" role="dialog" aria-modal="true" aria-label="报告预览">
@@ -301,12 +355,35 @@ export function ReportPreviewModal({
         <header>
           <div><strong>{result.title}</strong><span>{result.period}</span></div>
           <div>
-            <a href={result.download_url}>导出 PDF</a>
+            {reportRequest ? (
+              <button
+                type="button"
+                onClick={() => void reportRequest(
+                  'report-pdf',
+                  { reportId: result.report_id },
+                )}
+              >
+                导出 PDF
+              </button>
+            ) : (
+              <a href={result.download_url}>导出 PDF</a>
+            )}
             <button type="button" onClick={onClose}>关闭</button>
           </div>
         </header>
         <div className="report-preview-modal__body">
-          <iframe title="水质报告预览" src={result.preview_url} />
+          {reportRequest ? (
+            previewError
+              ? <div className="report-inline-error">{previewError}</div>
+              : (
+                <iframe
+                  title="水质报告预览"
+                  srcDoc={previewHtml}
+                />
+              )
+          ) : (
+            <iframe title="水质报告预览" src={result.preview_url} />
+          )}
         </div>
       </div>
     </div>

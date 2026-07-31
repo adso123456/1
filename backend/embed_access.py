@@ -59,8 +59,7 @@ def authorize_embed_origin(
     5. Origin 在 allowed_origins 白名单中
     6. （可选）source_id 在 allowed_source_ids 白名单中
 
-    不依赖任何客户端可伪造的 Header（如 X-Water-Agent-Parent-Origin）、
-    Token、Secret 或 JWT。
+    不依赖客户端提交的父页面标识或其他凭据。
     """
     if registry is None:
         raise EmbedAccessError(503, "嵌入应用注册表尚未配置")

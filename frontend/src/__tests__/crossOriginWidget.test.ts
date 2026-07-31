@@ -131,6 +131,7 @@ test('iframe ready/minimize 使用明确的父页面 targetOrigin', () => {
   const context = {
     parentOrigin: 'http://127.0.0.1:5174',
     instanceId: 'widget-1',
+    appId: 'water-platform-demo',
   };
   const posted: Array<{ message: unknown; targetOrigin: string }> = [];
   const target = {

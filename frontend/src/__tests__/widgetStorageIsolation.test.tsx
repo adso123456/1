@@ -80,6 +80,7 @@ test('protected 聊天使用 memory adapter，不读取或写入 localStorage', 
         embedContext={{
           parentOrigin: 'http://127.0.0.1:5174',
           instanceId: 'storage-isolation-test',
+          appId: 'water-platform-demo',
         }}
         requestOptions={{
           enabled: false,
@@ -147,6 +148,7 @@ test('protected Widget 渲染应用配置并转义文本', () => {
       embedContext={{
         parentOrigin: 'http://127.0.0.1:5174',
         instanceId: 'application-config-test',
+        appId: 'water-platform-demo',
       }}
       requestOptions={{
         enabled: false,

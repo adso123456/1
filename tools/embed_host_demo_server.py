@@ -1,7 +1,4 @@
-"""本地 5174 宿主页演示服务器。
-
-不再签发 JWT Token。嵌入 Widget 直接通过浏览器 Origin 请求头验证。
-"""
+"""本地 15174 宿主页演示服务器。"""
 
 from __future__ import annotations
 
@@ -23,7 +20,7 @@ class EmbedHostDemoHandler(SimpleHTTPRequestHandler):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=5174)
+    parser.add_argument("--port", type=int, default=15174)
     return parser.parse_args()
 
 

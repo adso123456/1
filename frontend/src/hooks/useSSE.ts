@@ -706,6 +706,8 @@ export interface UseSSERequestOptions {
   headersProvider?: () => Record<string, string>;
   onAuthorizationError?: () => void;
   persistenceMode?: 'local' | 'memory';
+  fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
+  bindConversationOnCreate?: boolean;
 }
 
 export function useSSE(
@@ -721,7 +723,10 @@ export function useSSE(
   );
   const headersProvider = requestOptions?.headersProvider;
   const onAuthorizationError = requestOptions?.onAuthorizationError;
+  const requestFetch = requestOptions?.fetcher ?? fetch;
   const persistenceMode = requestOptions?.persistenceMode ?? 'local';
+  const bindConversationOnCreate =
+    requestOptions?.bindConversationOnCreate ?? true;
   const storageRef = useRef<SessionStorageAdapter | null>(null);
   if (!storageRef.current) {
     storageRef.current = persistenceMode === 'memory'
@@ -775,7 +780,7 @@ export function useSSE(
     if (!requestsEnabled) return;
     const requestId = ++dataSourcesRequestRef.current;
     try {
-      const response = await fetch(dataSourcesEndpoint, {
+      const response = await requestFetch(dataSourcesEndpoint, {
       headers: headersProvider?.(),
       });
       if (response.status === 401 || response.status === 403) {
@@ -823,6 +828,7 @@ export function useSSE(
     headersProvider,
     onAuthorizationError,
     requestsEnabled,
+    requestFetch,
     storage,
   ]);
 
@@ -918,7 +924,7 @@ export function useSSE(
     let latestSources = dataSources;
     if (selectedSourceId) {
       try {
-        const response = await fetch(dataSourcesEndpoint, {
+        const response = await requestFetch(dataSourcesEndpoint, {
           headers: headersProvider?.(),
         });
         if (response.status === 401 || response.status === 403) {
@@ -974,9 +980,9 @@ export function useSSE(
     const nextSourceId = selectedSourceId || (
       latestSources.length === 1 ? latestSources[0].source_id : ''
     );
-    if (selectedSourceId && !dataSourcesEndpoint.startsWith('/api/embed/')) {
+    if (selectedSourceId && bindConversationOnCreate) {
       try {
-        const response = await fetch(`/api/conversations/${encodeURIComponent(newId)}/source`, {
+        const response = await requestFetch(`/api/conversations/${encodeURIComponent(newId)}/source`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1029,10 +1035,12 @@ export function useSSE(
   }, [
     currentSessionId,
     currentSourceId,
+    bindConversationOnCreate,
     dataSources,
     dataSourcesEndpoint,
     headersProvider,
     onAuthorizationError,
+    requestFetch,
     messages,
     loading,
     sourceBound,
@@ -1269,7 +1277,7 @@ export function useSSE(
     abortRef.current = controller;
 
     try {
-      const response = await fetch(chatEndpoint, {
+      const response = await requestFetch(chatEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1563,6 +1571,7 @@ export function useSSE(
     headersProvider,
     messages,
     onAuthorizationError,
+    requestFetch,
     requestsEnabled,
     sourceBound,
   ]);

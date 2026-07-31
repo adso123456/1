@@ -10,6 +10,7 @@ import {
   ReportConfigCard,
   ReportResultCard,
   type ReportConfigData,
+  type ReportRequest,
   type ReportResultData,
 } from './ReportComponents';
 import { DataSourceSuggestionCard } from './DataSourceSuggestionCard';
@@ -27,6 +28,7 @@ interface Props {
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
   onReportReconfigure?: (result: ReportResultData) => void;
+  reportRequest?: ReportRequest;
   onDataSourceSuggestion?: (
     sourceId: string,
     question: string,
@@ -53,6 +55,7 @@ export function MessageBubble({
   onReportGenerated,
   onReportPreview,
   onReportReconfigure,
+  reportRequest,
   onDataSourceSuggestion,
   dataSources = [],
 }: Props) {
@@ -122,6 +125,7 @@ export function MessageBubble({
               <ReportConfigCard
                 config={message.reportComponent.data as unknown as ReportConfigData}
                 onGenerated={result => onReportGenerated?.(message.id, result)}
+                reportRequest={reportRequest}
               />
             )}
             {message.reportComponent?.type === 'report_result' && (

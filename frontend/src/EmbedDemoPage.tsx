@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 
 interface WaterAgentWidgetApi {
-  init(options?: { agentUrl?: string; widgetPath?: string }): WaterAgentWidgetApi;
+  init(options?: {
+    agentUrl?: string;
+    apiUrl?: string;
+    appId?: string;
+    widgetPath?: string;
+  }): WaterAgentWidgetApi;
   open(): void;
   close(): void;
   destroy(): void;
@@ -30,6 +35,8 @@ export function EmbedDemoPage() {
     if (existing) {
       window.WaterAgentWidget?.init({
         agentUrl: window.location.origin,
+        apiUrl: window.location.origin,
+        appId: 'water-platform-demo',
         widgetPath: '/?mode=widget&devWidget=project-embed-demo',
       });
       return;
@@ -42,6 +49,8 @@ export function EmbedDemoPage() {
     script.onload = () => {
       window.WaterAgentWidget?.init({
         agentUrl: window.location.origin,
+        apiUrl: window.location.origin,
+        appId: 'water-platform-demo',
         widgetPath: '/?mode=widget&devWidget=project-embed-demo',
       });
     };

@@ -179,8 +179,16 @@ function test(name, callback) {
 }
 
 test('初始化只创建一个机器人实例', () => {
-  window.WaterAgentWidget.init({ agentUrl: 'http://localhost:5173' });
-  window.WaterAgentWidget.init({ agentUrl: 'http://localhost:5173' });
+  window.WaterAgentWidget.init({
+    agentUrl: 'http://localhost:5173',
+    apiUrl: 'http://localhost:8000',
+    appId: 'water-platform-demo',
+  });
+  window.WaterAgentWidget.init({
+    agentUrl: 'http://localhost:5173',
+    apiUrl: 'http://localhost:8000',
+    appId: 'water-platform-demo',
+  });
   assert(body.children.length === 1, '重复创建了浮窗实例');
   assert(
     findByClass(body, 'water-agent-trigger'),
@@ -528,7 +536,11 @@ test('destroy 清理按钮、iframe 和消息事件', () => {
 });
 
 test('agentUrl 尾部有无斜杠均生成正确绝对 iframe 地址', () => {
-  window.WaterAgentWidget.init({ agentUrl: 'http://agent.example:5173/' });
+  window.WaterAgentWidget.init({
+    agentUrl: 'http://agent.example:5173/',
+    apiUrl: 'http://agent.example:8000/',
+    appId: 'water-platform-demo',
+  });
   const iframe = findByClass(body, 'water-agent-frame');
   assert(
     new URL(iframe.src).origin === 'http://agent.example:5173',
@@ -653,20 +665,24 @@ test('WidgetApp 校验 opened 消息来源、实例 ID 且只注册一次监听�
   assert(widgetAppSource.includes("removeEventListener('message', handleWidgetMessage)"), 'widget 消息监听器未清理');
 });
 
-test('5174 静态宿主页只跨域加载脚本，不直接访问 API 或 Agent 存储', () => {
+test('15174 静态宿主页加载 15175 Widget 并配置 18012 API', () => {
   assert(
-    hostDemoSource.includes('src="http://127.0.0.1:5173/water-agent-widget.js"'),
-    '宿主页未通过绝对地址加载 5173 脚本',
+    hostDemoSource.includes('src="http://127.0.0.1:15175/water-agent-widget.js"'),
+    '宿主页未通过绝对地址加载 15175 脚本',
   );
   assert(
-    hostDemoSource.includes("agentUrl: 'http://127.0.0.1:5173'"),
-    '宿主页未配置 Agent 地址',
+    hostDemoSource.includes("agentUrl: 'http://127.0.0.1:15175'")
+      && hostDemoSource.includes("apiUrl: 'http://127.0.0.1:18012'"),
+    '宿主页未配置 Widget 和 API 地址',
   );
   assert(
     !hostDemoSource.includes('/api/data-sources') && !hostDemoSource.includes('/api/vanna/'),
-    '宿主页除签发 Token 外不应直接访问 Agent API',
+    '静态页面不应自行实现业务 API 调用',
   );
-  assert(hostDemoSource.includes('/api/embed-token'), '宿主页应从宿主后端获取嵌入 Token');
+  assert(
+    hostDemoSource.includes("appId: 'water-platform-demo'"),
+    '宿主页未配置公开 appId',
+  );
   assert(!hostDemoSource.includes('localStorage'), '宿主页不应读取 Agent localStorage');
 });
 

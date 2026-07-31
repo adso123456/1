@@ -26,7 +26,12 @@ const checks = [
   ['启停按钮仅对应 ready/disabled', page.includes("source.status === 'ready'") && page.includes("source.status === 'disabled'") && !page.includes("source.status === 'disabled' ? 'enable' : 'disable'")],
   ['中间状态显示专用动作', ['继续配置', '选择表和字段', '生成问数资产', '刷新问数资产', '检查配置'].every(value => page.includes(value))],
   ['动态名称刷新历史会话', hook.includes('meta.sourceDisplayName = latestName')],
-  ['Widget 使用授权摘要端点', widget.includes("dataSourcesEndpoint: '/api/embed/data-sources'")],
+  [
+    'Widget 通过父页面桥接读取授权摘要',
+    widget.includes("dataSourcesEndpoint: 'widget-rpc:data-sources'")
+      && widget.includes("rpcClient.request(")
+      && widget.includes("'data-sources'"),
+  ],
   ['Widget 无管理导航', !widget.includes("<DataSourcePage")],
   ['开发代理转发同源 Origin', vite.includes("Origin: 'http://localhost:8000'")],
   ['统一数据库类型格式', presentation.includes("return 'PostgreSQL'") && presentation.includes("return 'MySQL'")],
