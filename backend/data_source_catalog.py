@@ -896,14 +896,134 @@ class DataSourceCatalog:
     ) -> DataSourceRecord:
         payload = [dict(item) for item in metadata]
         with self._lock, self._connection(write=True) as connection:
+            row = connection.execute(
+                """
+                SELECT database_type, database_name, schema_name,
+                    status, enabled_for_chat, runtime_revision,
+                    selected_tables_count, selected_columns_count,
+                    selected_scope_json, metadata_path, memory_path
+                FROM data_sources WHERE source_id = ?
+                """,
+                (source_id,),
+            ).fetchone()
+            if row is None:
+                raise DataSourceNotFound("数据源不存在")
+
+            published = row["runtime_revision"] > 0
+            selected_scope = json.loads(row["selected_scope_json"])
+            uses_formal_metadata = False
+            if published and not selected_scope:
+                try:
+                    formal_metadata = json.loads(
+                        Path(row["metadata_path"]).read_text(encoding="utf-8")
+                    )
+                except (OSError, TypeError, ValueError):
+                    formal_metadata = []
+                if isinstance(formal_metadata, list):
+                    selected_scope = [
+                        dict(item)
+                        for item in formal_metadata
+                        if isinstance(item, Mapping)
+                    ]
+                    uses_formal_metadata = bool(selected_scope)
+
+            default_schema = row["schema_name"]
+            if not default_schema and row["database_type"] == "mysql":
+                default_schema = row["database_name"]
+
+            def identity(item: Mapping[str, Any]) -> tuple[Any, Any, Any]:
+                return (
+                    item.get("schema", default_schema),
+                    item.get("table"),
+                    item.get("column"),
+                )
+
+            discovered_by_column = {
+                identity(item): item for item in payload
+            }
+            structure_defaults = {
+                "type": "",
+                "object_type": "table",
+                "nullable": True,
+                "primary_key": False,
+                "ordinal_position": 0,
+                "indexes": [],
+            }
+            selected_tables = {
+                (identity(item)[0], item.get("table"))
+                for item in selected_scope
+            }
+            scope_compatible = (
+                bool(selected_scope)
+                and len(selected_scope) == row["selected_columns_count"]
+                and len(selected_tables) == row["selected_tables_count"]
+            )
+            for selected in selected_scope:
+                current = discovered_by_column.get(identity(selected))
+                selected_type = str(selected.get("type", "")).lower()
+                ignored_legacy_geometry = (
+                    current is None
+                    and uses_formal_metadata
+                    and row["database_type"] == "postgresql"
+                    and (
+                        selected_type == "geometry"
+                        or selected_type.startswith("geometry(")
+                    )
+                )
+                if ignored_legacy_geometry:
+                    continue
+                if current is None:
+                    scope_compatible = False
+                    break
+                for name, default in structure_defaults.items():
+                    if name not in selected:
+                        continue
+                    old_value = selected.get(name, default)
+                    new_value = current.get(name, default)
+                    ignored_legacy_numeric_precision = (
+                        name == "type"
+                        and uses_formal_metadata
+                        and row["database_type"] == "postgresql"
+                        and str(old_value).lower().startswith("numeric(")
+                        and str(new_value).lower() == "numeric"
+                    )
+                    if (
+                        old_value != new_value
+                        and not ignored_legacy_numeric_precision
+                    ):
+                        scope_compatible = False
+                        break
+                if not scope_compatible:
+                    break
+
+            assets_exist = all(
+                Path(row[name]).expanduser().resolve().exists()
+                for name in ("metadata_path", "memory_path")
+            )
+            if not published:
+                next_status, enabled_for_chat = "connected", 0
+            elif not scope_compatible or not assets_exist:
+                next_status, enabled_for_chat = "training_required", 0
+            elif row["status"] == "disabled":
+                next_status, enabled_for_chat = "disabled", 0
+            elif row["status"] in {"ready", "connected"} and bool(
+                row["enabled_for_chat"]
+            ):
+                next_status, enabled_for_chat = "ready", 1
+            else:
+                next_status, enabled_for_chat = "training_required", 0
+
             connection.execute(
                 """
                 UPDATE data_sources SET discovered_metadata_json = ?,
-                    status = 'connected', last_error = '', updated_at = ?
+                    status = ?, enabled_for_chat = ?,
+                    last_error = '', updated_at = ?
                 WHERE source_id = ?
                 """,
                 (
                     json.dumps(payload, ensure_ascii=False),
+                    next_status,
+                    enabled_for_chat,
                     int(time.time()),
                     source_id,
                 ),
