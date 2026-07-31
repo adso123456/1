@@ -896,14 +896,89 @@ class DataSourceCatalog:
     ) -> DataSourceRecord:
         payload = [dict(item) for item in metadata]
         with self._lock, self._connection(write=True) as connection:
+            row = connection.execute(
+                """
+                SELECT status, enabled_for_chat, runtime_revision,
+                    selected_tables_count, selected_columns_count,
+                    selected_scope_json, metadata_path, memory_path
+                FROM data_sources WHERE source_id = ?
+                """,
+                (source_id,),
+            ).fetchone()
+            if row is None:
+                raise DataSourceNotFound("数据源不存在")
+
+            selected_scope = json.loads(row["selected_scope_json"])
+            discovered_by_column = {
+                (
+                    item.get("schema", ""),
+                    item.get("table"),
+                    item.get("column"),
+                ): item
+                for item in payload
+            }
+            structure_defaults = {
+                "type": "",
+                "object_type": "table",
+                "nullable": True,
+                "primary_key": False,
+                "ordinal_position": 0,
+                "indexes": [],
+                "logical_relations": [],
+            }
+            selected_tables = {
+                (item.get("schema", ""), item.get("table"))
+                for item in selected_scope
+            }
+            scope_compatible = (
+                bool(selected_scope)
+                and len(selected_scope) == row["selected_columns_count"]
+                and len(selected_tables) == row["selected_tables_count"]
+            )
+            for selected in selected_scope:
+                current = discovered_by_column.get(
+                    (
+                        selected.get("schema", ""),
+                        selected.get("table"),
+                        selected.get("column"),
+                    )
+                )
+                if current is None or any(
+                    selected.get(name, default) != current.get(name, default)
+                    for name, default in structure_defaults.items()
+                ):
+                    scope_compatible = False
+                    break
+
+            published = row["runtime_revision"] > 0
+            assets_exist = all(
+                Path(row[name]).expanduser().resolve().exists()
+                for name in ("metadata_path", "memory_path")
+            )
+            if not published:
+                next_status, enabled_for_chat = "connected", 0
+            elif not scope_compatible or not assets_exist:
+                next_status, enabled_for_chat = "training_required", 0
+            elif row["status"] == "disabled":
+                next_status, enabled_for_chat = "disabled", 0
+            elif row["status"] in {"ready", "connected"} and bool(
+                row["enabled_for_chat"]
+            ):
+                next_status, enabled_for_chat = "ready", 1
+            else:
+                next_status, enabled_for_chat = "training_required", 0
+
             connection.execute(
                 """
                 UPDATE data_sources SET discovered_metadata_json = ?,
-                    status = 'connected', last_error = '', updated_at = ?
+                    status = ?, enabled_for_chat = ?,
+                    last_error = '', updated_at = ?
                 WHERE source_id = ?
                 """,
                 (
                     json.dumps(payload, ensure_ascii=False),
+                    next_status,
+                    enabled_for_chat,
                     int(time.time()),
                     source_id,
                 ),
