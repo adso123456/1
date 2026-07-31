@@ -898,7 +898,8 @@ class DataSourceCatalog:
         with self._lock, self._connection(write=True) as connection:
             row = connection.execute(
                 """
-                SELECT status, enabled_for_chat, runtime_revision,
+                SELECT database_type, database_name, schema_name,
+                    status, enabled_for_chat, runtime_revision,
                     selected_tables_count, selected_columns_count,
                     selected_scope_json, metadata_path, memory_path
                 FROM data_sources WHERE source_id = ?
@@ -908,14 +909,37 @@ class DataSourceCatalog:
             if row is None:
                 raise DataSourceNotFound("数据源不存在")
 
+            published = row["runtime_revision"] > 0
             selected_scope = json.loads(row["selected_scope_json"])
-            discovered_by_column = {
-                (
-                    item.get("schema", ""),
+            uses_formal_metadata = False
+            if published and not selected_scope:
+                try:
+                    formal_metadata = json.loads(
+                        Path(row["metadata_path"]).read_text(encoding="utf-8")
+                    )
+                except (OSError, TypeError, ValueError):
+                    formal_metadata = []
+                if isinstance(formal_metadata, list):
+                    selected_scope = [
+                        dict(item)
+                        for item in formal_metadata
+                        if isinstance(item, Mapping)
+                    ]
+                    uses_formal_metadata = bool(selected_scope)
+
+            default_schema = row["schema_name"]
+            if not default_schema and row["database_type"] == "mysql":
+                default_schema = row["database_name"]
+
+            def identity(item: Mapping[str, Any]) -> tuple[Any, Any, Any]:
+                return (
+                    item.get("schema", default_schema),
                     item.get("table"),
                     item.get("column"),
-                ): item
-                for item in payload
+                )
+
+            discovered_by_column = {
+                identity(item): item for item in payload
             }
             structure_defaults = {
                 "type": "",
@@ -927,7 +951,7 @@ class DataSourceCatalog:
                 "logical_relations": [],
             }
             selected_tables = {
-                (item.get("schema", ""), item.get("table"))
+                (identity(item)[0], item.get("table"))
                 for item in selected_scope
             }
             scope_compatible = (
@@ -936,21 +960,43 @@ class DataSourceCatalog:
                 and len(selected_tables) == row["selected_tables_count"]
             )
             for selected in selected_scope:
-                current = discovered_by_column.get(
-                    (
-                        selected.get("schema", ""),
-                        selected.get("table"),
-                        selected.get("column"),
+                current = discovered_by_column.get(identity(selected))
+                selected_type = str(selected.get("type", "")).lower()
+                ignored_legacy_geometry = (
+                    current is None
+                    and uses_formal_metadata
+                    and row["database_type"] == "postgresql"
+                    and (
+                        selected_type == "geometry"
+                        or selected_type.startswith("geometry(")
                     )
                 )
-                if current is None or any(
-                    selected.get(name, default) != current.get(name, default)
-                    for name, default in structure_defaults.items()
-                ):
+                if ignored_legacy_geometry:
+                    continue
+                if current is None:
                     scope_compatible = False
                     break
+                for name, default in structure_defaults.items():
+                    if name not in selected:
+                        continue
+                    old_value = selected.get(name, default)
+                    new_value = current.get(name, default)
+                    ignored_legacy_numeric_precision = (
+                        name == "type"
+                        and uses_formal_metadata
+                        and row["database_type"] == "postgresql"
+                        and str(old_value).lower().startswith("numeric(")
+                        and str(new_value).lower() == "numeric"
+                    )
+                    if (
+                        old_value != new_value
+                        and not ignored_legacy_numeric_precision
+                    ):
+                        scope_compatible = False
+                        break
+                if not scope_compatible:
+                    break
 
-            published = row["runtime_revision"] > 0
             assets_exist = all(
                 Path(row[name]).expanduser().resolve().exists()
                 for name in ("metadata_path", "memory_path")

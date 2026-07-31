@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -86,6 +87,81 @@ def _create_source(
     return catalog.require(record.source_id), metadata
 
 
+def _create_legacy_builtin_source(
+    tmp_path: Path,
+    database_type: str,
+) -> tuple[DataSourceCatalog, list[dict]]:
+    metadata = _metadata(database_type)
+    formal_metadata = [
+        {
+            "table": item["table"],
+            "column": item["column"],
+            "type": (
+                "numeric(12,4)"
+                if database_type == "postgresql" and item["type"] == "numeric"
+                else item["type"]
+            ),
+            "comment": item["comment"],
+        }
+        for item in metadata
+    ]
+    if database_type == "postgresql":
+        formal_metadata.append(
+            {
+                "table": "monitor_data",
+                "column": "geom",
+                "type": "geometry(Point,4326)",
+                "comment": "空间位置",
+            }
+        )
+    metadata_path = tmp_path / f"{database_type}-metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            formal_metadata,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory_path = tmp_path / f"{database_type}-memory"
+    memory_path.mkdir()
+    catalog = DataSourceCatalog(
+        tmp_path / f"{database_type}-catalog.sqlite3",
+        environ={
+            "TEST_USER": "test-user",
+            "TEST_PASSWORD": "test-password",
+        },
+    )
+    source_id = f"{database_type}-legacy"
+    catalog.initialize(
+        [
+            {
+                "source_id": source_id,
+                "display_name": f"{database_type} 历史源",
+                "description": "历史精简 Metadata",
+                "database_type": database_type,
+                "host": "127.0.0.1",
+                "port": 5433 if database_type == "postgresql" else 3307,
+                "database_name": "test_db",
+                "schema_name": "public" if database_type == "postgresql" else "",
+                "credential_reference": {
+                    "username": "TEST_USER",
+                    "password": "TEST_PASSWORD",
+                },
+                "metadata_path": metadata_path,
+                "memory_path": memory_path,
+                "selected_tables_count": 1,
+                "selected_columns_count": len(formal_metadata),
+            }
+        ]
+    )
+    record = catalog.require(source_id)
+    catalog.restore_publication_state(
+        source_id,
+        replace(record, status="connected", enabled_for_chat=True),
+    )
+    return catalog, metadata
+
+
 @pytest.mark.parametrize("database_type", ["postgresql", "mysql"])
 def test_rediscovery_preserves_ready_enabled(
     tmp_path: Path,
@@ -100,6 +176,39 @@ def test_rediscovery_preserves_ready_enabled(
     after = catalog.save_discovery(before.source_id, metadata)
 
     assert (after.status, after.enabled_for_chat) == ("ready", True)
+    assert after.runtime_revision == before.runtime_revision
+
+
+@pytest.mark.parametrize("database_type", ["postgresql", "mysql"])
+def test_rediscovery_recovers_legacy_builtin_without_catalog_scope(
+    tmp_path: Path,
+    database_type: str,
+) -> None:
+    catalog, metadata = _create_legacy_builtin_source(tmp_path, database_type)
+    before = catalog.require(f"{database_type}-legacy")
+
+    after = catalog.save_discovery(before.source_id, metadata)
+
+    assert not before.selected_scope
+    assert (after.status, after.enabled_for_chat) == ("ready", True)
+    assert after.runtime_revision == before.runtime_revision
+
+
+@pytest.mark.parametrize("database_type", ["postgresql", "mysql"])
+def test_rediscovery_rejects_incompatible_legacy_builtin_metadata(
+    tmp_path: Path,
+    database_type: str,
+) -> None:
+    catalog, metadata = _create_legacy_builtin_source(tmp_path, database_type)
+    before = catalog.require(f"{database_type}-legacy")
+    metadata[1]["type"] = "text"
+
+    after = catalog.save_discovery(before.source_id, metadata)
+
+    assert (after.status, after.enabled_for_chat) == (
+        "training_required",
+        False,
+    )
     assert after.runtime_revision == before.runtime_revision
 
 
