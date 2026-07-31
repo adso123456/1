@@ -37,6 +37,17 @@ SAFE_INTERNAL_ERROR = "管理服务暂时不可用"
 T = TypeVar("T")
 
 
+class AssistantApplicationLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    link_id: str
+    name: str
+    url: str
+    open_mode: str
+    enabled: bool
+    sort_order: int
+
+
 class CreateAssistantApplicationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -44,6 +55,9 @@ class CreateAssistantApplicationRequest(BaseModel):
     name: str
     allowed_origins: list[str] = Field(default_factory=list)
     allowed_source_ids: list[str] = Field(default_factory=list)
+    application_links: list[AssistantApplicationLinkRequest] = Field(
+        default_factory=list
+    )
     token_ttl_seconds: int = 300
     theme: str = DEFAULT_THEME
     header_font_color: str = DEFAULT_HEADER_FONT_COLOR
@@ -66,6 +80,7 @@ class UpdateAssistantApplicationRequest(BaseModel):
     name: str | None = None
     allowed_origins: list[str] | None = None
     allowed_source_ids: list[str] | None = None
+    application_links: list[AssistantApplicationLinkRequest] | None = None
     token_ttl_seconds: int | None = None
     theme: str | None = None
     header_font_color: str | None = None
@@ -264,6 +279,15 @@ def create_admin_router(
         return _view_payload(
             _safe_call(lambda: application_registry.update(app_id, **values))
         )
+
+    @router.delete(
+        "/assistant-applications/{app_id}",
+        status_code=204,
+        dependencies=dependencies,
+    )
+    def delete_application(app_id: str) -> Response:
+        _safe_call(lambda: application_registry.delete(app_id))
+        return Response(status_code=204)
 
     @router.post(
         "/assistant-applications/{app_id}/enable",

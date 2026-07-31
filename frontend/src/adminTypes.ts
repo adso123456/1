@@ -6,6 +6,15 @@ export interface AdminDataSource {
   display_name: string;
 }
 
+export interface AssistantApplicationLink {
+  link_id: string;
+  name: string;
+  url: string;
+  open_mode: 'new_tab' | 'same_tab';
+  enabled: boolean;
+  sort_order: number;
+}
+
 export interface AssistantApplicationView extends AssistantAppearance {
   app_id: string;
   name: string;
@@ -13,6 +22,7 @@ export interface AssistantApplicationView extends AssistantAppearance {
   secret_mask: string;
   allowed_origins: string[];
   allowed_source_ids: string[];
+  application_links: AssistantApplicationLink[];
   token_ttl_seconds: number;
   show_history: boolean;
   created_at: number;
@@ -24,6 +34,7 @@ export interface CreateAssistantApplication extends AssistantAppearance {
   name: string;
   allowed_origins: string[];
   allowed_source_ids: string[];
+  application_links: AssistantApplicationLink[];
   token_ttl_seconds: number;
   show_history: boolean;
   enabled: boolean;

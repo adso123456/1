@@ -12,12 +12,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from backend.data_source_registry import DataSourceRegistry
 
 
 APP_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{3,64}\Z")
+LINK_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{3,64}\Z")
 THEME_PATTERN = re.compile(r"#[0-9A-Fa-f]{6}\Z")
 DEFAULT_THEME = "#1677ff"
 DEFAULT_HEADER_FONT_COLOR = "#1f2329"
@@ -34,8 +35,11 @@ DEFAULT_FLOAT_Y_OFFSET = 24
 MAX_FLOAT_OFFSET = 1000
 MIN_TOKEN_TTL_SECONDS = 30
 MAX_TOKEN_TTL_SECONDS = 3600
+MAX_APPLICATION_LINKS = 20
+MAX_LINK_SORT_ORDER = 10_000
+APPLICATION_LINK_OPEN_MODES = frozenset({"new_tab", "same_tab"})
 SCHEMA_COMPONENT = "assistant_application_registry"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA_VERSION_TABLE = "system_schema_versions"
 
 V1_APPLICATION_TABLE_SCHEMAS = {
@@ -62,7 +66,7 @@ V1_APPLICATION_TABLE_SCHEMAS = {
         ("source_id", "TEXT", 1, 2),
     ),
 }
-APPLICATION_TABLE_SCHEMAS = {
+V2_APPLICATION_TABLE_SCHEMAS = {
     **V1_APPLICATION_TABLE_SCHEMAS,
     "assistant_applications": (
         *V1_APPLICATION_TABLE_SCHEMAS["assistant_applications"],
@@ -73,6 +77,18 @@ APPLICATION_TABLE_SCHEMAS = {
         ("float_x_offset", "INTEGER", 1, 0),
         ("float_y_anchor", "TEXT", 1, 0),
         ("float_y_offset", "INTEGER", 1, 0),
+    ),
+}
+APPLICATION_TABLE_SCHEMAS = {
+    **V2_APPLICATION_TABLE_SCHEMAS,
+    "assistant_application_links": (
+        ("link_id", "TEXT", 0, 1),
+        ("app_id", "TEXT", 1, 0),
+        ("name", "TEXT", 1, 0),
+        ("url", "TEXT", 1, 0),
+        ("open_mode", "TEXT", 1, 0),
+        ("enabled", "INTEGER", 1, 0),
+        ("sort_order", "INTEGER", 1, 0),
     ),
 }
 V2_COLUMN_DEFAULTS = {
@@ -111,6 +127,16 @@ class SchemaMigrationError(AssistantApplicationError):
 
 
 @dataclass(frozen=True)
+class AssistantApplicationLink:
+    link_id: str
+    name: str
+    url: str
+    open_mode: str
+    enabled: bool
+    sort_order: int
+
+
+@dataclass(frozen=True)
 class AssistantApplication:
     """仅供鉴权内部使用的完整应用记录。"""
 
@@ -120,6 +146,7 @@ class AssistantApplication:
     app_secret: str = field(repr=False)
     allowed_origins: tuple[str, ...]
     allowed_source_ids: tuple[str, ...]
+    application_links: tuple[AssistantApplicationLink, ...]
     token_ttl_seconds: int
     theme: str
     header_font_color: str
@@ -147,6 +174,7 @@ class AssistantApplicationView:
     secret_mask: str
     allowed_origins: tuple[str, ...]
     allowed_source_ids: tuple[str, ...]
+    application_links: tuple[AssistantApplicationLink, ...]
     token_ttl_seconds: int
     theme: str
     header_font_color: str
@@ -227,6 +255,49 @@ def normalize_origin(origin: Any) -> str:
         scheme == "https" and port == 443
     )
     return f"{scheme}://{host}{'' if port is None or default_port else f':{port}'}"
+
+
+def normalize_application_url(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidApplicationConfiguration("关联网站 URL 必须是非空字符串")
+    normalized = value.strip()
+    decoded = unquote(normalized)
+    if (
+        len(normalized) > 2048
+        or any(
+            character.isspace() or ord(character) < 32
+            for character in decoded
+        )
+        or "<" in decoded
+        or ">" in decoded
+        or "\\" in decoded
+        or "\\" in normalized
+    ):
+        raise InvalidApplicationConfiguration("关联网站 URL 格式无效")
+    try:
+        parsed = urlsplit(normalized)
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidApplicationConfiguration("关联网站 URL 格式无效") from exc
+    scheme = parsed.scheme.lower()
+    if (
+        scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise InvalidApplicationConfiguration(
+            "关联网站 URL 必须是完整的 http/https 地址且不能包含凭据"
+        )
+    hostname = parsed.hostname.lower()
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    default_port = (scheme == "http" and port == 80) or (
+        scheme == "https" and port == 443
+    )
+    authority = host if port is None or default_port else f"{host}:{port}"
+    return urlunsplit(
+        (scheme, authority, parsed.path, parsed.query, parsed.fragment)
+    )
 
 
 def mask_secret(secret: str) -> str:
@@ -663,23 +734,24 @@ class AssistantApplicationRegistry:
         cls,
         check_expressions: Sequence[str],
         column_name: str,
+        maximum: int = MAX_FLOAT_OFFSET,
     ) -> bool:
         equivalent_checks = {
-            f"{column_name}between0and{MAX_FLOAT_OFFSET}",
+            f"{column_name}between0and{maximum}",
             (
                 f"{column_name}>=0and"
-                f"{column_name}<={MAX_FLOAT_OFFSET}"
+                f"{column_name}<={maximum}"
             ),
             (
                 f"0<={column_name}and"
-                f"{column_name}<={MAX_FLOAT_OFFSET}"
+                f"{column_name}<={maximum}"
             ),
             (
-                f"{column_name}<={MAX_FLOAT_OFFSET}and"
+                f"{column_name}<={maximum}and"
                 f"{column_name}>=0"
             ),
             (
-                f"{MAX_FLOAT_OFFSET}>={column_name}and"
+                f"{maximum}>={column_name}and"
                 f"{column_name}>=0"
             ),
         }
@@ -736,8 +808,18 @@ class AssistantApplicationRegistry:
     ) -> None:
         self._require_compatible_tables(
             connection,
-            APPLICATION_TABLE_SCHEMAS,
+            V2_APPLICATION_TABLE_SCHEMAS,
             version=2,
+        )
+
+    def _require_v3_compatible_tables(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        self._require_compatible_tables(
+            connection,
+            APPLICATION_TABLE_SCHEMAS,
+            version=3,
         )
 
     def _require_compatible_tables(
@@ -764,7 +846,7 @@ class AssistantApplicationRegistry:
             raise SchemaMigrationError(
                 f"小助手应用数据库结构与当前 V{version} 不兼容"
             )
-        if version == 2:
+        if version >= 2:
             defaults = self._table_defaults(
                 connection,
                 "assistant_applications",
@@ -807,16 +889,42 @@ class AssistantApplicationRegistry:
                 raise SchemaMigrationError(
                     "小助手应用数据库结构与当前 V2 不兼容"
                 )
-        for table_name in (
+        child_tables = [
             "assistant_application_origins",
             "assistant_application_sources",
-        ):
+        ]
+        if version >= 3:
+            child_tables.append("assistant_application_links")
+        for table_name in child_tables:
             if not self._has_cascade_app_id_foreign_key(
                 connection,
                 table_name,
             ):
                 raise SchemaMigrationError(
                     f"小助手应用数据库结构与当前 V{version} 不兼容"
+                )
+        if version >= 3:
+            link_sql = self._table_sql(
+                connection,
+                "assistant_application_links",
+            )
+            link_checks = self._extract_check_expressions(link_sql)
+            if (
+                not self._has_boolean_check(link_checks, "enabled")
+                or not self._has_anchor_check(
+                    link_checks,
+                    "open_mode",
+                    "new_tab",
+                    "same_tab",
+                )
+                or not self._has_offset_check(
+                    link_checks,
+                    "sort_order",
+                    MAX_LINK_SORT_ORDER,
+                )
+            ):
+                raise SchemaMigrationError(
+                    "小助手应用数据库结构与当前 V3 不兼容"
                 )
 
     @staticmethod
@@ -910,6 +1018,34 @@ class AssistantApplicationRegistry:
             connection.execute(statement)
         self._require_v2_compatible_tables(connection)
 
+    def _migrate_2_to_3(self, connection: sqlite3.Connection) -> None:
+        self._require_v2_compatible_tables(connection)
+        connection.execute(
+            """
+            CREATE TABLE assistant_application_links (
+                link_id TEXT PRIMARY KEY,
+                app_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                open_mode TEXT NOT NULL
+                    CHECK (open_mode IN ('new_tab', 'same_tab')),
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                sort_order INTEGER NOT NULL
+                    CHECK (sort_order BETWEEN 0 AND 10000),
+                FOREIGN KEY (app_id)
+                    REFERENCES assistant_applications(app_id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX assistant_application_links_app_order_idx
+            ON assistant_application_links(app_id, sort_order, link_id)
+            """
+        )
+        self._require_v3_compatible_tables(connection)
+
     def _initialize_schema(self, connection: sqlite3.Connection) -> None:
         version_schema = (
             ("component", "TEXT", 0, 1),
@@ -918,6 +1054,7 @@ class AssistantApplicationRegistry:
         )
         table_names = self._table_names(connection)
         application_tables = set(APPLICATION_TABLE_SCHEMAS)
+        v2_application_tables = set(V2_APPLICATION_TABLE_SCHEMAS)
         existing_application_tables = table_names & application_tables
 
         if (
@@ -946,7 +1083,10 @@ class AssistantApplicationRegistry:
 
         if row is None:
             if existing_application_tables:
-                if existing_application_tables != application_tables:
+                if frozenset(existing_application_tables) not in {
+                    frozenset(v2_application_tables),
+                    frozenset(application_tables),
+                }:
                     raise SchemaMigrationError(
                         "小助手应用数据库仅存在部分应用表，无法安全接管"
                     )
@@ -962,13 +1102,18 @@ class AssistantApplicationRegistry:
                 ):
                     self._require_v1_compatible_tables(connection)
                     self._migrate_1_to_2(connection)
+                    self._migrate_2_to_3(connection)
                 elif (
                     application_signature
-                    == APPLICATION_TABLE_SCHEMAS[
+                    == V2_APPLICATION_TABLE_SCHEMAS[
                         "assistant_applications"
                     ]
                 ):
-                    self._require_v2_compatible_tables(connection)
+                    if existing_application_tables == v2_application_tables:
+                        self._require_v2_compatible_tables(connection)
+                        self._migrate_2_to_3(connection)
+                    else:
+                        self._require_v3_compatible_tables(connection)
                 else:
                     raise SchemaMigrationError(
                         "小助手应用数据库结构无法安全接管"
@@ -976,6 +1121,7 @@ class AssistantApplicationRegistry:
             else:
                 self._migrate_0_to_1(connection)
                 self._migrate_1_to_2(connection)
+                self._migrate_2_to_3(connection)
             connection.execute(
                 f"""
                 INSERT INTO {SCHEMA_VERSION_TABLE}
@@ -1000,6 +1146,7 @@ class AssistantApplicationRegistry:
         migrations = {
             0: self._migrate_0_to_1,
             1: self._migrate_1_to_2,
+            2: self._migrate_2_to_3,
         }
         while version < SCHEMA_VERSION:
             migration = migrations.get(version)
@@ -1015,7 +1162,7 @@ class AssistantApplicationRegistry:
                 """,
                 (version, int(time.time()), SCHEMA_COMPONENT),
             )
-        self._require_v2_compatible_tables(connection)
+        self._require_v3_compatible_tables(connection)
 
     def _normalize_origins(
         self,
@@ -1052,6 +1199,90 @@ class AssistantApplicationRegistry:
             normalized.add(source_id)
         return tuple(sorted(normalized))
 
+    @staticmethod
+    def _normalize_application_links(
+        links: Sequence[Mapping[str, Any] | AssistantApplicationLink] | None,
+    ) -> tuple[AssistantApplicationLink, ...]:
+        if links is None:
+            return ()
+        if isinstance(links, (str, bytes)) or not isinstance(links, Sequence):
+            raise InvalidApplicationConfiguration(
+                "application_links 必须是入口对象序列"
+            )
+        if len(links) > MAX_APPLICATION_LINKS:
+            raise InvalidApplicationConfiguration(
+                f"关联网站入口不能超过 {MAX_APPLICATION_LINKS} 个"
+            )
+        normalized: list[AssistantApplicationLink] = []
+        link_ids: set[str] = set()
+        for item in links:
+            values: Mapping[str, Any]
+            if isinstance(item, AssistantApplicationLink):
+                values = {
+                    "link_id": item.link_id,
+                    "name": item.name,
+                    "url": item.url,
+                    "open_mode": item.open_mode,
+                    "enabled": item.enabled,
+                    "sort_order": item.sort_order,
+                }
+            elif isinstance(item, Mapping):
+                values = item
+            else:
+                raise InvalidApplicationConfiguration(
+                    "关联网站入口必须是对象"
+                )
+            link_id = values.get("link_id")
+            if (
+                not isinstance(link_id, str)
+                or LINK_ID_PATTERN.fullmatch(link_id) is None
+            ):
+                raise InvalidApplicationConfiguration(
+                    "link_id 必须为 3～64 位字母、数字、下划线或短横线"
+                )
+            if link_id in link_ids:
+                raise InvalidApplicationConfiguration("link_id 不能重复")
+            link_ids.add(link_id)
+            name = _validate_text(
+                "关联网站名称",
+                values.get("name"),
+                maximum=120,
+            )
+            url = normalize_application_url(values.get("url"))
+            open_mode = values.get("open_mode")
+            if open_mode not in APPLICATION_LINK_OPEN_MODES:
+                raise InvalidApplicationConfiguration(
+                    "open_mode 必须是 new_tab 或 same_tab"
+                )
+            enabled = values.get("enabled")
+            if not isinstance(enabled, bool):
+                raise InvalidApplicationConfiguration(
+                    "关联网站 enabled 必须是布尔值"
+                )
+            sort_order = values.get("sort_order")
+            if (
+                isinstance(sort_order, bool)
+                or not isinstance(sort_order, int)
+                or sort_order < 0
+                or sort_order > MAX_LINK_SORT_ORDER
+            ):
+                raise InvalidApplicationConfiguration(
+                    f"sort_order 必须是 0～{MAX_LINK_SORT_ORDER} 的整数"
+                )
+            normalized.append(
+                AssistantApplicationLink(
+                    link_id=link_id,
+                    name=name,
+                    url=url,
+                    open_mode=open_mode,
+                    enabled=enabled,
+                    sort_order=sort_order,
+                )
+            )
+        return tuple(
+            sorted(normalized, key=lambda item: (item.sort_order, item.link_id))
+        )
+
     def create(
         self,
         *,
@@ -1059,6 +1290,9 @@ class AssistantApplicationRegistry:
         name: str,
         allowed_origins: Sequence[str] = (),
         allowed_source_ids: Sequence[str] = (),
+        application_links: Sequence[
+            Mapping[str, Any] | AssistantApplicationLink
+        ] = (),
         token_ttl_seconds: int = 300,
         theme: str = DEFAULT_THEME,
         header_font_color: str = DEFAULT_HEADER_FONT_COLOR,
@@ -1079,6 +1313,7 @@ class AssistantApplicationRegistry:
         name = _validate_text("name", name, maximum=120)
         origins = self._normalize_origins(allowed_origins)
         source_ids = self._normalize_source_ids(allowed_source_ids)
+        links = self._normalize_application_links(application_links)
         ttl = _validate_ttl(token_ttl_seconds)
         theme = _validate_theme(theme)
         header_font_color = _validate_color(
@@ -1184,6 +1419,26 @@ class AssistantApplicationRegistry:
                     """,
                     ((app_id, source_id) for source_id in source_ids),
                 )
+                connection.executemany(
+                    """
+                    INSERT INTO assistant_application_links (
+                        link_id, app_id, name, url,
+                        open_mode, enabled, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        (
+                            link.link_id,
+                            app_id,
+                            link.name,
+                            link.url,
+                            link.open_mode,
+                            int(link.enabled),
+                            link.sort_order,
+                        )
+                        for link in links
+                    ),
+                )
         except sqlite3.IntegrityError as exc:
             if self._exists(app_id):
                 raise ApplicationAlreadyExists(
@@ -1237,6 +1492,25 @@ class AssistantApplicationRegistry:
                     (app_id,),
                 )
             )
+            application_links = tuple(
+                AssistantApplicationLink(
+                    link_id=item["link_id"],
+                    name=item["name"],
+                    url=item["url"],
+                    open_mode=item["open_mode"],
+                    enabled=bool(item["enabled"]),
+                    sort_order=item["sort_order"],
+                )
+                for item in connection.execute(
+                    """
+                    SELECT link_id, name, url, open_mode, enabled, sort_order
+                    FROM assistant_application_links
+                    WHERE app_id = ?
+                    ORDER BY sort_order, link_id
+                    """,
+                    (app_id,),
+                )
+            )
         return AssistantApplication(
             app_id=row["app_id"],
             name=row["name"],
@@ -1244,6 +1518,7 @@ class AssistantApplicationRegistry:
             app_secret=row["app_secret"],
             allowed_origins=origins,
             allowed_source_ids=source_ids,
+            application_links=application_links,
             token_ttl_seconds=row["token_ttl_seconds"],
             theme=row["theme"],
             header_font_color=row["header_font_color"],
@@ -1270,6 +1545,7 @@ class AssistantApplicationRegistry:
             secret_mask=mask_secret(application.app_secret),
             allowed_origins=application.allowed_origins,
             allowed_source_ids=application.allowed_source_ids,
+            application_links=application.application_links,
             token_ttl_seconds=application.token_ttl_seconds,
             theme=application.theme,
             header_font_color=application.header_font_color,
@@ -1317,6 +1593,9 @@ class AssistantApplicationRegistry:
         name: str | None = None,
         allowed_origins: Sequence[str] | None = None,
         allowed_source_ids: Sequence[str] | None = None,
+        application_links: Sequence[
+            Mapping[str, Any] | AssistantApplicationLink
+        ] | None = None,
         token_ttl_seconds: int | None = None,
         theme: str | None = None,
         header_font_color: str | None = None,
@@ -1346,6 +1625,11 @@ class AssistantApplicationRegistry:
             current.allowed_source_ids
             if allowed_source_ids is None
             else self._normalize_source_ids(allowed_source_ids)
+        )
+        next_links = (
+            current.application_links
+            if application_links is None
+            else self._normalize_application_links(application_links)
         )
         next_ttl = (
             current.token_ttl_seconds
@@ -1492,7 +1776,40 @@ class AssistantApplicationRegistry:
                     """,
                     ((app_id, source_id) for source_id in next_sources),
                 )
+            if application_links is not None:
+                connection.execute(
+                    "DELETE FROM assistant_application_links WHERE app_id = ?",
+                    (app_id,),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO assistant_application_links (
+                        link_id, app_id, name, url,
+                        open_mode, enabled, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        (
+                            link.link_id,
+                            app_id,
+                            link.name,
+                            link.url,
+                            link.open_mode,
+                            int(link.enabled),
+                            link.sort_order,
+                        )
+                        for link in next_links
+                    ),
+                )
         return self.get(app_id)
+
+    def delete(self, app_id: str) -> None:
+        self._load_full(app_id)
+        with self._connection() as connection:
+            connection.execute(
+                "DELETE FROM assistant_applications WHERE app_id = ?",
+                (app_id,),
+            )
 
     def _set_enabled(
         self,

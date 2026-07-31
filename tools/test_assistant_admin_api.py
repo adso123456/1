@@ -100,7 +100,7 @@ def auth_headers(*, origin: str | None = None):
     return headers
 
 
-def assert_schema_version(db_path: Path, expected: int = 2) -> None:
+def assert_schema_version(db_path: Path, expected: int = 3) -> None:
     with closing(sqlite3.connect(db_path)) as connection:
         row = connection.execute(
             f"""
@@ -496,7 +496,7 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
     with closing(sqlite3.connect(future_path)) as connection:
         connection.execute(
             f"""
-            UPDATE {SCHEMA_VERSION_TABLE} SET version = 3
+            UPDATE {SCHEMA_VERSION_TABLE} SET version = 4
             WHERE component = ?
             """,
             (SCHEMA_COMPONENT,),
@@ -508,7 +508,7 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
         pass
     else:
         raise AssertionError("高版本数据库未失败关闭")
-    assert_schema_version(future_path, 3)
+    assert_schema_version(future_path, 4)
 
     incompatible_path = root / "incompatible.sqlite3"
     with closing(sqlite3.connect(incompatible_path)) as connection:
@@ -592,6 +592,16 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
             "name": "Admin created",
             "allowed_origins": ["http://127.0.0.1:5174"],
             "allowed_source_ids": [SOURCE_ID],
+            "application_links": [
+                {
+                    "link_id": "admin-link",
+                    "name": "管理平台",
+                    "url": "http://127.0.0.1:5174/embed-demo?tab=water#assistant",
+                    "open_mode": "new_tab",
+                    "enabled": True,
+                    "sort_order": 0,
+                }
+            ],
             "token_ttl_seconds": 300,
             "enabled": True,
         }
@@ -606,6 +616,9 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         first_secret = created.json()[APP_SECRET_FIELD]
         assert len(first_secret) >= 32
         assert created.text.count(first_secret) == 1
+        assert created.json()["application_links"] == create_body[
+            "application_links"
+        ]
         for field_name, expected in (
             ("theme", "#1677ff"),
             ("header_font_color", "#1f2329"),
@@ -668,6 +681,26 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         )
         assert unknown_source.status_code == 400
         assert invalid_application_origin.status_code == 400
+        for invalid_url in (
+            "javascript:alert(1)",
+            "https://user:pass@example.test/",
+            "https://example.test/%3Cscript%3E",
+        ):
+            invalid_link = client.post(
+                "/api/admin/assistant-applications",
+                headers=auth_headers(),
+                json={
+                    **create_body,
+                    "app_id": f"invalid-link-{len(invalid_url)}",
+                    "application_links": [
+                        {
+                            **create_body["application_links"][0],
+                            "url": invalid_url,
+                        }
+                    ],
+                },
+            )
+            assert invalid_link.status_code == 400
 
         updated = client.patch(
             "/api/admin/assistant-applications/admin-created",
@@ -677,6 +710,34 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         assert updated.status_code == 200
         assert updated.json()["name"] == "Updated"
         assert updated.json()["show_history"] is True
+        assert updated.json()["application_links"] == create_body[
+            "application_links"
+        ]
+        reordered_links = [
+            {
+                **create_body["application_links"][0],
+                "sort_order": 5,
+                "enabled": False,
+            },
+            {
+                "link_id": "admin-link-2",
+                "name": "第二入口",
+                "url": "https://example.test/second",
+                "open_mode": "same_tab",
+                "enabled": True,
+                "sort_order": 0,
+            },
+        ]
+        links_updated = client.patch(
+            "/api/admin/assistant-applications/admin-created",
+            headers=auth_headers(),
+            json={"application_links": reordered_links},
+        )
+        assert links_updated.status_code == 200
+        assert [
+            item["link_id"]
+            for item in links_updated.json()["application_links"]
+        ] == ["admin-link-2", "admin-link"]
         appearance_patch = {
             "theme": "#123abc",
             "header_font_color": "#fedcba",
@@ -785,6 +846,21 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
             pass
         else:
             raise AssertionError("轮换后旧 Embed Token 仍有效")
+
+        deleted = client.delete(
+            "/api/admin/assistant-applications/admin-created",
+            headers=auth_headers(),
+        )
+        assert deleted.status_code == 204
+        with closing(
+            sqlite3.connect(resources.assistant_application_registry.db_path)
+        ) as connection:
+            assert connection.execute(
+                """
+                SELECT COUNT(*) FROM assistant_application_links
+                WHERE app_id = 'admin-created'
+                """
+            ).fetchone() == (0,)
 
         assert client.get(
             "/api/data-sources",
@@ -966,7 +1042,7 @@ def test_live_http(resources: ApplicationResources) -> None:
                 WHERE app_id = 'live-http-app'
                 """
             ).fetchone()
-        assert version == (2,)
+        assert version == (3,)
         assert application == (second_secret,)
         assert origin_count == (1,)
         assert source_count == (1,)

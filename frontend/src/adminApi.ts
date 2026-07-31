@@ -7,7 +7,7 @@ import type {
 } from './adminTypes';
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: object;
   signal?: AbortSignal;
 }
@@ -94,6 +94,8 @@ async function request<T>(
     );
   }
 
+  if (response.status === 204) return undefined as T;
+
   try {
     return await response.json() as T;
   } catch {
@@ -141,6 +143,12 @@ export const adminApi = {
     return request<AssistantApplicationView>(
       applicationPath(appId),
       { method: 'PATCH', body: payload, signal },
+    );
+  },
+  deleteApplication(appId: string, signal?: AbortSignal) {
+    return request<void>(
+      applicationPath(appId),
+      { method: 'DELETE', signal },
     );
   },
   enableApplication(appId: string, signal?: AbortSignal) {

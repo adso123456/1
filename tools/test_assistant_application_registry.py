@@ -144,7 +144,7 @@ def create_v1_database(
         connection.commit()
 
 
-def assert_v2_migration(
+def assert_v3_migration(
     db_path: Path,
     data_sources: DataSourceRegistry,
 ) -> None:
@@ -162,6 +162,7 @@ def assert_v2_migration(
     assert loaded.float_x_offset == 24
     assert loaded.float_y_anchor == "bottom"
     assert loaded.float_y_offset == 24
+    assert loaded.application_links == ()
     with closing(sqlite3.connect(db_path)) as connection:
         assert connection.execute(
             f"""
@@ -170,6 +171,24 @@ def assert_v2_migration(
             """,
             (SCHEMA_COMPONENT,),
         ).fetchone() == (SCHEMA_VERSION,)
+
+
+def create_v2_database(
+    db_path: Path,
+    data_sources: DataSourceRegistry,
+) -> None:
+    create_v1_database(db_path, with_version=True)
+    registry = AssistantApplicationRegistry(db_path, data_sources)
+    with registry._connection() as connection:
+        registry._migrate_1_to_2(connection)
+        connection.execute(
+            f"""
+            UPDATE {SCHEMA_VERSION_TABLE}
+            SET version = 2
+            WHERE component = ?
+            """,
+            (SCHEMA_COMPONENT,),
+        )
 
 
 def main() -> int:
@@ -189,7 +208,7 @@ def main() -> int:
                 WHERE component = ?
                 """,
                 (SCHEMA_COMPONENT,),
-            ).fetchone() == (2,)
+            ).fetchone() == (SCHEMA_VERSION,)
             columns = tuple(
                 row[1]
                 for row in connection.execute(
@@ -212,7 +231,11 @@ def main() -> int:
         ):
             legacy_path = root / database_name
             create_v1_database(legacy_path, with_version=with_version)
-            assert_v2_migration(legacy_path, data_sources)
+            assert_v3_migration(legacy_path, data_sources)
+
+        versioned_v2_path = root / "versioned-v2.sqlite3"
+        create_v2_database(versioned_v2_path, data_sources)
+        assert_v3_migration(versioned_v2_path, data_sources)
 
         version_zero_path = root / "version-zero.sqlite3"
         with closing(sqlite3.connect(version_zero_path)) as connection:
@@ -240,7 +263,7 @@ def main() -> int:
                 WHERE component = ?
                 """,
                 (SCHEMA_COMPONENT,),
-            ).fetchone() == (2,)
+            ).fetchone() == (SCHEMA_VERSION,)
 
         partial_path = root / "partial.sqlite3"
         with closing(sqlite3.connect(partial_path)) as connection:
@@ -294,9 +317,9 @@ def main() -> int:
                 WHERE component = ?
                 """,
                 (SCHEMA_COMPONENT,),
-            ).fetchone() == (2,)
+            ).fetchone() == (SCHEMA_VERSION,)
 
-        future_path = root / "future-v3.sqlite3"
+        future_path = root / "future-v4.sqlite3"
         future_registry = AssistantApplicationRegistry(
             future_path,
             data_sources,
@@ -306,7 +329,7 @@ def main() -> int:
             connection.execute(
                 f"""
                 UPDATE {SCHEMA_VERSION_TABLE}
-                SET version = 3 WHERE component = ?
+                SET version = 4 WHERE component = ?
                 """,
                 (SCHEMA_COMPONENT,),
             )
@@ -354,6 +377,24 @@ def main() -> int:
                 "http://127.0.0.1:5174/",
             ),
             allowed_source_ids=("source-a", "source-a"),
+            application_links=(
+                {
+                    "link_id": "platform-main",
+                    "name": "水务管理平台",
+                    "url": "HTTP://EXAMPLE.TEST:80/embed?source=water#assistant",
+                    "open_mode": "new_tab",
+                    "enabled": True,
+                    "sort_order": 1,
+                },
+                {
+                    "link_id": "platform-backup",
+                    "name": "备用入口",
+                    "url": "https://example.test/backup",
+                    "open_mode": "same_tab",
+                    "enabled": False,
+                    "sort_order": 0,
+                },
+            ),
             token_ttl_seconds=300,
             theme="#123ABC",
             header_font_color="#F0E1D2",
@@ -382,6 +423,13 @@ def main() -> int:
             "http://127.0.0.1:5174",
         )
         assert created_a.application.allowed_source_ids == ("source-a",)
+        assert tuple(
+            link.link_id for link in created_a.application.application_links
+        ) == ("platform-backup", "platform-main")
+        assert (
+            created_a.application.application_links[1].url
+            == "http://example.test/embed?source=water#assistant"
+        )
         assert created_a.application.theme == "#123abc"
         assert created_a.application.header_font_color == "#f0e1d2"
         assert created_a.application.float_icon_draggable is True
@@ -415,6 +463,33 @@ def main() -> int:
                     app_id=f"invalid-origin-{len(origin)}",
                     name="invalid",
                     allowed_origins=(origin,),
+                ),
+            )
+        for invalid_url in (
+            "javascript:alert(1)",
+            "data:text/html,hello",
+            "file:///tmp/demo",
+            "https://user:pass@example.test/path",
+            "https://example.test/<script>",
+            "https://example.test/%3Cscript%3E",
+            "https://example.test/path%0Aheader",
+            "/embed-demo",
+        ):
+            expect_raises(
+                InvalidApplicationConfiguration,
+                lambda invalid_url=invalid_url: registry.create(
+                    app_id=f"invalid-link-{len(invalid_url)}",
+                    name="invalid",
+                    application_links=(
+                        {
+                            "link_id": "invalid-link",
+                            "name": "非法入口",
+                            "url": invalid_url,
+                            "open_mode": "new_tab",
+                            "enabled": True,
+                            "sort_order": 0,
+                        },
+                    ),
                 ),
             )
         expect_raises(
@@ -469,6 +544,24 @@ def main() -> int:
             float_y_anchor="bottom",
             float_y_offset=9,
             show_history=True,
+            application_links=(
+                {
+                    "link_id": "platform-main",
+                    "name": "水务管理平台",
+                    "url": "https://example.test/main",
+                    "open_mode": "same_tab",
+                    "enabled": True,
+                    "sort_order": 0,
+                },
+                {
+                    "link_id": "platform-backup",
+                    "name": "备用入口",
+                    "url": "https://example.test/backup",
+                    "open_mode": "new_tab",
+                    "enabled": False,
+                    "sort_order": 5,
+                },
+            ),
         )
         assert updated.name == "更新后的助手 A"
         assert updated.allowed_source_ids == ()
@@ -480,6 +573,13 @@ def main() -> int:
         assert updated.float_x_offset == 8
         assert updated.float_y_anchor == "bottom"
         assert updated.float_y_offset == 9
+        assert tuple(
+            (link.link_id, link.enabled, link.sort_order)
+            for link in updated.application_links
+        ) == (
+            ("platform-main", True, 0),
+            ("platform-backup", False, 5),
+        )
         registry.update(
             "assistant-a",
             allowed_origins=("http://127.0.0.1:5174",),
@@ -671,6 +771,51 @@ def main() -> int:
                 """
                 SELECT COUNT(*) FROM assistant_applications
                 WHERE app_id = 'rollback-app'
+                """
+            ).fetchone()[0] == 0
+
+        with closing(sqlite3.connect(registry.db_path)) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            with connection:
+                connection.execute(
+                    """
+                    CREATE TRIGGER reject_rollback_link
+                    BEFORE INSERT ON assistant_application_links
+                    WHEN NEW.url = 'https://rollback.test/link'
+                    BEGIN
+                        SELECT RAISE(ABORT, 'controlled link rollback');
+                    END
+                    """
+                )
+        expect_raises(
+            sqlite3.IntegrityError,
+            lambda: registry.update(
+                "assistant-a",
+                name="不应保存的名称",
+                application_links=(
+                    {
+                        "link_id": "rollback-link",
+                        "name": "回滚入口",
+                        "url": "https://rollback.test/link",
+                        "open_mode": "new_tab",
+                        "enabled": True,
+                        "sort_order": 0,
+                    },
+                ),
+            ),
+        )
+        rolled_back = registry.get("assistant-a")
+        assert rolled_back.name == "更新后的助手 A"
+        assert tuple(
+            link.link_id for link in rolled_back.application_links
+        ) == ("platform-main", "platform-backup")
+
+        registry.delete("assistant-a")
+        with closing(sqlite3.connect(registry.db_path)) as connection:
+            assert connection.execute(
+                """
+                SELECT COUNT(*) FROM assistant_application_links
+                WHERE app_id = 'assistant-a'
                 """
             ).fetchone()[0] == 0
 
