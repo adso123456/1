@@ -1096,9 +1096,49 @@ class AssistantApplicationRegistry:
         self._require_v3_compatible_tables(connection)
 
     def _migrate_3_to_4(self, connection: sqlite3.Connection) -> None:
-        """V3→V4：安全重建 assistant_applications 表，删除 app_secret 和 token_ttl_seconds 列。"""
+        """V3→V4：安全重建全部应用表，删除 app_secret 和 token_ttl_seconds 列。
+
+        全程处于调用方 _initialize_schema 持有的单一事务中，任一步失败整体回滚。
+        先备份三个子表记录并删除旧子表，再重建 V4 主表与子表后原样恢复记录，
+        避免在 foreign_keys=ON 下 DROP 主表时外键级联清空子表数据。
+        """
         self._require_v3_compatible_tables(connection)
-        # 用重建方式删除列，兼容所有 SQLite 版本
+
+        # 1. 迁移前完整读取三个子表记录
+        origins = tuple(
+            (row["app_id"], row["origin"])
+            for row in connection.execute(
+                "SELECT app_id, origin FROM assistant_application_origins"
+            )
+        )
+        sources = tuple(
+            (row["app_id"], row["source_id"])
+            for row in connection.execute(
+                "SELECT app_id, source_id FROM assistant_application_sources"
+            )
+        )
+        links = tuple(
+            (
+                row["link_id"],
+                row["app_id"],
+                row["name"],
+                row["url"],
+                row["open_mode"],
+                row["enabled"],
+                row["sort_order"],
+            )
+            for row in connection.execute(
+                "SELECT link_id, app_id, name, url, open_mode, enabled, sort_order "
+                "FROM assistant_application_links"
+            )
+        )
+
+        # 2. 先删除三个旧子表（含关联索引），避免 DROP 主表时级联清空子表数据
+        connection.execute("DROP TABLE assistant_application_links")
+        connection.execute("DROP TABLE assistant_application_sources")
+        connection.execute("DROP TABLE assistant_application_origins")
+
+        # 3. 重建无 app_secret / token_ttl_seconds 的 V4 主表，数据迁到临时表后改名
         connection.execute(
             """
             CREATE TABLE assistant_applications_v4 (
@@ -1152,6 +1192,84 @@ class AssistantApplicationRegistry:
             "ALTER TABLE assistant_applications_v4 "
             "RENAME TO assistant_applications"
         )
+
+        # 4. 重建三个子表、约束和索引
+        connection.execute(
+            """
+            CREATE TABLE assistant_application_origins (
+                app_id TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                PRIMARY KEY (app_id, origin),
+                FOREIGN KEY (app_id)
+                    REFERENCES assistant_applications(app_id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE assistant_application_sources (
+                app_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                PRIMARY KEY (app_id, source_id),
+                FOREIGN KEY (app_id)
+                    REFERENCES assistant_applications(app_id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE assistant_application_links (
+                link_id TEXT PRIMARY KEY,
+                app_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                open_mode TEXT NOT NULL
+                    CHECK (open_mode IN ('new_tab', 'same_tab')),
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                sort_order INTEGER NOT NULL
+                    CHECK (sort_order BETWEEN 0 AND 10000),
+                FOREIGN KEY (app_id)
+                    REFERENCES assistant_applications(app_id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX assistant_application_links_app_order_idx
+            ON assistant_application_links(app_id, sort_order, link_id)
+            """
+        )
+
+        # 5. 原样恢复所有子表记录
+        connection.executemany(
+            "INSERT INTO assistant_application_origins (app_id, origin) "
+            "VALUES (?, ?)",
+            origins,
+        )
+        connection.executemany(
+            "INSERT INTO assistant_application_sources (app_id, source_id) "
+            "VALUES (?, ?)",
+            sources,
+        )
+        connection.executemany(
+            """
+            INSERT INTO assistant_application_links (
+                link_id, app_id, name, url,
+                open_mode, enabled, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            links,
+        )
+
+        # 6. 外键完整性校验：非空即回滚并报错
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise SchemaMigrationError(
+                "小助手应用数据库迁移后外键完整性校验失败"
+            )
+
         self._require_v4_compatible_tables(connection)
 
     # ------------------------------------------------------------------
