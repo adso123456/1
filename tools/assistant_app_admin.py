@@ -24,7 +24,6 @@ from backend.assistant_application_registry import (  # noqa: E402
 from backend.data_source_registry import (  # noqa: E402
     build_current_data_source_registry,
 )
-from backend.embed_access import load_embed_application_config  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,7 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--name", required=True)
     create.add_argument("--origin", action="append", default=[])
     create.add_argument("--source-id", action="append", default=[])
-    create.add_argument("--ttl", type=int, default=300)
     create.add_argument("--theme", default="#1677ff")
     create.add_argument("--logo-url", default="")
     create.add_argument("--welcome", default="有什么可以帮助你的？")
@@ -68,7 +66,6 @@ def build_parser() -> argparse.ArgumentParser:
     source_group = update.add_mutually_exclusive_group()
     source_group.add_argument("--source-id", action="append")
     source_group.add_argument("--clear-source-ids", action="store_true")
-    update.add_argument("--ttl", type=int)
     update.add_argument("--theme")
     update.add_argument("--logo-url")
     update.add_argument("--welcome")
@@ -87,11 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
         dest="show_history",
     )
 
-    for command in ("enable", "disable", "rotate-secret"):
+    for command in ("enable", "disable"):
         child = subparsers.add_parser(command)
         child.add_argument("--app-id", required=True)
 
-    subparsers.add_parser("bootstrap-env")
+    delete = subparsers.add_parser("delete")
+    delete.add_argument("--app-id", required=True)
+
     return parser
 
 
@@ -119,30 +118,29 @@ def execute(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "create":
-        created = registry.create(
+        view = registry.create(
             app_id=args.app_id,
             name=args.name,
             allowed_origins=args.origin,
             allowed_source_ids=args.source_id,
-            token_ttl_seconds=args.ttl,
             theme=args.theme,
             logo_url=args.logo_url,
             welcome=args.welcome,
             welcome_description=args.welcome_description,
             show_history=args.show_history,
         )
-        print(f"created: {created.application.app_id}")
-        print(f"app_secret: {created.app_secret}")
+        print(f"created: {view.app_id}")
         return 0
 
     if args.command == "list":
-        print("app_id\tname\tenabled\torigins\tsources\tupdated_at")
+        print("app_id\tname\tenabled\torigins\tsources\tlinks\tupdated_at")
         for application in registry.list():
             print(
                 f"{application.app_id}\t{application.name}\t"
                 f"{str(application.enabled).lower()}\t"
                 f"{len(application.allowed_origins)}\t"
                 f"{len(application.allowed_source_ids)}\t"
+                f"{len(application.application_links)}\t"
                 f"{application.updated_at}"
             )
         return 0
@@ -167,7 +165,6 @@ def execute(args: argparse.Namespace) -> int:
             name=args.name,
             allowed_origins=origins,
             allowed_source_ids=source_ids,
-            token_ttl_seconds=args.ttl,
             theme=args.theme,
             logo_url=args.logo_url,
             welcome=args.welcome,
@@ -185,28 +182,9 @@ def execute(args: argparse.Namespace) -> int:
         print(f"disabled: {registry.disable(args.app_id).app_id}")
         return 0
 
-    if args.command == "rotate-secret":
-        rotated = registry.rotate_secret(args.app_id)
-        print(f"rotated: {rotated.application.app_id}")
-        print(f"app_secret: {rotated.app_secret}")
-        return 0
-
-    if args.command == "bootstrap-env":
-        config = load_embed_application_config()
-        if config is None:
-            raise InvalidApplicationConfiguration(
-                "未找到旧单应用环境变量"
-            )
-        registry.create(
-            app_id=config.app_id,
-            name=config.app_id,
-            enabled=config.enabled,
-            app_secret=config.app_secret,
-            allowed_origins=config.allowed_origins,
-            allowed_source_ids=config.allowed_source_ids,
-            token_ttl_seconds=config.token_ttl_seconds,
-        )
-        print(f"bootstrapped: {config.app_id}")
+    if args.command == "delete":
+        registry.delete(args.app_id)
+        print(f"deleted: {args.app_id}")
         return 0
 
     raise AssertionError(f"未知命令: {args.command}")

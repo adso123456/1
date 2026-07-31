@@ -58,7 +58,6 @@ class CreateAssistantApplicationRequest(BaseModel):
     application_links: list[AssistantApplicationLinkRequest] = Field(
         default_factory=list
     )
-    token_ttl_seconds: int = 300
     theme: str = DEFAULT_THEME
     header_font_color: str = DEFAULT_HEADER_FONT_COLOR
     logo_url: str = ""
@@ -81,7 +80,6 @@ class UpdateAssistantApplicationRequest(BaseModel):
     allowed_origins: list[str] | None = None
     allowed_source_ids: list[str] | None = None
     application_links: list[AssistantApplicationLinkRequest] | None = None
-    token_ttl_seconds: int | None = None
     theme: str | None = None
     header_font_color: str | None = None
     logo_url: str | None = None
@@ -246,17 +244,12 @@ def create_admin_router(
     )
     def create_application(
         body: CreateAssistantApplicationRequest,
-        response: Response,
     ) -> dict[str, Any]:
-        created = _safe_call(
-            lambda: application_registry.create(**body.model_dump())
+        return _view_payload(
+            _safe_call(
+                lambda: application_registry.create(**body.model_dump())
+            )
         )
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
-        return {
-            **_view_payload(created.application),
-            "app_secret": created.app_secret,
-        }
 
     @router.get(
         "/assistant-applications/{app_id}",
@@ -306,20 +299,5 @@ def create_admin_router(
         return _view_payload(
             _safe_call(lambda: application_registry.disable(app_id))
         )
-
-    @router.post(
-        "/assistant-applications/{app_id}/rotate-secret",
-        dependencies=dependencies,
-    )
-    def rotate_secret(app_id: str, response: Response) -> dict[str, Any]:
-        rotated = _safe_call(
-            lambda: application_registry.rotate_secret(app_id)
-        )
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
-        return {
-            **_view_payload(rotated.application),
-            "app_secret": rotated.app_secret,
-        }
 
     return router

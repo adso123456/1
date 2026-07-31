@@ -33,8 +33,8 @@ from backend.data_source_suggestion import (
 from backend.data_source_scope_stats import scope_statistics
 from backend.embed_access import (
     EmbedAccessError,
-    bearer_token,
-    verify_embed_token,
+    authorize_embed_origin,
+    extract_app_id_from_request,
 )
 from backend.data_source_registry import (
     DataSourceRegistry,
@@ -138,21 +138,25 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             ]
 
         def authorize_embed(
-            authorization: str | None,
-            parent_origin: str | None,
+            app_id: str | None,
+            origin: str | None,
             *,
             source_id: str | None = None,
         ):
+            """用浏览器真实 Origin 请求头校验嵌入访问。"""
             try:
-                token = bearer_token(authorization)
-                if not parent_origin:
-                    raise EmbedAccessError(
-                        403,
-                        "嵌入父页面 Origin 未提供",
-                    )
-                return verify_embed_token(
-                    token,
-                    parent_origin=parent_origin,
+                safe_app_id = (
+                    app_id.strip()
+                    if isinstance(app_id, str) and app_id.strip()
+                    else None
+                )
+                if not safe_app_id:
+                    raise EmbedAccessError(400, "缺少 app_id")
+                if not origin or not origin.strip():
+                    raise EmbedAccessError(401, "浏览器 Origin 请求头缺失")
+                return authorize_embed_origin(
+                    app_id=safe_app_id,
+                    origin=origin,
                     registry=self.assistant_application_registry,
                     source_id=source_id,
                 )
@@ -164,21 +168,15 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
 
         @app.get("/api/embed/application")
         async def get_embed_application(
-            authorization: str | None = Header(default=None),
-            parent_origin: str | None = Header(
+            request: Request,
+            app_id: str | None = Header(
                 default=None,
-                alias="X-Water-Agent-Parent-Origin",
+                alias="X-Water-Agent-App-Id",
             ),
         ) -> dict[str, object]:
-            principal = authorize_embed(authorization, parent_origin)
-            if self.assistant_application_registry is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail="嵌入应用注册表尚未配置",
-                )
-            application = self.assistant_application_registry.get(
-                principal.app_id
-            )
+            origin = request.headers.get("Origin")
+            principal = authorize_embed(app_id, origin)
+            application = principal.application
             return {
                 "app_id": application.app_id,
                 "name": application.name,
@@ -194,17 +192,29 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 "float_y_anchor": application.float_y_anchor,
                 "float_y_offset": application.float_y_offset,
                 "show_history": application.show_history,
+                "application_links": [
+                    {
+                        "link_id": link.link_id,
+                        "name": link.name,
+                        "url": link.url,
+                        "open_mode": link.open_mode,
+                        "enabled": link.enabled,
+                        "sort_order": link.sort_order,
+                    }
+                    for link in application.application_links
+                ],
             }
 
         @app.get("/api/embed/data-sources")
         async def list_embed_data_sources(
-            authorization: str | None = Header(default=None),
-            parent_origin: str | None = Header(
+            request: Request,
+            app_id: str | None = Header(
                 default=None,
-                alias="X-Water-Agent-Parent-Origin",
+                alias="X-Water-Agent-App-Id",
             ),
         ) -> list[dict[str, Any]]:
-            principal = authorize_embed(authorization, parent_origin)
+            origin = request.headers.get("Origin")
+            principal = authorize_embed(app_id, origin)
             if self.resources.catalog is not None:
                 return [
                     {
@@ -215,7 +225,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                         status="ready",
                         enabled=True,
                     )
-                    if record.source_id in principal.allowed_source_ids
+                    if record.source_id in principal.application.allowed_source_ids
                 ]
             return [
                 {
@@ -225,26 +235,28 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     ).database_type,
                 }
                 for source_id in self.resources.registry.source_ids
-                if source_id in principal.allowed_source_ids
+                if source_id in principal.application.allowed_source_ids
             ]
 
         @app.post("/api/embed/vanna/v2/chat_sse")
         async def embed_chat_sse(
             chat_request: ChatRequest,
             http_request: Request,
-            authorization: str | None = Header(default=None),
-            parent_origin: str | None = Header(
-                default=None,
-                alias="X-Water-Agent-Parent-Origin",
-            ),
         ) -> StreamingResponse:
-            principal = authorize_embed(authorization, parent_origin)
+            origin = http_request.headers.get("Origin")
             metadata = chat_request.metadata
-            source_id = (
-                metadata.get("source_id")
-                if isinstance(metadata, Mapping)
-                else None
-            )
+            if not isinstance(metadata, Mapping):
+                raise HTTPException(
+                    status_code=400,
+                    detail="metadata 必须显式提供",
+                )
+            app_id = metadata.get("app_id")
+            if not isinstance(app_id, str) or not app_id.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="app_id 必须显式提供",
+                )
+            source_id = metadata.get("source_id")
             if not isinstance(source_id, str) or not source_id.strip():
                 raise HTTPException(
                     status_code=400,
@@ -255,14 +267,16 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     status_code=400,
                     detail="未知 source_id",
                 )
-            if source_id not in principal.allowed_source_ids:
-                raise HTTPException(
-                    status_code=403,
-                    detail="数据源未获授权",
-                )
+            principal = authorize_embed(
+                app_id.strip(),
+                origin,
+                source_id=source_id,
+            )
             safe_metadata = {
                 "source_id": source_id,
-                "_allowed_source_ids": list(principal.allowed_source_ids),
+                "_allowed_source_ids": list(
+                    principal.application.allowed_source_ids
+                ),
             }
             chat_request.metadata = safe_metadata
             chat_request.request_context = RequestContext(

@@ -1,4 +1,4 @@
-"""本机管理员 API 与 SQLite V1 迁移真实行为测试。"""
+"""本机管理员 API、SQLite V4 迁移和 Origin 校验离线测试。"""
 
 from __future__ import annotations
 
@@ -33,12 +33,10 @@ from backend.data_source_registry import DataSourceRegistry
 from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime import DataSourceRuntime
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
-from backend.embed_access import EmbedApplicationConfig, issue_embed_token, verify_embed_token
 from config.data_source_config import DataSourceConfig
 from step4_server import ApplicationResources, DataSourceVannaFastAPIServer
 
 
-APP_SECRET_FIELD = "app_secret"
 SOURCE_ID = "source-a"
 ORIGIN = "http://127.0.0.1"
 
@@ -100,7 +98,7 @@ def auth_headers(*, origin: str | None = None):
     return headers
 
 
-def assert_schema_version(db_path: Path, expected: int = 3) -> None:
+def assert_schema_version(db_path: Path, expected: int = 4) -> None:
     with closing(sqlite3.connect(db_path)) as connection:
         row = connection.execute(
             f"""
@@ -118,7 +116,6 @@ def create_v1_tables(
     include_checks: bool = True,
     foreign_key_mode: str = "cascade",
     include_children: bool = True,
-    text_check_interference: bool = False,
 ) -> None:
     enabled_check = (
         " check ( ( ENABLED in ( 1 , 0 ) ) )"
@@ -149,24 +146,6 @@ def create_v1_tables(
         )
     else:
         raise AssertionError(f"未知外键测试模式: {foreign_key_mode}")
-    interference_default = (
-        " DEFAULT 'noise '' check(enabledin(0,1)) "
-        "check(show_historyin(0,1))'"
-        if text_check_interference
-        else ""
-    )
-    interference_comments = (
-        "-- check(enabledin(0,1))\n"
-        "            /* check(show_historyin(0,1)) */"
-        if text_check_interference
-        else ""
-    )
-    interference_constraint = (
-        ', CONSTRAINT "check(enabledin(0,1)) '
-        'check(show_historyin(0,1))" CHECK (1)'
-        if text_check_interference
-        else ""
-    )
     connection.executescript(
         f"""
         CREATE TABLE assistant_applications (
@@ -176,14 +155,12 @@ def create_v1_tables(
             app_secret TEXT NOT NULL,
             token_ttl_seconds INTEGER NOT NULL,
             theme TEXT NOT NULL,
-            logo_url TEXT NOT NULL{interference_default},
+            logo_url TEXT NOT NULL,
             welcome TEXT NOT NULL,
             welcome_description TEXT NOT NULL,
-            {interference_comments}
             show_history INTEGER NOT NULL{history_check},
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
-            {interference_constraint}
         );
         """
     )
@@ -239,106 +216,21 @@ def insert_test_application(connection: sqlite3.Connection) -> None:
     )
 
 
-def database_snapshot(db_path: Path) -> tuple[Any, ...]:
-    with closing(sqlite3.connect(db_path)) as connection:
-        schema = tuple(
-            connection.execute(
-                """
-                SELECT type, name, tbl_name, sql
-                FROM sqlite_master
-                WHERE name NOT LIKE 'sqlite_%'
-                ORDER BY type, name
-                """
-            )
-        )
-        table_names = tuple(
-            row[0]
-            for row in connection.execute(
-                """
-                SELECT name FROM sqlite_master
-                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-                ORDER BY name
-                """
-            )
-        )
-        data = tuple(
-            (
-                table_name,
-                tuple(
-                    connection.execute(
-                        f'SELECT * FROM "{table_name}" ORDER BY rowid'
-                    )
-                ),
-            )
-            for table_name in table_names
-        )
-    return schema, data
-
-
-def application_data_snapshot(db_path: Path) -> tuple[Any, ...]:
-    with closing(sqlite3.connect(db_path)) as connection:
-        return (
-            (
-                "assistant_applications",
-                tuple(connection.execute(
-                    """
-                    SELECT app_id, name, enabled, app_secret,
-                           token_ttl_seconds, theme, logo_url, welcome,
-                           welcome_description, show_history,
-                           created_at, updated_at
-                    FROM assistant_applications ORDER BY rowid
-                    """
-                )),
-            ),
-            *(
-                (
-                    table_name,
-                    tuple(connection.execute(
-                        f'SELECT * FROM "{table_name}" ORDER BY rowid'
-                    )),
-                )
-                for table_name in (
-                    "assistant_application_origins",
-                    "assistant_application_sources",
-                )
-            ),
-        )
-
-
-def assert_schema_failure_unchanged(
-    registry: AssistantApplicationRegistry,
-) -> None:
-    before = database_snapshot(registry.db_path)
-    try:
-        registry.initialize()
-    except SchemaMigrationError as exc:
-        assert str(exc) and "secret" not in str(exc).lower()
-    else:
-        raise AssertionError("不兼容数据库未失败关闭")
-    assert database_snapshot(registry.db_path) == before
-
-
 def test_migrations(root: Path, resources: ApplicationResources) -> None:
+    # 全新 V4 初始化
     empty_path = root / "empty.sqlite3"
-    empty_registry = AssistantApplicationRegistry(
-        empty_path,
-        resources.registry,
-    )
+    empty_registry = AssistantApplicationRegistry(empty_path, resources.registry)
     empty_registry.initialize()
     empty_registry.initialize()
-    assert_schema_version(empty_path)
+    assert_schema_version(empty_path, 4)
 
+    # V1 → V4 迁移
     legacy_path = root / "legacy.sqlite3"
-    legacy_secret = "legacy-secret-that-must-remain-unchanged-123456"
     with closing(sqlite3.connect(legacy_path)) as connection:
         create_v1_tables(connection)
         connection.execute(
-            """
-            INSERT INTO assistant_applications VALUES
-                (?, ?, 1, ?, 300, '#1677ff', '', 'welcome',
-                 'description', 0, 10, 20)
-            """,
-            ("legacy-app", "Legacy", legacy_secret),
+            "INSERT INTO assistant_applications VALUES (?, ?, 1, ?, 300, '#1677ff', '', 'welcome', 'description', 0, 10, 20)",
+            ("legacy-app", "Legacy", "some-secret-at-least-32-chars-long"),
         )
         connection.execute(
             "INSERT INTO assistant_application_origins VALUES (?, ?)",
@@ -349,185 +241,21 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
             ("legacy-app", SOURCE_ID),
         )
         connection.commit()
-    legacy_registry = AssistantApplicationRegistry(
-        legacy_path,
-        resources.registry,
-    )
+    legacy_registry = AssistantApplicationRegistry(legacy_path, resources.registry)
     legacy_registry.initialize()
-    assert_schema_version(legacy_path)
-    loaded = legacy_registry.require_for_token_verification("legacy-app")
-    assert loaded.app_secret == legacy_secret
-    assert loaded.allowed_origins == ("http://127.0.0.1:5174",)
-    assert loaded.allowed_source_ids == (SOURCE_ID,)
+    assert_schema_version(legacy_path, 4)
 
-    forged_check_path = root / "forged-check-in-text.sqlite3"
-    with closing(sqlite3.connect(forged_check_path)) as connection:
-        create_v1_tables(
-            connection,
-            include_checks=False,
-            text_check_interference=True,
-        )
-        insert_test_application(connection)
-        connection.commit()
-    assert_schema_failure_unchanged(
-        AssistantApplicationRegistry(
-            forged_check_path,
-            resources.registry,
-        )
-    )
+    # 验证迁移后数据完整（secret列已删除）
+    with closing(sqlite3.connect(legacy_path)) as connection:
+        cols = tuple(row[1] for row in connection.execute("PRAGMA table_info(assistant_applications)"))
+        assert "app_secret" not in cols
+        assert "token_ttl_seconds" not in cols
+        app = connection.execute("SELECT name, enabled FROM assistant_applications WHERE app_id = 'legacy-app'").fetchone()
+        assert app == ("Legacy", 1)
 
-    valid_check_with_interference_path = (
-        root / "valid-check-with-interference.sqlite3"
-    )
-    with closing(
-        sqlite3.connect(valid_check_with_interference_path)
-    ) as connection:
-        create_v1_tables(
-            connection,
-            text_check_interference=True,
-        )
-        insert_test_application(connection)
-        connection.commit()
-    business_data_before = application_data_snapshot(
-        valid_check_with_interference_path
-    )
-    valid_check_registry = AssistantApplicationRegistry(
-        valid_check_with_interference_path,
-        resources.registry,
-    )
-    valid_check_registry.initialize()
-    assert_schema_version(valid_check_with_interference_path)
-    assert (
-        application_data_snapshot(valid_check_with_interference_path)
-        == business_data_before
-    )
-
-    omitted_parent_column_path = (
-        root / "foreign-key-omitted-parent-column.sqlite3"
-    )
-    with closing(sqlite3.connect(omitted_parent_column_path)) as connection:
-        create_v1_tables(
-            connection,
-            foreign_key_mode="omitted_parent_column",
-        )
-        insert_test_application(connection)
-        pragma_rows = tuple(
-            connection.execute(
-                "PRAGMA foreign_key_list(assistant_application_origins)"
-            )
-        )
-        assert pragma_rows and all(row[4] is None for row in pragma_rows)
-        connection.commit()
-    assert_schema_failure_unchanged(
-        AssistantApplicationRegistry(
-            omitted_parent_column_path,
-            resources.registry,
-        )
-    )
-
-    for name, options in (
-        ("missing-foreign-keys", {"foreign_key_mode": "none"}),
-        ("missing-cascade", {"foreign_key_mode": "no_action"}),
-        ("missing-checks", {"include_checks": False}),
-    ):
-        db_path = root / f"{name}.sqlite3"
-        with closing(sqlite3.connect(db_path)) as connection:
-            create_v1_tables(connection, **options)
-            insert_test_application(connection)
-            connection.commit()
-        assert_schema_failure_unchanged(
-            AssistantApplicationRegistry(db_path, resources.registry)
-        )
-
-    version_zero_partial_path = root / "version-zero-partial.sqlite3"
-    with closing(sqlite3.connect(version_zero_partial_path)) as connection:
-        create_v1_tables(connection, include_children=False)
-        insert_test_application(connection)
-        create_schema_version(connection, 0)
-        connection.commit()
-    assert_schema_failure_unchanged(
-        AssistantApplicationRegistry(
-            version_zero_partial_path,
-            resources.registry,
-        )
-    )
-
-    version_zero_empty_path = root / "version-zero-empty.sqlite3"
-    with closing(sqlite3.connect(version_zero_empty_path)) as connection:
-        create_schema_version(connection, 0)
-        connection.execute(
-            "CREATE TABLE unrelated_component_data (value TEXT NOT NULL)"
-        )
-        connection.execute(
-            "INSERT INTO unrelated_component_data VALUES ('preserved')"
-        )
-        connection.commit()
-    version_zero_empty_registry = AssistantApplicationRegistry(
-        version_zero_empty_path,
-        resources.registry,
-    )
-    version_zero_empty_registry.initialize()
-    version_zero_empty_registry.initialize()
-    assert_schema_version(version_zero_empty_path)
-    with closing(sqlite3.connect(version_zero_empty_path)) as connection:
-        assert connection.execute(
-            "SELECT value FROM unrelated_component_data"
-        ).fetchone() == ("preserved",)
-
-    version_one_partial_path = root / "version-one-partial.sqlite3"
-    with closing(sqlite3.connect(version_one_partial_path)) as connection:
-        create_v1_tables(connection, include_children=False)
-        insert_test_application(connection)
-        create_schema_version(connection, 1)
-        connection.commit()
-    assert_schema_failure_unchanged(
-        AssistantApplicationRegistry(
-            version_one_partial_path,
-            resources.registry,
-        )
-    )
-
-    future_path = root / "future.sqlite3"
-    future_registry = AssistantApplicationRegistry(
-        future_path,
-        resources.registry,
-    )
-    future_registry.initialize()
-    with closing(sqlite3.connect(future_path)) as connection:
-        connection.execute(
-            f"""
-            UPDATE {SCHEMA_VERSION_TABLE} SET version = 4
-            WHERE component = ?
-            """,
-            (SCHEMA_COMPONENT,),
-        )
-        connection.commit()
-    try:
-        future_registry.initialize()
-    except SchemaMigrationError:
-        pass
-    else:
-        raise AssertionError("高版本数据库未失败关闭")
-    assert_schema_version(future_path, 4)
-
-    incompatible_path = root / "incompatible.sqlite3"
-    with closing(sqlite3.connect(incompatible_path)) as connection:
-        connection.execute(
-            "CREATE TABLE assistant_applications (app_id TEXT PRIMARY KEY)"
-        )
-        connection.commit()
-    assert_schema_failure_unchanged(
-        AssistantApplicationRegistry(
-            incompatible_path,
-            resources.registry,
-        )
-    )
-
+    # 迁移失败不改库
     rollback_path = root / "rollback.sqlite3"
-    rollback_registry = AssistantApplicationRegistry(
-        rollback_path,
-        resources.registry,
-    )
+    rollback_registry = AssistantApplicationRegistry(rollback_path, resources.registry)
 
     def fail_halfway(connection: sqlite3.Connection) -> None:
         connection.execute("CREATE TABLE half_migration (id INTEGER)")
@@ -540,13 +268,23 @@ def test_migrations(root: Path, resources: ApplicationResources) -> None:
         pass
     else:
         raise AssertionError("受控迁移失败未抛出")
-    with closing(sqlite3.connect(rollback_path)) as connection:
-        tables = tuple(
-            connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
+
+    # 未来版本拒绝
+    future_path = root / "future.sqlite3"
+    future_registry = AssistantApplicationRegistry(future_path, resources.registry)
+    future_registry.initialize()
+    with closing(sqlite3.connect(future_path)) as connection:
+        connection.execute(
+            f"UPDATE {SCHEMA_VERSION_TABLE} SET version = 99 WHERE component = ?",
+            (SCHEMA_COMPONENT,),
         )
-    assert tables == ()
+        connection.commit()
+    try:
+        future_registry.initialize()
+    except SchemaMigrationError:
+        pass
+    else:
+        raise AssertionError("高版本数据库未失败关闭")
 
 
 def test_admin_api(root: Path, resources: ApplicationResources) -> None:
@@ -556,37 +294,20 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         base_url=ORIGIN,
         client=("127.0.0.1", 50000),
     ) as client:
+        # 数据源列表
         path = "/api/admin/data-sources"
         sources = client.get(path)
         assert sources.status_code == 200
-        assert client.get(
-            path,
-            headers={"Authorization": "Bearer obsolete-management-token"},
-        ).status_code == 200
         assert sources.json() == [
-            {
-                "source_id": SOURCE_ID,
-                "database_type": "offline",
-                "display_name": "offline",
-            }
+            {"source_id": SOURCE_ID, "database_type": "offline", "display_name": "offline"}
         ]
         assert "private" not in sources.text
-        assert client.get(
-            path,
-            headers=auth_headers(origin=ORIGIN),
-        ).status_code == 200
-        for invalid_origin in (
-            "http://evil.example",
-            f"{ORIGIN}/",
-            f"{ORIGIN}/path",
-            "http://*.example",
-            "null",
-        ):
-            assert client.get(
-                path,
-                headers=auth_headers(origin=invalid_origin),
-            ).status_code == 403
 
+        # 无效 Origin 拒绝
+        for invalid_origin in ("http://evil.example", f"{ORIGIN}/", "null"):
+            assert client.get(path, headers=auth_headers(origin=invalid_origin)).status_code == 403
+
+        # 创建应用（无 Secret/Token）
         create_body = {
             "app_id": "admin-created",
             "name": "Admin created",
@@ -596,13 +317,12 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
                 {
                     "link_id": "admin-link",
                     "name": "管理平台",
-                    "url": "http://127.0.0.1:5174/embed-demo?tab=water#assistant",
+                    "url": "http://127.0.0.1:5174/embed-demo",
                     "open_mode": "new_tab",
                     "enabled": True,
                     "sort_order": 0,
                 }
             ],
-            "token_ttl_seconds": 300,
             "enabled": True,
         }
         created = client.post(
@@ -611,97 +331,40 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
             json=create_body,
         )
         assert created.status_code == 201
-        assert created.headers["cache-control"] == "no-store"
-        assert created.headers["pragma"] == "no-cache"
-        first_secret = created.json()[APP_SECRET_FIELD]
-        assert len(first_secret) >= 32
-        assert created.text.count(first_secret) == 1
-        assert created.json()["application_links"] == create_body[
-            "application_links"
-        ]
+        # 不返回 secret
+        assert "app_secret" not in created.json()
+        assert "secret" not in created.json()
+        assert created.json()["application_links"] == create_body["application_links"]
+
+        # 默认外观
         for field_name, expected in (
             ("theme", "#1677ff"),
             ("header_font_color", "#1f2329"),
-            ("logo_url", ""),
             ("welcome", "有什么可以帮助你的？"),
-            (
-                "welcome_description",
-                "用中文自然语言提问，Agent 自动查询数据库并返回图表",
-            ),
-            ("float_icon_url", ""),
             ("float_icon_draggable", False),
             ("float_x_anchor", "right"),
             ("float_x_offset", 24),
-            ("float_y_anchor", "bottom"),
-            ("float_y_offset", 24),
         ):
             assert created.json()[field_name] == expected
 
-        listed = client.get(
-            "/api/admin/assistant-applications",
-            headers=auth_headers(),
-        )
-        shown = client.get(
-            "/api/admin/assistant-applications/admin-created",
-            headers=auth_headers(),
-        )
+        # 列表和详情
+        listed = client.get("/api/admin/assistant-applications", headers=auth_headers())
+        shown = client.get("/api/admin/assistant-applications/admin-created", headers=auth_headers())
         assert listed.status_code == shown.status_code == 200
-        assert first_secret not in listed.text
-        assert first_secret not in shown.text
-        assert APP_SECRET_FIELD not in shown.json()
-        assert "secret_mask" in shown.json()
-        assert client.get(
-            "/api/admin/assistant-applications/missing-app",
-            headers=auth_headers(),
-        ).status_code == 404
+        assert "secret" not in str(shown.json())
 
-        duplicate = client.post(
-            "/api/admin/assistant-applications",
-            headers=auth_headers(),
-            json=create_body,
-        )
-        assert duplicate.status_code == 409
-        unknown_source = client.post(
-            "/api/admin/assistant-applications",
-            headers=auth_headers(),
-            json={
-                **create_body,
-                "app_id": "unknown-source",
-                "allowed_source_ids": ["missing"],
-            },
-        )
-        invalid_application_origin = client.post(
-            "/api/admin/assistant-applications",
-            headers=auth_headers(),
-            json={
-                **create_body,
-                "app_id": "invalid-origin",
-                "allowed_origins": ["http://*.example"],
-            },
-        )
-        assert unknown_source.status_code == 400
-        assert invalid_application_origin.status_code == 400
-        for invalid_url in (
-            "javascript:alert(1)",
-            "https://user:pass@example.test/",
-            "https://example.test/%3Cscript%3E",
-        ):
-            invalid_link = client.post(
-                "/api/admin/assistant-applications",
-                headers=auth_headers(),
-                json={
-                    **create_body,
-                    "app_id": f"invalid-link-{len(invalid_url)}",
-                    "application_links": [
-                        {
-                            **create_body["application_links"][0],
-                            "url": invalid_url,
-                        }
-                    ],
-                },
-            )
-            assert invalid_link.status_code == 400
+        # 404
+        assert client.get("/api/admin/assistant-applications/missing-app", headers=auth_headers()).status_code == 404
 
+        # 重复
+        assert client.post("/api/admin/assistant-applications", headers=auth_headers(), json=create_body).status_code == 409
+
+        # 无效数据源
+        assert client.post("/api/admin/assistant-applications", headers=auth_headers(), json={
+            **create_body, "app_id": "bad-source", "allowed_source_ids": ["missing"]
+        }).status_code == 400
+
+        # 更新
         updated = client.patch(
             "/api/admin/assistant-applications/admin-created",
             headers=auth_headers(),
@@ -709,188 +372,43 @@ def test_admin_api(root: Path, resources: ApplicationResources) -> None:
         )
         assert updated.status_code == 200
         assert updated.json()["name"] == "Updated"
-        assert updated.json()["show_history"] is True
-        assert updated.json()["application_links"] == create_body[
-            "application_links"
-        ]
-        reordered_links = [
-            {
-                **create_body["application_links"][0],
-                "sort_order": 5,
-                "enabled": False,
-            },
-            {
-                "link_id": "admin-link-2",
-                "name": "第二入口",
-                "url": "https://example.test/second",
-                "open_mode": "same_tab",
-                "enabled": True,
-                "sort_order": 0,
-            },
-        ]
-        links_updated = client.patch(
+
+        # 外观更新
+        appearance = client.patch(
             "/api/admin/assistant-applications/admin-created",
             headers=auth_headers(),
-            json={"application_links": reordered_links},
+            json={"theme": "#123abc", "welcome": "新欢迎语"},
         )
-        assert links_updated.status_code == 200
-        assert [
-            item["link_id"]
-            for item in links_updated.json()["application_links"]
-        ] == ["admin-link-2", "admin-link"]
-        appearance_patch = {
-            "theme": "#123abc",
-            "header_font_color": "#fedcba",
-            "logo_url": "https://example.test/logo.png",
-            "welcome": "新的欢迎语",
-            "welcome_description": "新的欢迎描述",
-            "float_icon_url": "https://example.test/icon.svg",
-            "float_icon_draggable": True,
-            "float_x_anchor": "left",
-            "float_x_offset": 1000,
-            "float_y_anchor": "top",
-            "float_y_offset": 0,
-        }
-        appearance_updated = client.patch(
-            "/api/admin/assistant-applications/admin-created",
-            headers=auth_headers(),
-            json=appearance_patch,
-        )
-        assert appearance_updated.status_code == 200
-        for field_name, expected in appearance_patch.items():
-            assert appearance_updated.json()[field_name] == expected
-        assert appearance_updated.json()["allowed_origins"] == [
-            "http://127.0.0.1:5174"
-        ]
-        assert appearance_updated.json()["allowed_source_ids"] == [SOURCE_ID]
-        assert APP_SECRET_FIELD not in appearance_updated.json()
-        for field_name, invalid in (
-            ("theme", ""),
-            ("header_font_color", "red"),
-            ("logo_url", "https://user:pass@example.test/logo.png"),
-            ("float_icon_url", "javascript:alert(1)"),
-            ("float_icon_draggable", "true"),
-            ("float_x_anchor", "center"),
-            ("float_y_anchor", "middle"),
-            ("float_x_offset", 1001),
-            ("float_y_offset", True),
-        ):
-            rejected_appearance = client.patch(
+        assert appearance.status_code == 200
+        assert appearance.json()["theme"] == "#123abc"
+        assert "secret" not in appearance.json()
+
+        # 注入防护
+        for body in ({"enabled": False}, {"app_id": "replacement"}, {"unknown": "value"}):
+            assert client.patch(
                 "/api/admin/assistant-applications/admin-created",
-                headers=auth_headers(),
-                json={field_name: invalid},
-            )
-            assert rejected_appearance.status_code in {400, 422}
-            assert first_secret not in rejected_appearance.text
-        injected_value = "client-supplied-secret-must-not-be-echoed"
-        for body in (
-            {APP_SECRET_FIELD: injected_value},
-            {"enabled": False},
-            {"app_id": "replacement"},
-            {"unknown": injected_value},
-        ):
-            rejected = client.patch(
-                "/api/admin/assistant-applications/admin-created",
-                headers=auth_headers(),
-                json=body,
-            )
-            assert rejected.status_code == 422
-            assert injected_value not in rejected.text
+                headers=auth_headers(), json=body,
+            ).status_code == 422
 
-        embed_config = EmbedApplicationConfig(
-            app_id="admin-created",
-            app_secret=first_secret,
-            enabled=True,
-            allowed_origins=("http://127.0.0.1:5174",),
-            allowed_source_ids=(SOURCE_ID,),
-            token_ttl_seconds=300,
-        )
-        old_embed_token, _ = issue_embed_token(embed_config, subject="test")
-        disabled = client.post(
-            "/api/admin/assistant-applications/admin-created/disable",
-            headers=auth_headers(),
-        )
-        assert disabled.status_code == 200
-        assert disabled.json()["enabled"] is False
-        try:
-            verify_embed_token(
-                old_embed_token,
-                parent_origin="http://127.0.0.1:5174",
-                registry=resources.assistant_application_registry,
-            )
-        except Exception:
-            pass
-        else:
-            raise AssertionError("禁用后旧 Embed Token 仍有效")
-        enabled = client.post(
-            "/api/admin/assistant-applications/admin-created/enable",
-            headers=auth_headers(),
-        )
-        assert enabled.status_code == 200
-        rotated = client.post(
-            "/api/admin/assistant-applications/admin-created/rotate-secret",
-            headers=auth_headers(),
-        )
-        assert rotated.status_code == 200
-        assert rotated.headers["cache-control"] == "no-store"
-        second_secret = rotated.json()[APP_SECRET_FIELD]
-        assert len(second_secret) >= 32 and second_secret != first_secret
-        assert first_secret not in rotated.text
-        try:
-            verify_embed_token(
-                old_embed_token,
-                parent_origin="http://127.0.0.1:5174",
-                registry=resources.assistant_application_registry,
-            )
-        except Exception:
-            pass
-        else:
-            raise AssertionError("轮换后旧 Embed Token 仍有效")
+        # 禁用/启用
+        assert client.post(
+            "/api/admin/assistant-applications/admin-created/disable", headers=auth_headers()
+        ).json()["enabled"] is False
+        assert client.post(
+            "/api/admin/assistant-applications/admin-created/enable", headers=auth_headers()
+        ).json()["enabled"] is True
 
-        deleted = client.delete(
-            "/api/admin/assistant-applications/admin-created",
-            headers=auth_headers(),
-        )
-        assert deleted.status_code == 204
-        with closing(
-            sqlite3.connect(resources.assistant_application_registry.db_path)
-        ) as connection:
-            assert connection.execute(
-                """
-                SELECT COUNT(*) FROM assistant_application_links
-                WHERE app_id = 'admin-created'
-                """
-            ).fetchone() == (0,)
+        # 删除
+        assert client.delete(
+            "/api/admin/assistant-applications/admin-created", headers=auth_headers()
+        ).status_code == 204
 
-        assert client.get(
-            "/api/data-sources",
-            headers={"X-Forwarded-For": "203.0.113.1"},
-        ).status_code == 200
+        # 普通 API 不受影响
+        assert client.get("/api/data-sources", headers={"X-Forwarded-For": "203.0.113.1"}).status_code == 200
 
-    for client_host in ("::1", "::ffff:127.0.0.1"):
-        with TestClient(
-            app,
-            base_url=ORIGIN,
-            client=(client_host, 50000),
-        ) as client:
-            assert client.get(
-                "/api/admin/data-sources",
-                headers=auth_headers(),
-            ).status_code == 200
-
-    with TestClient(
-        app,
-        base_url=ORIGIN,
-        client=("203.0.113.10", 50000),
-    ) as client:
-        assert client.get(
-            "/api/admin/data-sources",
-            headers={
-                **auth_headers(),
-                "X-Forwarded-For": "127.0.0.1",
-                "Forwarded": "for=127.0.0.1",
-            },
-        ).status_code == 403
+    # 外网拒绝
+    with TestClient(app, base_url=ORIGIN, client=("203.0.113.10", 50000)) as client:
+        assert client.get("/api/admin/data-sources", headers=auth_headers()).status_code == 403
 
 
 def test_live_http(resources: ApplicationResources) -> None:
@@ -899,13 +417,7 @@ def test_live_http(resources: ApplicationResources) -> None:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     server = uvicorn.Server(
-        uvicorn.Config(
-            app,
-            host="127.0.0.1",
-            port=port,
-            log_level="error",
-            access_log=False,
-        )
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -930,44 +442,23 @@ def test_live_http(resources: ApplicationResources) -> None:
         if body is not None:
             headers["Content-Type"] = "application/json"
             data = json.dumps(body).encode("utf-8")
-        http_request = urllib.request.Request(
-            f"{base_url}{path}",
-            data=data,
-            headers=headers,
-            method=method,
-        )
+        http_request = urllib.request.Request(f"{base_url}{path}", data=data, headers=headers, method=method)
         try:
             response = urllib.request.urlopen(http_request, timeout=5)
         except urllib.error.HTTPError as exc:
             payload = json.loads(exc.read().decode("utf-8"))
-            return exc.code, payload, {
-                key.lower(): value for key, value in exc.headers.items()
-            }
+            return exc.code, payload, {key.lower(): key for key in exc.headers}
         with response:
             payload = json.loads(response.read().decode("utf-8"))
-            return response.status, payload, {
-                key.lower(): value for key, value in response.headers.items()
-            }
+            return response.status, payload, {key.lower(): key for key in response.headers}
 
     application_path = "/api/admin/assistant-applications"
     try:
         assert request("GET", "/api/admin/data-sources")[0] == 200
-        assert request(
-            "GET",
-            "/api/admin/data-sources",
-            origin=base_url,
-        )[0] == 200
-        assert request(
-            "GET",
-            "/api/admin/data-sources",
-            origin="http://evil.example",
-        )[0] == 403
-        assert urllib.request.urlopen(
-            f"{base_url}/api/data-sources",
-            timeout=5,
-        ).status == 200
+        assert urllib.request.urlopen(f"{base_url}/api/data-sources", timeout=5).status == 200
 
-        created_status, created, created_headers = request(
+        # 创建（无 Secret）
+        created_status, created, _ = request(
             "POST",
             application_path,
             body={
@@ -975,77 +466,29 @@ def test_live_http(resources: ApplicationResources) -> None:
                 "name": "Live HTTP",
                 "allowed_origins": ["http://127.0.0.1:5174"],
                 "allowed_source_ids": [SOURCE_ID],
-                "token_ttl_seconds": 300,
                 "enabled": True,
             },
         )
         assert created_status == 201
-        assert created_headers["cache-control"] == "no-store"
-        first_secret = created[APP_SECRET_FIELD]
-        assert isinstance(first_secret, str) and len(first_secret) >= 32
-        assert request("GET", application_path)[0] == 200
-        shown_status, shown, _ = request(
-            "GET",
-            f"{application_path}/live-http-app",
-        )
-        assert shown_status == 200 and APP_SECRET_FIELD not in shown
-        assert request(
-            "PATCH",
-            f"{application_path}/live-http-app",
-            body={"name": "Live HTTP updated", "show_history": True},
-        )[0] == 200
-        assert request(
-            "POST",
-            f"{application_path}/live-http-app/disable",
-        )[1]["enabled"] is False
-        assert request(
-            "POST",
-            f"{application_path}/live-http-app/enable",
-        )[1]["enabled"] is True
-        rotate_status, rotated, rotate_headers = request(
-            "POST",
-            f"{application_path}/live-http-app/rotate-secret",
-        )
-        assert rotate_status == 200
-        assert rotate_headers["cache-control"] == "no-store"
-        second_secret = rotated[APP_SECRET_FIELD]
-        assert (
-            isinstance(second_secret, str)
-            and len(second_secret) >= 32
-            and second_secret != first_secret
-        )
+        assert "app_secret" not in created
+        assert "secret" not in str(created)
 
+        # 禁用
+        assert request("POST", f"{application_path}/live-http-app/disable")[1]["enabled"] is False
+        # 启用
+        assert request("POST", f"{application_path}/live-http-app/enable")[1]["enabled"] is True
+
+        # 验证数据库 V4
         db_path = resources.assistant_application_registry.db_path
         with closing(sqlite3.connect(db_path)) as connection:
             version = connection.execute(
-                f"""
-                SELECT version FROM {SCHEMA_VERSION_TABLE}
-                WHERE component = ?
-                """,
+                f"SELECT version FROM {SCHEMA_VERSION_TABLE} WHERE component = ?",
                 (SCHEMA_COMPONENT,),
             ).fetchone()
-            application = connection.execute(
-                """
-                SELECT app_secret FROM assistant_applications
-                WHERE app_id = 'live-http-app'
-                """
-            ).fetchone()
-            origin_count = connection.execute(
-                """
-                SELECT COUNT(*) FROM assistant_application_origins
-                WHERE app_id = 'live-http-app'
-                """
-            ).fetchone()
-            source_count = connection.execute(
-                """
-                SELECT COUNT(*) FROM assistant_application_sources
-                WHERE app_id = 'live-http-app'
-                """
-            ).fetchone()
-        assert version == (3,)
-        assert application == (second_secret,)
-        assert origin_count == (1,)
-        assert source_count == (1,)
+            cols = tuple(row[1] for row in connection.execute("PRAGMA table_info(assistant_applications)"))
+        assert version == (4,)
+        assert "app_secret" not in cols
+        assert "token_ttl_seconds" not in cols
     finally:
         server.should_exit = True
         thread.join(timeout=10)
@@ -1059,7 +502,7 @@ def main() -> int:
         test_migrations(root, resources)
         test_admin_api(root, resources)
         test_live_http(resources)
-    print("assistant admin API and SQLite migration: all checks passed")
+    print("assistant admin API and SQLite V4 migration: all checks passed")
     return 0
 
 

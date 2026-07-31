@@ -126,13 +126,7 @@
     <script>
       WaterAgentWidget.init({
         agentUrl: 'http://127.0.0.1:5173',
-        getToken: async function () {
-          const response = await fetch('/api/embed-token', {
-            headers: { 'Accept': 'application/json' }
-          });
-          if (!response.ok) throw new Error('Token 获取失败');
-          return response.json();
-        }
+        appId: 'water-platform-demo',
       });
     </script>
   </body>

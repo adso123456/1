@@ -1,6 +1,5 @@
 import type {
   AdminDataSource,
-  AssistantApplicationSecretResponse,
   AssistantApplicationView,
   CreateAssistantApplication,
   UpdateAssistantApplication,
@@ -130,7 +129,7 @@ export const adminApi = {
     payload: CreateAssistantApplication,
     signal?: AbortSignal,
   ) {
-    return request<AssistantApplicationSecretResponse>(
+    return request<AssistantApplicationView>(
       `${ADMIN_PATH_PREFIX}assistant-applications`,
       { method: 'POST', body: payload, signal },
     );
@@ -160,12 +159,6 @@ export const adminApi = {
   disableApplication(appId: string, signal?: AbortSignal) {
     return request<AssistantApplicationView>(
       `${applicationPath(appId)}/disable`,
-      { method: 'POST', signal },
-    );
-  },
-  rotateSecret(appId: string, signal?: AbortSignal) {
-    return request<AssistantApplicationSecretResponse>(
-      `${applicationPath(appId)}/rotate-secret`,
       { method: 'POST', signal },
     );
   },

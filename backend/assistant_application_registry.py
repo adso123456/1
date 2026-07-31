@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-import secrets
 import sqlite3
 import time
 from collections.abc import Mapping, Sequence
@@ -33,14 +32,16 @@ DEFAULT_FLOAT_X_OFFSET = 24
 DEFAULT_FLOAT_Y_ANCHOR = "bottom"
 DEFAULT_FLOAT_Y_OFFSET = 24
 MAX_FLOAT_OFFSET = 1000
-MIN_TOKEN_TTL_SECONDS = 30
-MAX_TOKEN_TTL_SECONDS = 3600
 MAX_APPLICATION_LINKS = 20
 MAX_LINK_SORT_ORDER = 10_000
 APPLICATION_LINK_OPEN_MODES = frozenset({"new_tab", "same_tab"})
 SCHEMA_COMPONENT = "assistant_application_registry"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA_VERSION_TABLE = "system_schema_versions"
+
+# ---------------------------------------------------------------------------
+# 历史 Schema 定义（仅用于迁移兼容性校验）
+# ---------------------------------------------------------------------------
 
 V1_APPLICATION_TABLE_SCHEMAS = {
     "assistant_applications": (
@@ -66,6 +67,7 @@ V1_APPLICATION_TABLE_SCHEMAS = {
         ("source_id", "TEXT", 1, 2),
     ),
 }
+
 V2_APPLICATION_TABLE_SCHEMAS = {
     **V1_APPLICATION_TABLE_SCHEMAS,
     "assistant_applications": (
@@ -79,7 +81,8 @@ V2_APPLICATION_TABLE_SCHEMAS = {
         ("float_y_offset", "INTEGER", 1, 0),
     ),
 }
-APPLICATION_TABLE_SCHEMAS = {
+
+V3_APPLICATION_TABLE_SCHEMAS = {
     **V2_APPLICATION_TABLE_SCHEMAS,
     "assistant_application_links": (
         ("link_id", "TEXT", 0, 1),
@@ -91,7 +94,48 @@ APPLICATION_TABLE_SCHEMAS = {
         ("sort_order", "INTEGER", 1, 0),
     ),
 }
-V2_COLUMN_DEFAULTS = {
+
+# V4 去掉 app_secret 和 token_ttl_seconds 两列
+APPLICATION_TABLE_SCHEMAS = {
+    "assistant_applications": (
+        ("app_id", "TEXT", 0, 1),
+        ("name", "TEXT", 1, 0),
+        ("enabled", "INTEGER", 1, 0),
+        ("theme", "TEXT", 1, 0),
+        ("logo_url", "TEXT", 1, 0),
+        ("welcome", "TEXT", 1, 0),
+        ("welcome_description", "TEXT", 1, 0),
+        ("show_history", "INTEGER", 1, 0),
+        ("created_at", "INTEGER", 1, 0),
+        ("updated_at", "INTEGER", 1, 0),
+        ("header_font_color", "TEXT", 1, 0),
+        ("float_icon_url", "TEXT", 1, 0),
+        ("float_icon_draggable", "INTEGER", 1, 0),
+        ("float_x_anchor", "TEXT", 1, 0),
+        ("float_x_offset", "INTEGER", 1, 0),
+        ("float_y_anchor", "TEXT", 1, 0),
+        ("float_y_offset", "INTEGER", 1, 0),
+    ),
+    "assistant_application_origins": (
+        ("app_id", "TEXT", 1, 1),
+        ("origin", "TEXT", 1, 2),
+    ),
+    "assistant_application_sources": (
+        ("app_id", "TEXT", 1, 1),
+        ("source_id", "TEXT", 1, 2),
+    ),
+    "assistant_application_links": (
+        ("link_id", "TEXT", 0, 1),
+        ("app_id", "TEXT", 1, 0),
+        ("name", "TEXT", 1, 0),
+        ("url", "TEXT", 1, 0),
+        ("open_mode", "TEXT", 1, 0),
+        ("enabled", "INTEGER", 1, 0),
+        ("sort_order", "INTEGER", 1, 0),
+    ),
+}
+
+V4_COLUMN_DEFAULTS = {
     "header_font_color": ("text", "#1f2329"),
     "float_icon_url": ("text", ""),
     "float_icon_draggable": ("integer", 0),
@@ -138,16 +182,14 @@ class AssistantApplicationLink:
 
 @dataclass(frozen=True)
 class AssistantApplication:
-    """仅供鉴权内部使用的完整应用记录。"""
+    """完整的应用记录。仅供 Origin 验证等内部逻辑使用。"""
 
     app_id: str
     name: str
     enabled: bool
-    app_secret: str = field(repr=False)
     allowed_origins: tuple[str, ...]
     allowed_source_ids: tuple[str, ...]
     application_links: tuple[AssistantApplicationLink, ...]
-    token_ttl_seconds: int
     theme: str
     header_font_color: str
     logo_url: str
@@ -171,11 +213,9 @@ class AssistantApplicationView:
     app_id: str
     name: str
     enabled: bool
-    secret_mask: str
     allowed_origins: tuple[str, ...]
     allowed_source_ids: tuple[str, ...]
     application_links: tuple[AssistantApplicationLink, ...]
-    token_ttl_seconds: int
     theme: str
     header_font_color: str
     logo_url: str
@@ -190,12 +230,6 @@ class AssistantApplicationView:
     show_history: bool
     created_at: int
     updated_at: int
-
-
-@dataclass(frozen=True)
-class CreatedAssistantApplication:
-    application: AssistantApplicationView
-    app_secret: str = field(repr=False)
 
 
 def resolve_system_db_path(
@@ -300,12 +334,6 @@ def normalize_application_url(value: Any) -> str:
     )
 
 
-def mask_secret(secret: str) -> str:
-    if len(secret) <= 8:
-        return "********"
-    return f"{secret[:4]}********{secret[-4:]}"
-
-
 def _validate_text(
     field_name: str,
     value: Any,
@@ -393,21 +421,8 @@ def _validate_offset(field_name: str, value: Any) -> int:
     return value
 
 
-def _validate_ttl(value: Any) -> int:
-    if (
-        not isinstance(value, int)
-        or isinstance(value, bool)
-        or value < MIN_TOKEN_TTL_SECONDS
-        or value > MAX_TOKEN_TTL_SECONDS
-    ):
-        raise InvalidApplicationConfiguration(
-            "token_ttl_seconds 必须在 30～3600 之间"
-        )
-    return value
-
-
 class AssistantApplicationRegistry:
-    """应用级 Origin、数据源和展示配置的事务型注册表。"""
+    """应用级 Origin、数据源、关联网站和展示配置的事务型注册表。"""
 
     def __init__(
         self,
@@ -450,6 +465,10 @@ class AssistantApplicationRegistry:
             raise
         finally:
             connection.close()
+
+    # ------------------------------------------------------------------
+    # Schema 内省辅助
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _table_names(connection: sqlite3.Connection) -> set[str]:
@@ -792,6 +811,10 @@ class AssistantApplicationRegistry:
                 return True
         return False
 
+    # ------------------------------------------------------------------
+    # Schema 兼容性校验
+    # ------------------------------------------------------------------
+
     def _require_v1_compatible_tables(
         self,
         connection: sqlite3.Connection,
@@ -818,8 +841,18 @@ class AssistantApplicationRegistry:
     ) -> None:
         self._require_compatible_tables(
             connection,
-            APPLICATION_TABLE_SCHEMAS,
+            V3_APPLICATION_TABLE_SCHEMAS,
             version=3,
+        )
+
+    def _require_v4_compatible_tables(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        self._require_compatible_tables(
+            connection,
+            APPLICATION_TABLE_SCHEMAS,
+            version=4,
         )
 
     def _require_compatible_tables(
@@ -851,14 +884,26 @@ class AssistantApplicationRegistry:
                 connection,
                 "assistant_applications",
             )
+            expected_defaults = (
+                V4_COLUMN_DEFAULTS if version >= 4
+                else {
+                    "header_font_color": ("text", "#1f2329"),
+                    "float_icon_url": ("text", ""),
+                    "float_icon_draggable": ("integer", 0),
+                    "float_x_anchor": ("text", "right"),
+                    "float_x_offset": ("integer", 24),
+                    "float_y_anchor": ("text", "bottom"),
+                    "float_y_offset": ("integer", 24),
+                }
+            )
             if any(
                 self._normalized_schema_default(
                     defaults.get(column_name)
                 ) != expected
-                for column_name, expected in V2_COLUMN_DEFAULTS.items()
+                for column_name, expected in expected_defaults.items()
             ):
                 raise SchemaMigrationError(
-                    "小助手应用数据库结构与当前 V2 不兼容"
+                    f"小助手应用数据库结构与当前 V{version} 不兼容"
                 )
             if (
                 not self._has_boolean_check(
@@ -887,7 +932,7 @@ class AssistantApplicationRegistry:
                 )
             ):
                 raise SchemaMigrationError(
-                    "小助手应用数据库结构与当前 V2 不兼容"
+                    f"小助手应用数据库结构与当前 V{version} 不兼容"
                 )
         child_tables = [
             "assistant_application_origins",
@@ -924,8 +969,12 @@ class AssistantApplicationRegistry:
                 )
             ):
                 raise SchemaMigrationError(
-                    "小助手应用数据库结构与当前 V3 不兼容"
+                    f"小助手应用数据库结构与当前 V{version} 不兼容"
                 )
+
+    # ------------------------------------------------------------------
+    # 迁移步骤
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _create_v1_tables(connection: sqlite3.Connection) -> None:
@@ -1046,6 +1095,69 @@ class AssistantApplicationRegistry:
         )
         self._require_v3_compatible_tables(connection)
 
+    def _migrate_3_to_4(self, connection: sqlite3.Connection) -> None:
+        """V3→V4：安全重建 assistant_applications 表，删除 app_secret 和 token_ttl_seconds 列。"""
+        self._require_v3_compatible_tables(connection)
+        # 用重建方式删除列，兼容所有 SQLite 版本
+        connection.execute(
+            """
+            CREATE TABLE assistant_applications_v4 (
+                app_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                theme TEXT NOT NULL,
+                logo_url TEXT NOT NULL,
+                welcome TEXT NOT NULL,
+                welcome_description TEXT NOT NULL,
+                show_history INTEGER NOT NULL CHECK (show_history IN (0, 1)),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                header_font_color TEXT NOT NULL DEFAULT '#1f2329',
+                float_icon_url TEXT NOT NULL DEFAULT '',
+                float_icon_draggable INTEGER NOT NULL DEFAULT 0
+                    CHECK (float_icon_draggable IN (0, 1)),
+                float_x_anchor TEXT NOT NULL DEFAULT 'right'
+                    CHECK (float_x_anchor IN ('left', 'right')),
+                float_x_offset INTEGER NOT NULL DEFAULT 24
+                    CHECK (float_x_offset BETWEEN 0 AND 1000),
+                float_y_anchor TEXT NOT NULL DEFAULT 'bottom'
+                    CHECK (float_y_anchor IN ('top', 'bottom')),
+                float_y_offset INTEGER NOT NULL DEFAULT 24
+                    CHECK (float_y_offset BETWEEN 0 AND 1000)
+            )
+            """
+        )
+        # 复制除 secret/TTL 外的所有列
+        connection.execute(
+            """
+            INSERT INTO assistant_applications_v4 (
+                app_id, name, enabled, theme, logo_url,
+                welcome, welcome_description, show_history,
+                created_at, updated_at, header_font_color,
+                float_icon_url, float_icon_draggable,
+                float_x_anchor, float_x_offset,
+                float_y_anchor, float_y_offset
+            ) SELECT
+                app_id, name, enabled, theme, logo_url,
+                welcome, welcome_description, show_history,
+                created_at, updated_at, header_font_color,
+                float_icon_url, float_icon_draggable,
+                float_x_anchor, float_x_offset,
+                float_y_anchor, float_y_offset
+            FROM assistant_applications
+            """
+        )
+        connection.execute("DROP TABLE assistant_applications")
+        connection.execute(
+            "ALTER TABLE assistant_applications_v4 "
+            "RENAME TO assistant_applications"
+        )
+        self._require_v4_compatible_tables(connection)
+
+    # ------------------------------------------------------------------
+    # Schema 初始化（自动迁移）
+    # ------------------------------------------------------------------
+
     def _initialize_schema(self, connection: sqlite3.Connection) -> None:
         version_schema = (
             ("component", "TEXT", 0, 1),
@@ -1053,9 +1165,10 @@ class AssistantApplicationRegistry:
             ("updated_at", "INTEGER", 1, 0),
         )
         table_names = self._table_names(connection)
-        application_tables = set(APPLICATION_TABLE_SCHEMAS)
+        v4_application_tables = set(APPLICATION_TABLE_SCHEMAS)
+        v3_application_tables = set(V3_APPLICATION_TABLE_SCHEMAS)
         v2_application_tables = set(V2_APPLICATION_TABLE_SCHEMAS)
-        existing_application_tables = table_names & application_tables
+        existing_application_tables = table_names & v4_application_tables
 
         if (
             SCHEMA_VERSION_TABLE in table_names
@@ -1083,9 +1196,11 @@ class AssistantApplicationRegistry:
 
         if row is None:
             if existing_application_tables:
+                # 已存在表但无版本记录 → 自动检测并迁移
                 if frozenset(existing_application_tables) not in {
                     frozenset(v2_application_tables),
-                    frozenset(application_tables),
+                    frozenset(v3_application_tables),
+                    frozenset(v4_application_tables),
                 }:
                     raise SchemaMigrationError(
                         "小助手应用数据库仅存在部分应用表，无法安全接管"
@@ -1103,6 +1218,7 @@ class AssistantApplicationRegistry:
                     self._require_v1_compatible_tables(connection)
                     self._migrate_1_to_2(connection)
                     self._migrate_2_to_3(connection)
+                    self._migrate_3_to_4(connection)
                 elif (
                     application_signature
                     == V2_APPLICATION_TABLE_SCHEMAS[
@@ -1112,16 +1228,40 @@ class AssistantApplicationRegistry:
                     if existing_application_tables == v2_application_tables:
                         self._require_v2_compatible_tables(connection)
                         self._migrate_2_to_3(connection)
-                    else:
+                        self._migrate_3_to_4(connection)
+                    elif existing_application_tables == v3_application_tables:
                         self._require_v3_compatible_tables(connection)
+                        self._migrate_3_to_4(connection)
+                    else:
+                        self._require_v4_compatible_tables(connection)
+                elif (
+                    application_signature
+                    == V3_APPLICATION_TABLE_SCHEMAS[
+                        "assistant_applications"
+                    ]
+                ):
+                    if existing_application_tables == v3_application_tables:
+                        self._require_v3_compatible_tables(connection)
+                        self._migrate_3_to_4(connection)
+                    else:
+                        self._require_v4_compatible_tables(connection)
+                elif (
+                    application_signature
+                    == APPLICATION_TABLE_SCHEMAS[
+                        "assistant_applications"
+                    ]
+                ):
+                    self._require_v4_compatible_tables(connection)
                 else:
                     raise SchemaMigrationError(
                         "小助手应用数据库结构无法安全接管"
                     )
             else:
+                # 全新数据库，从 V1 一直迁移到 V4
                 self._migrate_0_to_1(connection)
                 self._migrate_1_to_2(connection)
                 self._migrate_2_to_3(connection)
+                self._migrate_3_to_4(connection)
             connection.execute(
                 f"""
                 INSERT INTO {SCHEMA_VERSION_TABLE}
@@ -1147,6 +1287,7 @@ class AssistantApplicationRegistry:
             0: self._migrate_0_to_1,
             1: self._migrate_1_to_2,
             2: self._migrate_2_to_3,
+            3: self._migrate_3_to_4,
         }
         while version < SCHEMA_VERSION:
             migration = migrations.get(version)
@@ -1162,7 +1303,11 @@ class AssistantApplicationRegistry:
                 """,
                 (version, int(time.time()), SCHEMA_COMPONENT),
             )
-        self._require_v3_compatible_tables(connection)
+        self._require_v4_compatible_tables(connection)
+
+    # ------------------------------------------------------------------
+    # 规范化
+    # ------------------------------------------------------------------
 
     def _normalize_origins(
         self,
@@ -1283,6 +1428,10 @@ class AssistantApplicationRegistry:
             sorted(normalized, key=lambda item: (item.sort_order, item.link_id))
         )
 
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
     def create(
         self,
         *,
@@ -1293,7 +1442,6 @@ class AssistantApplicationRegistry:
         application_links: Sequence[
             Mapping[str, Any] | AssistantApplicationLink
         ] = (),
-        token_ttl_seconds: int = 300,
         theme: str = DEFAULT_THEME,
         header_font_color: str = DEFAULT_HEADER_FONT_COLOR,
         logo_url: str = "",
@@ -1307,14 +1455,12 @@ class AssistantApplicationRegistry:
         float_y_offset: int = DEFAULT_FLOAT_Y_OFFSET,
         show_history: bool = False,
         enabled: bool = True,
-        app_secret: str | None = None,
-    ) -> CreatedAssistantApplication:
+    ) -> AssistantApplicationView:
         app_id = validate_app_id(app_id)
         name = _validate_text("name", name, maximum=120)
         origins = self._normalize_origins(allowed_origins)
         source_ids = self._normalize_source_ids(allowed_source_ids)
         links = self._normalize_application_links(application_links)
-        ttl = _validate_ttl(token_ttl_seconds)
         theme = _validate_theme(theme)
         header_font_color = _validate_color(
             "header_font_color",
@@ -1358,11 +1504,6 @@ class AssistantApplicationRegistry:
             "float_y_offset",
             float_y_offset,
         )
-        secret = app_secret if app_secret is not None else secrets.token_urlsafe(32)
-        if not isinstance(secret, str) or len(secret) < 32:
-            raise InvalidApplicationConfiguration(
-                "app_secret 至少需要 32 个字符"
-            )
         now = int(time.time())
         self.initialize()
         try:
@@ -1370,15 +1511,14 @@ class AssistantApplicationRegistry:
                 connection.execute(
                     """
                     INSERT INTO assistant_applications (
-                        app_id, name, enabled, app_secret,
-                        token_ttl_seconds, theme, logo_url,
+                        app_id, name, enabled, theme, logo_url,
                         welcome, welcome_description, show_history,
                         created_at, updated_at, header_font_color,
                         float_icon_url, float_icon_draggable,
                         float_x_anchor, float_x_offset,
                         float_y_anchor, float_y_offset
                     ) VALUES (
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?
                     )
                     """,
@@ -1386,8 +1526,6 @@ class AssistantApplicationRegistry:
                         app_id,
                         name,
                         int(enabled),
-                        secret,
-                        ttl,
                         theme,
                         logo_url,
                         welcome,
@@ -1445,10 +1583,7 @@ class AssistantApplicationRegistry:
                     f"应用已存在: {app_id}"
                 ) from None
             raise
-        return CreatedAssistantApplication(
-            application=self.get(app_id),
-            app_secret=secret,
-        )
+        return self.get(app_id)
 
     def _exists(self, app_id: str) -> bool:
         if not self._db_path.exists():
@@ -1515,11 +1650,9 @@ class AssistantApplicationRegistry:
             app_id=row["app_id"],
             name=row["name"],
             enabled=bool(row["enabled"]),
-            app_secret=row["app_secret"],
             allowed_origins=origins,
             allowed_source_ids=source_ids,
             application_links=application_links,
-            token_ttl_seconds=row["token_ttl_seconds"],
             theme=row["theme"],
             header_font_color=row["header_font_color"],
             logo_url=row["logo_url"],
@@ -1542,11 +1675,9 @@ class AssistantApplicationRegistry:
             app_id=application.app_id,
             name=application.name,
             enabled=application.enabled,
-            secret_mask=mask_secret(application.app_secret),
             allowed_origins=application.allowed_origins,
             allowed_source_ids=application.allowed_source_ids,
             application_links=application.application_links,
-            token_ttl_seconds=application.token_ttl_seconds,
             theme=application.theme,
             header_font_color=application.header_font_color,
             logo_url=application.logo_url,
@@ -1566,10 +1697,11 @@ class AssistantApplicationRegistry:
     def get(self, app_id: str) -> AssistantApplicationView:
         return self._to_view(self._load_full(app_id))
 
-    def require_for_token_verification(
+    def require_origin_verification(
         self,
         app_id: str,
     ) -> AssistantApplication:
+        """加载完整应用记录用于 Origin 校验。若应用已禁用则拒绝。"""
         application = self._load_full(app_id)
         if not application.enabled:
             raise ApplicationDisabled("嵌入应用已禁用")
@@ -1596,7 +1728,6 @@ class AssistantApplicationRegistry:
         application_links: Sequence[
             Mapping[str, Any] | AssistantApplicationLink
         ] | None = None,
-        token_ttl_seconds: int | None = None,
         theme: str | None = None,
         header_font_color: str | None = None,
         logo_url: str | None = None,
@@ -1630,11 +1761,6 @@ class AssistantApplicationRegistry:
             current.application_links
             if application_links is None
             else self._normalize_application_links(application_links)
-        )
-        next_ttl = (
-            current.token_ttl_seconds
-            if token_ttl_seconds is None
-            else _validate_ttl(token_ttl_seconds)
         )
         next_theme = current.theme if theme is None else _validate_theme(theme)
         next_header_font_color = (
@@ -1724,7 +1850,7 @@ class AssistantApplicationRegistry:
             connection.execute(
                 """
                 UPDATE assistant_applications
-                SET name = ?, token_ttl_seconds = ?, theme = ?,
+                SET name = ?, theme = ?,
                     header_font_color = ?, logo_url = ?, welcome = ?,
                     welcome_description = ?, float_icon_url = ?,
                     float_icon_draggable = ?, float_x_anchor = ?,
@@ -1734,7 +1860,6 @@ class AssistantApplicationRegistry:
                 """,
                 (
                     next_name,
-                    next_ttl,
                     next_theme,
                     next_header_font_color,
                     next_logo,
@@ -1833,20 +1958,3 @@ class AssistantApplicationRegistry:
 
     def disable(self, app_id: str) -> AssistantApplicationView:
         return self._set_enabled(app_id, False)
-
-    def rotate_secret(self, app_id: str) -> CreatedAssistantApplication:
-        self._load_full(app_id)
-        new_secret = secrets.token_urlsafe(32)
-        with self._connection() as connection:
-            connection.execute(
-                """
-                UPDATE assistant_applications
-                SET app_secret = ?, updated_at = ?
-                WHERE app_id = ?
-                """,
-                (new_secret, int(time.time()), app_id),
-            )
-        return CreatedAssistantApplication(
-            application=self.get(app_id),
-            app_secret=new_secret,
-        )

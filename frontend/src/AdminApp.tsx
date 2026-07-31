@@ -16,12 +16,13 @@ import {
 import type {
   AdminDataSource,
   AssistantApplicationLink,
-  AssistantApplicationSecretResponse,
   AssistantApplicationView,
   CreateAssistantApplication,
 } from './adminTypes';
 import { formatDatabaseType } from './dataSourcePresentation';
 import './AdminApp.css';
+
+/* ── 表单与链接模型 ── */
 
 interface FormState {
   appId: string;
@@ -29,29 +30,13 @@ interface FormState {
   origins: string;
   sourceIds: string[];
   staleSourceIds: string[];
-  ttl: string;
   showHistory: boolean;
   enabled: boolean;
   links: AssistantApplicationLink[];
 }
 
-interface SecretState {
-  id: number;
-  epoch: number;
-  appId: string;
-  value: string;
-}
-
-interface SecretOwnership {
-  epoch: number;
-  id: number;
-  status: 'pending' | 'displaying';
-  operation: 'create' | 'rotate';
-  appId: string | null;
-}
-
 interface ConfirmationState {
-  action: 'disable' | 'rotate' | 'delete';
+  action: 'disable' | 'delete';
   application: AssistantApplicationView;
 }
 
@@ -77,7 +62,6 @@ const EMPTY_FORM: FormState = {
   origins: '',
   sourceIds: [],
   staleSourceIds: [],
-  ttl: '300',
   showHistory: false,
   enabled: true,
   links: [],
@@ -95,7 +79,6 @@ function formFromApplication(
     staleSourceIds: application.allowed_source_ids.filter(
       sourceId => !knownSourceIds.has(sourceId),
     ),
-    ttl: String(application.token_ttl_seconds),
     showHistory: application.show_history,
     enabled: application.enabled,
     links: application.application_links.map(link => ({ ...link })),
@@ -188,10 +171,6 @@ function validateForm(
     return 'app_id 必须为 3～64 位字母、数字、下划线或短横线。';
   }
   if (!form.name.trim()) return '名称不能为空。';
-  const ttl = Number(form.ttl);
-  if (!Number.isInteger(ttl) || ttl < 30 || ttl > 3600) {
-    return 'Token 有效期必须是 30～3600 秒的整数。';
-  }
   if (
     editing
     && form.sourceIds.some(sourceId => !knownSourceIds.has(sourceId))
@@ -202,24 +181,12 @@ function validateForm(
     origin => !isExactOrigin(origin),
   );
   if (invalidOrigin) {
-    return 'Origin 必须是规范的精确 http/https Origin，不能包含路径、参数、凭据或通配符。';
+    return 'Origin 必须是规范的精确 http/https Origin。';
   }
-  if (form.links.length > 20) return '关联网站入口不能超过 20 个。';
-  const linkIds = new Set<string>();
   for (const link of form.links) {
-    if (!/^[A-Za-z0-9_-]{3,64}$/.test(link.link_id)) {
-      return '关联网站 link_id 格式无效。';
-    }
-    if (linkIds.has(link.link_id)) return '关联网站 link_id 不能重复。';
-    linkIds.add(link.link_id);
     if (!link.name.trim()) return '关联网站名称不能为空。';
-    if (
-      link.name.includes('<')
-      || link.name.includes('>')
-      || link.name.trim().length > 120
-    ) return '关联网站名称格式无效。';
-    if (!isSafeApplicationUrl(link.url)) {
-      return '关联网站 URL 必须是完整、安全且不含凭据的 http/https 地址。';
+    if (!link.url.trim() || !isSafeApplicationUrl(link.url.trim())) {
+      return '请填写完整有效的关联网站 URL。';
     }
     if (!['new_tab', 'same_tab'].includes(link.open_mode)) {
       return '关联网站打开方式无效。';
@@ -234,7 +201,6 @@ function commonPayload(form: FormState): Pick<
   | 'allowed_origins'
   | 'allowed_source_ids'
   | 'application_links'
-  | 'token_ttl_seconds'
   | 'show_history'
 > {
   return {
@@ -247,7 +213,6 @@ function commonPayload(form: FormState): Pick<
       url: link.url.trim(),
       sort_order: index,
     })),
-    token_ttl_seconds: Number(form.ttl),
     show_history: form.showHistory,
   };
 }
@@ -257,12 +222,7 @@ function formatTimestamp(value: number): string {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('zh-CN');
 }
 
-function viewFromSecretResponse(
-  response: AssistantApplicationSecretResponse,
-): AssistantApplicationView {
-  const { app_secret: _secret, ...application } = response;
-  return application;
-}
+/* ── 组件 ── */
 
 interface AssistantManagementProps {
   embedded?: boolean;
@@ -280,10 +240,6 @@ export function AssistantManagement({
   const [form, setForm] = useState<FormState | null>(null);
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
-  const [secret, setSecret] = useState<SecretState | null>(null);
-  const [secretOwnership, setSecretOwnership] =
-    useState<SecretOwnership | null>(null);
-  const [copyStatus, setCopyStatus] = useState('');
   const [confirmation, setConfirmation] =
     useState<ConfirmationState | null>(null);
   const [appearanceDialog, setAppearanceDialog] =
@@ -297,8 +253,6 @@ export function AssistantManagement({
   const formSubmitRef = useRef<number | null>(null);
   const formDialogOpenRef = useRef(false);
   const confirmationDialogOpenRef = useRef(false);
-  const secretOperationIdRef = useRef(0);
-  const secretOwnershipRef = useRef<SecretOwnership | null>(null);
   const appearanceSessionRef = useRef(0);
   const appearanceDialogRef = useRef<AppearanceDialogState | null>(null);
   const appearanceSaveRef = useRef<{
@@ -312,60 +266,6 @@ export function AssistantManagement({
   const abortRequests = useCallback(() => {
     for (const controller of controllersRef.current) controller.abort();
     controllersRef.current.clear();
-  }, []);
-
-  const acquireSecretOwnership = useCallback((
-    operation: SecretOwnership['operation'],
-    appId: string | null,
-  ): SecretOwnership | null => {
-    if (secretOwnershipRef.current !== null) return null;
-    secretOperationIdRef.current += 1;
-    const ownership: SecretOwnership = {
-      epoch: lifecycleEpochRef.current,
-      id: secretOperationIdRef.current,
-      status: 'pending',
-      operation,
-      appId,
-    };
-    secretOwnershipRef.current = ownership;
-    setSecretOwnership(ownership);
-    return ownership;
-  }, []);
-
-  const ownsSecretFlow = useCallback((
-    ownership: Pick<SecretOwnership, 'epoch' | 'id'>,
-  ) => {
-    const current = secretOwnershipRef.current;
-    return (
-      mountedRef.current
-      && ownership.epoch === lifecycleEpochRef.current
-      && current?.epoch === ownership.epoch
-      && current.id === ownership.id
-    );
-  }, []);
-
-  const markSecretDisplaying = useCallback((
-    ownership: SecretOwnership,
-  ): SecretOwnership | null => {
-    if (!ownsSecretFlow(ownership)) return null;
-    const displaying = { ...ownership, status: 'displaying' as const };
-    secretOwnershipRef.current = displaying;
-    setSecretOwnership(displaying);
-    return displaying;
-  }, [ownsSecretFlow]);
-
-  const releaseSecretOwnership = useCallback((
-    ownership: Pick<SecretOwnership, 'epoch' | 'id'>,
-  ) => {
-    const current = secretOwnershipRef.current;
-    if (
-      current?.epoch !== ownership.epoch
-      || current.id !== ownership.id
-    ) {
-      return;
-    }
-    secretOwnershipRef.current = null;
-    if (mountedRef.current) setSecretOwnership(null);
   }, []);
 
   useEffect(() => {
@@ -450,7 +350,8 @@ export function AssistantManagement({
   );
 
   const removeApplication = useCallback((appId: string) => {
-    setApplications(current => current.filter(item => item.app_id !== appId));
+    setApplications(current =>
+      current.filter(item => item.app_id !== appId));
   }, []);
 
   const refresh = useCallback(async () => {
@@ -495,7 +396,6 @@ export function AssistantManagement({
       formSubmitRef.current !== null
       || formDialogOpenRef.current
       || confirmationDialogOpenRef.current
-      || secretOwnershipRef.current !== null
       || appearanceDialogRef.current !== null
     ) return;
     formSessionRef.current += 1;
@@ -510,7 +410,6 @@ export function AssistantManagement({
       formSubmitRef.current !== null
       || formDialogOpenRef.current
       || confirmationDialogOpenRef.current
-      || secretOwnershipRef.current !== null
       || appearanceDialogRef.current !== null
     ) return;
     formSessionRef.current += 1;
@@ -546,21 +445,10 @@ export function AssistantManagement({
     }
     const actionKey = editingAppId ? `edit:${editingAppId}` : 'create';
     const epoch = lifecycleEpochRef.current;
-    const secretOwner = editingAppId === null
-      ? acquireSecretOwnership('create', form.appId)
-      : null;
-    if (editingAppId === null && !secretOwner) {
-      setFormError('已有一次性 Secret 操作正在进行，请完成后再试。');
-      return;
-    }
     const action = beginAction(actionKey, epoch);
-    if (!action) {
-      if (secretOwner) releaseSecretOwnership(secretOwner);
-      return;
-    }
+    if (!action) return;
     const formSession = formSessionRef.current;
     formSubmitRef.current = formSession;
-    let secretDelivered = false;
     setFormError('');
     const request = startRequest(epoch);
     const ownsForm = () => (
@@ -588,21 +476,8 @@ export function AssistantManagement({
           payload,
           request.controller.signal,
         );
-        if (
-          !ownsForm()
-          || !secretOwner
-          || !ownsSecretFlow(secretOwner)
-        ) return;
-        replaceApplication(viewFromSecretResponse(created));
-        const displayingOwner = markSecretDisplaying(secretOwner);
-        if (!displayingOwner) return;
-        setSecret({
-          id: displayingOwner.id,
-          epoch: displayingOwner.epoch,
-          appId: created.app_id,
-          value: created.app_secret,
-        });
-        secretDelivered = true;
+        if (!ownsForm()) return;
+        replaceApplication(created);
       }
       if (!ownsForm()) return;
       formSubmitRef.current = null;
@@ -619,9 +494,6 @@ export function AssistantManagement({
     } finally {
       finishRequest(request);
       if (ownsForm()) formSubmitRef.current = null;
-      if (secretOwner && !secretDelivered) {
-        releaseSecretOwnership(secretOwner);
-      }
       endAction(actionKey, action);
     }
   };
@@ -656,7 +528,6 @@ export function AssistantManagement({
       appearanceDialogRef.current !== null
       || formDialogOpenRef.current
       || confirmationDialogOpenRef.current
-      || secretOwnershipRef.current !== null
     ) return;
     confirmationDialogOpenRef.current = true;
     setConfirmation({ action, application });
@@ -668,7 +539,6 @@ export function AssistantManagement({
       || formDialogOpenRef.current
       || formSubmitRef.current !== null
       || confirmationDialogOpenRef.current
-      || secretOwnershipRef.current !== null
     ) return;
     appearanceSessionRef.current += 1;
     const dialog = {
@@ -755,21 +625,8 @@ export function AssistantManagement({
     const { action, application } = confirmation;
     const actionKey = `${action}:${application.app_id}`;
     const epoch = lifecycleEpochRef.current;
-    const secretOwner = action === 'rotate'
-      ? acquireSecretOwnership('rotate', application.app_id)
-      : null;
-    if (action === 'rotate' && !secretOwner) {
-      confirmationDialogOpenRef.current = false;
-      setConfirmation(null);
-      setPageError('已有一次性 Secret 操作正在进行，请完成后再试。');
-      return;
-    }
     const ownership = beginAction(actionKey, epoch);
-    if (!ownership) {
-      if (secretOwner) releaseSecretOwnership(secretOwner);
-      return;
-    }
-    let secretDelivered = false;
+    if (!ownership) return;
     confirmationDialogOpenRef.current = false;
     setConfirmation(null);
     const request = startRequest(epoch);
@@ -780,42 +637,17 @@ export function AssistantManagement({
           request.controller.signal,
         );
         if (isCurrentRequest(request)) replaceApplication(updated);
-      } else if (action === 'rotate') {
-        const rotated = await adminApi.rotateSecret(
-          application.app_id,
-          request.controller.signal,
-        );
-        if (
-          !isCurrentRequest(request)
-          || !secretOwner
-          || !ownsSecretFlow(secretOwner)
-        ) return;
-        replaceApplication(viewFromSecretResponse(rotated));
-        const displayingOwner = markSecretDisplaying(secretOwner);
-        if (!displayingOwner) return;
-        setSecret({
-          id: displayingOwner.id,
-          epoch: displayingOwner.epoch,
-          appId: rotated.app_id,
-          value: rotated.app_secret,
-        });
-        secretDelivered = true;
-      } else {
+      } else if (action === 'delete') {
         await adminApi.deleteApplication(
           application.app_id,
           request.controller.signal,
         );
-        if (isCurrentRequest(request)) {
-          removeApplication(application.app_id);
-        }
+        if (isCurrentRequest(request)) removeApplication(application.app_id);
       }
     } catch (error) {
       handleError(error, request);
     } finally {
       finishRequest(request);
-      if (secretOwner && !secretDelivered) {
-        releaseSecretOwnership(secretOwner);
-      }
       endAction(actionKey, ownership);
     }
   };
@@ -823,32 +655,6 @@ export function AssistantManagement({
   const closeConfirmation = () => {
     confirmationDialogOpenRef.current = false;
     setConfirmation(null);
-  };
-
-  const closeSecret = () => {
-    if (secret) {
-      releaseSecretOwnership(secret);
-    }
-    setSecret(null);
-    setCopyStatus('');
-  };
-
-  const copySecret = async () => {
-    if (!secret) return;
-    const { epoch, id } = secret;
-    try {
-      await navigator.clipboard.writeText(secret.value);
-      if (!ownsSecretFlow({ epoch, id })) return;
-      setCopyStatus('已复制到剪贴板。');
-    } catch {
-      const current = secretOwnershipRef.current;
-      if (
-        epoch !== lifecycleEpochRef.current
-        || current?.epoch !== epoch
-        || current.id !== id
-      ) return;
-      setCopyStatus('复制失败，请手动复制。');
-    }
   };
 
   const knownSourceIds = new Set(
@@ -865,7 +671,6 @@ export function AssistantManagement({
     : null;
   const formSubmitting = formActionKey !== null
     && busyActions.has(formActionKey);
-  const secretFlowActive = secretOwnership !== null;
 
   return (
     <main
@@ -877,7 +682,7 @@ export function AssistantManagement({
           <div className="admin-title-row">
             <h1>小助手管理</h1>
           </div>
-          <p>管理嵌入应用的来源授权、展示配置与启用状态。</p>
+          <p>管理嵌入应用的来源授权、展示配置、关联网站入口与启用状态。</p>
         </div>
         <div className="admin-header-actions">
           <button
@@ -894,7 +699,6 @@ export function AssistantManagement({
             onClick={openCreate}
             disabled={
               formSubmitRef.current !== null
-              || secretFlowActive
               || appearanceDialog !== null
             }
           >
@@ -923,14 +727,13 @@ export function AssistantManagement({
         ) : applications.length === 0 ? (
           <div className="admin-state-card admin-state-card--empty">
             <strong>还没有小助手</strong>
-            <span>创建第一个本机嵌入应用，配置允许的来源和数据源。</span>
+            <span>创建第一个嵌入应用，配置允许的来源和数据源。</span>
             <button
               className="admin-button admin-button--primary"
               type="button"
               onClick={openCreate}
               disabled={
                 formSubmitRef.current !== null
-                || secretFlowActive
                 || appearanceDialog !== null
               }
             >
@@ -943,42 +746,30 @@ export function AssistantManagement({
               <thead>
                 <tr>
                   <th>应用</th>
-                  <th>状态与 Secret</th>
+                  <th>状态</th>
                   <th>授权范围</th>
-                  <th>Token / 更新时间</th>
+                  <th>关联网站</th>
+                  <th>更新时间</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {applications.map(application => {
-                  const enabledLinks = application.application_links.filter(
-                    link => link.enabled,
-                  );
-                  const firstLink = enabledLinks[0];
-                  return (
+                {applications.map(application => (
                   <tr key={application.app_id}>
                     <td data-label="应用">
                       <strong>{application.name}</strong>
                       <code className="admin-breakable">
                         {application.app_id}
                       </code>
-                      <span className="admin-link-summary">
-                        {application.application_links.length
-                          ? `关联站点：${application.application_links[0].name} · ${application.application_links.length} 个入口`
-                          : '配置网站入口'}
-                      </span>
                     </td>
-                    <td data-label="状态与 Secret">
+                    <td data-label="状态">
                       <span className={
                         application.enabled
                           ? 'admin-status admin-status--enabled'
                           : 'admin-status admin-status--disabled'
                       }>
-                        {application.enabled ? '已启用' : '已禁用'}
+                        {application.enabled ? '已启用' : '已停用'}
                       </span>
-                      <code className="admin-secret-mask">
-                        {application.secret_mask}
-                      </code>
                     </td>
                     <td data-label="授权范围">
                       <div className="admin-chip-group">
@@ -1015,62 +806,52 @@ export function AssistantManagement({
                           : <span className="admin-muted">无允许 Origin</span>}
                       </div>
                     </td>
-                    <td data-label="Token / 更新时间">
-                      <span>{application.token_ttl_seconds} 秒</span>
+                    <td data-label="关联网站">
+                      {application.application_links.filter(link => link.enabled).length
+                        ? (
+                          <div className="admin-link-group">
+                            {application.application_links
+                              .filter(link => link.enabled)
+                              .map(link => (
+                                <a
+                                  key={link.link_id}
+                                  href={link.url}
+                                  target={link.open_mode === 'new_tab' ? '_blank' : '_self'}
+                                  rel="noopener noreferrer"
+                                  className="admin-link-chip"
+                                  title={link.url}
+                                >
+                                  {link.name}
+                                </a>
+                              ))}
+                          </div>
+                        )
+                        : <span className="admin-muted">无</span>}
+                    </td>
+                    <td data-label="更新时间">
                       <span className="admin-muted">
                         {formatTimestamp(application.updated_at)}
                       </span>
                     </td>
                     <td data-label="操作">
                       <div className="admin-row-actions">
-                        {enabledLinks.length === 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => openEdit(application)}
-                          >
-                            配置网站入口
-                          </button>
-                        ) : enabledLinks.length === 1 && firstLink ? (
-                          <a
-                            href={firstLink.url}
-                            target={
-                              firstLink.open_mode === 'new_tab'
-                                ? '_blank'
-                                : '_self'
-                            }
-                            rel={
-                              firstLink.open_mode === 'new_tab'
-                                ? 'noopener noreferrer'
-                                : undefined
-                            }
-                          >
-                            访问网站
-                          </a>
-                        ) : (
-                          <details className="admin-action-menu">
-                            <summary>访问网站</summary>
-                            <div role="menu">
-                              {enabledLinks.map(link => (
+                        {application.application_links.some(link => link.enabled) && (
+                          <>
+                            {application.application_links
+                              .filter(link => link.enabled)
+                              .slice(0, 1)
+                              .map(link => (
                                 <a
-                                  href={link.url}
                                   key={link.link_id}
-                                  target={
-                                    link.open_mode === 'new_tab'
-                                      ? '_blank'
-                                      : '_self'
-                                  }
-                                  rel={
-                                    link.open_mode === 'new_tab'
-                                      ? 'noopener noreferrer'
-                                      : undefined
-                                  }
-                                  role="menuitem"
+                                  href={link.url}
+                                  target={link.open_mode === 'new_tab' ? '_blank' : '_self'}
+                                  rel="noopener noreferrer"
+                                  style={{ textDecoration: 'none' }}
                                 >
-                                  {link.name}
+                                  <button type="button">访问网站</button>
                                 </a>
                               ))}
-                            </div>
-                          </details>
+                          </>
                         )}
                         <button
                           type="button"
@@ -1088,80 +869,65 @@ export function AssistantManagement({
                             appearanceDialog !== null
                             || form !== null
                             || confirmation !== null
-                            || secretFlowActive
                           }
                           onClick={() => openAppearance(application)}
                         >
                           外观
                         </button>
-                        <details className="admin-action-menu">
-                          <summary>更多</summary>
-                          <div>
-                            {application.enabled ? (
-                              <button
-                                type="button"
-                                disabled={busyActions.has(
-                                  `disable:${application.app_id}`,
-                                )}
-                                onClick={() => openConfirmation(
-                                  'disable',
-                                  application,
-                                )}
-                              >
-                                禁用
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={busyActions.has(
-                                  `enable:${application.app_id}`,
-                                )}
-                                onClick={() => enableApplication(application)}
-                              >
-                                {busyActions.has(`enable:${application.app_id}`)
-                                  ? '启用中…'
-                                  : '启用'}
-                              </button>
+                        {application.enabled ? (
+                          <button
+                            type="button"
+                            disabled={busyActions.has(
+                              `disable:${application.app_id}`,
                             )}
-                            <button
-                              type="button"
-                              disabled={
-                                secretFlowActive
-                                || appearanceDialog !== null
-                                || busyActions.has(
-                                  `rotate:${application.app_id}`,
-                                )
-                              }
-                              onClick={() => openConfirmation(
-                                'rotate',
-                                application,
-                              )}
-                            >
-                              轮换 Secret
-                            </button>
-                            <button
-                              type="button"
-                              className="admin-danger-link"
-                              onClick={() => openConfirmation(
-                                'delete',
-                                application,
-                              )}
-                            >
-                              删除应用
-                            </button>
-                          </div>
-                        </details>
+                            onClick={() => openConfirmation(
+                              'disable',
+                              application,
+                            )}
+                          >
+                            停用
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={busyActions.has(
+                              `enable:${application.app_id}`,
+                            )}
+                            onClick={() => enableApplication(application)}
+                          >
+                            {busyActions.has(`enable:${application.app_id}`)
+                              ? '启用中…'
+                              : '启用'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={
+                            appearanceDialog !== null
+                            || form !== null
+                            || confirmation !== null
+                            || busyActions.has(
+                              `delete:${application.app_id}`,
+                            )
+                          }
+                          onClick={() => openConfirmation(
+                            'delete',
+                            application,
+                          )}
+                        >
+                          删除
+                        </button>
                       </div>
                     </td>
                   </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </section>
 
+      {/* ── 新建/编辑表单 ── */}
       {form && (
         <div className="admin-modal-backdrop" role="presentation">
           <section
@@ -1212,20 +978,6 @@ export function AssistantManagement({
                     })}
                   />
                 </label>
-                <label>
-                  <span>Token 有效期（秒）</span>
-                  <input
-                    type="number"
-                    min="30"
-                    max="3600"
-                    step="1"
-                    value={form.ttl}
-                    onChange={event => setForm({
-                      ...form,
-                      ttl: event.target.value,
-                    })}
-                  />
-                </label>
                 <label className="admin-form-span-2">
                   <span>允许 Origin（一行一个）</span>
                   <textarea
@@ -1237,154 +989,8 @@ export function AssistantManagement({
                     })}
                     placeholder="https://example.com"
                   />
-                  <small>仅接受规范的精确 http/https Origin。</small>
+                  <small>仅接受规范的精确 http/https Origin，不包含路径或通配符。</small>
                 </label>
-                <fieldset className="admin-form-span-2 admin-link-fieldset">
-                  <legend>关联网站入口</legend>
-                  <div className="admin-link-fieldset__header">
-                    <small>
-                      仅用于管理页反向跳转，不参与 Origin、Token 或数据源授权。
-                    </small>
-                    <button
-                      type="button"
-                      disabled={form.links.length >= 20 || formSubmitting}
-                      onClick={() => setForm({
-                        ...form,
-                        links: [
-                          ...form.links,
-                          newApplicationLink(form.links.length),
-                        ],
-                      })}
-                    >
-                      添加入口
-                    </button>
-                  </div>
-                  {form.links.length === 0 ? (
-                    <p className="admin-link-empty">尚未配置关联网站入口。</p>
-                  ) : (
-                    <div className="admin-link-editor-list">
-                      {form.links.map((link, index) => (
-                        <div
-                          className="admin-link-editor"
-                          key={link.link_id}
-                        >
-                          <label>
-                            <span>名称</span>
-                            <input
-                              value={link.name}
-                              disabled={formSubmitting}
-                              onChange={event => {
-                                const links = form.links.map(item =>
-                                  item.link_id === link.link_id
-                                    ? { ...item, name: event.target.value }
-                                    : item);
-                                setForm({ ...form, links });
-                              }}
-                              placeholder="水务管理平台"
-                            />
-                          </label>
-                          <label className="admin-link-editor__url">
-                            <span>URL</span>
-                            <input
-                              type="url"
-                              value={link.url}
-                              disabled={formSubmitting}
-                              onChange={event => {
-                                const links = form.links.map(item =>
-                                  item.link_id === link.link_id
-                                    ? { ...item, url: event.target.value }
-                                    : item);
-                                setForm({ ...form, links });
-                              }}
-                              placeholder="https://example.com/path?tab=1#assistant"
-                            />
-                          </label>
-                          <label>
-                            <span>打开方式</span>
-                            <select
-                              value={link.open_mode}
-                              disabled={formSubmitting}
-                              onChange={event => {
-                                const openMode = event.target.value as
-                                  AssistantApplicationLink['open_mode'];
-                                const links = form.links.map(item =>
-                                  item.link_id === link.link_id
-                                    ? { ...item, open_mode: openMode }
-                                    : item);
-                                setForm({ ...form, links });
-                              }}
-                            >
-                              <option value="new_tab">新标签页</option>
-                              <option value="same_tab">当前页面</option>
-                            </select>
-                          </label>
-                          <label className="admin-link-editor__enabled">
-                            <input
-                              type="checkbox"
-                              checked={link.enabled}
-                              disabled={formSubmitting}
-                              onChange={event => {
-                                const links = form.links.map(item =>
-                                  item.link_id === link.link_id
-                                    ? { ...item, enabled: event.target.checked }
-                                    : item);
-                                setForm({ ...form, links });
-                              }}
-                            />
-                            <span>启用</span>
-                          </label>
-                          <div className="admin-link-editor__actions">
-                            <button
-                              type="button"
-                              aria-label={`上移入口 ${link.name || index + 1}`}
-                              disabled={index === 0 || formSubmitting}
-                              onClick={() => {
-                                const links = [...form.links];
-                                [links[index - 1], links[index]] = [
-                                  links[index],
-                                  links[index - 1],
-                                ];
-                                setForm({ ...form, links });
-                              }}
-                            >
-                              ↑
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`下移入口 ${link.name || index + 1}`}
-                              disabled={
-                                index === form.links.length - 1
-                                || formSubmitting
-                              }
-                              onClick={() => {
-                                const links = [...form.links];
-                                [links[index], links[index + 1]] = [
-                                  links[index + 1],
-                                  links[index],
-                                ];
-                                setForm({ ...form, links });
-                              }}
-                            >
-                              ↓
-                            </button>
-                            <button
-                              type="button"
-                              disabled={formSubmitting}
-                              onClick={() => setForm({
-                                ...form,
-                                links: form.links.filter(
-                                  item => item.link_id !== link.link_id,
-                                ),
-                              })}
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </fieldset>
                 <fieldset className="admin-form-span-2 admin-source-fieldset">
                   <legend>授权数据源</legend>
                   {dataSources.map(source => (
@@ -1436,6 +1042,92 @@ export function AssistantManagement({
                     ))}
                   </fieldset>
                 )}
+                <fieldset className="admin-form-span-2 admin-link-fieldset">
+                  <legend>
+                    关联网站入口
+                    <button
+                      type="button"
+                      className="admin-link-add-button"
+                      disabled={form.links.length >= 20}
+                      onClick={() => setForm({
+                        ...form,
+                        links: [
+                          ...form.links,
+                          newApplicationLink(form.links.length),
+                        ],
+                      })}
+                    >
+                      ＋ 添加入口
+                    </button>
+                  </legend>
+                  {form.links.length === 0 && (
+                    <p className="admin-muted">暂无关联网站入口。</p>
+                  )}
+                  {form.links.map((link, index) => (
+                    <div className="admin-link-row" key={link.link_id}>
+                      <input
+                        value={link.name}
+                        placeholder="入口名称"
+                        onChange={event => {
+                          const links = [...form.links];
+                          links[index] = { ...link, name: event.target.value };
+                          setForm({ ...form, links });
+                        }}
+                      />
+                      <input
+                        value={link.url}
+                        placeholder="https://example.com"
+                        onChange={event => {
+                          const links = [...form.links];
+                          links[index] = { ...link, url: event.target.value };
+                          setForm({ ...form, links });
+                        }}
+                      />
+                      <select
+                        value={link.open_mode}
+                        onChange={event => {
+                          const links = [...form.links];
+                          links[index] = {
+                            ...link,
+                            open_mode: event.target.value as 'new_tab' | 'same_tab',
+                          };
+                          setForm({ ...form, links });
+                        }}
+                      >
+                        <option value="new_tab">新标签页</option>
+                        <option value="same_tab">当前页</option>
+                      </select>
+                      <label className="admin-link-enabled">
+                        <input
+                          type="checkbox"
+                          checked={link.enabled}
+                          onChange={event => {
+                            const links = [...form.links];
+                            links[index] = {
+                              ...link,
+                              enabled: event.target.checked,
+                            };
+                            setForm({ ...form, links });
+                          }}
+                        />
+                        <span>启用</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="admin-link-remove-button"
+                        title="移除入口"
+                        onClick={() => {
+                          const links = form.links.filter(
+                            (_, current) => current !== index,
+                          );
+                          setForm({ ...form, links });
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </fieldset>
                 <label className="admin-checkbox-row admin-form-span-2">
                   <input
                     type="checkbox"
@@ -1448,7 +1140,7 @@ export function AssistantManagement({
                   <span>
                     <strong>显示当前嵌入生命周期内的会话切换</strong>
                     <small>
-                      仅控制当前嵌入页面内的会话切换，不代表服务端保存历史记录，也不会跨设备同步。
+                      仅控制当前嵌入页面内的会话切换，不代表服务端保存历史记录。
                     </small>
                   </span>
                 </label>
@@ -1464,7 +1156,7 @@ export function AssistantManagement({
                     />
                     <span>
                       <strong>创建后立即启用</strong>
-                      <small>禁用状态的应用不能签发或使用嵌入 Token。</small>
+                      <small>禁用状态的应用无法使用嵌入功能。</small>
                     </span>
                   </label>
                 )}
@@ -1496,6 +1188,7 @@ export function AssistantManagement({
         </div>
       )}
 
+      {/* ── 外观设置 ── */}
       {appearanceDialog && (
         <AssistantAppearanceDialog
           key={`${appearanceDialog.epoch}:${appearanceDialog.sessionId}`}
@@ -1509,6 +1202,7 @@ export function AssistantManagement({
         />
       )}
 
+      {/* ── 确认对话框 ── */}
       {confirmation && (
         <div className="admin-modal-backdrop" role="presentation">
           <section
@@ -1520,17 +1214,13 @@ export function AssistantManagement({
             <p className="admin-eyebrow">CONFIRM ACTION</p>
             <h2 id="admin-confirm-title">
               {confirmation.action === 'disable'
-                ? '确认禁用小助手？'
-                : confirmation.action === 'rotate'
-                  ? '确认轮换 Secret？'
-                  : '确认删除小助手？'}
+                ? '确认停用小助手？'
+                : '确认删除小助手？'}
             </h2>
             <p>
               {confirmation.action === 'disable'
-                ? '禁用后，现有嵌入 Token 将立即失效。'
-                : confirmation.action === 'rotate'
-                  ? '轮换后，旧 Secret 和使用旧 Secret 签发的 Token 将立即失效。'
-                  : '删除后，应用、授权配置和关联网站入口将一并删除，且无法恢复。'}
+                ? '停用后，嵌入请求将被拒绝。'
+                : '删除后不可恢复，该应用的所有配置将永久移除。'}
             </p>
             <code className="admin-breakable">
               {confirmation.application.app_id}
@@ -1544,53 +1234,11 @@ export function AssistantManagement({
                 取消
               </button>
               <button
-                className={
-                  confirmation.action === 'delete'
-                    ? 'admin-button admin-button--danger'
-                    : 'admin-button admin-button--primary'
-                }
+                className="admin-button admin-button--danger"
                 type="button"
                 onClick={runConfirmedAction}
               >
                 确认
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {secret && (
-        <div className="admin-modal-backdrop" role="presentation">
-          <section
-            className="admin-modal admin-secret-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="admin-secret-title"
-          >
-            <p className="admin-eyebrow">ONE-TIME SECRET</p>
-            <h2 id="admin-secret-title">请立即保存应用 Secret</h2>
-            <p className="admin-secret-warning">
-              关闭后无法再次查看。请将它安全交给对应宿主应用。
-            </p>
-            <label>
-              <span>{secret.appId}</span>
-              <textarea value={secret.value} readOnly rows={3} />
-            </label>
-            {copyStatus && <p className="admin-copy-status">{copyStatus}</p>}
-            <div className="admin-modal-actions">
-              <button
-                className="admin-button"
-                type="button"
-                onClick={copySecret}
-              >
-                复制
-              </button>
-              <button
-                className="admin-button admin-button--primary"
-                type="button"
-                onClick={closeSecret}
-              >
-                我已保存，关闭
               </button>
             </div>
           </section>
