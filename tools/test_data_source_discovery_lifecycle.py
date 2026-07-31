@@ -62,8 +62,11 @@ def _create_source(
     database_type: str,
     *,
     published: bool,
+    selected_logical_relations: list[dict] | None = None,
 ):
     metadata = _metadata(database_type)
+    if selected_logical_relations is not None:
+        metadata[1]["logical_relations"] = selected_logical_relations
     record = catalog.create(
         display_name=f"{database_type} 测试源",
         description="生命周期测试",
@@ -175,6 +178,33 @@ def test_rediscovery_preserves_ready_enabled(
 
     after = catalog.save_discovery(before.source_id, metadata)
 
+    assert (after.status, after.enabled_for_chat) == ("ready", True)
+    assert after.runtime_revision == before.runtime_revision
+
+
+def test_mysql_rediscovery_ignores_business_logical_relations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = _catalog(tmp_path, monkeypatch)
+    before, metadata = _create_source(
+        catalog,
+        "mysql",
+        published=True,
+        selected_logical_relations=[
+            {
+                "target_table": "monitor_station",
+                "source_column": "id",
+                "target_column": "monitor_id",
+                "confidence": "verified",
+            }
+        ],
+    )
+    metadata[1]["logical_relations"] = []
+
+    after = catalog.save_discovery(before.source_id, metadata)
+
+    assert before.selected_scope[1]["logical_relations"]
     assert (after.status, after.enabled_for_chat) == ("ready", True)
     assert after.runtime_revision == before.runtime_revision
 

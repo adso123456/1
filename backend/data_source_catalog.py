@@ -948,7 +948,6 @@ class DataSourceCatalog:
                 "primary_key": False,
                 "ordinal_position": 0,
                 "indexes": [],
-                "logical_relations": [],
             }
             selected_tables = {
                 (identity(item)[0], item.get("table"))
