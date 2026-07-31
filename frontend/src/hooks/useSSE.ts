@@ -5,12 +5,17 @@ import { sanitizeUserVisibleDataSourceText } from '../dataSourcePresentation';
 import { fallbackSpecFromColumns, isRenderableChartType, getChartTypeAvailability } from '../chartRegistry';
 import { prepareChartV2All } from '../chartPipelineV2';
 import type { Row } from '../datasetProfilerV2';
+import type {
+  ReportConfigData,
+  ReportResultData,
+} from '../components/ReportComponents';
 
 /* ======== 本地会话持久化（localStorage） ======== */
 
 const SESSIONS_KEY = 'water_qa_sessions';
 const META_KEY = 'water_qa_session_meta';
 const CURRENT_ID_KEY = 'water_qa_current_id';
+const PENDING_REPORTS_KEY = 'water_qa_pending_reports';
 
 export interface SessionStorageAdapter {
   loadSessions: () => Record<string, ChatMessage[]>;
@@ -19,6 +24,8 @@ export interface SessionStorageAdapter {
   saveMeta: (data: Record<string, SessionMeta>) => boolean;
   loadCurrentId: () => string;
   saveCurrentId: (id: string) => void;
+  loadPendingReports: () => Record<string, ReportConfigData>;
+  savePendingReports: (data: Record<string, ReportConfigData>) => boolean;
   consumeReadError: () => string | null;
 }
 
@@ -186,6 +193,29 @@ function loadCurrentId(): string {
 function saveCurrentId(id: string) {
   try { localStorage.setItem(CURRENT_ID_KEY, id); } catch { /* quota exceeded */ }
 }
+function loadPendingReports(): Record<string, ReportConfigData> {
+  try {
+    const raw = localStorage.getItem(PENDING_REPORTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, ReportConfigData>
+      : {};
+  } catch {
+    lastStorageReadError = '未确认的报表配置读取失败，已安全关闭。';
+    return {};
+  }
+}
+function savePendingReports(
+  data: Record<string, ReportConfigData>,
+): boolean {
+  try {
+    localStorage.setItem(PENDING_REPORTS_KEY, JSON.stringify(data));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const localSessionStorageAdapter: SessionStorageAdapter = {
   loadSessions: loadAllSessions,
@@ -194,6 +224,8 @@ const localSessionStorageAdapter: SessionStorageAdapter = {
   saveMeta: saveAllMeta,
   loadCurrentId,
   saveCurrentId,
+  loadPendingReports,
+  savePendingReports,
   consumeReadError: consumeStorageReadError,
 };
 
@@ -201,6 +233,7 @@ export function createMemorySessionStorage(): SessionStorageAdapter {
   let sessions: Record<string, ChatMessage[]> = {};
   let metadata: Record<string, SessionMeta> = {};
   let currentId = '';
+  let pendingReports: Record<string, ReportConfigData> = {};
   return {
     loadSessions: () => sessions,
     saveSessions: data => {
@@ -215,6 +248,11 @@ export function createMemorySessionStorage(): SessionStorageAdapter {
     loadCurrentId: () => currentId,
     saveCurrentId: id => {
       currentId = id;
+    },
+    loadPendingReports: () => pendingReports,
+    savePendingReports: data => {
+      pendingReports = data;
+      return true;
     },
     consumeReadError: () => null,
   };
@@ -709,10 +747,14 @@ export function useSSE(
     initialSession.sourceBound,
   );
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
+  const [dataSourcesLoaded, setDataSourcesLoaded] = useState(false);
   const [dataSourceError, setDataSourceError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialSession.messages,
   );
+  const [pendingReportConfigs, setPendingReportConfigs] = useState<
+    Record<string, ReportConfigData>
+  >(() => storage.loadPendingReports());
   const [loading, setLoading] = useState(false);
   const [sessionList, setSessionList] = useState<SessionMeta[]>(() =>
     Object.values(storage.loadMeta()).sort((a, b) => b.updatedAt - a.updatedAt),
@@ -743,6 +785,7 @@ export function useSSE(
       const sources = normalizeDataSources(await response.json());
       if (requestId !== dataSourcesRequestRef.current) return;
       setDataSources(sources);
+      setDataSourcesLoaded(true);
       if (sources.length === 0) {
         setDataSourceError('当前没有可用数据源。');
       } else {
@@ -831,6 +874,44 @@ export function useSSE(
     storage,
   ]);
 
+  useEffect(() => {
+    if (!storage.savePendingReports(pendingReportConfigs)) {
+      setStorageError(STORAGE_WRITE_ERROR);
+    }
+  }, [pendingReportConfigs, storage]);
+
+  useEffect(() => {
+    if (!dataSourcesLoaded) return;
+    const available = new Set(
+      dataSources
+        .filter(source => source.status === 'ready' && source.enabled_for_chat)
+        .map(source => source.source_id),
+    );
+    const currentPending = pendingReportConfigs[currentSessionId];
+    const removedCurrent = Boolean(
+      currentPending && !available.has(currentPending.source_id),
+    );
+    setPendingReportConfigs(current => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([, config]) => {
+          const keep = available.has(config.source_id);
+          return keep;
+        }),
+      );
+      return Object.keys(next).length === Object.keys(current).length
+        ? current
+        : next;
+    });
+    if (removedCurrent) {
+      setDataSourceError('报表数据源当前不可用，未确认的配置已安全关闭。');
+    }
+  }, [
+    currentSessionId,
+    dataSources,
+    dataSourcesLoaded,
+    pendingReportConfigs,
+  ]);
+
   /** 创建新会话并切换 */
   const createNewSession = useCallback(async (selectedSourceId?: string): Promise<boolean> => {
     if (loading) return false;
@@ -915,6 +996,11 @@ export function useSSE(
       }
     }
     setMessages([]);
+    setPendingReportConfigs(current => {
+      const next = { ...current };
+      delete next[newId];
+      return next;
+    });
     setCurrentSessionId(newId);
     setCurrentSourceId(nextSourceId);
     setSourceBound(Boolean(selectedSourceId));
@@ -1018,6 +1104,11 @@ export function useSSE(
     const allMeta = storage.loadMeta();
     delete allMeta[id];
     const metaOk = storage.saveMeta(allMeta);
+    setPendingReportConfigs(current => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
 
     if (!sessionsOk || !metaOk) {
       setStorageError(STORAGE_WRITE_ERROR);
@@ -1079,6 +1170,12 @@ export function useSSE(
       setDataSourceError('当前会话的数据源不可用于发送。');
       return;
     }
+    setPendingReportConfigs(current => {
+      if (!current[currentSessionId]) return current;
+      const next = { ...current };
+      delete next[currentSessionId];
+      return next;
+    });
     const switchType = isPureChartSwitch(userText);
 
     // 纯图表切换：仅对单图消息生效
@@ -1205,6 +1302,7 @@ export function useSSE(
       const dataframes: DataFrameData[] = [];
       let finalText = '';
       let sqlText: string | null = null;
+      let receivedReportConfig = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1389,9 +1487,19 @@ export function useSSE(
                   )
                 );
               }
-            } else if (rich.type === 'report_config' || rich.type === 'report_result') {
+            } else if (rich.type === 'report_config') {
+              receivedReportConfig = true;
+              setPendingReportConfigs(current => ({
+                ...current,
+                [conversation_id || currentSessionId]:
+                  rich.data as unknown as ReportConfigData,
+              }));
+              setMessages(prev => prev.filter(
+                message => message.id !== assistantMsgId,
+              ));
+            } else if (rich.type === 'report_result') {
               const reportComponent = {
-                type: rich.type,
+                type: 'report_result',
                 data: rich.data,
               } as ChatMessage['reportComponent'];
               setMessages(prev =>
@@ -1421,17 +1529,19 @@ export function useSSE(
 
       // 流结束：确保最终状态正确
       setMessages(prev =>
-        prev.map(m =>
-          m.id === assistantMsgId
-            ? {
-                ...m,
-                text: finalText,
-                dataframes: [...dataframes],
-                streaming: false,
-                sql: sqlText,
-              }
-            : m
-        )
+        receivedReportConfig
+          ? prev.filter(m => m.id !== assistantMsgId)
+          : prev.map(m =>
+              m.id === assistantMsgId
+                ? {
+                    ...m,
+                    text: finalText,
+                    dataframes: [...dataframes],
+                    streaming: false,
+                    sql: sqlText,
+                  }
+                : m
+            )
       );
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -1463,9 +1573,14 @@ export function useSSE(
 
   const clearMessages = useCallback(() => {
     setMessages([]);
+    setPendingReportConfigs(current => {
+      const next = { ...current };
+      delete next[currentSessionId];
+      return next;
+    });
     lastDataRef.current = null;
     lastConvIdRef.current = '';
-  }, []);
+  }, [currentSessionId]);
 
   /** 替换指定消息中第 chartIndex 个 chart（V2 点击切换用） */
   const replaceMessageChart = useCallback(
@@ -1510,6 +1625,48 @@ export function useSSE(
     [],
   );
 
+  const updatePendingReportConfig = useCallback(
+    (config: ReportConfigData) => {
+      setPendingReportConfigs(current => ({
+        ...current,
+        [currentSessionId]: config,
+      }));
+    },
+    [currentSessionId],
+  );
+
+  const dismissPendingReportConfig = useCallback(() => {
+    setPendingReportConfigs(current => {
+      const next = { ...current };
+      delete next[currentSessionId];
+      return next;
+    });
+  }, [currentSessionId]);
+
+  const appendReportResult = useCallback((result: ReportResultData) => {
+    setPendingReportConfigs(current => {
+      const next = { ...current };
+      delete next[currentSessionId];
+      return next;
+    });
+    setMessages(current => [
+      ...current,
+      {
+        id: `a_report_${Date.now()}`,
+        role: 'assistant',
+        text: '',
+        dataframes: [],
+        charts: [],
+        thinkingCollapsed: true,
+        streaming: false,
+        reportComponent: {
+          type: 'report_result',
+          data: result as unknown as Record<string, unknown>,
+        },
+      },
+    ]);
+  }, [currentSessionId]);
+
   return {
     messages,
     loading,
@@ -1518,6 +1675,10 @@ export function useSSE(
     clearMessages,
     replaceMessageChart,
     replaceMessageReport,
+    pendingReportConfig: pendingReportConfigs[currentSessionId] ?? null,
+    updatePendingReportConfig,
+    dismissPendingReportConfig,
+    appendReportResult,
     sessionList,
     currentSessionId,
     createNewSession,

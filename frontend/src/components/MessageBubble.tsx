@@ -26,6 +26,7 @@ interface Props {
   workspaceUrl?: string;
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
   onReportPreview?: (result: ReportResultData) => void;
+  onReportReconfigure?: (result: ReportResultData) => void;
   onDataSourceSuggestion?: (
     sourceId: string,
     question: string,
@@ -51,6 +52,7 @@ export function MessageBubble({
   workspaceUrl,
   onReportGenerated,
   onReportPreview,
+  onReportReconfigure,
   onDataSourceSuggestion,
   dataSources = [],
 }: Props) {
@@ -126,6 +128,7 @@ export function MessageBubble({
               <ReportResultCard
                 result={message.reportComponent.data as unknown as ReportResultData}
                 onPreview={result => onReportPreview?.(result)}
+                onReconfigure={onReportReconfigure}
               />
             )}
             {message.dataSourceSuggestion && (

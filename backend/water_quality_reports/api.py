@@ -34,7 +34,7 @@ class GenerateReportRequest(BaseModel):
     report_type: Literal["daily", "monthly"]
     date: str | None = None
     month: str | None = None
-    indicators: list[int] | None = None
+    indicators: list[int] = Field(min_length=1)
     frequency_hours: dict[str, int] = Field(default_factory=dict)
     recent_days: int = Field(default=3, ge=2, le=7)
 
@@ -161,12 +161,8 @@ def create_report_router(
                         detail="月报必须且只能提供 month",
                     )
                 period = _parse_month(request.month)
-            codes = (
-                tuple(dict.fromkeys(request.indicators))
-                if request.indicators is not None
-                else None
-            )
-            if codes is not None and (not codes or any(code < 0 for code in codes)):
+            codes = tuple(dict.fromkeys(request.indicators))
+            if not codes or any(code < 0 for code in codes):
                 raise ValueError("至少选择一个有效指标")
             overrides = {
                 int(code): hours

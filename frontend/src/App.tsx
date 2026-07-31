@@ -10,8 +10,10 @@ import { DataSourcePage } from './components/DataSourcePage';
 import { NewConversationSourceDialog } from './components/NewConversationSourceDialog';
 import {
   ReportPreviewModal,
+  type ReportOptions,
   type ReportResultData,
 } from './components/ReportComponents';
+import { configFromReportResult } from './reportConfigState';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
 import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec } from './types';
@@ -55,6 +57,10 @@ function App() {
     clearMessages,
     replaceMessageChart,
     replaceMessageReport,
+    pendingReportConfig,
+    updatePendingReportConfig,
+    dismissPendingReportConfig,
+    appendReportResult,
     sessionList,
     currentSessionId,
     createNewSession,
@@ -244,6 +250,22 @@ function App() {
     setToast(null);
   }, [toast, switchDashboard]);
 
+  const handleReportReconfigure = useCallback(async (
+    result: ReportResultData,
+  ) => {
+    try {
+      const response = await fetch('/api/reports/water-quality/options');
+      if (!response.ok) throw new Error();
+      const options = await response.json() as ReportOptions;
+      updatePendingReportConfig(configFromReportResult(result, options));
+    } catch {
+      setToast({
+        message: '最新报表筛选项加载失败，请稍后重试。',
+        dashboardId: null,
+      });
+    }
+  }, [updatePendingReportConfig]);
+
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       <Sidebar
@@ -311,6 +333,14 @@ function App() {
               setReportPreview(result);
             }}
             onReportPreview={setReportPreview}
+            onReportReconfigure={handleReportReconfigure}
+            pendingReportConfig={pendingReportConfig}
+            onReportConfigChange={updatePendingReportConfig}
+            onReportConfigCancel={dismissPendingReportConfig}
+            onReportConfigGenerated={result => {
+              appendReportResult(result);
+              setReportPreview(result);
+            }}
             sourceLabel={currentSource
               ? `${currentSource.display_name} · ${formatDatabaseType(currentSource.database_type)} · ${formatDataSourceStatus(currentSource.status, currentSource.enabled_for_chat)}`
               : ''}

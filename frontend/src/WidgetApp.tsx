@@ -9,6 +9,12 @@ import {
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { ChatArea } from './components/ChatArea';
 import {
+  ReportPreviewModal,
+  type ReportOptions,
+  type ReportResultData,
+} from './components/ReportComponents';
+import { configFromReportResult } from './reportConfigState';
+import {
   buildWorkspaceUrl,
   resolveWidgetAccessMode,
 } from './appMode';
@@ -218,6 +224,11 @@ export function WidgetChat({
     cancelRequest,
     clearMessages,
     replaceMessageChart,
+    replaceMessageReport,
+    pendingReportConfig,
+    updatePendingReportConfig,
+    dismissPendingReportConfig,
+    appendReportResult,
     sessionList,
     currentSessionId,
     createNewSession,
@@ -234,6 +245,8 @@ export function WidgetChat({
   const [notice, setNotice] =
     useState<{ ok: boolean; message: string } | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [reportPreview, setReportPreview] =
+    useState<ReportResultData | null>(null);
 
   useEffect(() => {
     if (!notice?.ok) return;
@@ -292,6 +305,21 @@ export function WidgetChat({
     },
     [currentSessionId, dashboard, pendingAdd],
   );
+
+  const handleReportReconfigure = useCallback(async (
+    result: ReportResultData,
+  ) => {
+    try {
+      const response = await fetch('/api/reports/water-quality/options', {
+        headers: requestOptions?.headersProvider?.(),
+      });
+      if (!response.ok) throw new Error();
+      const options = await response.json() as ReportOptions;
+      updatePendingReportConfig(configFromReportResult(result, options));
+    } catch {
+      setNotice({ ok: false, message: '最新报表筛选项加载失败，请稍后重试。' });
+    }
+  }, [requestOptions, updatePendingReportConfig]);
 
   return (
     <div
@@ -373,6 +401,23 @@ export function WidgetChat({
           onClear={clearMessages}
           onChangeChartType={() => {}}
           onV2ChartSwitch={replaceMessageChart}
+          onReportGenerated={(messageId, result) => {
+            replaceMessageReport(
+              messageId,
+              result as unknown as Record<string, unknown>,
+            );
+            setReportPreview(result);
+          }}
+          onReportPreview={setReportPreview}
+          onReportReconfigure={handleReportReconfigure}
+          pendingReportConfig={pendingReportConfig}
+          onReportConfigChange={updatePendingReportConfig}
+          onReportConfigCancel={dismissPendingReportConfig}
+          onReportConfigGenerated={result => {
+            appendReportResult(result);
+            setReportPreview(result);
+          }}
+          reportRequestHeaders={requestOptions?.headersProvider}
           onAddToDashboard={
             dashboard ? handleRequestAddToDashboard : undefined
           }
@@ -418,6 +463,11 @@ export function WidgetChat({
           </button>
         </div>
       )}
+
+      <ReportPreviewModal
+        result={reportPreview}
+        onClose={() => setReportPreview(null)}
+      />
     </div>
   );
 }
