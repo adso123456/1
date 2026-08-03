@@ -44,6 +44,8 @@ def _make_asset(
     *,
     asset_version: str = "v1",
     enabled: bool = True,
+    runtime_revision: int = 1,
+    metadata_sha256: str = "test-metadata-sha",
 ) -> Path:
     questions = [
         {"id": f"q_{index:02d}", "text": text, "enabled": enabled}
@@ -53,6 +55,8 @@ def _make_asset(
         source_id,
         questions,
         asset_version=asset_version,
+        runtime_revision=runtime_revision,
+        metadata_sha256=metadata_sha256,
         generated_at="2026-01-01T00:00:00+00:00",
         generator="test",
         basis={"note": "test asset"},
@@ -143,6 +147,20 @@ def _make_api(root: Path):
     return catalog, coordinator, app
 
 
+def _set_runtime_revision(catalog: DataSourceCatalog, source_id: str, revision: int) -> None:
+    import sqlite3
+
+    connection = sqlite3.connect(catalog.db_path)
+    try:
+        connection.execute(
+            "UPDATE data_sources SET runtime_revision = ? WHERE source_id = ?",
+            (revision, source_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def _client(app: FastAPI):
     return TestClient(
         app,
@@ -208,6 +226,11 @@ def _test_asset_loading() -> list[tuple[str, bool, str]]:
             "同一会话结果稳定",
             [item["id"] for item in first] == [item["id"] for item in second]
             and [item["text"] for item in first] == [item["text"] for item in second],
+        )
+        check(
+            "资产携带 runtime_revision 与 metadata_sha256",
+            loaded_a["runtime_revision"] == 1
+            and loaded_a["metadata_sha256"] == "test-metadata-sha",
         )
         check(
             "不足 3 条时只返回实际数量",
@@ -360,6 +383,29 @@ def _test_api() -> list[tuple[str, bool, str]]:
                 and missing_asset.json()["asset_version"] is None,
                 f"source={missing_asset.json().get('source_id')}",
             )
+
+            # revision 一致（1 = 目录当前 1）时正常返回
+            matching_rev = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-rev-ok', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "runtime_revision 一致时正常返回",
+                matching_rev.status_code == 200
+                and len(matching_rev.json()["questions"]) > 0,
+            )
+
+            # revision 不一致 → 空列表（资产仍存在但禁止展示）
+            _set_runtime_revision(catalog, "source-a", 2)
+            mismatched_rev = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-rev-bad', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "runtime_revision 不一致返回空列表",
+                mismatched_rev.status_code == 200
+                and mismatched_rev.json()["questions"] == []
+                and mismatched_rev.json()["asset_version"] == "v1",
+            )
+            _set_runtime_revision(catalog, "source-a", 1)
 
             # 源损坏 → 空列表
             catalog.bind_conversation("conv-corrupt", "source-a")

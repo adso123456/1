@@ -1,16 +1,33 @@
-"""数据源专属推荐问题离线生成器（V1）。
+"""数据源专属推荐问题离线生成器（V1 阻断修复版）。
 
-独立进程，执行完成后退出。绑定单一 source_id：
-- 只读指定数据源：复用已发布 Metadata 与已批准 SQL 示例（approved），不复制一套平行的数据库理解体系；
-- 对已批准问题做确定性泛化（去掉会快速过期的日期/具体名称/ID），避免前端写死；
-- 可选对真实数据库做只读执行验证（PG `default_transaction_read_only=on`；MySQL `START TRANSACTION READ ONLY`）；
-- 只写本源的问题资产 `<AGENT_DATA_DIR>/question_suggestions/<source_id>/questions_v1.json`，
-  不修改数据库、正式 Chroma、Metadata、Memory、Catalog 或训练资产；
-- 生成失败不影响正式问数。
+独立进程，执行完成后退出。绑定单一 source_id，只读该数据源：
+
+1. 严格复用现有训练资产：
+   - 只接受 `train_decision == "approved"`、`tool_name == "run_sql"`、
+     `training_level` 属于项目现有合法白名单；
+   - 使用当前 source_id 对应的 SQLGuard（`SQLGuard` / `MySQLSQLGuard`，
+     index 为该源已发布 Metadata）校验 SQL；
+   - 解析已发布 Metadata，确认问题关联表与 SQL 使用表属于当前发布范围。
+
+2. 问题必须语义完整、可直接执行：
+   - 不发布含“某日/某月/某年/指定对象/指定监测站”等未解析占位词的问题；
+   - 日期类 SQL 改写为确定语义（最新有数据的一天/七天/一个月），
+     通过只读查询解析真实日期后替换，得到具体可执行 SQL；
+   - 数据库验证对应最终展示问题的实际 SQL（改写后的 SQL），
+     不是只验证原始训练样例后挂到改写问题上；
+   - 无法安全改写或验证的问题设为 disabled 并记录原因。
+
+3. 资产绑定 runtime revision：
+   - 资产保存 `runtime_revision` 与 `metadata_sha256`；
+   - 在线读取时资产 revision 与 Catalog 当前 revision 不一致即返回空列表。
+
+真实数据库只读事务（PG `default_transaction_read_only=on`；MySQL
+`SET SESSION TRANSACTION READ ONLY` + `START TRANSACTION READ ONLY`），
+禁止修改正式数据库、Catalog、Metadata、Memory、Chroma 与训练资产。
 
 用法：
-    python tools/generate_question_suggestions.py --source-id mysql-lzh-monitor
-    python tools/generate_question_suggestions.py --source-id postgresql-main --no-db-verify
+    python tools/generate_question_suggestions.py --source-id postgresql-main
+    python tools/generate_question_suggestions.py --source-id mysql-lzh-monitor --no-db-verify
     python tools/generate_question_suggestions.py --source-id <id> --root <临时根> --catalog <catalog.sqlite3>
         --materials-dir <示例目录> --metadata-path <metadata.json> --no-db-verify
 """
@@ -23,7 +40,8 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -41,169 +59,109 @@ from config.settings import AGENT_DATA_DIR
 
 GENERATOR_NAME = "tools/generate_question_suggestions.py"
 
-# 站点/业务对象名词后缀，按最长优先匹配；用于把具体名称替换为稳定称呼
-_NOUN_SUFFIXES = (
-    "污水处理厂",
-    "自来水厂",
-    "磷石膏库",
-    "水文站",
-    "气象站",
-    "监测站",
-    "排污口",
-    "断面",
-    "站点",
-    "水库",
-    "企业",
-    "公司",
-    "工厂",
-    "站",
-)
-_NOUN_NORMALIZE = {"站": "监测站", "站点": "监测站"}
-
-_DATE_LITERAL_RE = re.compile(
-    r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$"
-    r"|^\d{4}[-/]\d{1,2}$"
-)
-_FLAG_LITERALS = {"0", "1", "%", ""}
-_CJK_RE = re.compile(r"[一-鿿]")
-
-
 # --------------------------------------------------------------------------- #
-# 问题文本泛化
+# 合法值白名单（来自项目现有训练资产实际取值）
 # --------------------------------------------------------------------------- #
 
+LEGAL_TRAIN_DECISION = "approved"
+LEGAL_TOOL_NAME = "run_sql"
+LEGAL_TRAINING_LEVELS = frozenset(
+    {
+        "level2_sql_examples",
+        "level3_sql_examples",
+        "level2_mysql_sql_examples",
+        "level3_mysql_sql_examples",
+    }
+)
 
-def _noun_for_literal(candidate: str) -> str:
-    best = ""
-    for suffix in _NOUN_SUFFIXES:
-        if candidate.endswith(suffix) and len(suffix) > len(best):
-            best = suffix
-    return _NOUN_NORMALIZE.get(best, best)
+# 未解析占位词：启用的问题文本禁止包含
+PLACEHOLDER_WORDS = (
+    "某日", "某月", "某年", "某天", "某一天",
+    "指定对象", "指定监测站", "指定站", "指定企业", "指定区域",
+    "指定断面", "指定水文站", "指定气象站", "指定污染源",
+    "某个", "某站", "某企业", "某区域", "某断面", "某监测站",
+)
 
+# --------------------------------------------------------------------------- #
+# 日期/问题文本正则
+# --------------------------------------------------------------------------- #
 
-def extract_name_literals(sql: str) -> list[str]:
-    """从 SQL 单引号字面量中提取中文业务名称（排除日期/标志/纯数字）。"""
-    names: list[str] = []
-    for literal in re.findall(r"'([^']*)'", sql):
-        literal = literal.strip()
-        if not literal or len(literal) < 2:
-            continue
-        if _DATE_LITERAL_RE.match(literal):
-            continue
-        if literal in _FLAG_LITERALS or literal.isdigit():
-            continue
-        if not _CJK_RE.search(literal):
-            continue
-        if literal not in names:
-            names.append(literal)
-    return names
-
-
-def _generalize_names(text: str, name_literals: list[str]) -> str:
-    """把具体业务名称替换为稳定称呼，例如 幸福河站 → 指定监测站。
-
-    名称字面量后只追加已知名词后缀（覆盖“名称”与“名称+站”两种写法），
-    避免误吞“最近”等普通词。
-    """
-    result = text
-    suffix_alternatives = "|".join(
-        sorted(_NOUN_SUFFIXES, key=len, reverse=True)
-    )
-    for name in name_literals:
-        if name not in result:
-            continue
-        literal_noun = _noun_for_literal(name)
-
-        def _replace(match: re.Match[str]) -> str:
-            following = match.group(0)[len(name):]
-            combined = name + following
-            noun = _noun_for_literal(combined) or literal_noun
-            return "指定" + noun if noun else "指定对象"
-
-        result = re.sub(
-            re.escape(name) + "(?:" + suffix_alternatives + ")?",
-            _replace,
-            result,
-        )
-    return result
-
-
-def _generalize_ids(text: str) -> str:
-    """去掉 `ID 96、97、98` 这类具体标识值。"""
-    result = re.sub(r"ID\s*[\d、,，\s]+", "", text)
-    result = re.sub(r"id\s*[\d、,，\s]+", "", result)
-    return result
-
-
-def _generalize_dates(text: str) -> str:
-    """把日期/时间段替换为稳定的“某日/某月/某年”。"""
-    result = text
-    result = re.sub(r"\d{4}年\d{1,2}月\d{1,2}日", "某日", result)
-    result = re.sub(r"\d{4}年\d{1,2}月", "某月", result)
-    result = re.sub(r"\d{4}年", "某年", result)
-    result = re.sub(r"\d{1,2}月\d{1,2}日", "某日", result)
-    result = re.sub(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", "某日", result)
-    result = re.sub(r"\d{4}[-/]\d{1,2}", "某月", result)
-    result = re.sub(r"某日起?\s*七\s*天", "某日起七天", result)
-    result = re.sub(r"某日起?\s*7\s*天", "某日起7天", result)
-    return result
+# SQL 中的日期比较：<列> <op> 'YYYY-MM-DD[ 时间]'
+_SQL_DATE_CMP_RE = re.compile(
+    r"([\w.]+)\s*(<=|>=|<|>|=)\s*'(\d{4}-\d{1,2}-\d{1,2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?)'"
+)
+_Q_DATE_SEVEN_RE = re.compile(r"\d{4}年\d{1,2}月\d{1,2}日\s*起\s*(?:七|7)\s*[天日]")
+_Q_DATE_DAY_RE = re.compile(r"\d{4}年\d{1,2}月\d{1,2}日")
+_Q_DATE_MONTH_RE = re.compile(r"\d{4}年\d{1,2}月")
 
 
 def _cleanup(text: str) -> str:
-    result = re.sub(r"\s+", "", text)
+    result = re.sub(r"\s+", " ", text)
     result = re.sub(r"[，、]{2,}", "、", result)
-    result = result.strip(" ，、")
-    return result
+    result = re.sub(r"在(?=最新有数据)", "", result)
+    return result.strip(" ，、")
 
 
-def generalize_question(question: str, sql: str) -> str:
-    """把已批准问题泛化为稳定推荐问题（无具体日期/名称/ID）。"""
-    result = question.strip()
-    result = _generalize_names(result, extract_name_literals(sql))
-    result = _generalize_ids(result)
-    result = _generalize_dates(result)
-    return _cleanup(result)
+def _has_placeholder(text: str) -> bool:
+    return any(word in text for word in PLACEHOLDER_WORDS)
 
 
 # --------------------------------------------------------------------------- #
-# 已批准 SQL 示例与 Metadata 读取（只读）
+# 已批准 SQL 示例读取（严格过滤）
 # --------------------------------------------------------------------------- #
 
 
-def load_approved_samples(material_paths: list[Path]) -> list[dict[str, Any]]:
-    """从已批准训练材料中提取 approved 示例。"""
+def _sample_eligibility(sample: dict[str, Any]) -> tuple[bool, str]:
+    if sample.get("train_decision") != LEGAL_TRAIN_DECISION:
+        return False, "非 approved"
+    if sample.get("tool_name") != LEGAL_TOOL_NAME:
+        return False, f"tool_name 非 {LEGAL_TOOL_NAME}"
+    training_level = sample.get("training_level")
+    if training_level not in LEGAL_TRAINING_LEVELS:
+        return False, f"非法 training_level: {training_level!r}"
+    question = sample.get("question")
+    sql = sample.get("args", {}).get("sql")
+    if not isinstance(question, str) or not question.strip():
+        return False, "缺少问题文本"
+    if not isinstance(sql, str) or not sql.strip():
+        return False, "缺少 SQL"
+    return True, ""
+
+
+def load_approved_samples(
+    material_paths: list[Path],
+) -> tuple[list[dict[str, Any]], Counter]:
+    """读取已批准示例并返回 (合格样本, 过滤原因统计)。"""
     samples: list[dict[str, Any]] = []
+    reasons: Counter = Counter()
     for path in material_paths:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            reasons["材料不可读"] += 1
             continue
         items = payload.get("samples", []) if isinstance(payload, dict) else payload
         if not isinstance(items, list):
             continue
         for sample in items:
             if not isinstance(sample, dict):
+                reasons["非对象示例"] += 1
                 continue
-            decision = sample.get("train_decision")
-            if decision is not None and decision != "approved":
-                continue
-            question = sample.get("question")
-            sql = sample.get("args", {}).get("sql")
-            if not isinstance(question, str) or not question.strip():
-                continue
-            if not isinstance(sql, str) or not sql.strip():
+            eligible, reason = _sample_eligibility(sample)
+            if not eligible:
+                reasons[reason] += 1
                 continue
             samples.append(
                 {
                     "sample_id": sample.get("sample_id") or "",
-                    "question": question.strip(),
-                    "sql": sql,
+                    "question": str(sample["question"]).strip(),
+                    "sql": str(sample["args"]["sql"]).strip(),
                     "expected_behavior": sample.get("expected_behavior") or "",
                     "tables": list(sample.get("expected_tables") or []),
                 }
             )
     samples.sort(key=lambda item: item["sample_id"])
-    return samples
+    return samples, reasons
 
 
 def default_materials_paths(source_id: str) -> list[Path]:
@@ -213,13 +171,17 @@ def default_materials_paths(source_id: str) -> list[Path]:
         path = training / "mysql_lzh_monitor" / "sql_examples.json"
         return [path] if path.is_file() else []
     if source_id == "postgresql-main":
-        paths = [
+        return [
             *sorted(training.glob("f5_level2_batch*.json")),
             *sorted(training.glob("f5_level3_batch*.json")),
         ]
-        return paths
     path = training / source_id / "sql_examples.json"
     return [path] if path.is_file() else []
+
+
+# --------------------------------------------------------------------------- #
+# Metadata 与 SQLGuard（复用现有能力）
+# --------------------------------------------------------------------------- #
 
 
 def _file_sha256(path: Path) -> str:
@@ -233,8 +195,142 @@ def _files_sha256(paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
+def _load_published_tables(metadata_path: Path) -> set[str]:
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(payload, list):
+        return set()
+    return {str(item.get("table")) for item in payload if isinstance(item, dict) and item.get("table")}
+
+
+def _build_guard(database_type: str, metadata_path: Path) -> Any:
+    if database_type == "mysql":
+        from backend.mysql_sql_guard import MySQLSQLGuard
+
+        return MySQLSQLGuard(index_path=str(metadata_path))
+    from backend.sql_guard import SQLGuard
+
+    return SQLGuard(index_path=str(metadata_path))
+
+
 # --------------------------------------------------------------------------- #
-# 真实数据库只读验证（尽力而为，失败不阻塞生成）
+# 日期改写：确定语义 → 真实日期
+# --------------------------------------------------------------------------- #
+
+
+def _split_date_literal(literal: str) -> tuple[str, str]:
+    match = re.match(r"(\d{4}-\d{1,2}-\d{1,2})(.*)", literal)
+    assert match is not None
+    return match.group(1), match.group(2)
+
+
+def _parse_date(value: str) -> date:
+    return datetime.strptime(value.strip()[:10], "%Y-%m-%d").date()
+
+
+def _date_matches(sql: str) -> list[tuple[str, str, str]]:
+    return list(_SQL_DATE_CMP_RE.findall(sql))
+
+
+def _strip_date_conditions(sql: str, matches: list[tuple[str, str, str]]) -> str:
+    result = sql
+    for col, op, literal in matches:
+        result = re.sub(
+            rf"\s*(?:AND\s+)?{re.escape(col)}\s*{re.escape(op)}\s*{re.escape(f"'{literal}'")}",
+            "",
+            result,
+            flags=re.I,
+        )
+    result = re.sub(r"\bWHERE\s+AND\b", "WHERE", result, flags=re.I)
+    result = re.sub(r"\bWHERE\s*$", "", result, flags=re.I)
+    return result
+
+
+def _latest_day_probe_sql(sql: str, matches: list[tuple[str, str, str]]) -> str:
+    """构造求“最新有数据的一天”的只读探针 SQL（去掉日期条件与尾部子句）。"""
+    stripped = _strip_date_conditions(sql, matches)
+    from_match = re.search(r"\bFROM\b", stripped, flags=re.I)
+    if from_match is None:
+        raise ValueError("SQL 缺少 FROM 子句")
+    timecol = matches[0][0]
+    tail = stripped[from_match.start():]
+    tail = re.sub(
+        r"\s+(ORDER\s+BY|GROUP\s+BY|LIMIT|HAVING)\b.*$",
+        "",
+        tail,
+        flags=re.I | re.S,
+    )
+    tail = re.sub(r"\bWHERE\s*$", "", tail, flags=re.I)
+    return f"SELECT MAX(DATE({timecol})) AS latest_day " + tail
+
+
+def _analyze_date_range(
+    matches: list[tuple[str, str, str]],
+) -> tuple[str, str, int]:
+    """返回 (granularity, 问题语义短语, 窗口天数)。"""
+    dates: dict[str, date] = {}
+    for col, op, literal in matches:
+        parsed = _parse_date(literal)
+        if op in (">=", ">") and "start" not in dates:
+            dates["start"] = parsed
+        elif op in ("<", "<=") and "end" not in dates:
+            dates["end"] = parsed
+    start = dates.get("start")
+    end = dates.get("end")
+    month = any(_split_date_literal(literal)[0].endswith("-01") for _, _, literal in matches)
+    if month:
+        return "month", "最新有数据的一个月", 0
+    if start and end:
+        window = (end - start).days
+        if window == 1:
+            return "day", "最新有数据的一天", 1
+        if window == 7:
+            return "day", "最新有数据的七天", 7
+        return "day", f"最新有数据的{window}天", window
+    return "day", "最新有数据的一天", 1
+
+
+def _shift_month(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, 1)
+
+
+def _substitute_dates(
+    sql: str,
+    matches: list[tuple[str, str, str]],
+    latest_day: date,
+    granularity: str,
+    window_days: int,
+) -> str:
+    result = sql
+    for col, op, literal in matches:
+        date_part, suffix = _split_date_literal(literal)
+        if granularity == "month":
+            if op in ("<", "<="):
+                new_date = _shift_month(latest_day, 1)
+            else:
+                new_date = date(latest_day.year, latest_day.month, 1)
+        elif op in ("<", "<="):
+            new_date = date.fromordinal(latest_day.toordinal() + window_days)
+        else:
+            new_date = latest_day
+        result = result.replace(f"'{literal}'", f"'{new_date.strftime('%Y-%m-%d')}{suffix}'")
+    return result
+
+
+def _rewrite_question(question: str, phrase: str) -> str:
+    result = _Q_DATE_SEVEN_RE.sub(phrase, question)
+    result = _Q_DATE_DAY_RE.sub(phrase, result)
+    result = _Q_DATE_MONTH_RE.sub(phrase, result)
+    return _cleanup(result)
+
+
+# --------------------------------------------------------------------------- #
+# 真实数据库只读验证（复用 catalog 凭据与连接参数）
 # --------------------------------------------------------------------------- #
 
 
@@ -242,113 +338,130 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _connect_read_only(record: Any, username: str, password: str):
-    if record.database_type == "mysql":
-        from backend.mysql_tls import build_mysql_tls_settings
+class ReadOnlySqlVerifier:
+    """基于 catalog 凭据的只读 SQL 验证器（PG/MySQL）。"""
 
-        import pymysql
+    def __init__(self, catalog: DataSourceCatalog, source_id: str) -> None:
+        self._catalog = catalog
+        self._source_id = source_id
+        self._record = catalog.require(source_id)
+        self._connection = None
 
-        connection = pymysql.connect(
-            host=record.host,
-            port=record.port,
-            database=record.database_name,
-            user=username,
-            password=password,
-            connect_timeout=record.connect_timeout,
-            charset="utf8mb4",
-            autocommit=False,
-            cursorclass=pymysql.cursors.DictCursor,
-            **build_mysql_tls_settings(
-                mode=record.mysql_tls_mode,
-                ca_path=record.ssl_ca_path,
-                cert_path=record.ssl_cert_path,
-                key_path=record.ssl_key_path,
-            ),
-        )
+    def connect(self) -> None:
+        username, password = self._catalog.credentials(self._source_id)
+        record = self._record
+        if record.database_type == "mysql":
+            from backend.mysql_tls import build_mysql_tls_settings
+
+            import pymysql
+
+            connection = pymysql.connect(
+                host=record.host,
+                port=record.port,
+                database=record.database_name,
+                user=username,
+                password=password,
+                connect_timeout=record.connect_timeout,
+                charset="utf8mb4",
+                autocommit=False,
+                cursorclass=pymysql.cursors.DictCursor,
+                **build_mysql_tls_settings(
+                    mode=record.mysql_tls_mode,
+                    ca_path=record.ssl_ca_path,
+                    cert_path=record.ssl_cert_path,
+                    key_path=record.ssl_key_path,
+                ),
+            )
+            cursor = connection.cursor()
+            cursor.execute("SET SESSION TRANSACTION READ ONLY")
+            cursor.execute("START TRANSACTION READ ONLY")
+            cursor.close()
+            self._connection = connection
+            return
+
+        import psycopg2
+        import psycopg2.extras
+
+        kwargs: dict[str, Any] = {
+            "host": record.host,
+            "port": record.port,
+            "dbname": record.database_name,
+            "user": username,
+            "password": password,
+            "connect_timeout": record.connect_timeout,
+            "application_name": "question-suggestion-generator",
+            "options": "-c default_transaction_read_only=on -c statement_timeout=30000",
+            "cursor_factory": psycopg2.extras.RealDictCursor,
+        }
+        if record.ssl_mode:
+            kwargs["sslmode"] = record.ssl_mode
+        connection = psycopg2.connect(**kwargs)
         cursor = connection.cursor()
-        cursor.execute("SET SESSION TRANSACTION READ ONLY")
-        cursor.execute("START TRANSACTION READ ONLY")
+        cursor.execute("BEGIN READ ONLY")
         cursor.close()
-        return connection
+        self._connection = connection
 
-    import psycopg2
-    import psycopg2.extras
-
-    kwargs: dict[str, Any] = {
-        "host": record.host,
-        "port": record.port,
-        "dbname": record.database_name,
-        "user": username,
-        "password": password,
-        "connect_timeout": record.connect_timeout,
-        "application_name": "question-suggestion-generator",
-        "options": "-c default_transaction_read_only=on -c statement_timeout=30000",
-        "cursor_factory": psycopg2.extras.RealDictCursor,
-    }
-    if record.ssl_mode:
-        kwargs["sslmode"] = record.ssl_mode
-    connection = psycopg2.connect(**kwargs)
-    cursor = connection.cursor()
-    cursor.execute("BEGIN READ ONLY")
-    cursor.close()
-    return connection
-
-
-def verify_samples_read_only(
-    catalog: DataSourceCatalog,
-    source_id: str,
-    samples: list[dict[str, Any]],
-) -> tuple[dict[str, dict[str, Any]], str]:
-    """只读执行已批准 SQL 并记录结果；连接/凭据不可用时返回跳过原因。"""
-    try:
-        record = catalog.require(source_id)
-        username, password = catalog.credentials(source_id)
-    except Exception as exc:
-        return {}, f"凭据/目录不可用: {type(exc).__name__}"
-
-    connection = None
-    try:
-        connection = _connect_read_only(record, username, password)
-    except Exception as exc:
-        return {}, f"连接失败: {type(exc).__name__}"
-
-    results: dict[str, dict[str, Any]] = {}
-    try:
-        cursor = connection.cursor()
+    def resolve_latest_day(self, probe_sql: str) -> date | None:
+        if self._connection is None:
+            raise RuntimeError("verifier 未连接")
+        cursor = self._connection.cursor()
         try:
-            for sample in samples:
-                try:
-                    cursor.execute(sample["sql"])
-                    columns = (
-                        [description[0] for description in cursor.description]
-                        if cursor.description
-                        else []
-                    )
-                    rows = cursor.fetchmany(20)
-                    results[sample["sample_id"]] = {
-                        "verified": True,
-                        "read_only": True,
-                        "columns": columns[:20],
-                        "row_count_sampled": len(rows),
-                    }
-                except Exception as exc:
-                    results[sample["sample_id"]] = {
-                        "verified": False,
-                        "read_only": True,
-                        "error": f"{type(exc).__name__}: {str(exc)[:120]}",
-                    }
+            cursor.execute(probe_sql)
+            row = cursor.fetchone()
+        except Exception:
+            return None
         finally:
             cursor.close()
-        return results, "verified"
-    finally:
+        if row is None:
+            return None
+        value = row[0] if not isinstance(row, dict) else row.get("latest_day")
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return _parse_date(value)
+        if hasattr(value, "date") and callable(getattr(value, "date", None)):
+            return value.date()
+        return value
+
+    def verify(self, sql: str) -> dict[str, Any]:
+        if self._connection is None:
+            return {"verified": False, "error": "verifier 未连接"}
+        cursor = self._connection.cursor()
         try:
-            connection.rollback()
+            cursor.execute(sql)
+            columns = (
+                [description[0] for description in cursor.description]
+                if cursor.description
+                else []
+            )
+            rows = cursor.fetchmany(20)
+            return {
+                "verified": True,
+                "read_only": True,
+                "columns": columns[:20],
+                "row_count_sampled": len(rows),
+            }
+        except Exception as exc:
+            return {
+                "verified": False,
+                "read_only": True,
+                "error": f"{type(exc).__name__}: {str(exc)[:120]}",
+            }
+        finally:
+            cursor.close()
+
+    def close(self) -> None:
+        if self._connection is None:
+            return
+        try:
+            self._connection.rollback()
         except Exception:
             pass
         try:
-            connection.close()
+            self._connection.close()
         except Exception:
             pass
+        self._connection = None
 
 
 # --------------------------------------------------------------------------- #
@@ -356,11 +469,7 @@ def verify_samples_read_only(
 # --------------------------------------------------------------------------- #
 
 
-def _stable_question_id(
-    source_id: str,
-    sample_id: str,
-    text: str,
-) -> str:
+def _stable_question_id(source_id: str, sample_id: str, text: str) -> str:
     digest = hashlib.sha256(
         f"{source_id}:{sample_id}:{text}".encode("utf-8")
     ).hexdigest()[:12]
@@ -390,87 +499,169 @@ def generate_questions(
     no_db_verify: bool,
     max_questions: int,
     asset_version: str,
+    verifier: Any | None = None,
 ) -> dict[str, Any]:
     """执行生成并写入资产，返回摘要。"""
     catalog = _open_catalog(catalog_path)
     record = catalog.require(source_id)
 
     resolved_metadata = (
-        metadata_path
-        if metadata_path is not None
-        else Path(record.metadata_path)
+        metadata_path if metadata_path is not None else Path(record.metadata_path)
     )
+    if not resolved_metadata.is_file():
+        raise ValueError(f"已发布 Metadata 不存在: {resolved_metadata}")
+    metadata_sha256 = _file_sha256(resolved_metadata)
+    metadata_tables = _load_published_tables(resolved_metadata)
+
+    guard = _build_guard(record.database_type, resolved_metadata)
+
     materials = (
         sorted(Path(materials_dir).glob("*.json"))
         if materials_dir
         else default_materials_paths(source_id)
     )
-    samples = load_approved_samples(materials)
+    samples, filter_reasons = load_approved_samples(materials)
 
-    seen: set[str] = set()
-    questions: list[dict[str, Any]] = []
-    for sample in samples:
-        if len(questions) >= max_questions:
-            break
-        text = generalize_question(sample["question"], sample["sql"])
-        if text in seen:
-            continue
-        seen.add(text)
-        entry: dict[str, Any] = {
-            "id": _stable_question_id(source_id, sample["sample_id"], text),
-            "text": text,
-            "enabled": True,
-            "related_tables": sample["tables"],
-            "related_sample_id": sample["sample_id"],
-        }
-        if sample["expected_behavior"]:
-            entry["expected_behavior"] = sample["expected_behavior"]
-        questions.append(entry)
+    # 只读验证器：日期改写与最终 SQL 验证都依赖它，须在循环前建立
+    verification_note = "skipped"
+    own_verifier: Any = verifier
+    if not no_db_verify:
+        verification_note = "verified"
+        if own_verifier is None:
+            own_verifier = ReadOnlySqlVerifier(catalog, source_id)
+            own_verifier.connect()  # 连接失败则整体中止，不写资产
 
-    if no_db_verify:
-        verification_note = "skipped"
-        verification: dict[str, dict[str, Any]] = {}
-    else:
-        verification, verification_note = verify_samples_read_only(
-            catalog,
-            source_id,
-            samples,
-        )
-        for question in questions:
-            sample_id = question.get("related_sample_id")
-            if sample_id in verification:
-                question["verification"] = verification[sample_id]
+    disabled_reasons: Counter = Counter()
+    candidates: list[dict[str, Any]] = []
+    seen_texts: set[str] = set()
+
+    try:
+        for sample in samples:
+            if len(candidates) >= max_questions:
+                break
+            entry: dict[str, Any] = {
+                "id": _stable_question_id(source_id, sample["sample_id"], sample["question"]),
+                "related_sample_id": sample["sample_id"],
+                "related_tables": list(sample["tables"]),
+            }
+
+            # 1) 关联表必须属于该源当前发布范围
+            missing_tables = [
+                table for table in sample["tables"] if table not in metadata_tables
+            ]
+            if missing_tables:
+                entry["disabled_reason"] = "metadata_mismatch"
+                entry["metadata_missing_tables"] = missing_tables
+                disabled_reasons["metadata_mismatch"] += 1
+                candidates.append(entry)
+                continue
+
+            # 2) 日期改写：解析真实日期得到具体可执行 SQL
+            matches = _date_matches(sample["sql"])
+            if matches:
+                if own_verifier is None:
+                    entry["disabled_reason"] = "verification_unavailable"
+                    disabled_reasons["verification_unavailable"] += 1
+                    candidates.append(entry)
+                    continue
+                try:
+                    probe_sql = _latest_day_probe_sql(sample["sql"], matches)
+                    latest_day = own_verifier.resolve_latest_day(probe_sql)
+                except Exception:
+                    latest_day = None
+                if latest_day is None:
+                    entry["disabled_reason"] = "no_data"
+                    disabled_reasons["no_data"] += 1
+                    candidates.append(entry)
+                    continue
+                granularity, phrase, window_days = _analyze_date_range(matches)
+                rewritten_sql = _substitute_dates(
+                    sample["sql"], matches, latest_day, granularity, window_days
+                )
+                question = _rewrite_question(sample["question"], phrase)
             else:
-                question["verification"] = {
-                    "verified": False,
-                    "read_only": True,
-                    "error": "verification skipped",
-                }
+                rewritten_sql = sample["sql"]
+                question = _cleanup(sample["question"])
+
+            if _has_placeholder(question):
+                entry["disabled_reason"] = "placeholder"
+                disabled_reasons["placeholder"] += 1
+                candidates.append(entry)
+                continue
+
+            # 3) SQLGuard 校验改写后的实际 SQL
+            guard_result = guard.validate(rewritten_sql, query="")
+            if not guard_result.passed:
+                entry["disabled_reason"] = "sqlguard_fail"
+                entry["guard_reason"] = guard_result.reason
+                disabled_reasons["sqlguard_fail"] += 1
+                candidates.append(entry)
+                continue
+
+            # 4) 去重
+            if question in seen_texts:
+                continue
+            seen_texts.add(question)
+
+            entry["text"] = question
+            entry["related_sql"] = rewritten_sql
+            entry["enabled"] = False
+            candidates.append(entry)
+
+        # 5) 真实只读执行验证（对应最终问题及其实际 SQL）
+        if own_verifier is None:
+            for entry in candidates:
+                if "enabled" in entry:
+                    entry["disabled_reason"] = "verification_unavailable"
+                    entry["verification"] = {
+                        "verified": False,
+                        "read_only": True,
+                        "error": "verification skipped",
+                    }
+                    entry.pop("enabled", None)
+                    disabled_reasons["verification_unavailable"] += 1
+        else:
+            for entry in candidates:
+                if "enabled" not in entry:
+                    continue
+                result = own_verifier.verify(entry["related_sql"])
+                if result.get("verified"):
+                    entry["enabled"] = True
+                    entry["verification"] = result
+                else:
+                    entry["disabled_reason"] = "execution_fail"
+                    entry["verification"] = result
+                    disabled_reasons["execution_fail"] += 1
+                    entry.pop("enabled", None)
+    finally:
+        if own_verifier is not None and own_verifier is not verifier:
+            own_verifier.close()
+
+    enabled_entries = [entry for entry in candidates if entry.get("enabled") is True]
 
     basis: dict[str, Any] = {
         "metadata_path": str(resolved_metadata),
-        "metadata_sha256": (
-            _file_sha256(resolved_metadata)
-            if resolved_metadata.is_file()
-            else ""
-        ),
+        "metadata_sha256": metadata_sha256,
+        "metadata_table_count": len(metadata_tables),
         "sql_examples_paths": [str(path) for path in materials],
-        "sql_examples_sha256": (
-            _files_sha256(materials) if materials else ""
-        ),
+        "sql_examples_sha256": _files_sha256(materials) if materials else "",
         "approved_sample_count": len(samples),
-        "generated_question_count": len(questions),
+        "enabled_question_count": len(enabled_entries),
         "db_verification": verification_note,
+        "filter_reasons": dict(filter_reasons),
+        "disabled_reasons": dict(disabled_reasons),
         "summary": (
-            f"基于 {len(samples)} 条已批准 SQL 示例与已发布 Metadata 生成 "
-            f"{len(questions)} 条推荐问题；来源：{'; '.join(str(p) for p in materials) or '无'}"
+            f"已批准 {len(samples)} 条，启用 {len(enabled_entries)} 条；"
+            f"过滤：{dict(filter_reasons)}；禁用：{dict(disabled_reasons)}"
         ),
     }
 
     directory = build_question_directory(
         source_id,
-        questions,
+        enabled_entries,
         asset_version=asset_version,
+        runtime_revision=record.runtime_revision,
+        metadata_sha256=metadata_sha256,
         generated_at=_utc_now_iso(),
         generator=GENERATOR_NAME,
         basis=basis,
@@ -481,14 +672,14 @@ def generate_questions(
         "source_id": source_id,
         "asset_version": asset_version,
         "asset_path": str(output),
+        "runtime_revision": record.runtime_revision,
+        "metadata_sha256": metadata_sha256,
         "approved_sample_count": len(samples),
-        "generated_question_count": len(questions),
+        "enabled_question_count": len(enabled_entries),
+        "disabled_count": len(candidates) - len(enabled_entries),
         "db_verification": verification_note,
-        "verified_questions": (
-            sum(1 for item in verification.values() if item.get("verified"))
-            if verification
-            else 0
-        ),
+        "filter_reasons": dict(filter_reasons),
+        "disabled_reasons": dict(disabled_reasons),
         "basis": basis,
     }
 
@@ -521,13 +712,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-db-verify",
         action="store_true",
-        help="跳过真实数据库只读验证",
+        help="跳过真实数据库只读验证（问题不启用，仅做管线校验）",
     )
     parser.add_argument(
         "--max-questions",
         type=int,
         default=100,
-        help="最多生成问题数（默认 100）",
+        help="最多处理问题数（默认 100）",
     )
     parser.add_argument("--asset-version", default="v1", help="资产版本号")
     args = parser.parse_args(argv)
@@ -537,9 +728,7 @@ def main(argv: list[str] | None = None) -> int:
         root=Path(args.root) if args.root else None,
         catalog_path=args.catalog,
         materials_dir=args.materials_dir,
-        metadata_path=(
-            Path(args.metadata_path) if args.metadata_path else None
-        ),
+        metadata_path=Path(args.metadata_path) if args.metadata_path else None,
         no_db_verify=args.no_db_verify,
         max_questions=args.max_questions,
         asset_version=args.asset_version,

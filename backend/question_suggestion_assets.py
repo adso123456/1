@@ -64,6 +64,8 @@ def build_question_directory(
     questions: list[dict[str, Any]],
     *,
     asset_version: str = "v1",
+    runtime_revision: int | None = None,
+    metadata_sha256: str = "",
     generated_at: str = "",
     generator: str = "",
     basis: Mapping[str, Any] | None = None,
@@ -91,7 +93,9 @@ def build_question_directory(
             "category",
             "related_tables",
             "related_sample_id",
+            "related_sql",
             "verification",
+            "disabled_reason",
         ):
             if optional in item:
                 entry[optional] = item[optional]
@@ -100,6 +104,8 @@ def build_question_directory(
         "schema_version": ASSET_SCHEMA_VERSION,
         "source_id": source_id,
         "asset_version": asset_version,
+        "runtime_revision": runtime_revision,
+        "metadata_sha256": metadata_sha256,
         "generated_at": generated_at,
         "generator": generator,
         "basis": dict(basis or {}),
@@ -173,9 +179,17 @@ def load_question_directory(
     asset_version = payload.get("asset_version")
     if not isinstance(asset_version, str) or not asset_version.strip():
         asset_version = "v1"
+    runtime_revision = payload.get("runtime_revision")
+    if not isinstance(runtime_revision, int) or isinstance(runtime_revision, bool):
+        runtime_revision = None
+    metadata_sha256 = payload.get("metadata_sha256")
+    if not isinstance(metadata_sha256, str) or not metadata_sha256.strip():
+        metadata_sha256 = ""
     return {
         "source_id": source_id,
         "asset_version": asset_version.strip(),
+        "runtime_revision": runtime_revision,
+        "metadata_sha256": metadata_sha256.strip(),
         "questions": questions,
     }
 

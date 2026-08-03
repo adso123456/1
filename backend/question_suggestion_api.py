@@ -74,6 +74,13 @@ def create_question_suggestion_router(
                 "asset_version": None,
                 "questions": [],
             }
+        # 资产必须与当前数据源 runtime revision 严格一致，否则禁止展示
+        if directory.get("runtime_revision") != record.runtime_revision:
+            return {
+                "source_id": context.source_id,
+                "asset_version": directory["asset_version"],
+                "questions": [],
+            }
         questions = select_suggested_questions(directory, conversation_id)
         return {
             "source_id": context.source_id,
