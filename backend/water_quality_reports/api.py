@@ -1,27 +1,33 @@
-"""水质日报、月报 FastAPI 路由。"""
+"""水质日报、月报 FastAPI 路由（普通工作台）。"""
 
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
-from backend.water_quality_reports.artifacts import (
-    ReportArtifactError,
-    ReportArtifactNotFound,
-    ReportArtifactStore,
+from backend.water_quality_reports.application_service import (
+    ReportApplicationService,
+    ReportArtifactNotFoundError,
+    ReportArtifactOperationError,
+    ReportDataSourceError,
+    ReportParameterError,
+    ReportPdfRenderError,
+    parse_date,
+    parse_month,
 )
+from backend.water_quality_reports.artifacts import ReportArtifactStore
 from backend.water_quality_reports.pdf_renderer import (
-    PdfRenderError,
     WaterQualityPdfRenderer,
 )
-from backend.water_quality_reports.repository import ReportDataSourceError
+from backend.water_quality_reports.repository import (
+    ReportDataSourceError as RepositoryDataSourceError,
+)
 from backend.water_quality_reports.service import WaterQualityReportService
 from backend.water_quality_reports.template import render_report_html
 
@@ -40,21 +46,19 @@ class GenerateReportRequest(BaseModel):
 
 
 def _parse_date(value: str) -> date:
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None:
-        raise HTTPException(status_code=422, detail="日期必须为 YYYY-MM-DD")
+    """Backward-compatible wrapper; parsing lives in the shared layer."""
     try:
-        return date.fromisoformat(value)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="日期无效") from None
+        return parse_date(value)
+    except ReportParameterError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 def _parse_month(value: str) -> date:
-    if re.fullmatch(r"\d{4}-\d{2}", value) is None:
-        raise HTTPException(status_code=422, detail="月份必须为 YYYY-MM")
+    """Backward-compatible wrapper; parsing lives in the shared layer."""
     try:
-        return datetime.strptime(value, "%Y-%m").date().replace(day=1)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="月份无效") from None
+        return parse_month(value)
+    except ReportParameterError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 def _parse_indicator_codes(value: str | None) -> tuple[int, ...] | None:
@@ -97,6 +101,7 @@ def create_report_router(
     router = APIRouter(prefix="/api/reports/water-quality", tags=["water-quality-reports"])
     renderer = renderer or WaterQualityPdfRenderer()
     artifacts = artifact_store or ReportArtifactStore(service_factory, renderer)
+    reports = ReportApplicationService(artifacts, renderer)
 
     def daily_report(
         value: str,
@@ -114,8 +119,8 @@ def create_report_router(
             )
             logger.info("Daily report query timings: %s", service.repository.query_timings)
             return report
-        except (ReportDataSourceError, ValueError) as exc:
-            status_code = 503 if isinstance(exc, ReportDataSourceError) else 422
+        except (RepositoryDataSourceError, ValueError) as exc:
+            status_code = 503 if isinstance(exc, RepositoryDataSourceError) else 422
             raise HTTPException(status_code=status_code, detail=str(exc)) from None
 
     def monthly_report(
@@ -132,81 +137,65 @@ def create_report_router(
             )
             logger.info("Monthly report query timings: %s", service.repository.query_timings)
             return report
-        except (ReportDataSourceError, ValueError) as exc:
-            status_code = 503 if isinstance(exc, ReportDataSourceError) else 422
+        except (RepositoryDataSourceError, ValueError) as exc:
+            status_code = 503 if isinstance(exc, RepositoryDataSourceError) else 422
             raise HTTPException(status_code=status_code, detail=str(exc)) from None
 
     @router.get("/options")
     def get_options():
-        service = service_factory()
         try:
-            return service.options()
+            return reports.options()
         except ReportDataSourceError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from None
 
     @router.post("/generate")
     def generate_report(request: GenerateReportRequest):
         try:
-            if request.report_type == "daily":
-                if request.date is None or request.month is not None:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="日报必须且只能提供 date",
-                    )
-                period = _parse_date(request.date)
-            else:
-                if request.month is None or request.date is not None:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="月报必须且只能提供 month",
-                    )
-                period = _parse_month(request.month)
-            codes = tuple(dict.fromkeys(request.indicators))
-            if not codes or any(code < 0 for code in codes):
-                raise ValueError("至少选择一个有效指标")
-            overrides = {
-                int(code): hours
-                for code, hours in request.frequency_hours.items()
-            }
-            return artifacts.generate(
+            period = reports.validate_generate_request(
+                request.report_type,
+                request.date,
+                request.month,
+            )
+            codes = reports.normalize_indicators(request.indicators)
+            overrides = reports.normalize_frequency_hours(request.frequency_hours)
+            return reports.generate(
                 report_type=request.report_type,
                 period=period,
                 indicator_codes=codes,
                 frequency_overrides=overrides,
                 recent_days=request.recent_days,
             )
-        except HTTPException:
-            raise
+        except ReportParameterError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
         except ReportDataSourceError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from None
-        except (ValueError, ReportArtifactError) as exc:
+        except ReportArtifactOperationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
 
     @router.get("/artifacts/{report_id}/preview", response_class=HTMLResponse)
     def preview_artifact(report_id: str):
         try:
-            return HTMLResponse(render_report_html(artifacts.load(report_id)))
-        except ReportArtifactNotFound as exc:
+            return HTMLResponse(reports.preview_html(report_id))
+        except ReportArtifactNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
-        except ReportArtifactError as exc:
+        except ReportArtifactOperationError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from None
 
     @router.get("/artifacts/{report_id}/pdf")
     def download_artifact(report_id: str):
         try:
-            report = artifacts.load(report_id)
-            path = artifacts.pdf_path(report_id)
-        except ReportArtifactNotFound as exc:
+            result = reports.pdf(report_id)
+        except ReportArtifactNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
-        except ReportArtifactError as exc:
+        except ReportArtifactOperationError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from None
-        if report["report_type"] == "daily":
-            suffix = report["report_date"].replace("-", "")
-            filename = f"梁子湖流域自动站水质日报_{suffix}.pdf"
-        else:
-            suffix = report["report_month"].replace("-", "")
-            filename = f"梁子湖流域自动站水质月报_{suffix}.pdf"
-        return FileResponse(path, media_type="application/pdf", filename=filename)
+        return FileResponse(
+            result.path,
+            media_type="application/pdf",
+            filename=result.filename,
+        )
 
     @router.get("/daily")
     def get_daily(
@@ -236,9 +225,8 @@ def create_report_router(
     ):
         report = daily_report(date_value, indicators, frequency_hours, recent_days)
         try:
-            path = renderer.render(report)
-        except PdfRenderError:
-            logger.exception("Daily PDF rendering failed")
+            path = reports.render_pdf(report)
+        except ReportPdfRenderError:
             raise HTTPException(status_code=500, detail="PDF 生成失败") from None
         return FileResponse(
             path,
@@ -271,9 +259,8 @@ def create_report_router(
     ):
         report = monthly_report(month_value, indicators, frequency_hours)
         try:
-            path = renderer.render(report)
-        except PdfRenderError:
-            logger.exception("Monthly PDF rendering failed")
+            path = reports.render_pdf(report)
+        except ReportPdfRenderError:
             raise HTTPException(status_code=500, detail="PDF 生成失败") from None
         return FileResponse(
             path,

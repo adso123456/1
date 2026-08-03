@@ -165,7 +165,7 @@ def main() -> int:
         with (
             patch("step4_server.ReportArtifactStore", FakeReportStore),
             patch(
-                "step4_server.render_report_html",
+                "backend.water_quality_reports.application_service.render_report_html",
                 lambda _report: "<html>preview-ok</html>",
             ),
         ):

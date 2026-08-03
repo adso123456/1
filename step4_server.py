@@ -45,27 +45,19 @@ from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
 from backend.mysql_runtime_factory import create_mysql_runtime
-from backend.water_quality_reports.api import (
-    GenerateReportRequest,
-    _parse_date,
-    _parse_month,
-    create_report_router,
+from backend.water_quality_reports.api import create_report_router
+from backend.water_quality_reports.application_service import (
+    ReportApplicationService,
 )
-from backend.water_quality_reports.artifacts import (
-    ReportArtifactError,
-    ReportArtifactNotFound,
-    ReportArtifactStore,
-)
+from backend.water_quality_reports.artifacts import ReportArtifactStore
 from backend.water_quality_reports.chat_handler import WaterQualityReportChatHandler
+from backend.water_quality_reports.embed_api import create_embed_report_router
 from backend.water_quality_reports.repository import ReportRepository
 from backend.water_quality_reports.service import WaterQualityReportService
-from backend.water_quality_reports.template import render_report_html
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
-    FileResponse,
-    HTMLResponse,
     JSONResponse,
     StreamingResponse,
 )
@@ -79,7 +71,6 @@ EMBED_SAFE_CONTEXT_HEADERS = ("user-agent", "accept-language")
 EMBED_PATH_PATTERN = re.compile(r"^/api/embed/apps/([^/]+)(?:/|$)")
 EMBED_ALLOWED_METHODS = "GET, POST, OPTIONS"
 EMBED_ALLOWED_HEADERS = "Accept, Content-Type"
-REPORT_SOURCE_ID = "mysql-lzh-monitor"
 
 
 @dataclass(frozen=True)
@@ -376,121 +367,21 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 },
             )
 
-        def require_report_store(
-            app_id: str,
-            request: Request,
-        ) -> ReportArtifactStore:
-            authorize_embed(
-                app_id,
-                request.headers.get("Origin"),
-                source_id=REPORT_SOURCE_ID,
-            )
-            if report_artifact_store is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail="报告服务当前不可用",
-                )
-            return report_artifact_store
-
-        @app.get("/api/embed/apps/{app_id}/reports/options")
-        def get_embed_report_options(app_id: str, request: Request):
-            store = require_report_store(app_id, request)
-            try:
-                return store.options()
-            except Exception:
-                raise HTTPException(
-                    status_code=503,
-                    detail="报表筛选项加载失败",
-                ) from None
-
-        @app.post("/api/embed/apps/{app_id}/reports/generate")
-        def generate_embed_report(
-            app_id: str,
-            payload: GenerateReportRequest,
-            request: Request,
-        ):
-            store = require_report_store(app_id, request)
-            if payload.report_type == "daily":
-                if payload.date is None or payload.month is not None:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="日报必须且只能提供 date",
-                    )
-                period = _parse_date(payload.date)
-            else:
-                if payload.month is None or payload.date is not None:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="月报必须且只能提供 month",
-                    )
-                period = _parse_month(payload.month)
-            try:
-                return store.generate(
-                    report_type=payload.report_type,
-                    period=period,
-                    indicator_codes=tuple(dict.fromkeys(payload.indicators)),
-                    frequency_overrides={
-                        int(code): hours
-                        for code, hours in payload.frequency_hours.items()
-                    },
-                    recent_days=payload.recent_days,
-                )
-            except ReportArtifactError:
-                raise HTTPException(
-                    status_code=422,
-                    detail="报表生成失败，请检查报表参数",
-                ) from None
-
-        @app.get(
-            "/api/embed/apps/{app_id}/reports/artifacts/{report_id}/preview",
-            response_class=HTMLResponse,
+        embed_report_service = (
+            ReportApplicationService(report_artifact_store)
+            if report_artifact_store is not None
+            else None
         )
-        def preview_embed_report(
-            app_id: str,
-            report_id: str,
-            request: Request,
-        ):
-            store = require_report_store(app_id, request)
-            try:
-                return HTMLResponse(render_report_html(store.load(report_id)))
-            except ReportArtifactNotFound:
-                raise HTTPException(status_code=404, detail="报告不存在") from None
-            except ReportArtifactError:
-                raise HTTPException(
-                    status_code=500,
-                    detail="报告预览加载失败",
-                ) from None
-
-        @app.get(
-            "/api/embed/apps/{app_id}/reports/artifacts/{report_id}/pdf"
+        app.include_router(
+            create_embed_report_router(
+                service=embed_report_service,
+                authorize=lambda app_id, origin, source_id: authorize_embed(
+                    app_id,
+                    origin,
+                    source_id=source_id,
+                ),
+            )
         )
-        def download_embed_report(
-            app_id: str,
-            report_id: str,
-            request: Request,
-        ):
-            store = require_report_store(app_id, request)
-            try:
-                report = store.load(report_id)
-                path = store.pdf_path(report_id)
-            except ReportArtifactNotFound:
-                raise HTTPException(status_code=404, detail="报告不存在") from None
-            except ReportArtifactError:
-                raise HTTPException(
-                    status_code=500,
-                    detail="报告文件生成失败",
-                ) from None
-            suffix = (
-                report["report_date"].replace("-", "")
-                if report["report_type"] == "daily"
-                else report["report_month"].replace("-", "")
-            )
-            report_name = "日报" if report["report_type"] == "daily" else "月报"
-            return FileResponse(
-                path,
-                media_type="application/pdf",
-                filename=f"梁子湖流域自动站水质{report_name}_{suffix}.pdf",
-            )
 
         if self.assistant_application_registry is not None:
 
