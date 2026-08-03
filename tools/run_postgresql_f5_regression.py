@@ -1214,7 +1214,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             return list(
                 await asyncio.gather(
                     requirement_worker("requires run_sql", 1),
-                    requirement_worker("does not require run_sql", 0),
+                    requirement_worker("你好", 0),
                 )
             )
 
@@ -1289,7 +1289,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
                 and get_original_question() is None
             )
 
-            await hook.before_message(None, "next deepseek request")
+            await hook.before_message(None, "你好")
             next_state_before_call = get_run_sql_requirement()
             await deep_service.send_request(fake_request)
             next_decision = get_run_sql_requirement().decisions[-1]
@@ -1559,7 +1559,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         async def run_non_thinking_isolation_workers():
             return await asyncio.gather(
                 non_thinking_isolation_worker("non-thinking A", 1, 2),
-                non_thinking_isolation_worker("original B", 0, 1),
+                non_thinking_isolation_worker("谢谢", 0, 1),
             )
 
         isolation_a, isolation_b = asyncio.run(
@@ -1982,7 +1982,7 @@ LIMIT 20"""
             recovery_service._client = DeepSeekClient()
             recovery_service.parent_call_count = 0
             recovery_service.parent_payloads = []
-            await failing_hook.before_message(None, "request after provider exception")
+            await failing_hook.before_message(None, "你好")
             await recovery_service.send_request(fake_request)
             recovery_payload = recovery_service.parent_payloads[0]
             recovery_decision = get_run_sql_requirement().decisions[-1]

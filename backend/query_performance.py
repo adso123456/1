@@ -38,6 +38,7 @@ class QueryPerformanceState:
     current_stage: str = "request_received"
     trace_directory: Path | None = None
     run_sql_count: int = 0
+    successful_run_sql_count: int = 0
     dataframe_count: int = 0
     provider_retry_count: int = 0
     tool_error_count: int = 0
@@ -155,13 +156,16 @@ def record_sql_result(
     if state is None:
         return
     state.run_sql_count += 1
-    if success and metadata.get("query_type") == "SELECT":
+    successful_select = success and metadata.get("query_type") == "SELECT"
+    if successful_select:
+        state.successful_run_sql_count += 1
+        state.last_sql = sql
+    if successful_select and isinstance(metadata.get("results"), list):
         state.dataframe_count += 1
-    else:
+    if not successful_select:
         state.tool_error_count += 1
     if guard_severity != "ok":
         state.guard_warning_count += 1
-    state.last_sql = sql
     state.last_result_metadata = dict(metadata)
 
 
@@ -191,7 +195,10 @@ def performance_payload(state: QueryPerformanceState) -> dict[str, Any]:
         "total_ms": round(total_ms, 3),
         "llm_call_count": state.counters.get("provider_llm_calls", 0),
         "tool_round_count": state.run_sql_count,
-        "successful_run_sql_count": state.dataframe_count,
+        "successful_run_sql_count": state.successful_run_sql_count,
+        "successful_sql_present": bool(
+            state.successful_run_sql_count and state.last_sql
+        ),
         "dataframe_count": state.dataframe_count,
         "fast_path_used": state.fast_path_used,
         "context_profile": state.context_profile.value,

@@ -11,7 +11,8 @@ from backend.request_diagnostics import write_trace_json
 
 
 REQUIREMENT_REASON = "approved_sql_example_injected"
-DATA_FOLLOWUP_REQUIREMENT_REASON = "data_followup_requires_fresh_sql"
+DEFAULT_DATABASE_QUERY_REASON = "ordinary_database_query_requires_sql"
+NON_DATA_EXEMPTION_REASON = "explicit_non_data_request"
 FORCED_RUN_SQL_TOOL_CHOICE = {
     "type": "function",
     "function": {"name": "run_sql"},
@@ -25,6 +26,7 @@ class RunSqlRequirementError(RuntimeError):
 @dataclass
 class RunSqlRequirementState:
     requires_run_sql: bool = False
+    explicit_non_data_exemption: bool = False
     requirement_reasons: list[str] = field(default_factory=list)
     first_llm_call_seen: bool = False
     forced_tool_choice_applied: bool = False
@@ -74,22 +76,29 @@ def record_injected_sql_examples(injected_count: int) -> RunSqlRequirementState:
     """只以实际注入数量设置本请求门禁。"""
     state = get_run_sql_requirement() or initialize_run_sql_requirement()
     state.sql_example_injected_count = injected_count
-    if injected_count > 0:
+    if injected_count > 0 and not state.explicit_non_data_exemption:
         state.requires_run_sql = True
         if REQUIREMENT_REASON not in state.requirement_reasons:
             state.requirement_reasons.append(REQUIREMENT_REASON)
     return state
 
 
-def record_data_followup_requirement(question: str) -> RunSqlRequirementState:
-    """数据型追问在首轮强制重新调用 run_sql。"""
-    from backend.query_intent import requires_fresh_data_followup
+def record_default_database_query_requirement(
+    question: str,
+) -> RunSqlRequirementState:
+    """普通问数默认强制查库，仅明确非数据交流可以豁免。"""
+    from backend.query_intent import is_explicit_non_data_request
 
     state = get_run_sql_requirement() or initialize_run_sql_requirement()
-    if requires_fresh_data_followup(question):
-        state.requires_run_sql = True
-        if DATA_FOLLOWUP_REQUIREMENT_REASON not in state.requirement_reasons:
-            state.requirement_reasons.append(DATA_FOLLOWUP_REQUIREMENT_REASON)
+    if is_explicit_non_data_request(question):
+        state.requires_run_sql = False
+        state.explicit_non_data_exemption = True
+        if NON_DATA_EXEMPTION_REASON not in state.requirement_reasons:
+            state.requirement_reasons.append(NON_DATA_EXEMPTION_REASON)
+        return state
+    state.requires_run_sql = True
+    if DEFAULT_DATABASE_QUERY_REASON not in state.requirement_reasons:
+        state.requirement_reasons.append(DEFAULT_DATABASE_QUERY_REASON)
     return state
 
 
@@ -106,8 +115,8 @@ def record_successful_run_sql(*, row_count: int, columns: list[str]) -> bool:
     state.successful_run_sql_columns = list(columns)
     state.tool_phase_closed = True
     state.tool_phase_close_reason = (
-        "first_successful_run_sql_for_data_followup"
-        if DATA_FOLLOWUP_REQUIREMENT_REASON in state.requirement_reasons
+        "first_successful_run_sql_for_database_query"
+        if DEFAULT_DATABASE_QUERY_REASON in state.requirement_reasons
         else "first_successful_run_sql_for_approved_example"
     )
     _write_trace_state(state)
@@ -140,6 +149,7 @@ def close_tool_phase_after_success(reason: str) -> bool:
 def _state_payload(state: RunSqlRequirementState) -> dict[str, Any]:
     return {
         "requires_run_sql": state.requires_run_sql,
+        "explicit_non_data_exemption": state.explicit_non_data_exemption,
         "requirement_reasons": state.requirement_reasons,
         "sql_example_injected_count": state.sql_example_injected_count,
         "successful_run_sql_completed": state.successful_run_sql_completed,

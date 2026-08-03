@@ -22,20 +22,23 @@ from backend.query_context import OriginalQuestionLifecycleHook
 from backend.query_performance import (
     begin_query_performance,
     clear_query_performance,
+    performance_payload,
+    record_sql_result,
 )
 from backend.runtime_prewarm import RuntimePrewarmer
 from backend.run_sql_requirement import (
-    DATA_FOLLOWUP_REQUIREMENT_REASON,
+    DEFAULT_DATABASE_QUERY_REASON,
     FORCED_RUN_SQL_TOOL_CHOICE,
+    NON_DATA_EXEMPTION_REASON,
     build_effective_request_policy,
     get_run_sql_requirement,
-    record_successful_run_sql,
+    record_injected_sql_examples,
 )
 from backend.simple_query_fast_path import build_fast_path_summary
 from backend.streaming_text import ChartAnnotationTailFilter
 from backend.tracing_llm_service import TracingOpenAILlmService
 from config.performance_settings import QueryPerformanceSettings
-from tools.run_query_performance_validation import validate_fresh_data_followup
+from tools.run_query_performance_validation import validate_case_contract
 from vanna.core.llm import LlmMessage, LlmRequest, LlmStreamChunk
 from vanna.core.user import User
 
@@ -301,51 +304,74 @@ async def test_retry_cancellation_and_event_loop() -> tuple[bool, str]:
     )
 
 
-async def test_data_followup_requires_fresh_sql() -> tuple[bool, str]:
+async def test_default_closed_run_sql_gate() -> tuple[bool, str]:
     hook = OriginalQuestionLifecycleHook()
     user = User(id="followup-user", username="followup-user")
-    await hook.before_message(user, "只显示刚才结果中的前3个断面")
-    state = get_run_sql_requirement()
-    policy = build_effective_request_policy(
-        llm_call_index=1,
-        tools=[{"name": "run_sql"}],
-        original_payload={"tool_choice": "auto"},
-        provider_hostname="api.deepseek.com",
-        model="deepseek-v4-pro",
+    data_requests = (
+        "把刚才结果按数量排序",
+        "只看其中状态正常的",
+        "那再来5条",
+        "把这些记录按时间倒序",
+        "给我上面几个的详细信息",
+        "换个条件，只看夷陵区",
+        "不要前三个，显示后五个",
+        "接着查",
     )
-    closed = record_successful_run_sql(
-        row_count=3,
-        columns=["station_id", "record_count"],
+    exempt_requests = (
+        "解释一下刚才结果",
+        "刚才为什么这样排序",
+        "这个字段是什么意思",
+        "SQL语法是什么意思",
+        "你是指哪个字段吗？",
+        "谢谢",
+        "你好",
     )
-    data_followup_passed = bool(
-        state
-        and DATA_FOLLOWUP_REQUIREMENT_REASON in state.requirement_reasons
-        and policy.effective_tool_choice == FORCED_RUN_SQL_TOOL_CHOICE
-        and closed
-        and state.successful_run_sql_count == 1
-        and state.tool_phase_close_reason
-        == "first_successful_run_sql_for_data_followup"
-        and all(
-            requires_fresh_data_followup(question)
-            for question in (
-                "刚才结果中的前3个",
-                "再筛选状态正常的记录",
-                "继续查询最近的数据",
-                "只显示其中数量最多的5个",
-            )
-        )
-    )
-    await hook.after_message(None)
 
-    await hook.before_message(user, "解释一下刚才结果是什么意思")
-    explanation_state = get_run_sql_requirement()
-    explanation_passed = bool(
-        explanation_state and not explanation_state.requires_run_sql
-    )
-    await hook.after_message(None)
+    forced: list[str] = []
+    for question in data_requests:
+        await hook.before_message(user, question)
+        state = get_run_sql_requirement()
+        policy = build_effective_request_policy(
+            llm_call_index=1,
+            tools=[{"name": "run_sql"}],
+            original_payload={"tool_choice": "auto"},
+            provider_hostname="api.deepseek.com",
+            model="deepseek-v4-pro",
+        )
+        if (
+            state
+            and state.requires_run_sql
+            and DEFAULT_DATABASE_QUERY_REASON in state.requirement_reasons
+            and policy.effective_tool_choice == FORCED_RUN_SQL_TOOL_CHOICE
+        ):
+            forced.append(question)
+        await hook.after_message(None)
+
+    exempted: list[str] = []
+    for question in exempt_requests:
+        await hook.before_message(user, question)
+        record_injected_sql_examples(2)
+        state = get_run_sql_requirement()
+        policy = build_effective_request_policy(
+            llm_call_index=1,
+            tools=[{"name": "run_sql"}],
+            original_payload={"tool_choice": "auto"},
+            provider_hostname="api.deepseek.com",
+            model="deepseek-v4-pro",
+        )
+        if (
+            state
+            and not state.requires_run_sql
+            and state.explicit_non_data_exemption
+            and NON_DATA_EXEMPTION_REASON in state.requirement_reasons
+            and policy.effective_tool_choice == "auto"
+        ):
+            exempted.append(question)
+        await hook.after_message(None)
     return (
-        data_followup_passed and explanation_passed,
-        f"data_followup={data_followup_passed}, explanation={explanation_passed}",
+        len(forced) == len(data_requests) and len(exempted) == len(exempt_requests),
+        f"forced={len(forced)}/{len(data_requests)}, "
+        f"exempted={len(exempted)}/{len(exempt_requests)}",
     )
 
 
@@ -368,31 +394,91 @@ async def main() -> int:
             f"client_type={client_type}, max_retries={native_service._client.max_retries}",
         )
     )
-    followup_passed, followup_detail = (
-        await test_data_followup_requires_fresh_sql()
-    )
+    followup_passed, followup_detail = await test_default_closed_run_sql_gate()
     results.append(
         (
-            "数据型追问首轮强制新 run_sql，解释型追问保持原行为",
+            "普通问数默认强制 run_sql，明确非数据请求才豁免",
             followup_passed,
             followup_detail,
         )
     )
-    missing_followup_error = validate_fresh_data_followup(
-        question="只显示刚才结果中的前3个断面",
-        performance={"successful_run_sql_count": 0},
-        dataframe_count=0,
+    missing_followup_error = validate_case_contract(
+        requires_fresh_sql=True,
+        expected_request_id="missed-followup",
+        expected_source_id="postgresql-main",
+        performance={
+            "successful_run_sql_count": 0,
+            "dataframe_count": 0,
+            "successful_sql_present": False,
+        },
+        observed_dataframe_count=0,
     )
-    valid_followup_error = validate_fresh_data_followup(
-        question="只显示刚才结果中的前3个断面",
-        performance={"successful_run_sql_count": 1},
-        dataframe_count=1,
+    valid_followup_error = validate_case_contract(
+        requires_fresh_sql=True,
+        expected_request_id="valid-followup",
+        expected_source_id="postgresql-main",
+        performance={
+            "successful_run_sql_count": 1,
+            "dataframe_count": 1,
+            "successful_sql_present": True,
+            "request_id": "valid-followup",
+            "source_id": "postgresql-main",
+        },
+        observed_dataframe_count=1,
+    )
+    exempt_validation_error = validate_case_contract(
+        requires_fresh_sql=False,
+        expected_request_id="exempt",
+        expected_source_id="postgresql-main",
+        performance={},
+        observed_dataframe_count=0,
     )
     results.append(
         (
-            "性能验证对缺少新 SQL/DataFrame 的数据型追问失败关闭",
-            bool(missing_followup_error) and not valid_followup_error,
-            repr((missing_followup_error, valid_followup_error)),
+            "显式验收合同不依赖生产分类并对缺少新 SQL/DataFrame 失败关闭",
+            not requires_fresh_data_followup("给我上面几个的详细信息")
+            and bool(missing_followup_error)
+            and not valid_followup_error
+            and not exempt_validation_error,
+            repr(
+                (
+                    missing_followup_error,
+                    valid_followup_error,
+                    exempt_validation_error,
+                )
+            ),
+        )
+    )
+
+    count_state = begin_query_performance(
+        conversation_id="count-contract",
+        request_id="count-contract",
+        question="查询数据",
+        source_id="postgresql-main",
+    )
+    record_sql_result(
+        sql="SELECT 1",
+        metadata={"query_type": "SELECT"},
+        guard_severity="ok",
+        success=True,
+    )
+    first_count_payload = performance_payload(count_state)
+    record_sql_result(
+        sql="SELECT 2",
+        metadata={"query_type": "SELECT", "results": []},
+        guard_severity="ok",
+        success=True,
+    )
+    second_count_payload = performance_payload(count_state)
+    clear_query_performance()
+    results.append(
+        (
+            "成功 SQL 与 DataFrame 使用独立计数",
+            first_count_payload["successful_run_sql_count"] == 1
+            and first_count_payload["dataframe_count"] == 0
+            and second_count_payload["successful_run_sql_count"] == 2
+            and second_count_payload["dataframe_count"] == 1,
+            repr((first_count_payload, second_count_payload)),
         )
     )
 

@@ -39,6 +39,35 @@ _FOLLOW_UP_DATA_ACTION_PATTERNS = (
 _EXPLANATION_ONLY_TERMS = (
     "解释", "说明", "什么意思", "含义", "怎么理解", "为什么", "原因",
 )
+_GREETING_OR_THANKS_PATTERNS = (
+    re.compile(r"^(?:你|您)?好[啊呀吗]?$"),
+    re.compile(r"^(?:嗨|哈喽|hello|hi)[啊呀]?$", re.IGNORECASE),
+    re.compile(r"^(?:早上|上午|中午|下午|晚上)?好$"),
+    re.compile(r"^(?:谢谢|感谢|多谢|辛苦了)[你您]?[了啊呀]?$"),
+)
+_EXPLICIT_EXPLANATION_PATTERNS = (
+    re.compile(
+        r"^(?:请)?(?:解释|说明)(?:一下)?"
+        r"(?:刚才|上次|上一条|上面|这个|该|上述)(?:结果|回答|字段|SQL)"
+    ),
+    re.compile(
+        r"(?:这个|该|上述|上面|刚才|上一条)?.{0,8}"
+        r"(?:字段|结果|回答|SQL).{0,8}(?:是什么意思|什么含义|怎么理解)"
+    ),
+    re.compile(
+        r"(?:SQL|SELECT|WHERE|JOIN|GROUPBY|ORDERBY).{0,8}"
+        r"(?:语法|语句|含义|是什么意思|怎么写|怎么理解)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:刚才|上次|上一条|上面).{0,8}为什么.{0,12}(?:排序|显示|回答|计算)"),
+)
+_EXPLICIT_CLARIFICATION_PATTERNS = (
+    re.compile(
+        r"^(?:请问)?(?:需要|还需要)(?:我)?(?:说明|补充|提供).{0,16}"
+        r"(?:什么|哪些)(?:条件|信息|范围)?[吗？?]?$"
+    ),
+    re.compile(r"^(?:你|您)是指.{1,24}[吗？?]$"),
+)
 
 
 def select_context_profile(question: str) -> ContextProfile:
@@ -80,3 +109,18 @@ def requires_fresh_data_followup(question: str) -> bool:
     if any(term in normalized for term in _EXPLANATION_ONLY_TERMS):
         return False
     return any(pattern.search(normalized) for pattern in _FOLLOW_UP_DATA_ACTION_PATTERNS)
+
+
+def is_explicit_non_data_request(question: str) -> bool:
+    """仅识别可以明确豁免数据库查询的交流；未识别请求默认查库。"""
+    normalized = re.sub(r"\s+", "", question or "").strip("，。！？!?；;：:")
+    if not normalized:
+        return True
+    return any(
+        pattern.search(normalized)
+        for pattern in (
+            *_GREETING_OR_THANKS_PATTERNS,
+            *_EXPLICIT_EXPLANATION_PATTERNS,
+            *_EXPLICIT_CLARIFICATION_PATTERNS,
+        )
+    )
