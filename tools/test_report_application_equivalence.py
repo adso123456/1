@@ -366,6 +366,27 @@ class TrackingReportStore:
         return path
 
 
+class CountingStore:
+    """Wraps a real store and counts generate invocations."""
+
+    def __init__(self, inner: ReportArtifactStore) -> None:
+        self._inner = inner
+        self.generate_calls = 0
+
+    def options(self):
+        return self._inner.options()
+
+    def generate(self, **kwargs):
+        self.generate_calls += 1
+        return self._inner.generate(**kwargs)
+
+    def load(self, report_id):
+        return self._inner.load(report_id)
+
+    def pdf_path(self, report_id):
+        return self._inner.pdf_path(report_id)
+
+
 def run_checks() -> int:
     failures = 0
     temp_holder = tempfile.TemporaryDirectory(prefix="report-equiv-")
@@ -635,6 +656,9 @@ def run_checks() -> int:
             assert t22.calls == ["options"], t22.calls
         log(f"[PASS] 22. Embed OPTIONS/CORS 行为不变，授权后才触碰 Store")
 
+        # 负数指标异常合同（正式复审阻断项修复回归）
+        check_negative_indicator_contract()
+
         # 23. Widget report RPC 的 Loader URL 映射未变
         loader_source = (
             PROJECT_ROOT / "frontend" / "public" / "water-agent-widget.js"
@@ -663,6 +687,67 @@ def assert_status(response, status: int) -> None:
         response.status_code,
         response.text,
     )
+
+
+def check_negative_indicator_contract() -> None:
+    """Negative indicator contract restored by the fix.
+
+    Ordinary: 422 with the original message, store never touched.
+    Embed: 500 through the real underlying ValueError path, store actually
+    entered once (proving no HTTP-layer early rejection).
+    """
+    service = CountingReportService()
+    store = CountingStore(
+        ReportArtifactStore(lambda: service, WaterQualityPdfRenderer())
+    )
+    shared = ReportApplicationService(store)
+    ordinary = FastAPI()
+    ordinary.include_router(
+        create_report_router(lambda: service, artifact_store=store)
+    )
+    embed = FastAPI()
+    embed.include_router(
+        create_embed_report_router(service=shared, authorize=lambda *a, **k: None)
+    )
+    oc = TestClient(ordinary)
+    # 未捕获的 ValueError 必须作为真实 500 response 返回，而非在客户端 raise。
+    ec = TestClient(embed, raise_server_exceptions=False)
+    base = f"/api/embed/apps/{APP_ID}/reports"
+    headers = {"Origin": ORIGIN}
+
+    negative = {
+        "report_type": "daily",
+        "date": "2025-07-28",
+        "indicators": [-1],
+        "frequency_hours": {},
+        "recent_days": 3,
+    }
+    ordinary_response = oc.post("/api/reports/water-quality/generate", json=negative)
+    assert ordinary_response.status_code == 422, ordinary_response.text
+    assert ordinary_response.json()["detail"] == "至少选择一个有效指标"
+    assert store.generate_calls == 0, store.generate_calls
+    log(f"[PASS] 普通负数指标 → 422 且不触碰 Store")
+
+    embed_response = ec.post(f"{base}/generate", json=negative, headers=headers)
+    assert embed_response.status_code == 500, embed_response.text
+    assert store.generate_calls == 1, store.generate_calls
+    log(f"[PASS] Embed 负数指标 → 500 且实际进入 Store 与底层 ValueError 路径")
+
+    dedupe = {
+        "report_type": "daily",
+        "date": "2025-07-28",
+        "indicators": [5, 5, 0, 5, 0],
+        "frequency_hours": {},
+        "recent_days": 3,
+    }
+    ordinary_dedupe = oc.post(
+        "/api/reports/water-quality/generate", json=dedupe
+    ).json()
+    embed_dedupe = ec.post(f"{base}/generate", json=dedupe, headers=headers).json()
+    assert ordinary_dedupe["indicators"] == [5, 0], ordinary_dedupe["indicators"]
+    assert embed_dedupe["indicators"] == [5, 0], embed_dedupe["indicators"]
+    assert ordinary_dedupe == embed_dedupe
+    log(f"[PASS] 正常指标去重保持 [5, 5, 0, 5, 0] → [5, 0]（普通与 Embed）")
 
 
 def main() -> int:

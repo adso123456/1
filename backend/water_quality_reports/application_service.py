@@ -132,11 +132,14 @@ class ReportApplicationService:
 
     @staticmethod
     def normalize_indicators(indicators: list[int]) -> tuple[int, ...]:
-        """Deduplicate while preserving order, and require a valid selection."""
-        codes = tuple(dict.fromkeys(indicators))
-        if not codes or any(code < 0 for code in codes):
-            raise ReportParameterError("至少选择一个有效指标")
-        return codes
+        """Deduplicate while preserving order.
+
+        The shared layer does not reject negative codes: each HTTP adapter
+        decides validity -- the ordinary router maps negatives to 422 while
+        the Embed adapter lets them reach the underlying validation ValueError
+        (500), matching the pre-refactor contract.
+        """
+        return tuple(dict.fromkeys(indicators))
 
     @staticmethod
     def normalize_frequency_hours(

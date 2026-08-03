@@ -157,6 +157,8 @@ def create_report_router(
                 request.month,
             )
             codes = reports.normalize_indicators(request.indicators)
+            if not codes or any(code < 0 for code in codes):
+                raise ValueError("至少选择一个有效指标")
             overrides = reports.normalize_frequency_hours(request.frequency_hours)
             return reports.generate(
                 report_type=request.report_type,
