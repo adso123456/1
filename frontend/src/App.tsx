@@ -16,7 +16,7 @@ import {
 import { configFromReportResult } from './reportConfigState';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
-import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec } from './types';
+import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec, SuggestedQuestion, SuggestedQuestionsResponse } from './types';
 import {
   clearWorkspaceSessionParam,
   readWorkspaceSessionId,
@@ -98,7 +98,32 @@ function App() {
   const [reportPreview, setReportPreview] = useState<ReportResultData | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 新会话（已绑定数据源且无消息）时，按会话绑定拉取数据源专属推荐问题
+  useEffect(() => {
+    if (!currentSessionId || !sourceBound || messages.length > 0) {
+      setSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/conversations/${encodeURIComponent(currentSessionId)}/suggested-questions`)
+      .then(async response => {
+        if (response.status === 404 || !response.ok) return null;
+        const payload = (await response.json()) as SuggestedQuestionsResponse;
+        return Array.isArray(payload.questions) ? payload.questions : [];
+      })
+      .then(questions => {
+        if (!cancelled && questions !== null) setSuggestions(questions);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId, messages.length, sourceBound]);
 
   useEffect(() => {
     if (!requestedSessionId || currentSessionId !== requestedSessionId) return;
@@ -346,6 +371,7 @@ function App() {
               : ''}
             sourceUnavailableReason={sourceUnavailable}
             dataSources={dataSources}
+            suggestions={suggestions}
             onDataSourceSuggestion={async (sourceId, question) => {
               const ok = await createNewSession(sourceId);
               if (ok) setPendingQuestion(question);
