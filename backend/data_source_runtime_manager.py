@@ -91,6 +91,10 @@ class DataSourceRuntimeManager:
         return self._registry.source_ids
 
     @property
+    def registry(self) -> DataSourceRegistry:
+        return self._registry
+
+    @property
     def database_types(self) -> tuple[str, ...]:
         return self._database_types
 

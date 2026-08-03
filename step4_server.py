@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
@@ -45,6 +46,7 @@ from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
 from backend.mysql_runtime_factory import create_mysql_runtime
+from backend.runtime_prewarm import RuntimePrewarmer
 from backend.water_quality_reports.api import create_report_router
 from backend.water_quality_reports.application_service import (
     ReportApplicationService,
@@ -98,10 +100,22 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             if assistant_application_registry is not None
             else resources.assistant_application_registry
         )
+        self.runtime_prewarmer = RuntimePrewarmer(
+            resources.runtime_manager
+        )
         self.chat_handler = DataSourceChatHandler(
             resources.coordinator,
             resources.runtime_manager,
+            self.runtime_prewarmer.snapshot,
         )
+        fastapi_config = dict(self.config.get("fastapi") or {})
+        fastapi_config.setdefault("lifespan", self._lifespan)
+        self.config["fastapi"] = fastapi_config
+
+    @asynccontextmanager
+    async def _lifespan(self, _app: FastAPI):
+        await self.runtime_prewarmer.warm_ready_sources()
+        yield
 
     def create_app(self) -> FastAPI:
         report_service_factory = None
@@ -148,6 +162,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 }
                 for source_id in self.resources.registry.source_ids
             ]
+
+        @app.get("/api/runtime-prewarm-status")
+        async def runtime_prewarm_status() -> dict[str, dict[str, object]]:
+            return self.runtime_prewarmer.snapshot()
 
         def authorize_embed(
             app_id: str,
@@ -305,6 +323,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             )
             safe_metadata = {
                 "source_id": source_id,
+                "_embed_request": True,
                 "_allowed_source_ids": list(
                     principal.application.allowed_source_ids
                 ),

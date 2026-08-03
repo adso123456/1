@@ -61,6 +61,14 @@ def initialize_request_diagnostics(question: str) -> RequestDiagnosticContext:
     return context
 
 
+def ensure_request_diagnostics(question: str) -> RequestDiagnosticContext:
+    """复用路由层已创建的诊断上下文，兼容直接调用 Agent 的场景。"""
+    current = get_request_diagnostics()
+    if current is not None:
+        return current
+    return initialize_request_diagnostics(question)
+
+
 def get_request_diagnostics() -> RequestDiagnosticContext | None:
     return _current_diagnostics.get()
 

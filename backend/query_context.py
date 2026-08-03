@@ -10,8 +10,8 @@ from vanna.core.user import User
 
 from backend.request_diagnostics import (
     clear_request_diagnostics,
+    ensure_request_diagnostics,
     get_request_diagnostics,
-    initialize_request_diagnostics,
     utc_timestamp,
     write_trace_json,
 )
@@ -38,6 +38,12 @@ def finalize_request_context(
 ) -> None:
     """写入请求结束证据并幂等清理所有请求级 ContextVar。"""
     try:
+        if status == "error":
+            from backend.query_performance import get_query_performance
+
+            performance = get_query_performance()
+            if performance is not None:
+                performance.request_failed = True
         diagnostics = get_request_diagnostics()
         if diagnostics is not None:
             payload = {
@@ -62,7 +68,7 @@ class OriginalQuestionLifecycleHook(LifecycleHook):
     async def before_message(self, user: User, message: str) -> None:
         _original_question.set(message)
         initialize_run_sql_requirement()
-        diagnostics = initialize_request_diagnostics(message)
+        diagnostics = ensure_request_diagnostics(message)
         write_trace_json(
             "request-start.json",
             {

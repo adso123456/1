@@ -167,6 +167,9 @@ def main() -> int:
                     and agents["source-b"].calls == []
                     and isinstance(events_a1[0], dict)
                     and events_a1[0]["conversation_id"] == "conversation-a"
+                    and events_a1[0]["rich"]["type"] == "progress"
+                    and events_a1[0]["rich"]["data"]["stage"]
+                    == "request_received"
                     and events_a1[-1] == "[DONE]",
                     response_a1.text,
                 )
@@ -272,7 +275,8 @@ def main() -> int:
             results.append(
                 (
                     "一个数据源失败不影响另一个数据源",
-                    "agent-failing offline failure" in failed.text
+                    "问数执行失败，请稍后重试。" in failed.text
+                    and "agent-failing offline failure" not in failed.text
                     and "agent-b:healthy" in healthy.text,
                     failed.text + healthy.text,
                 )
