@@ -29,7 +29,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
-from tools.generate_question_suggestions import generate_questions
+from tools.generate_question_suggestions import (
+    _analyze_date_range,
+    _date_matches,
+    _rewrite_question,
+    _substitute_dates,
+    generate_questions,
+)
 
 
 PLACEHOLDER_WORDS = (
@@ -118,6 +124,36 @@ def _write_materials(materials_dir: Path) -> Path:
             "查询站点名称，最多返回50条",
             "SELECT s.station_name FROM wm_station AS s WHERE s.del_flag = '0' LIMIT 50",
             expected_tables=["wm_station"],
+        ),
+        # 真实七天窗口样例（对应 MYSQL_WQ_SEVEN_DAY_006 形态）
+        _sql(
+            "SAMPLE_SEVEN_DAY",
+            "查询幸福河站2025年5月27日起七天的日均pH趋势",
+            (
+                "SELECT r.monitor_time, r.ph_value "
+                "FROM wm_data AS r "
+                "JOIN wm_station AS s ON s.id = r.station_id AND s.del_flag = '0' "
+                "WHERE s.station_name = '幸福河站' "
+                "AND r.monitor_time >= '2025-05-27 00:00:00' "
+                "AND r.monitor_time < '2025-06-03 00:00:00' "
+                "AND r.del_flag = '0' "
+                "ORDER BY r.monitor_time LIMIT 20"
+            ),
+        ),
+        # 完整自然月窗口样例
+        _sql(
+            "SAMPLE_MONTH",
+            "统计2025年5月各区域水质站点的平均pH，最多返回30个区域",
+            (
+                "SELECT s.station_name, ROUND(AVG(r.ph_value), 3) AS avg_ph "
+                "FROM wm_data AS r "
+                "JOIN wm_station AS s ON s.id = r.station_id AND s.del_flag = '0' "
+                "WHERE r.monitor_time >= '2025-05-01 00:00:00' "
+                "AND r.monitor_time < '2025-06-01 00:00:00' "
+                "AND r.del_flag = '0' "
+                "AND r.ph_value IS NOT NULL "
+                "GROUP BY s.station_name LIMIT 30"
+            ),
         ),
         # 过滤类：缺 train_decision
         {
@@ -221,6 +257,69 @@ def _run(source_id, root, catalog_path, materials_dir, metadata_path, **kwargs):
     )
 
 
+def _test_date_window_rewrites() -> list[tuple[str, bool, str]]:
+    """5 类日期窗口的改写：断言最终问题文本与最终 SQL 日期边界。"""
+    results: list[tuple[str, bool, str]] = []
+
+    def check(name: str, passed: bool, detail: str = "") -> None:
+        results.append((name, passed, detail))
+
+    latest_day = date(2026, 1, 15)
+    # (标签, 下界字面量, 上界字面量, 期望粒度, 期望短语, 期望开始日, 期望结束日)
+    cases = [
+        ("单日", "'2025-04-09 00:00:00'", "'2025-04-10 00:00:00'",
+         "day", "最新有数据的一天", date(2026, 1, 15), date(2026, 1, 16)),
+        ("真实七天样例", "'2025-05-27 00:00:00'", "'2025-06-03 00:00:00'",
+         "day", "最新有数据的七天", date(2026, 1, 9), date(2026, 1, 16)),
+        ("任意30天", "'2025-03-01 00:00:00'", "'2025-03-31 00:00:00'",
+         "day", "最新有数据的30天", date(2025, 12, 17), date(2026, 1, 16)),
+        ("月初单日必须仍是单日", "'2025-05-01 00:00:00'", "'2025-05-02 00:00:00'",
+         "day", "最新有数据的一天", date(2026, 1, 15), date(2026, 1, 16)),
+        ("完整自然月必须识别为月", "'2025-05-01 00:00:00'", "'2025-06-01 00:00:00'",
+         "month", "最新有数据的一个月", date(2026, 1, 1), date(2026, 2, 1)),
+    ]
+    for label, lower, upper, gran, phrase, start, end in cases:
+        sql = (
+            f"SELECT r.monitor_time, r.ph_value FROM wm_data AS r "
+            f"WHERE r.monitor_time >= {lower} AND r.monitor_time < {upper} "
+            f"AND r.del_flag = '0' ORDER BY r.monitor_time LIMIT 20"
+        )
+        matches = _date_matches(sql)
+        got_gran, got_phrase, window = _analyze_date_range(matches)
+        check(
+            f"{label}: 粒度识别",
+            got_gran == gran and got_phrase == phrase,
+            f"gran={got_gran} phrase={got_phrase}",
+        )
+        rewritten = _substitute_dates(sql, matches, latest_day, got_gran, window)
+        check(
+            f"{label}: SQL 边界 [{start}, {end})",
+            f">= '{start} 00:00:00'" in rewritten
+            and f"< '{end} 00:00:00'" in rewritten,
+            rewritten[:160],
+        )
+        # 问题文本：用中文日期短语做回归
+        question_map = {
+            "单日": "查询幸福河站2025年4月9日的pH小时变化，最多返回50条",
+            "真实七天样例": "查询幸福河站2025年5月27日起七天的日均pH趋势",
+            "任意30天": "查询幸福河站2025年3月1日起30天的日均趋势",
+            "月初单日必须仍是单日": "查询幸福河站2025年5月1日的pH小时变化，最多返回50条",
+            "完整自然月必须识别为月": "统计2025年5月各区域水质站点的平均pH，最多返回30个区域",
+        }
+        rewritten_question = _rewrite_question(question_map[label], phrase)
+        check(
+            f"{label}: 问题文本含确定语义",
+            phrase in rewritten_question and "某日" not in rewritten_question,
+            rewritten_question,
+        )
+
+    for name, passed, detail in results:
+        print(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
+    failed = sum(not passed for _, passed, _ in results)
+    print(f"total={len(results)} passed={len(results) - failed} failed={failed}")
+    return results
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
 
@@ -273,8 +372,8 @@ def main() -> int:
         # 启用的问题：占位词检查 + 数量
         enabled = [q for q in payload["questions"] if q.get("enabled")]
         check(
-            "启用 2 条（日期改写 + 无日期）",
-            len(enabled) == 2,
+            "启用 4 条（单日/七天/月/无日期）",
+            len(enabled) == 4,
             f"count={len(enabled)}",
         )
         check(
@@ -288,7 +387,9 @@ def main() -> int:
         texts = [q["text"] for q in enabled]
         check(
             "日期改写为确定语义",
-            any("最新有数据的一天" in text for text in texts),
+            any("最新有数据的一天" in text for text in texts)
+            and any("最新有数据的七天" in text for text in texts)
+            and any("最新有数据的一个月" in text for text in texts),
             f"texts={texts}",
         )
         check(
@@ -296,20 +397,38 @@ def main() -> int:
             any("幸福河站" in text for text in texts),
         )
 
-        # 验证对应最终问题的实际 SQL
+        # 验证对应最终问题的实际 SQL（问题文本 + SQL 日期边界）
+        by_sample = {q["related_sample_id"]: q for q in enabled}
+        for sample_id, start, end, phrase in [
+            ("SAMPLE_OK_DATE", "2026-01-15", "2026-01-16", "最新有数据的一天"),
+            ("SAMPLE_SEVEN_DAY", "2026-01-09", "2026-01-16", "最新有数据的七天"),
+            ("SAMPLE_MONTH", "2026-01-01", "2026-02-01", "最新有数据的一个月"),
+        ]:
+            q = by_sample.get(sample_id)
+            check(
+                f"{sample_id} 问题文本含确定语义",
+                q is not None and phrase in q["text"],
+                f"text={q['text'] if q else None}",
+            )
+            check(
+                f"{sample_id} SQL 日期边界 [{start}, {end})",
+                q is not None
+                and f">= '{start} 00:00:00'" in q.get("related_sql", "")
+                and f"< '{end} 00:00:00'" in q.get("related_sql", ""),
+                f"sql={q.get('related_sql','')[:160] if q else None}",
+            )
+        plain = by_sample.get("SAMPLE_OK_PLAIN")
+        check(
+            "无日期问题保持原样",
+            plain is not None and "查询站点名称" in plain["text"],
+        )
+
+        # 验证器验证了与资产一致的改写 SQL
         asset_sqls = [q.get("related_sql", "") for q in enabled]
         check(
             "验证器验证了与资产一致的改写 SQL",
             verifier.verified_sqls == asset_sqls,
             f"n={len(verifier.verified_sqls)}",
-        )
-        check(
-            "改写 SQL 使用真实日期（无占位日期）",
-            all(
-                "2026-01-15" in sql and "2026-01-16" in sql
-                for sql in verifier.verified_sqls
-                if "monitor_time >=" in sql
-            ),
         )
         check(
             "资产携带 runtime_revision 与 metadata_sha256",
@@ -358,7 +477,7 @@ def main() -> int:
         )
         check(
             "数据库执行失败的问题不启用",
-            summary_fail["disabled_reasons"].get("execution_fail") == 2,
+            summary_fail["disabled_reasons"].get("execution_fail") == 4,
             f"reasons={summary_fail['disabled_reasons']}",
         )
 
@@ -379,7 +498,12 @@ def main() -> int:
         print(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
     failed = sum(not passed for _, passed, _ in results)
     print(f"total={len(results)} passed={len(results) - failed} failed={failed}")
-    return 0 if failed == 0 else 1
+    if failed:
+        return 1
+
+    window_results = _test_date_window_rewrites()
+    window_failed = sum(not passed for _, passed, _ in window_results)
+    return 1 if window_failed else 0
 
 
 if __name__ == "__main__":

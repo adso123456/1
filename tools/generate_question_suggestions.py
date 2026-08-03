@@ -90,7 +90,10 @@ PLACEHOLDER_WORDS = (
 _SQL_DATE_CMP_RE = re.compile(
     r"([\w.]+)\s*(<=|>=|<|>|=)\s*'(\d{4}-\d{1,2}-\d{1,2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?)'"
 )
-_Q_DATE_SEVEN_RE = re.compile(r"\d{4}年\d{1,2}月\d{1,2}日\s*起\s*(?:七|7)\s*[天日]")
+# “…日起 N 天”跨度问题（N 为数字或中文数词）
+_Q_DATE_SPAN_RE = re.compile(
+    r"\d{4}年\d{1,2}月\d{1,2}日\s*起\s*(?:\d+|[一二三四五六七八九十]+)\s*天"
+)
 _Q_DATE_DAY_RE = re.compile(r"\d{4}年\d{1,2}月\d{1,2}日")
 _Q_DATE_MONTH_RE = re.compile(r"\d{4}年\d{1,2}月")
 
@@ -266,29 +269,48 @@ def _latest_day_probe_sql(sql: str, matches: list[tuple[str, str, str]]) -> str:
     return f"SELECT MAX(DATE({timecol})) AS latest_day " + tail
 
 
+def _is_natural_month(start: date, end: date) -> bool:
+    """下界为某月 1 日、上界为下月 1 日，构成恰好一个自然月的半开区间。"""
+    if start.day != 1 or end.day != 1:
+        return False
+    if start.month == 12:
+        return end.year == start.year + 1 and end.month == 1 and end.day == 1
+    return end.year == start.year and end.month == start.month + 1 and end.day == 1
+
+
 def _analyze_date_range(
     matches: list[tuple[str, str, str]],
 ) -> tuple[str, str, int]:
-    """返回 (granularity, 问题语义短语, 窗口天数)。"""
-    dates: dict[str, date] = {}
+    """返回 (granularity, 问题语义短语, 窗口天数)。
+
+    按同一时间字段识别上下界；自然月窗口必须满足完整上下界关系
+    （下界为某月 1 日、上界为下月 1 日），不能仅凭“出现月初日期”判断。
+    """
+    by_column: dict[str, list[tuple[str, str, str]]] = {}
     for col, op, literal in matches:
-        parsed = _parse_date(literal)
-        if op in (">=", ">") and "start" not in dates:
-            dates["start"] = parsed
-        elif op in ("<", "<=") and "end" not in dates:
-            dates["end"] = parsed
-    start = dates.get("start")
-    end = dates.get("end")
-    month = any(_split_date_literal(literal)[0].endswith("-01") for _, _, literal in matches)
-    if month:
-        return "month", "最新有数据的一个月", 0
-    if start and end:
-        window = (end - start).days
-        if window == 1:
-            return "day", "最新有数据的一天", 1
-        if window == 7:
-            return "day", "最新有数据的七天", 7
-        return "day", f"最新有数据的{window}天", window
+        by_column.setdefault(col, []).append((col, op, literal))
+
+    for column_matches in by_column.values():
+        start: date | None = None
+        end: date | None = None
+        for _, op, literal in column_matches:
+            parsed = _parse_date(literal)
+            if op in (">=", ">") and start is None:
+                start = parsed
+            elif op in ("<", "<=") and end is None:
+                end = parsed
+        if start is None and end is None:
+            continue
+        if start is not None and end is not None:
+            if _is_natural_month(start, end):
+                return "month", "最新有数据的一个月", 0
+            window = (end - start).days
+            if window == 1:
+                return "day", "最新有数据的一天", 1
+            if window == 7:
+                return "day", "最新有数据的七天", 7
+            return "day", f"最新有数据的{window}天", window
+        return "day", "最新有数据的一天", 1
     return "day", "最新有数据的一天", 1
 
 
@@ -315,15 +337,17 @@ def _substitute_dates(
             else:
                 new_date = date(latest_day.year, latest_day.month, 1)
         elif op in ("<", "<="):
-            new_date = date.fromordinal(latest_day.toordinal() + window_days)
+            # 结束日 = D + 1：半开区间 [D-(N-1), D+1)，保证最新数据日 D 在窗口内
+            new_date = date.fromordinal(latest_day.toordinal() + 1)
         else:
-            new_date = latest_day
+            # 开始日 = D - (N-1)：包含 D 在内最近 N 个自然日
+            new_date = date.fromordinal(latest_day.toordinal() - (window_days - 1))
         result = result.replace(f"'{literal}'", f"'{new_date.strftime('%Y-%m-%d')}{suffix}'")
     return result
 
 
 def _rewrite_question(question: str, phrase: str) -> str:
-    result = _Q_DATE_SEVEN_RE.sub(phrase, question)
+    result = _Q_DATE_SPAN_RE.sub(phrase, question)
     result = _Q_DATE_DAY_RE.sub(phrase, result)
     result = _Q_DATE_MONTH_RE.sub(phrase, result)
     return _cleanup(result)
