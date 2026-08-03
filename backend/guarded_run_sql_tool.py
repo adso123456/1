@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from typing import Any, Type
 
 from vanna.capabilities.sql_runner import RunSqlToolArgs
@@ -12,7 +13,16 @@ from vanna.components import ComponentType, NotificationComponent, SimpleTextCom
 from vanna.core.tool import Tool, ToolContext, ToolResult
 
 from backend.sql_guard import SQLGuard, SQLGuardResult
-from backend.run_sql_requirement import record_successful_run_sql_result
+from backend.run_sql_requirement import (
+    close_tool_phase_after_success,
+    record_successful_run_sql_result,
+)
+from backend.query_performance import (
+    emit_progress,
+    get_query_performance,
+    record_sql_result,
+    record_timing,
+)
 
 
 def append_authoritative_sql_execution_result(
@@ -86,6 +96,11 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
     async def execute(self, context: ToolContext, args: RunSqlToolArgs) -> ToolResult:
         sql = getattr(args, "sql", "")
         query, query_source = self._extract_query(context, args)
+        performance = get_query_performance()
+        if performance is not None and performance.run_sql_count:
+            emit_progress("retrying", "正在修正查询")
+        emit_progress("validating_sql", "正在校验查询安全性")
+        guard_started = time.monotonic()
         if self._is_hard_blocked_context(context):
             guard_result = self._make_hard_block_result(sql, "同一问题已触发 SQL Guard hard block")
             self._trace_attempt(
@@ -96,7 +111,15 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
                 blocked_by_sql_guard=True,
                 hard_blocked_before_validation=True,
             )
-            return self._blocked_result(guard_result, query_source=query_source)
+            record_timing("sql_guard_ms", (time.monotonic() - guard_started) * 1000)
+            result = self._blocked_result(guard_result, query_source=query_source)
+            record_sql_result(
+                sql=sql,
+                metadata=dict(result.metadata or {}),
+                guard_severity=guard_result.severity,
+                success=False,
+            )
+            return result
 
         if self._is_threshold_trend_request(query):
             guard_result = self._make_hard_block_result(
@@ -112,7 +135,15 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
                 blocked_by_sql_guard=True,
                 hard_blocked_before_validation=False,
             )
-            return self._blocked_result(guard_result, query_source=query_source)
+            record_timing("sql_guard_ms", (time.monotonic() - guard_started) * 1000)
+            result = self._blocked_result(guard_result, query_source=query_source)
+            record_sql_result(
+                sql=sql,
+                metadata=dict(result.metadata or {}),
+                guard_severity=guard_result.severity,
+                success=False,
+            )
+            return result
 
         guard_result = self.sql_guard.validate(sql=sql, query=query)
         if guard_result.passed and query_source == "missing" and self._should_block_missing_query_threshold_sql(sql):
@@ -128,9 +159,21 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
         )
         if not guard_result.passed:
             self._mark_hard_blocked_context(context)
-            return self._blocked_result(guard_result, query_source=query_source)
+            record_timing("sql_guard_ms", (time.monotonic() - guard_started) * 1000)
+            result = self._blocked_result(guard_result, query_source=query_source)
+            record_sql_result(
+                sql=sql,
+                metadata=dict(result.metadata or {}),
+                guard_severity=guard_result.severity,
+                success=False,
+            )
+            return result
 
+        record_timing("sql_guard_ms", (time.monotonic() - guard_started) * 1000)
+        emit_progress("executing_sql", "正在执行查询")
+        execute_started = time.monotonic()
         result = await self.inner_tool.execute(context, args)
+        record_timing("sql_execute_ms", (time.monotonic() - execute_started) * 1000)
         tool_phase_closed_now = record_successful_run_sql_result(result)
         append_authoritative_sql_execution_result(
             result,
@@ -146,6 +189,22 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
             warning = self._format_warning_message(guard_result)
             result.metadata["sql_guard_warning"] = warning
             result.result_for_llm = f"{warning}\n\n{result.result_for_llm}"
+
+        record_sql_result(
+            sql=sql,
+            metadata=dict(result.metadata or {}),
+            guard_severity=guard_result.severity,
+            success=bool(result.success),
+        )
+        if result.success:
+            if not any(
+                term in query
+                for term in ("分别查询", "两个查询", "多结果", "多组结果")
+            ):
+                close_tool_phase_after_success(
+                    "first_successful_single_query_run_sql"
+                )
+            emit_progress("generating_answer", "正在整理答案")
 
         return result
 

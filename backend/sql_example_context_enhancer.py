@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 from vanna.core.enhancer import LlmContextEnhancer
 
 from backend.request_diagnostics import write_trace_json, write_trace_text
+from backend.query_intent import ContextProfile
+from backend.query_performance import get_query_performance, record_timing
 from backend.run_sql_requirement import record_injected_sql_examples
 from backend.sql_guard import SQLGuard
 
@@ -52,6 +55,7 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
     async def enhance_system_prompt(
         self, system_prompt: str, user_message: str, user: Any
     ) -> str:
+        enhance_started = time.monotonic()
         enhanced_prompt = system_prompt
         if self.base_enhancer:
             enhanced_prompt = await self.base_enhancer.enhance_system_prompt(
@@ -99,6 +103,10 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
             },
         )
         write_trace_text("final-system-prompt.txt", final_prompt)
+        record_timing(
+            "context_enhance_ms",
+            (time.monotonic() - enhance_started) * 1000,
+        )
         return final_prompt
 
     async def enhance_user_messages(self, messages: list[Any], user: Any) -> list[Any]:
@@ -107,17 +115,29 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
         return messages
 
     async def _retrieve_examples(self, user_message: str) -> list[dict[str, Any]]:
-        self.last_stats = SqlExampleContextStats(top_k=self.top_k)
+        state = get_query_performance()
+        effective_top_k = (
+            min(self.top_k, 3)
+            if state is not None
+            and state.context_profile is ContextProfile.SIMPLE_LOOKUP
+            else self.top_k
+        )
+        self.last_stats = SqlExampleContextStats(top_k=effective_top_k)
         if not self.memory or not hasattr(self.memory, "search_similar_usage"):
             return []
 
         self.last_stats.search_similar_usage_called = True
         self.last_stats.tool_name_filter = "run_sql"
+        retrieve_started = time.monotonic()
         results = await self.memory.search_similar_usage(
             question=user_message,
             context=SimpleNamespace(metadata={"stage": "sql_example_context_enhancer"}),
             limit=self.top_k,
             tool_name_filter="run_sql",
+        )
+        record_timing(
+            "sql_example_retrieve_ms",
+            (time.monotonic() - retrieve_started) * 1000,
         )
         self.last_stats.returned_count = len(results or [])
 
@@ -135,8 +155,10 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
                 continue
             if example:
                 examples.append(example)
-            if len(examples) >= self.top_k:
-                break
+        examples.sort(
+            key=lambda item: (not bool(item.get("exact_question_match")),)
+        )
+        examples = examples[:effective_top_k]
 
         self.last_stats.injected_count = len(examples)
         return examples

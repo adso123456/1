@@ -108,6 +108,18 @@ def record_successful_run_sql_result(result: Any) -> bool:
     )
 
 
+def close_tool_phase_after_success(reason: str) -> bool:
+    """单查询成功后关闭 Tool 阶段；多结果请求由调用方保留开放。"""
+    state = get_run_sql_requirement()
+    if state is None or state.tool_phase_closed:
+        return False
+    state.successful_run_sql_completed = True
+    state.tool_phase_closed = True
+    state.tool_phase_close_reason = reason
+    _write_trace_state(state)
+    return True
+
+
 def _state_payload(state: RunSqlRequirementState) -> dict[str, Any]:
     return {
         "requires_run_sql": state.requires_run_sql,

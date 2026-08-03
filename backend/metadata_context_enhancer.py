@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from vanna.core.enhancer import LlmContextEnhancer
 
 from backend.metadata_retriever import DeterministicMetadataRetriever
+from backend.query_intent import ContextProfile
+from backend.query_performance import get_query_performance, record_timing
 
 
 class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
@@ -23,17 +26,40 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
     async def enhance_system_prompt(
         self, system_prompt: str, user_message: str, user: Any
     ) -> str:
+        enhance_started = time.monotonic()
         enhanced_prompt = system_prompt
         if self.base_enhancer:
             enhanced_prompt = await self.base_enhancer.enhance_system_prompt(
                 system_prompt, user_message, user
             )
 
-        candidates = self.metadata_retriever.retrieve(user_message, top_n=self.top_n)
+        state = get_query_performance()
+        simple = (
+            state is not None
+            and state.context_profile is ContextProfile.SIMPLE_LOOKUP
+        )
+        top_n = min(self.top_n, 6) if simple else self.top_n
+        retrieve_started = time.monotonic()
+        candidates = self.metadata_retriever.retrieve(user_message, top_n=top_n)
+        record_timing(
+            "metadata_retrieve_ms",
+            (time.monotonic() - retrieve_started) * 1000,
+        )
         if not candidates:
+            record_timing(
+                "context_enhance_ms",
+                (time.monotonic() - enhance_started) * 1000,
+            )
             return enhanced_prompt
 
-        return enhanced_prompt + self._build_metadata_context(user_message, candidates)
+        result = enhanced_prompt + self._build_metadata_context(
+            user_message, candidates, simple=simple
+        )
+        record_timing(
+            "context_enhance_ms",
+            (time.monotonic() - enhance_started) * 1000,
+        )
+        return result
 
     async def enhance_user_messages(self, messages: list[Any], user: Any) -> list[Any]:
         if self.base_enhancer:
@@ -41,7 +67,11 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
         return messages
 
     def _build_metadata_context(
-        self, user_message: str, candidates: list[dict[str, Any]]
+        self,
+        user_message: str,
+        candidates: list[dict[str, Any]],
+        *,
+        simple: bool = False,
     ) -> str:
         table_lines = []
         column_lines = []
@@ -69,7 +99,7 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
                     f"({column['column_type']}): {column['column_comment']} | "
                     f"matched_by={', '.join(column['matched_by'])}"
                 )
-            if index <= 3:
+            if index <= (2 if simple else 3):
                 rendered = "、".join(
                     f"{column['column_name']}"
                     f"({column['column_comment']})"
@@ -96,9 +126,13 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
                 "\n".join(table_lines),
                 "",
                 "Candidate columns:",
-                "\n".join(column_lines[:20]),
+                "\n".join(column_lines[: (12 if simple else 20)]),
                 "",
-                "Full columns for the top 3 relevant tables:",
+                (
+                    "Full columns for the top 2 relevant tables:"
+                    if simple
+                    else "Full columns for the top 3 relevant tables:"
+                ),
                 "\n".join(table_column_lines),
             ]
         )

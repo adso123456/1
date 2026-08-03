@@ -1,6 +1,7 @@
 """中文 Embedding 与 Chroma Memory 组装。"""
 
 import os
+import time
 from pathlib import Path
 
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -9,6 +10,8 @@ from chromadb.utils import embedding_functions
 from vanna.integrations.chromadb.agent_memory import ChromaAgentMemory
 
 from config.settings import CHROMA_DIR
+from backend.query_intent import ContextProfile
+from backend.query_performance import get_query_performance, record_timing
 
 
 EMBEDDING_FUNCTION = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -22,12 +25,25 @@ class ChineseChromaAgentMemory(ChromaAgentMemory):
     async def search_text_memories(
         self, query, context, *, limit=10, similarity_threshold=0.55
     ):
-        return await super().search_text_memories(
-            query=query,
-            context=context,
-            limit=limit,
-            similarity_threshold=similarity_threshold,
+        state = get_query_performance()
+        effective_limit = (
+            min(limit, 3)
+            if state is not None
+            and state.context_profile is ContextProfile.SIMPLE_LOOKUP
+            else limit
         )
+        started = time.monotonic()
+        try:
+            return await super().search_text_memories(
+                query=query,
+                context=context,
+                limit=effective_limit,
+                similarity_threshold=similarity_threshold,
+            )
+        finally:
+            record_timing(
+                "text_memory_ms", (time.monotonic() - started) * 1000
+            )
 
 
 def create_memory(persist_directory: str | Path | None = None):
