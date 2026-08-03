@@ -18,6 +18,7 @@ from backend.request_diagnostics import (
 from backend.run_sql_requirement import (
     clear_run_sql_requirement,
     initialize_run_sql_requirement,
+    record_data_followup_requirement,
 )
 
 
@@ -68,6 +69,7 @@ class OriginalQuestionLifecycleHook(LifecycleHook):
     async def before_message(self, user: User, message: str) -> None:
         _original_question.set(message)
         initialize_run_sql_requirement()
+        record_data_followup_requirement(message)
         diagnostics = ensure_request_diagnostics(message)
         write_trace_json(
             "request-start.json",

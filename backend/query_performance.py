@@ -191,6 +191,8 @@ def performance_payload(state: QueryPerformanceState) -> dict[str, Any]:
         "total_ms": round(total_ms, 3),
         "llm_call_count": state.counters.get("provider_llm_calls", 0),
         "tool_round_count": state.run_sql_count,
+        "successful_run_sql_count": state.dataframe_count,
+        "dataframe_count": state.dataframe_count,
         "fast_path_used": state.fast_path_used,
         "context_profile": state.context_profile.value,
         "request_cancelled": state.request_cancelled,

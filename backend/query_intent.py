@@ -30,6 +30,15 @@ _SIMPLE_PATTERNS = (
     re.compile(r"(?:列出|显示|查询|查找|有哪些|明细|详情|记录|名单)"),
     re.compile(r"(?:最新|最近)\s*\d+\s*(?:条|个|行)"),
 )
+_FOLLOW_UP_DATA_ACTION_PATTERNS = (
+    re.compile(r"(?:只|仅)?(?:显示|保留|列出).{0,12}(?:其中|结果|前\s*\d+|后\s*\d+|最多|最少)"),
+    re.compile(r"(?:刚才|上次|上一|上面|其中|这些|结果).{0,16}(?:前\s*\d+|后\s*\d+|最多|最少)"),
+    re.compile(r"(?:再|继续)(?:筛选|过滤|查询|查找|统计|排序|显示|列出)"),
+    re.compile(r"(?:筛选|过滤).{0,20}(?:刚才|上次|上一|上面|其中|这些|结果)"),
+)
+_EXPLANATION_ONLY_TERMS = (
+    "解释", "说明", "什么意思", "含义", "怎么理解", "为什么", "原因",
+)
 
 
 def select_context_profile(question: str) -> ContextProfile:
@@ -61,3 +70,13 @@ def is_simple_result_query(question: str) -> bool:
     if any(term in normalized for term in _FOLLOW_UP_TERMS):
         return False
     return any(pattern.search(normalized) for pattern in _SIMPLE_PATTERNS)
+
+
+def requires_fresh_data_followup(question: str) -> bool:
+    """数据筛选型追问必须重新查询；解释、澄清和问候不触发。"""
+    normalized = re.sub(r"\s+", "", question or "")
+    if not normalized:
+        return False
+    if any(term in normalized for term in _EXPLANATION_ONLY_TERMS):
+        return False
+    return any(pattern.search(normalized) for pattern in _FOLLOW_UP_DATA_ACTION_PATTERNS)

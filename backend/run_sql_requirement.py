@@ -11,6 +11,7 @@ from backend.request_diagnostics import write_trace_json
 
 
 REQUIREMENT_REASON = "approved_sql_example_injected"
+DATA_FOLLOWUP_REQUIREMENT_REASON = "data_followup_requires_fresh_sql"
 FORCED_RUN_SQL_TOOL_CHOICE = {
     "type": "function",
     "function": {"name": "run_sql"},
@@ -80,8 +81,20 @@ def record_injected_sql_examples(injected_count: int) -> RunSqlRequirementState:
     return state
 
 
+def record_data_followup_requirement(question: str) -> RunSqlRequirementState:
+    """数据型追问在首轮强制重新调用 run_sql。"""
+    from backend.query_intent import requires_fresh_data_followup
+
+    state = get_run_sql_requirement() or initialize_run_sql_requirement()
+    if requires_fresh_data_followup(question):
+        state.requires_run_sql = True
+        if DATA_FOLLOWUP_REQUIREMENT_REASON not in state.requirement_reasons:
+            state.requirement_reasons.append(DATA_FOLLOWUP_REQUIREMENT_REASON)
+    return state
+
+
 def record_successful_run_sql(*, row_count: int, columns: list[str]) -> bool:
-    """记录获批样例请求的成功 SELECT，并在首次成功后关闭工具阶段。"""
+    """记录强制查询请求的成功 SELECT，并在首次成功后关闭工具阶段。"""
     state = get_run_sql_requirement()
     if state is None or not state.requires_run_sql:
         return False
@@ -92,7 +105,11 @@ def record_successful_run_sql(*, row_count: int, columns: list[str]) -> bool:
     state.successful_run_sql_row_count = row_count
     state.successful_run_sql_columns = list(columns)
     state.tool_phase_closed = True
-    state.tool_phase_close_reason = "first_successful_run_sql_for_approved_example"
+    state.tool_phase_close_reason = (
+        "first_successful_run_sql_for_data_followup"
+        if DATA_FOLLOWUP_REQUIREMENT_REASON in state.requirement_reasons
+        else "first_successful_run_sql_for_approved_example"
+    )
     _write_trace_state(state)
     return True
 

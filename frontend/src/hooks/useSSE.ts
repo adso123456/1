@@ -9,6 +9,7 @@ import type {
   ReportConfigData,
   ReportResultData,
 } from '../components/ReportComponents';
+import { settleCancelledAssistantMessage } from '../chatRequestState';
 
 /* ======== 本地会话持久化（localStorage） ======== */
 
@@ -1613,7 +1614,12 @@ export function useSSE(
             )
       );
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setMessages(prev =>
+          settleCancelledAssistantMessage(prev, assistantMsgId)
+        );
+        return;
+      }
       setMessages(prev =>
         prev.map(m =>
           m.id === assistantMsgId

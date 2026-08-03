@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.data_source_chat_handler import DataSourceChatHandler
+from backend.query_intent import requires_fresh_data_followup
 from backend.runtime_prewarm import RuntimePrewarmer
 from step4_server import create_application_resources
 from vanna.servers.base import ChatRequest
@@ -49,6 +50,27 @@ def _sha(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def validate_fresh_data_followup(
+    *,
+    question: str,
+    performance: dict[str, object],
+    dataframe_count: int,
+) -> str:
+    """数据型追问必须在当前请求内重新执行成功 SQL。"""
+    if not requires_fresh_data_followup(question):
+        return ""
+    successful_run_sql_count = int(
+        performance.get("successful_run_sql_count") or 0
+    )
+    if successful_run_sql_count < 1 or dataframe_count < 1:
+        return (
+            "数据型追问未产生新的成功 run_sql 和 DataFrame："
+            f"successful_run_sql_count={successful_run_sql_count}, "
+            f"dataframe_count={dataframe_count}"
+        )
+    return ""
+
+
 async def main() -> int:
     evidence_path = Path(
         os.environ["QUERY_PERF_EVIDENCE_PATH"]
@@ -71,6 +93,7 @@ async def main() -> int:
         if item.strip()
     }
     rows = []
+    validation_errors: list[str] = []
     for source_id, cases in CASES.items():
         conversation_id = f"perf-{source_id}"
         for case_id, question in cases:
@@ -127,6 +150,13 @@ async def main() -> int:
                 if trace
                 else {}
             )
+            validation_error = validate_fresh_data_followup(
+                question=question,
+                performance=performance,
+                dataframe_count=len(dataframes),
+            )
+            if validation_error:
+                validation_errors.append(f"{case_id}: {validation_error}")
             row = {
                 "source_id": source_id,
                 "case_id": case_id,
@@ -139,6 +169,7 @@ async def main() -> int:
                 "dataframe_sha256": _sha(dataframes),
                 "final_text_sha256": _sha(final_text),
                 "performance": performance,
+                "validation_error": validation_error,
             }
             rows.append(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
@@ -150,12 +181,17 @@ async def main() -> int:
                 "prewarm_ms": round(prewarm_ms, 3),
                 "prewarm": prewarm,
                 "cases": rows,
+                "validation_errors": validation_errors,
             },
             ensure_ascii=False,
             indent=2,
         ),
         encoding="utf-8",
     )
+    if validation_errors:
+        for error in validation_errors:
+            print(f"[FAIL] {error}", file=sys.stderr)
+        return 1
     return 0
 
 

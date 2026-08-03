@@ -13,16 +13,29 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.metadata_context_enhancer import DeterministicMetadataContextEnhancer
-from backend.query_intent import ContextProfile, select_context_profile
+from backend.query_intent import (
+    ContextProfile,
+    requires_fresh_data_followup,
+    select_context_profile,
+)
+from backend.query_context import OriginalQuestionLifecycleHook
 from backend.query_performance import (
     begin_query_performance,
     clear_query_performance,
 )
 from backend.runtime_prewarm import RuntimePrewarmer
+from backend.run_sql_requirement import (
+    DATA_FOLLOWUP_REQUIREMENT_REASON,
+    FORCED_RUN_SQL_TOOL_CHOICE,
+    build_effective_request_policy,
+    get_run_sql_requirement,
+    record_successful_run_sql,
+)
 from backend.simple_query_fast_path import build_fast_path_summary
 from backend.streaming_text import ChartAnnotationTailFilter
 from backend.tracing_llm_service import TracingOpenAILlmService
 from config.performance_settings import QueryPerformanceSettings
+from tools.run_query_performance_validation import validate_fresh_data_followup
 from vanna.core.llm import LlmMessage, LlmRequest, LlmStreamChunk
 from vanna.core.user import User
 
@@ -288,6 +301,54 @@ async def test_retry_cancellation_and_event_loop() -> tuple[bool, str]:
     )
 
 
+async def test_data_followup_requires_fresh_sql() -> tuple[bool, str]:
+    hook = OriginalQuestionLifecycleHook()
+    user = User(id="followup-user", username="followup-user")
+    await hook.before_message(user, "只显示刚才结果中的前3个断面")
+    state = get_run_sql_requirement()
+    policy = build_effective_request_policy(
+        llm_call_index=1,
+        tools=[{"name": "run_sql"}],
+        original_payload={"tool_choice": "auto"},
+        provider_hostname="api.deepseek.com",
+        model="deepseek-v4-pro",
+    )
+    closed = record_successful_run_sql(
+        row_count=3,
+        columns=["station_id", "record_count"],
+    )
+    data_followup_passed = bool(
+        state
+        and DATA_FOLLOWUP_REQUIREMENT_REASON in state.requirement_reasons
+        and policy.effective_tool_choice == FORCED_RUN_SQL_TOOL_CHOICE
+        and closed
+        and state.successful_run_sql_count == 1
+        and state.tool_phase_close_reason
+        == "first_successful_run_sql_for_data_followup"
+        and all(
+            requires_fresh_data_followup(question)
+            for question in (
+                "刚才结果中的前3个",
+                "再筛选状态正常的记录",
+                "继续查询最近的数据",
+                "只显示其中数量最多的5个",
+            )
+        )
+    )
+    await hook.after_message(None)
+
+    await hook.before_message(user, "解释一下刚才结果是什么意思")
+    explanation_state = get_run_sql_requirement()
+    explanation_passed = bool(
+        explanation_state and not explanation_state.requires_run_sql
+    )
+    await hook.after_message(None)
+    return (
+        data_followup_passed and explanation_passed,
+        f"data_followup={data_followup_passed}, explanation={explanation_passed}",
+    )
+
+
 async def main() -> int:
     results: list[tuple[str, bool, str]] = []
 
@@ -305,6 +366,33 @@ async def main() -> int:
             client_type == "AsyncOpenAI"
             and native_service._client.max_retries == 0,
             f"client_type={client_type}, max_retries={native_service._client.max_retries}",
+        )
+    )
+    followup_passed, followup_detail = (
+        await test_data_followup_requires_fresh_sql()
+    )
+    results.append(
+        (
+            "数据型追问首轮强制新 run_sql，解释型追问保持原行为",
+            followup_passed,
+            followup_detail,
+        )
+    )
+    missing_followup_error = validate_fresh_data_followup(
+        question="只显示刚才结果中的前3个断面",
+        performance={"successful_run_sql_count": 0},
+        dataframe_count=0,
+    )
+    valid_followup_error = validate_fresh_data_followup(
+        question="只显示刚才结果中的前3个断面",
+        performance={"successful_run_sql_count": 1},
+        dataframe_count=1,
+    )
+    results.append(
+        (
+            "性能验证对缺少新 SQL/DataFrame 的数据型追问失败关闭",
+            bool(missing_followup_error) and not valid_followup_error,
+            repr((missing_followup_error, valid_followup_error)),
         )
     )
 
