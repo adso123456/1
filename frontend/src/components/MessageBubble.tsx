@@ -84,7 +84,9 @@ export function MessageBubble({
           <span className="typing-dot" />
           <span className="typing-dot" />
         </span>
-        <span style={{ color: '#9ca3af', fontSize: 13 }}>思考中…</span>
+        <span style={{ color: '#9ca3af', fontSize: 13 }}>
+          {message.progressMessage || '正在准备问数…'}
+        </span>
       </div>
     );
   }

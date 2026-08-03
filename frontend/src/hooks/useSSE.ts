@@ -351,11 +351,12 @@ export function buildChatRequestBody(
   message: string,
   conversationId: string,
   sourceId: string,
+  requestId?: string,
 ) {
   return {
     message,
     conversation_id: conversationId,
-    request_id: undefined,
+    request_id: requestId,
     metadata: { source_id: sourceId },
   };
 }
@@ -1257,6 +1258,7 @@ export function useSSE(
     };
 
     const assistantMsgId = `a_${Date.now()}`;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const assistantMsg: ChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
@@ -1265,6 +1267,8 @@ export function useSSE(
       charts: [],
       thinkingCollapsed: true,
       streaming: true,
+      progressMessage: '已接收问题',
+      progressRequestId: requestId,
     };
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
@@ -1289,6 +1293,7 @@ export function useSSE(
             userText,
             currentSessionId,
             currentSourceId,
+            requestId,
           )
         ),
         signal: controller.signal,
@@ -1332,7 +1337,38 @@ export function useSSE(
 
             if (!rich) continue;
 
-            if (rich.type === 'dataframe') {
+            if (rich.type === 'progress') {
+              if (event.request_id !== requestId) continue;
+              const progressData = rich.data as Record<string, unknown>;
+              const stage = String(progressData.stage || '');
+              const message = String(progressData.message || '');
+              setMessages(prev => prev.map(item =>
+                item.id === assistantMsgId
+                  ? {
+                      ...item,
+                      progressMessage: stage === 'completed' ? undefined : message,
+                      progressRequestId: stage === 'completed' ? undefined : requestId,
+                    }
+                  : item
+              ));
+            } else if (rich.type === 'text_delta') {
+              if (event.request_id !== requestId) continue;
+              const deltaData = rich.data as Record<string, unknown>;
+              const delta = typeof deltaData.delta === 'string' ? deltaData.delta : '';
+              if (delta) {
+                finalText += delta;
+                setMessages(prev => prev.map(item =>
+                  item.id === assistantMsgId
+                    ? {
+                        ...item,
+                        text: finalText,
+                        progressMessage: undefined,
+                        progressRequestId: undefined,
+                      }
+                    : item
+                ));
+              }
+            } else if (rich.type === 'dataframe') {
               const dataDict = rich.data as Record<string, unknown>;
               const dfData = dataDict as unknown as DataFrameData;
               dataframes.push(dfData);
@@ -1357,7 +1393,14 @@ export function useSSE(
                         dataVersionRef.current,
                       )
                     : m.charts;
-                  const next = { ...m, dataframes: [...dataframes], charts: updatedCharts, sql: sqlText };
+                  const next = {
+                    ...m,
+                    dataframes: [...dataframes],
+                    charts: updatedCharts,
+                    sql: sqlText,
+                    progressMessage: undefined,
+                    progressRequestId: undefined,
+                  };
                   return next;
                 })
               );
@@ -1475,6 +1518,22 @@ export function useSSE(
                   }
                 }
               }
+            } else if (rich.type === 'error') {
+              const errorData = rich.data as Record<string, unknown>;
+              finalText = typeof errorData.message === 'string'
+                ? errorData.message
+                : '问数执行失败，请稍后重试。';
+              setMessages(prev => prev.map(item =>
+                item.id === assistantMsgId
+                  ? {
+                      ...item,
+                      text: finalText,
+                      streaming: false,
+                      progressMessage: undefined,
+                      progressRequestId: undefined,
+                    }
+                  : item
+              ));
             } else if (rich.type === 'chart') {
               const chartInfo = rich.data as Record<string, unknown>;
               if (lastDataRef.current && isChartWorthy(lastDataRef.current.columns, lastDataRef.current.rows)) {
@@ -1547,6 +1606,8 @@ export function useSSE(
                     dataframes: [...dataframes],
                     streaming: false,
                     sql: sqlText,
+                    progressMessage: undefined,
+                    progressRequestId: undefined,
                   }
                 : m
             )
