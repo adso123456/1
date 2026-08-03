@@ -9,6 +9,7 @@
 - 原始前测：`E:\3\_perf_runs\query-latency-optimization-v1\baseline-f8921ee\baseline-real-validation.json`，SHA256 `caa7f30d5b0336701e333f0f9c52dfda612ef0c3af1c3d30eaa242ced8dc9ad9`。
 - 原始后测：`E:\3\_perf_runs\query-latency-optimization-v1\optimized-dc94c37\optimized-validation.json`，SHA256 `e25b3b5b57b20fb683a9cd04592262e5b379a5a6a44edea6c3ed04457ffd5c4b`。
 - 准确率回退复测：`E:\3\_perf_runs\query-latency-optimization-v1\optimized-dc94c37\accuracy-fallback-validation.json`，SHA256 `26ce9b9c40d3b2f5b172a9e704eff2171acd1074ef1d42e19b52a66eb74da4fa`。
+- MySQL 聚合与追问复测：`E:\3\_perf_runs\query-latency-optimization-v1\optimized-dc94c37\followup-recheck.json`，SHA256 `cd00be9eb4d9e5ce1856ee3625ad248c4b3822492a79f73817c7ef287bf14ddb`。
 
 ## 修改前后结果
 
@@ -45,6 +46,7 @@
 - 初次后测发现“排污口类型”和“排污口监测记录”使用缩减上下文时输出字段少于基线，因此把这些准确率敏感类型确定性回退到 `FULL`。
 - 回退复测中，“排污口名称和类型”恢复 `catalog_level_1/2/3`；“最近排污口监测记录”恢复基线全部字段并额外返回 `water_temp`，均首次 SQL 成功、单次 Provider、保留 DataFrame。
 - “水质监测断面名称”在前后测均未成功生成可执行 SQL；修改前调用 8 次、约 `39806 ms`，修改后由 Tool 轮上限在 3 次停止、约 `20984 ms`。该题不计入快速路径成功率，也未通过缩减上下文掩盖失败。
+- 首次后测的 MySQL 追问直接根据上一轮已执行结果给出文本而未重复查询；专项复测中聚合和追问均完整执行 SQL、返回 DataFrame，并在结束前输出 `text_delta`。不同真实模型调用可能选择不同的合法业务表，因此证据只声明同一会话内追问与其上一轮结果一致，不声明跨模型采样的 SQL 字节一致。
 - 聚合、趋势、排名、图表、报表、复杂追问、多结果和语义不明确问题始终使用 `FULL`；SQL 修正、Guard warning、Tool 异常、Provider 重试、多 DataFrame 或超过 50 行均禁止快速路径。
 
 ## Vanna 2.0.2 与 OpenAI 客户端结论
