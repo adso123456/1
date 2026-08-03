@@ -317,6 +317,12 @@ async def test_default_closed_run_sql_gate() -> tuple[bool, str]:
         "不要前三个，显示后五个",
         "接着查",
     )
+    mixed_data_requests = (
+        "解释一下刚才结果，然后只显示前3条",
+        "这个字段是什么意思，顺便查询最近5条记录",
+        "刚才为什么这样排序，再查夷陵区",
+        "说明一下结果，再按时间倒序显示",
+    )
     exempt_requests = (
         "解释一下刚才结果",
         "刚才为什么这样排序",
@@ -328,7 +334,7 @@ async def test_default_closed_run_sql_gate() -> tuple[bool, str]:
     )
 
     forced: list[str] = []
-    for question in data_requests:
+    for question in (*data_requests, *mixed_data_requests):
         await hook.before_message(user, question)
         state = get_run_sql_requirement()
         policy = build_effective_request_policy(
@@ -369,8 +375,12 @@ async def test_default_closed_run_sql_gate() -> tuple[bool, str]:
             exempted.append(question)
         await hook.after_message(None)
     return (
-        len(forced) == len(data_requests) and len(exempted) == len(exempt_requests),
-        f"forced={len(forced)}/{len(data_requests)}, "
+        len(forced) == len(data_requests) + len(mixed_data_requests)
+        and all(question in forced for question in mixed_data_requests)
+        and len(exempted) == len(exempt_requests),
+        f"forced={len(forced)}/{len(data_requests) + len(mixed_data_requests)}, "
+        f"mixed_forced={sum(question in forced for question in mixed_data_requests)}"
+        f"/{len(mixed_data_requests)}, "
         f"exempted={len(exempted)}/{len(exempt_requests)}",
     )
 

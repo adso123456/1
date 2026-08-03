@@ -45,21 +45,30 @@ _GREETING_OR_THANKS_PATTERNS = (
     re.compile(r"^(?:早上|上午|中午|下午|晚上)?好$"),
     re.compile(r"^(?:谢谢|感谢|多谢|辛苦了)[你您]?[了啊呀]?$"),
 )
+_EXPLICIT_DATA_OPERATION_PATTERNS = (
+    re.compile(r"(?:查询|查找|筛选|过滤|只看|再查|接着查|继续查)"),
+    re.compile(r"(?:只|再|然后|顺便|重新)(?:显示|列出|返回|取|保留)"),
+    re.compile(r"(?:把|将).{0,24}(?:排序|显示|筛选|过滤|列出|返回)"),
+    re.compile(
+        r"(?:再|然后|顺便|重新)(?:按.{0,20})?"
+        r"(?:排序|倒序|升序|显示|列出|返回|筛选|过滤)"
+    ),
+)
 _EXPLICIT_EXPLANATION_PATTERNS = (
     re.compile(
         r"^(?:请)?(?:解释|说明)(?:一下)?"
-        r"(?:刚才|上次|上一条|上面|这个|该|上述)(?:结果|回答|字段|SQL)"
+        r"(?:刚才|上次|上一条|上面|这个|该|上述)(?:结果|回答|字段|SQL)$"
     ),
     re.compile(
-        r"(?:这个|该|上述|上面|刚才|上一条)?.{0,8}"
-        r"(?:字段|结果|回答|SQL).{0,8}(?:是什么意思|什么含义|怎么理解)"
+        r"^(?:这个|该|上述|上面|刚才|上一条)?.{0,8}"
+        r"(?:字段|结果|回答|SQL).{0,8}(?:是什么意思|什么含义|怎么理解)$"
     ),
     re.compile(
-        r"(?:SQL|SELECT|WHERE|JOIN|GROUPBY|ORDERBY).{0,8}"
-        r"(?:语法|语句|含义|是什么意思|怎么写|怎么理解)",
+        r"^(?:SQL|SELECT|WHERE|JOIN|GROUPBY|ORDERBY).{0,8}"
+        r"(?:语法|语句|含义|是什么意思|怎么写|怎么理解)$",
         re.IGNORECASE,
     ),
-    re.compile(r"(?:刚才|上次|上一条|上面).{0,8}为什么.{0,12}(?:排序|显示|回答|计算)"),
+    re.compile(r"^(?:刚才|上次|上一条|上面).{0,8}为什么.{0,12}(?:排序|显示|回答|计算)$"),
 )
 _EXPLICIT_CLARIFICATION_PATTERNS = (
     re.compile(
@@ -116,8 +125,10 @@ def is_explicit_non_data_request(question: str) -> bool:
     normalized = re.sub(r"\s+", "", question or "").strip("，。！？!?；;：:")
     if not normalized:
         return True
+    if any(pattern.search(normalized) for pattern in _EXPLICIT_DATA_OPERATION_PATTERNS):
+        return False
     return any(
-        pattern.search(normalized)
+        pattern.fullmatch(normalized)
         for pattern in (
             *_GREETING_OR_THANKS_PATTERNS,
             *_EXPLICIT_EXPLANATION_PATTERNS,
