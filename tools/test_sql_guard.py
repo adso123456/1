@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from test_report_output import resolve_test_report_path
+
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -12,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.sql_guard import SQLGuard
 
 
-REPORT_PATH = CURRENT_DIR / "sql_guard_test_result.md"
+REPORT_PATH = resolve_test_report_path("sql_guard_test_result.md")
 
 TEST_CASES: list[dict[str, Any]] = [
     {

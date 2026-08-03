@@ -5,11 +5,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from test_report_output import resolve_test_report_path
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-AGENT_FACTORY = PROJECT_ROOT / "backend" / "agent_factory.py"
+CONFIG_SOURCES = (
+    PROJECT_ROOT / "backend" / "agent_assembly.py",
+    PROJECT_ROOT / "backend" / "tracing_llm_service.py",
+)
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
-REPORT_PATH = PROJECT_ROOT / "tools" / "deepseek_config_check_result.md"
+REPORT_PATH = resolve_test_report_path("deepseek_config_check_result.md")
 
 EXPECTED_BASE_URL = "https://api.deepseek.com"
 OLD_BASE_URL = "https://opencode.ai/zen/go/v1"
@@ -21,92 +26,62 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-def _git_status_short() -> list[str]:
+def _tracked_env_files() -> list[str]:
     result = subprocess.run(
-        ["git", "status", "--short"],
+        ["git", "ls-files", "--", ".env", ".env.local"],
         cwd=PROJECT_ROOT,
         check=True,
         capture_output=True,
         text=True,
         encoding="utf-8",
     )
-    return result.stdout.splitlines()
+    return [line for line in result.stdout.splitlines() if line.strip()]
 
 
 def run_checks() -> dict[str, Any]:
-    agent_factory_text = _read(AGENT_FACTORY)
+    config_text = "\n".join(_read(path) for path in CONFIG_SOURCES)
     env_example_text = _read(ENV_EXAMPLE)
-    status_lines = _git_status_short()
-
-    hardcoded_keys = re.findall(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}", agent_factory_text)
-    env_tracked_or_staged = any(
-        line.strip().endswith(".env") or line.strip().endswith(".env.local")
-        for line in status_lines
-    )
+    hardcoded_keys = re.findall(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}", config_text)
 
     checks = {
-        "current_base_url": EXPECTED_BASE_URL
-        if EXPECTED_BASE_URL in agent_factory_text
-        else "not_found",
-        "current_model": EXPECTED_MODEL if EXPECTED_MODEL in agent_factory_text else "not_found",
+        "current_base_url": EXPECTED_BASE_URL if EXPECTED_BASE_URL in config_text else "not_found",
+        "current_model": EXPECTED_MODEL if EXPECTED_MODEL in config_text else "not_found",
         "api_key_source": API_KEY_ENV
-        if f'os.getenv("{API_KEY_ENV}")' in agent_factory_text
+        if re.search(r'(?:getenv|source\.get)\(["\']DEEPSEEK_API_KEY["\']\)', config_text)
         else "not_found",
         "hardcoded_key_found": bool(hardcoded_keys),
-        "old_base_url_in_agent_factory": OLD_BASE_URL in agent_factory_text,
-        "env_example_has_placeholder": (
-            f"{API_KEY_ENV}=your_deepseek_api_key_here" in env_example_text
+        "old_base_url_found": OLD_BASE_URL in config_text,
+        "env_example_has_placeholder": bool(
+            re.search(r"^DEEPSEEK_API_KEY=(?:replace|your)_", env_example_text, re.MULTILINE)
         ),
-        "env_file_tracked_or_staged": env_tracked_or_staged,
-        "modified_sql_guard": False,
-        "modified_run_sql_tool": False,
-        "modified_api_routes": False,
-        "modified_frontend": False,
-        "connected_database": False,
-        "executed_sql": False,
-        "trained_vanna": False,
-        "modified_chromadb": False,
-        "entered_level_2_3_4": False,
+        "tracked_env_files": _tracked_env_files(),
     }
     checks["passed"] = (
         checks["current_base_url"] == EXPECTED_BASE_URL
         and checks["current_model"] == EXPECTED_MODEL
         and checks["api_key_source"] == API_KEY_ENV
         and not checks["hardcoded_key_found"]
-        and not checks["old_base_url_in_agent_factory"]
+        and not checks["old_base_url_found"]
         and checks["env_example_has_placeholder"]
-        and not checks["env_file_tracked_or_staged"]
+        and not checks["tracked_env_files"]
     )
     return checks
 
 
 def write_report(checks: dict[str, Any]) -> None:
     lines = [
-        "# DeepSeek 配置静态检查结果",
+        "# DeepSeek 配置静态检查",
         "",
-        "## 汇总",
+        f"- base_url：{checks['current_base_url']}",
+        f"- model：{checks['current_model']}",
+        f"- API Key 来源：{checks['api_key_source']}",
+        f"- 发现硬编码密钥：{'是' if checks['hardcoded_key_found'] else '否'}",
+        f"- 发现旧网关：{'是' if checks['old_base_url_found'] else '否'}",
+        f"- `.env.example` 包含占位符：{'是' if checks['env_example_has_placeholder'] else '否'}",
+        f"- Git 跟踪真实 `.env`：{', '.join(checks['tracked_env_files']) or '否'}",
+        f"- 结论：{'通过' if checks['passed'] else '未通过'}",
         "",
-        f"- 当前 base_url：{checks['current_base_url']}",
-        f"- 当前 model：{checks['current_model']}",
-        f"- API key 来源：{checks['api_key_source']}",
-        f"- 是否发现硬编码密钥：{'是' if checks['hardcoded_key_found'] else '否'}",
-        f"- backend/agent_factory.py 是否仍存在旧 base_url：{'是' if checks['old_base_url_in_agent_factory'] else '否'}",
-        f"- .env.example 是否包含占位符：{'是' if checks['env_example_has_placeholder'] else '否'}",
-        f"- .env 是否被纳入 git：{'是' if checks['env_file_tracked_or_staged'] else '否'}",
-        f"- 是否修改 SQL Guard：{'是' if checks['modified_sql_guard'] else '否'}",
-        f"- 是否修改 RunSqlTool：{'是' if checks['modified_run_sql_tool'] else '否'}",
-        f"- 是否修改 API 路由：{'是' if checks['modified_api_routes'] else '否'}",
-        f"- 是否修改前端：{'是' if checks['modified_frontend'] else '否'}",
-        f"- 是否连接数据库：{'是' if checks['connected_database'] else '否'}",
-        f"- 是否执行 SQL：{'是' if checks['executed_sql'] else '否'}",
-        f"- 是否训练 Vanna：{'是' if checks['trained_vanna'] else '否'}",
-        f"- 是否修改 ChromaDB：{'是' if checks['modified_chromadb'] else '否'}",
-        f"- 是否进入第 2/3/4 级：{'是' if checks['entered_level_2_3_4'] else '否'}",
-        f"- 静态检查是否通过：{'是' if checks['passed'] else '否'}",
-        "",
-        "## 范围说明",
-        "",
-        "本检查仅验证 backend/agent_factory.py 的当前 LLM 配置；未调用 DeepSeek API，未连接数据库，未执行 SQL。",
+        "本检查只读取当前 Agent 装配、LLM 服务与环境变量模板，不调用模型、数据库或正式资产。",
     ]
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
 
@@ -114,15 +89,10 @@ def write_report(checks: dict[str, Any]) -> None:
 def main() -> int:
     checks = run_checks()
     write_report(checks)
-    print(f"当前 base_url: {checks['current_base_url']}")
-    print(f"当前 model: {checks['current_model']}")
-    print(f"API key 来源: {checks['api_key_source']}")
-    print(f"是否发现硬编码密钥: {'是' if checks['hardcoded_key_found'] else '否'}")
-    print(
-        "backend/agent_factory.py 是否仍存在旧 base_url: "
-        f"{'是' if checks['old_base_url_in_agent_factory'] else '否'}"
-    )
-    print(f"报告: {REPORT_PATH}")
+    print(f"base_url: {checks['current_base_url']}")
+    print(f"model: {checks['current_model']}")
+    print(f"API key source: {checks['api_key_source']}")
+    print(f"report: {REPORT_PATH}")
     return 0 if checks["passed"] else 1
 
 

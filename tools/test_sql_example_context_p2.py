@@ -11,10 +11,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from test_report_output import resolve_test_report_path
+
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 REVIEW_PATH = PROJECT_ROOT / "training" / "sql_examples_level3_p2_review_result.json"
-REPORT_PATH = CURRENT_DIR / "sql_example_context_p2_test_result.md"
+REPORT_PATH = resolve_test_report_path("sql_example_context_p2_test_result.md")
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -207,11 +209,11 @@ async def run() -> list[Result]:
     _, reason = convert(candidate(two_table, level="level3_unknown_sql_examples"))
     check("未知 training level 拒绝", "not allowed" in reason, reason)
     expected_levels = {
-        "level2_sql_examples", "level3_sql_examples", "level3_p0_sql_examples",
+        "level2_sql_examples", "level2_mysql_sql_examples", "level3_sql_examples", "level3_p0_sql_examples",
         "level3_p1_sql_examples", "level3_p2_sql_examples",
     }
     check(
-        "白名单精确包含五个正式等级",
+        "白名单与当前六个正式等级一致",
         ALLOWED_TRAINING_LEVELS == expected_levels,
         str(sorted(ALLOWED_TRAINING_LEVELS)),
     )

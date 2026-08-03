@@ -1,5 +1,8 @@
 # F6-1A～F6-1F DDL Text Memory 审计、身份与隔离幂等基线
 
+> [!NOTE]
+> 本文是特定提交和隔离验收的历史证据，不是当前启动手册或正式资产状态源。当前架构与运行方式请查看 `ARCHITECTURE.md`、`PROJECT_STATUS.md` 和 `RUNBOOK.md`。
+
 ## 1. 审计边界与结论
 
 - F6-1A 初始基线提交：`559a990f60dca2071f106ced145609f991ac4b3b`；R1 修复基线提交：`5be951504d5026190fff5808ead7db819b74758b`；F6-1B 基线提交：`f923d57ca747dff25f551bb8f1c9a28ecbbe96ad`；F6-1E 基线提交：`b7d2b576e945d0574c1a6750a0d434454deddcfd`。

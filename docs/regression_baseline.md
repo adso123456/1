@@ -1,5 +1,8 @@
 # PostgreSQL F5 回归基线
 
+> [!NOTE]
+> 本文记录 PostgreSQL F5 阶段的历史回归证据，不代表当前多数据源完整回归范围。当前项目状态与运行方式请查看 `PROJECT_STATUS.md` 和 `RUNBOOK.md`。
+
 ## 唯一回归集
 
 - Suite：`training/regression/postgresql_f5_regression_v1.json`

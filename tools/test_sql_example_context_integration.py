@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from test_report_output import resolve_test_report_path
+
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-REPORT_PATH = CURRENT_DIR / "sql_example_context_integration_test_result.md"
+REPORT_PATH = resolve_test_report_path("sql_example_context_integration_test_result.md")
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

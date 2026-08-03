@@ -1,36 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from test_report_output import resolve_test_report_path
+
 
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-REPORT_PATH = CURRENT_DIR / "sql_example_context_enhancer_test_result.md"
-BASE_COMMIT = "7aece6fda0504c40d1a92bd3fe498eebd4482aa3"
-ALLOWED_STATUS_PATHS = {
-    "backend/agent_factory.py",
-    "backend/memory.py",
-    "backend/diagnostic_metadata_retriever.py",
-    "backend/postgresql_runtime_factory.py",
-    "tools/test_agent_factory_delegation.py",
-    "tools/test_postgresql_runtime_factory.py",
-    "tools/test_postgresql_runtime_live_smoke.py",
-    "tools/test_sql_example_context_integration.py",
-    "tools/test_sql_example_context_enhancer.py",
-    "tools/sql_example_context_enhancer_test_result.md",
-}
-ALLOWED_PREEXISTING_STATUS_PATHS = {
-    "docs/codex_master_execution_plan.md",
-    "vanna_data/68092f4b-e2a5-4ccd-b126-95b1218cb050/data_level0.bin",
-    "vanna_data/68092f4b-e2a5-4ccd-b126-95b1218cb050/length.bin",
-    "vanna_data/chroma.sqlite3",
-}
+REPORT_PATH = resolve_test_report_path("sql_example_context_enhancer_test_result.md")
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -46,31 +28,6 @@ class TestResult:
     name: str
     passed: bool
     reason: str
-
-
-def run_command(args: list[str]) -> str:
-    completed = subprocess.run(
-        args,
-        cwd=PROJECT_ROOT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    return completed.stdout.strip()
-
-
-def effective_status(status_short: str) -> tuple[str, list[str]]:
-    unexpected: list[str] = []
-    for line in status_short.splitlines():
-        if not line.strip():
-            continue
-        path = line[2:].strip().replace("\\", "/")
-        if path not in ALLOWED_STATUS_PATHS | ALLOWED_PREEXISTING_STATUS_PATHS:
-            unexpected.append(line)
-    return status_short, unexpected
 
 
 def memory_item(
@@ -321,6 +278,7 @@ async def test_existing_allowed_levels_compatible() -> TestResult:
 async def test_allowed_levels_remain_explicit() -> TestResult:
     expected = {
         "level2_sql_examples",
+        "level2_mysql_sql_examples",
         "level3_sql_examples",
         "level3_p0_sql_examples",
         "level3_p1_sql_examples",
@@ -328,7 +286,7 @@ async def test_allowed_levels_remain_explicit() -> TestResult:
     }
     passed = ALLOWED_TRAINING_LEVELS == expected
     return TestResult(
-        "training_level 白名单保持为五个精确值",
+        "training_level 白名单与当前六个正式等级一致",
         passed,
         f"allowed_levels={sorted(ALLOWED_TRAINING_LEVELS)}",
     )
@@ -527,19 +485,7 @@ async def run_tests() -> tuple[list[TestResult], dict[str, Any]]:
     results = [await test() for test in tests]
     passed = sum(1 for result in results if result.passed)
 
-    raw_status = run_command(["git", "status", "--short"])
-    initial_status, unexpected_status = effective_status(raw_status)
-    commit = run_command(["git", "rev-parse", "HEAD"])
-    if unexpected_status:
-        raise SystemExit("git status --short 存在非本阶段文件，停止：" + "；".join(unexpected_status))
-    if commit != BASE_COMMIT and run_command(["git", "merge-base", "--is-ancestor", BASE_COMMIT, commit]) != "":
-        raise SystemExit(f"当前 commit 不满足要求：{commit}")
-
     summary = {
-        "cwd": str(PROJECT_ROOT),
-        "remote": run_command(["git", "remote", "-v"]),
-        "commit": commit,
-        "initial_status": initial_status or "clean",
         "total": len(results),
         "passed": passed,
         "failed": len(results) - passed,
@@ -567,16 +513,6 @@ def write_report(results: list[TestResult], summary: dict[str, Any]) -> None:
         "",
         "## 汇总",
         "",
-        f"- 当前工作目录：{summary['cwd']}",
-        "- git remote -v：",
-        "```text",
-        summary["remote"],
-        "```",
-        f"- 当前 commit：{summary['commit']}",
-        "- 初始 git status --short：",
-        "```text",
-        summary["initial_status"],
-        "```",
         f"- 测试总数：{summary['total']}",
         f"- 通过数量：{summary['passed']}",
         f"- 失败数量：{summary['failed']}",

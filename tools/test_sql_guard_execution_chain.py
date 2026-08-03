@@ -8,9 +8,11 @@ from typing import Any, Type
 
 from pydantic import BaseModel
 
+from test_report_output import resolve_test_report_path
+
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-REPORT_PATH = CURRENT_DIR / "sql_guard_execution_chain_test_result.md"
+REPORT_PATH = resolve_test_report_path("sql_guard_execution_chain_test_result.md")
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -87,6 +89,7 @@ TEST_CASES: list[dict[str, Any]] = [
         "expected_blocked": False,
         "expected_query_source": "metadata.query",
         "expected_severity": "warning",
+        "candidate_tables": ["wm_station_info_v2"],
     },
 ]
 
@@ -98,6 +101,14 @@ class FakeContext(BaseModel):
 
 class FakeUser(BaseModel):
     metadata: dict[str, Any]
+
+
+class FixedCandidateRetriever:
+    def __init__(self, table_names: list[str]) -> None:
+        self.table_names = table_names
+
+    def retrieve(self, question: str, top_n: int = 10) -> list[dict[str, str]]:
+        return [{"table_name": name} for name in self.table_names[:top_n]]
 
 
 class FakeInnerRunSqlTool(Tool[RunSqlToolArgs]):
@@ -140,7 +151,10 @@ def run_command(args: list[str]) -> str:
 
 async def run_case(case: dict[str, Any]) -> dict[str, Any]:
     inner = FakeInnerRunSqlTool()
-    tool = GuardedRunSqlTool(inner_tool=inner, sql_guard=SQLGuard())
+    sql_guard = SQLGuard()
+    if "candidate_tables" in case:
+        sql_guard.retriever = FixedCandidateRetriever(case["candidate_tables"])
+    tool = GuardedRunSqlTool(inner_tool=inner, sql_guard=sql_guard)
     context = FakeContext(
         metadata=case["metadata"],
         user=FakeUser(metadata=case["user_metadata"]) if "user_metadata" in case else None,

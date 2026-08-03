@@ -1,5 +1,8 @@
 # Codex 项目自主执行总计划
 
+> [!WARNING]
+> 这是历史阶段执行计划，不再是当前唯一操作入口。现行架构、状态、启动和排障信息分别以 `ARCHITECTURE.md`、`PROJECT_STATUS.md`、`RUNBOOK.md`、`TROUBLESHOOTING.md` 为准。
+
 ## 1. 文件定位
 
 本文件是 Codex 长期执行本项目的唯一操作计划。

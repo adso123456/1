@@ -1,5 +1,8 @@
 # 仓库文件清单 (Repository Inventory)
 
+> [!WARNING]
+> 这是 2026-07-14 的历史审计快照，不代表当前架构、运行状态或启动方式。当前信息请以 `ARCHITECTURE.md`、`PROJECT_STATUS.md` 和 `RUNBOOK.md` 为准；本文件仅为审计追溯而保留。
+
 > 审计日期: 2026-07-14
 > 仓库: E:\3\posgresql\1
 > 分支: master, 基础 HEAD: 42be3c0e59324f6fa0767ae69b45fa6962aa8729

@@ -1,76 +1,65 @@
-# RUNBOOK.md — 运行手册
+# 运行手册
 
-## 环境配置
+## 运行前检查
 
-| 配置项 | 值 | 位置 |
-|--------|-----|------|
-| Python | 3.12，虚拟环境 `vanna_venv/` | 项目根目录 |
-| LLM | deepseek-v4-pro | `agent_config.py` → `step4_server.py` |
-| LLM 网关 | `https://opencode.ai/zen/go/v1`（OpenAI 兼容） | step4 脚本 |
-| LLM Key | 环境变量 `OPENCODE_API_KEY` | 系统/用户级环境变量 |
-| 数据库 | PostgreSQL 13 + TimescaleDB + PostGIS | Docker `local-timescale` |
-| 连接串 | `postgresql://postgres:test123456@localhost:5433/gt_monitor` | `agent_config.py` |
-| 向量库 | ChromaDB，本地持久化 `vanna_data/` | `agent_config.py` |
-| Embedding | `BAAI/bge-small-zh-v1.5`（中文） | `agent_config.py` |
-| 检索阈值 | 0.55 | `agent_config.py : ChineseChromaAgentMemory` |
-| Web 服务 | FastAPI `localhost:8000`，React 前端 `localhost:5173` | `step4_server.py`、`frontend/` |
-| 主前端 | React + ECharts | `frontend/` |
-| 备用内置页面 | FastAPI 根路径保留 `<vanna-chat>` | `VannaFastAPIServer` |
+- Python 3.12 虚拟环境已安装 `requirements.txt`。
+- 前端依赖已在 `frontend/` 安装。
+- PostgreSQL、MySQL 等被启用的数据源可以从本机访问。
+- 从 `.env.example` 复制所需变量到本机环境；只填写环境变量，不要把真实密钥提交到 Git。
+- LLM 使用 `DEEPSEEK_API_KEY`，默认模型和服务地址由后端配置读取。
+- 正式运行前确认 `DATA_SOURCE_CATALOG_PATH`、`WATER_AGENT_SYSTEM_DB_PATH`、Metadata、Memory 和 Chroma 路径指向预期资产。
 
-## 快速重启清单
+## 启动后端（默认 8000）
 
-前提：PostgreSQL Docker 容器 `local-timescale` 必须已在运行（127.0.0.1:5433）。
-
-### 启动后端（FastAPI :8000）
-
-```powershell
-# 1. 激活虚拟环境
-E:\3\posgresql\1\vanna_venv\Scripts\Activate.ps1
-
-# 如果报"禁止运行脚本"，先执行一次（仅首次需要）：
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# 2. 设置 LLM API Key
-$env:OPENCODE_API_KEY = "sk-你的key"
-
-# 3. 启动 FastAPI 服务（内部用 uvicorn 驱动）
-python step4_server.py
-# → 输出 Your app is running at: http://localhost:8000
-```
-
-**其他终端：**
-
-| 终端 | 激活命令 |
-|------|---------|
-| CMD | `E:\3\posgresql\1\vanna_venv\Scripts\activate.bat` |
-| Git Bash | `source E:/3/posgresql/1/vanna_venv/Scripts/activate` |
-
-**跳过激活的快捷方式**（不激活虚拟环境，直接用绝对路径跑）：
+在项目根目录执行：
 
 ```powershell
 E:\3\posgresql\1\vanna_venv\Scripts\python.exe step4_server.py
 ```
 
-### 启动前端（Vite :5173）
+需要隔离端口时，仅为当前终端设置端口：
 
 ```powershell
-# 另开终端
-cd E:\3\posgresql\1\frontend
-npm run dev
-# → http://localhost:5173
+$env:VANNA_SERVER_PORT = "18000"
+E:\3\posgresql\1\vanna_venv\Scripts\python.exe step4_server.py
 ```
 
-### 访问主前端
+启动过程会顺序预热 Catalog 中 `ready + enabled_for_chat` 的数据源。单个数据源预热失败不会阻止其他数据源预热，失败原因应在日志和预热状态接口中查看。
 
-浏览器打开 `http://localhost:5173`
+## 启动前端（默认 5173）
 
-### 访问备用内置页面
+另开终端：
 
-浏览器打开 `http://localhost:8000` 可访问 FastAPI 根路径保留的 Vanna 内置 `<vanna-chat>` 页面。当前主入口仍是 `frontend/` 下的 React + ECharts 前端。
+```powershell
+Set-Location E:\3\posgresql\1\frontend
+npm run dev
+```
 
-## 验证方式
+浏览器访问 `http://127.0.0.1:5173`。默认 Vite 代理把 `/api` 转发到 `http://localhost:8000`；隔离验收时应使用对应的前端代理配置和独立端口，不占用正式服务。
 
-- 后端启动后，确认输出 `Your app is running at: http://localhost:8000`。
-- 前端启动后，访问 `http://localhost:5173`。
-- Vite 已配置 proxy：`/api` → `http://localhost:8000`，需先启动后端 `step4_server.py`。
-- 当前 React 前端通过 SSE 接收 `dataframe` 和 `text`，根据 `chart_type` 标记自行生成 ECharts 图表。
+## 启动后验证
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/api/runtime-prewarm-status
+```
+
+随后在前端依次确认：
+
+1. 新建会话能看到所有 `ready + enabled` 数据源。
+2. PostgreSQL 和 MySQL 各完成一次普通查询，能收到进度、DataFrame 和最终文本。
+3. 日报或月报先显示配置面板，确认后才生成。
+4. 小助手管理页能读取应用，关联网站和 Widget 能按授权来源访问。
+
+## 停止与重启
+
+- 在对应终端使用 `Ctrl+C` 停止服务。
+- 重启前先确认端口没有遗留进程，再启动新实例。
+- 不要通过删除 Catalog、系统数据库、Metadata 或 Chroma 来解决启动问题。
+
+## 变更正式资产
+
+- 数据源变更使用管理 API/CLI 的发现、准备、发布和启停流程。
+- 小助手应用使用管理 API/CLI 创建或编辑。
+- 禁止直接编辑 SQLite、复制正在使用的 Chroma 目录或手工修改 runtime revision。
+- 调试和验收优先使用 Catalog、系统数据库与运行资产的副本。

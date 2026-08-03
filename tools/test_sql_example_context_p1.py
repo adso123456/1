@@ -9,9 +9,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
 
+from test_report_output import resolve_test_report_path
+
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-REPORT_PATH = CURRENT_DIR / "sql_example_context_p1_test_result.md"
+REPORT_PATH = resolve_test_report_path("sql_example_context_p1_test_result.md")
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -82,12 +84,14 @@ async def run() -> list[Result]:
         results.append(Result(name, condition, reason))
 
     expected_levels = {
+        "level2_mysql_sql_examples",
         "level2_sql_examples",
+        "level3_sql_examples",
         "level3_p0_sql_examples",
         "level3_p1_sql_examples",
         "level3_p2_sql_examples",
     }
-    check("白名单精确包含 L2/P0/P1/P2", ALLOWED_TRAINING_LEVELS == expected_levels,
+    check("白名单精确包含 PostgreSQL、MySQL 与 Level 3 等级", ALLOWED_TRAINING_LEVELS == expected_levels,
           str(sorted(ALLOWED_TRAINING_LEVELS)))
 
     for name, level in (

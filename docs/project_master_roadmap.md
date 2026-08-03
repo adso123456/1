@@ -1,5 +1,8 @@
 # 项目总路线与任务台账
 
+> [!WARNING]
+> 本文保留跨阶段历史任务台账，但不再作为运行状态或启动方式的唯一事实源。当前信息以 `PROJECT_STATUS.md`、`ARCHITECTURE.md` 和 `RUNBOOK.md` 为准。
+
 > 建议文件路径：`docs/project_master_roadmap.md`
 > 用途：作为本项目跨阶段、跨对话的唯一总路线依据。
 >

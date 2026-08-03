@@ -1,87 +1,63 @@
-# ARCHITECTURE.md — 项目架构
+# 项目架构
 
-## 项目概述
+## 总览
 
-基于 Vanna 2.0（MIT 协议）搭建的中文水利数据智能问答系统。用户用中文自然语言提问，Agent 自动查询本地 PostgreSQL，返回表格数据+文字说明，前端根据数据生成 ECharts 图表。当前【最小验证】已通过：6 张排污口表问答闭环全部跑通，能正确生成 SQL、查到真实数据、出图表。
+本项目是基于 Vanna 2.0 Agent API 的多数据源中文问数系统。React 前端通过 FastAPI 的 SSE 接口发起会话；后端按会话绑定的数据源加载独立运行时，生成并校验只读 SQL，查询真实数据库，再以进度、DataFrame、文本和图表事件返回结果。
 
-## 技术栈
-
-| 配置项 | 值 | 位置 |
-|--------|-----|------|
-| Python | 3.12，虚拟环境 `vanna_venv/` | 项目根目录 |
-| LLM | deepseek-v4-pro | `agent_config.py` → `step4_server.py` |
-| LLM 网关 | `https://opencode.ai/zen/go/v1`（OpenAI 兼容） | step4 脚本 |
-| 数据库 | PostgreSQL 13 + TimescaleDB + PostGIS | Docker `local-timescale` |
-| 向量库 | ChromaDB，本地持久化 `vanna_data/` | `agent_config.py` |
-| Embedding | `BAAI/bge-small-zh-v1.5`（中文） | `agent_config.py` |
-| Web 服务 | FastAPI `localhost:8000`，React 前端 `localhost:5173` | `step4_server.py`、`frontend/` |
-| 主前端 | React + ECharts | `frontend/` |
-| 备用内置页面 | FastAPI 根路径保留 `<vanna-chat>` | `VannaFastAPIServer` |
-
-## 请求链路
-
-```
-React 前端 (localhost:5173)
-  │  POST /api/vanna/v2/chat_sse
-  ▼
-Vite proxy (vite.config.ts) → localhost:8000
-  │
-  ▼
-FastAPI (step4_server.py → VannaFastAPIServer → uvicorn)
-  │  /api/vanna/v2/chat_sse → StreamingResponse (SSE)
-  │  /health
-  │  /api/vanna/v2/chat_websocket (备用)
-  ▼
-Agent → LLM (deepseek-v4-pro) + PostgreSQL (psycopg2) + ChromaDB
-  │
-  ▼
-SSE 返回 dataframe + text（text 内含 chart_type 标记）
-  │
-  ▼
-React 根据 dataframe + chart_type 生成 ECharts option 并渲染
+```text
+主工作台 / 嵌入式 Widget
+          │
+          ▼
+FastAPI（step4_server.py）
+          │
+          ├─ 会话与路由：source_id 强绑定、报表/普通问数分流
+          ├─ DataSourceCatalog：生命周期、scope、revision
+          ├─ DataSourceRuntimeManager：缓存、构建锁、revision 热切换
+          ├─ RuntimePrewarmer：启动时顺序预热 ready + enabled 数据源
+          │
+          ▼
+Vanna Agent（backend/agent_assembly.py）
+          ├─ TracingOpenAILlmService：DeepSeek、超时、流式与耗时追踪
+          ├─ Metadata / Memory / SQL 示例上下文
+          ├─ GuardedRunSqlTool：SQLGuard + schema 保持
+          └─ PostgreSQL / MySQL Runner
 ```
 
-## 核心架构（Vanna 2.0 Agent-based，不是 0.x）
+## 核心模块
 
-```
-用户中文提问 → FastAPI (step4_server.py)
-                    ↓
-              Agent (Vanna 2.0)
-              ├── OpenAILlmService        ← deepseek-v4-pro via opencode.ai
-              ├── PostgresRunner           ← psycopg2 同步查询 PostgreSQL
-              ├── ChromaAgentMemory        ← 存储 DDL/文档/示例问答
-              ├── DefaultLlmContextEnhancer ← 每次对话自动检索相关记忆注入 LLM
-              ├── RunSqlTool               ← 执行 SQL，返回 DataFrameComponent
-              └── VisualizeDataTool        ← 已注册，可生成 Plotly ChartComponent（当前 React 前端不消费 Plotly 配置）
-```
+| 模块 | 职责 |
+| --- | --- |
+| `step4_server.py` | 服务入口、lifespan、SSE、管理、报表、问题建议和 Embed 路由装配 |
+| `backend/data_source_catalog.py` | 数据源注册、发现结果、选定范围、状态和 revision 持久化 |
+| `backend/data_source_runtime_manager.py` | 按数据源构建、缓存和切换运行时 |
+| `backend/runtime_prewarmer.py` | 启动阶段顺序预热并记录状态 |
+| `backend/agent_assembly.py` | PostgreSQL/MySQL 共用 Agent、工具、上下文和性能配置 |
+| `backend/postgresql_runtime_factory.py` | PostgreSQL 连接与运行时装配 |
+| `backend/mysql_runtime_factory.py` | MySQL 连接与运行时装配 |
+| `backend/sql_guard.py` | 方言感知的只读 SQL 安全校验 |
+| `backend/tracing_llm_service.py` | LLM 调用、流式输出、计时和诊断 |
+| `frontend/src/` | 主工作台、数据源、仪表板、小助手和 Widget 界面 |
 
-## 当前主链路与职责
+## 数据源生命周期
 
-- 后端负责 LLM、SQL 查询、SSE 输出；`RunSqlTool` 输出原始表格数据（`dataframe`），最终文本携带 `chart_type` 标记。
-- React 前端负责读取 SSE 中的 `dataframe` 和 `text`，根据表格数据和 `chart_type` 自行生成 ECharts option。
-- FastAPI 根路径仍保留 Vanna 内置 `<vanna-chat>` 页面，仅作为备用入口。
-- `VisualizeDataTool` 仍在后端注册，可生成 Plotly `ChartComponent`，但当前 React 前端不消费 Plotly 配置。
+发现只读取物理结构；业务语义保存在正式 Metadata/Memory 中。发布后，Catalog 的 selected scope、正式资产和 runtime revision 共同决定数据源是否可问数。运行时始终按当前 revision 加载，不能把一次发现结果当作发布资产覆盖。
 
-## 关键模块
+## 问数链路
 
-| 脚本 | 用途 | 什么时候跑 |
-|------|------|-----------|
-| `agent_config.py` | 共享配置：DB 连接、ChromaDB 实例（中文 embedding + 0.55 阈值） | 不直接跑，被其他脚本 import |
-| `train_step3.py` | 从白名单表提取 DDL（含中文注释）→ 存入 ChromaDB，含示例问答 | 表结构变了、加了新表、或重建向量库时跑 |
-| `step4_agent.py` | CLI 模式问答测试，验证 LLM+SQL+检索+出图全链路 | 快速验证改动、不想启 Web 服务时跑 |
-| `step4_server.py` | 启动 FastAPI 服务，提供 SSE API，并在根路径保留 `<vanna-chat>` 备用内置页面 | 日常使用、演示、需要后端接口时跑 |
-| `frontend/` | React + ECharts 主前端，通过 `/api` 代理访问后端 SSE | 当前主浏览器入口 |
-| `step4_test2.py` | CLI 问答验证（时间过滤+出图），输出保存到 UTF-8 文件 | 终端乱码时用，输出到文件再查看 |
+1. 会话创建时绑定 `source_id`，后续请求不得切换来源。
+2. 普通数据库问数默认首轮要求调用 `run_sql`；明确的问候、感谢或纯解释请求可以豁免。
+3. SQLGuard 在执行前校验只读、表范围、方言和危险结构。
+4. 成功查询产生新的 DataFrame；需要自然语言总结时按文本增量流式输出。
+5. 前端消费向后兼容的 SSE 事件，取消请求后清理流式占位状态。
 
-## 关键 import 路径
+## 报表与 Widget
 
-```python
-from vanna.integrations.openai import OpenAILlmService
-from vanna.integrations.postgres import PostgresRunner
-from vanna.integrations.chromadb.agent_memory import ChromaAgentMemory
-from vanna.core.enhancer.default import DefaultLlmContextEnhancer
-from vanna.tools import RunSqlTool, VisualizeDataTool, LocalFileSystem
-from vanna import Agent, AgentConfig
-```
+- 报表路由先返回配置项，用户确认后查询数据库、生成预览和 PDF；普通问题仍进入通用 Agent。
+- Widget 不持有 Secret 或 Token。业务宿主页 Loader 以公开 `app_id` 向 Embed API 请求，并通过严格校验的 `postMessage` RPC 与 iframe 通信。
+- Embed CORS 按路径中的应用和真实浏览器 Origin 动态授权；关联网站只用于管理入口，不参与 Origin、数据源或 Widget 授权。
 
-> ⚠️ Vanna 官方 quickstart 文档写的 `from vanna.integrations.anthropic import OpenAILlmService` 是错的，别照抄。
+## 资产边界
+
+- 源码：Git 跟踪的 Python、TypeScript、配置模板、测试和文档。
+- 正式运行资产：Catalog、系统数据库、Metadata、Memory、Chroma、凭据和报表产物。
+- 运行资产不应由普通代码清理、测试或构建命令改写；隔离验收必须使用副本。
