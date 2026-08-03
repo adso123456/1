@@ -59,6 +59,7 @@ def build_shared_agent(
     from backend.schema_preserving_sql import SchemaPreservingRunSqlTool
     from backend.sql_example_context_enhancer import SqlExampleContextEnhancer
     from backend.tracing_llm_service import TracingOpenAILlmService
+    from config.performance_settings import QueryPerformanceSettings
     from config.settings import AGENT_DATA_DIR
 
     class SimpleUserResolver(UserResolver):
@@ -79,10 +80,12 @@ def build_shared_agent(
 
     if verbose:
         print("初始化 LLM 服务 (deepseek-v4-pro via DeepSeek official API)...")
+    performance_settings = QueryPerformanceSettings.from_environment(source)
     llm = TracingOpenAILlmService(
         model="deepseek-v4-pro",
         api_key=api_key,
         base_url="https://api.deepseek.com",
+        settings=performance_settings,
     )
 
     if validate_db_config is not None:
@@ -139,7 +142,10 @@ def build_shared_agent(
         llm_context_enhancer=llm_context_enhancer,
         lifecycle_hooks=[OriginalQuestionLifecycleHook()],
         context_enrichers=[OriginalQuestionContextEnricher()],
-        config=AgentConfig(stream_responses=True),
+        config=AgentConfig(
+            stream_responses=True,
+            max_tool_iterations=performance_settings.agent_max_tool_rounds,
+        ),
         system_prompt_builder=OptimizedSystemPromptBuilder(
             sql_dialect=sql_dialect
         ),
