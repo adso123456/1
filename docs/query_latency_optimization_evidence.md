@@ -65,4 +65,5 @@
 
 - `tools/test_guarded_run_sql_tool.py` 在干净的 `dc94c37` 上为 `14/15`，既有失败为 `candidate mismatch warning 不阻断`；性能分支结果相同。
 - `tools/test_data_source_request_coordinator.py` 在干净的 `dc94c37` 上为 `23/25`，既有失败是持久化绑定错误消息不含测试期待的 source id，以及并发跨源失败消息同一合同；性能分支结果相同。
-- 两项均在独立 detached worktree 复现，未作为本性能任务顺手修改。
+- `tools/test_sql_example_context_enhancer.py` 为 `21/22`：生产白名单已有 6 个合法 level（包含 MySQL），但基线测试仍硬编码“5 个精确值”；其余检索、过滤、top_k 与 EXACT QUESTION MATCH 21 项全部通过。
+- 以上均为正式基线既有合同不一致，未作为本性能任务顺手修改。
