@@ -161,6 +161,19 @@ export interface DataSourceSummary {
   pending_confirmation_count?: number;
 }
 
+/** 数据源专属推荐问题（后端 `GET /api/conversations/{id}/suggested-questions`）。 */
+export interface SuggestedQuestion {
+  id: string;
+  text: string;
+}
+
+/** 推荐问题接口响应。 */
+export interface SuggestedQuestionsResponse {
+  source_id: string;
+  asset_version: string | null;
+  questions: SuggestedQuestion[];
+}
+
 export interface DataSourceSuggestion {
   original_question: string;
   current_source_id: string;

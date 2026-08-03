@@ -45,6 +45,7 @@ from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.postgresql_runtime_factory import create_postgresql_runtime
 from backend.mysql_runtime_factory import create_mysql_runtime
+from backend.question_suggestion_api import create_question_suggestion_router
 from backend.water_quality_reports.api import create_report_router
 from backend.water_quality_reports.application_service import (
     ReportApplicationService,
@@ -416,6 +417,12 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     catalog=self.resources.catalog,
                     coordinator=self.resources.coordinator,
                     runtime_manager=self.resources.runtime_manager,
+                )
+            )
+            app.include_router(
+                create_question_suggestion_router(
+                    catalog=self.resources.catalog,
+                    coordinator=self.resources.coordinator,
                 )
             )
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { ChatMessage, ChartData, DataSourceSummary, RenderableChartType } from '../types';
+import type { ChatMessage, ChartData, DataSourceSummary, RenderableChartType, SuggestedQuestion } from '../types';
 import { MessageBubble } from './MessageBubble';
 import type {
   ReportConfigData,
@@ -46,14 +46,9 @@ interface Props {
     sourceId: string,
     question: string,
   ) => Promise<boolean> | boolean;
+  /** 当前会话绑定数据源专属的推荐问题；为空时显示占位提示。 */
+  suggestions?: SuggestedQuestion[];
 }
-
-const SUGGESTIONS = [
-  '生成2025年7月28日水质日报',
-  '夷陵区有哪些排污口？只列前5条',
-  '统计各区县排污口数量，用图表展示',
-  '查询2025年1月的监测数据，只取pH值有记录的前5条',
-];
 
 export function ChatArea({
   messages,
@@ -84,6 +79,7 @@ export function ChatArea({
   sourceUnavailableReason = '',
   dataSources = [],
   onDataSourceSuggestion,
+  suggestions = [],
 }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -160,29 +156,31 @@ export function ChatArea({
             <p style={{ fontSize: 13, color: '#9ca3af', marginBottom: 24 }}>
               {welcomeDescription}
             </p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-              {SUGGESTIONS.map((s, i) => (
-                <button
-                  key={i}
-                  onClick={() => { onSend(s); setInput(''); }}
-                  disabled={disabled || Boolean(sourceUnavailableReason)}
-                  style={{
-                    padding: '8px 16px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 20,
-                    backgroundColor: '#fff',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    color: '#374151',
-                    transition: 'all .15s',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = theme)}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = '#e5e7eb')}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+            {suggestions.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                {suggestions.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => { onSend(item.text); setInput(''); }}
+                    disabled={disabled || Boolean(sourceUnavailableReason)}
+                    style={{
+                      padding: '8px 16px',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 20,
+                      backgroundColor: '#fff',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      color: '#374151',
+                      transition: 'all .15s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = theme)}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = '#e5e7eb')}
+                  >
+                    {item.text}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
