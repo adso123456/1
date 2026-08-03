@@ -5,23 +5,26 @@
 
 ## 1. 文件定位
 
-本文件是 Codex 长期执行本项目的唯一操作计划。
+本文件只保留历史阶段的执行方法、目标和决策记录，不再规定当前工作的读取顺序，也不要求 Codex 在每次工作前强制读取。
 
-Codex 每次开始工作时必须先读取本文件，再读取：
+需要了解当前项目时，应直接读取：
 
 ```text
-docs/project_master_roadmap.md
+docs/PROJECT_STATUS.md
+docs/ARCHITECTURE.md
+docs/RUNBOOK.md
+docs/TROUBLESHOOTING.md
 ```
 
 其中：
 
-* 本文件负责执行方法、总目标、阶段顺序和自主决策规则；
-* `docs/project_master_roadmap.md` 负责当前状态、正式资产基线和历史验收事实；
+* 本文件记录历史执行方法、总目标、阶段顺序和当时的自主决策规则；
+* `docs/project_master_roadmap.md` 记录历史任务台账和阶段验收事实；
 * `docs/training_master_route.md` 只作为训练规范与历史参考；
 * `docs/integration_security_delivery_plan.md` 只作为网站集成和运行安全的专项参考；
 * `docs/regression_baseline.md` 中与当前 Runner、Suite 或正式资产不一致的内容均视为历史记录，不得覆盖当前代码和总路线。
 
-不得再创建第二套总计划。
+下文出现的“当前”“必须”或“不得”等措辞均属于相应历史阶段，不构成现行操作指令。
 
 ---
 

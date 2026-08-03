@@ -1,13 +1,13 @@
 # 项目总路线与任务台账
 
 > [!WARNING]
-> 本文保留跨阶段历史任务台账，但不再作为运行状态或启动方式的唯一事实源。当前信息以 `PROJECT_STATUS.md`、`ARCHITECTURE.md` 和 `RUNBOOK.md` 为准。
+> 本文保留跨阶段历史任务台账，但不再作为运行状态或启动方式的现行依据。当前信息以 `PROJECT_STATUS.md`、`ARCHITECTURE.md` 和 `RUNBOOK.md` 为准。
 
 > 建议文件路径：`docs/project_master_roadmap.md`
-> 用途：作为本项目跨阶段、跨对话的唯一总路线依据。
+> 用途：保留本项目跨阶段、跨对话的历史路线和任务记录。
 >
-> **状态职责声明：本文件是唯一当前状态源；`docs/training_master_route.md` 仅记录训练规范与历史验收记录。**
-> 后续任何新任务、阶段切换、技术债延期或验收结论，都应同步更新本文件，避免遗漏历史任务。
+> **状态职责声明：本文件不再提供当前状态；`docs/training_master_route.md` 同样仅用于训练规范与历史验收追溯。**
+> 当前状态、架构与启动方式分别以 `docs/PROJECT_STATUS.md`、`docs/ARCHITECTURE.md` 和 `docs/RUNBOOK.md` 为准。下文出现的“当前”与行动要求均指记录产生时的历史阶段。
 
 ---
 
@@ -34,7 +34,7 @@
 adso123456/1
 ```
 
-当前项目根目录：
+当时记录的项目根目录：
 
 ```text
 E:\3\posgresql\1
@@ -270,7 +270,7 @@ F5 PostgreSQL Level 2 ✅ 已收口
 - Batch 10交付后完成两轮独立无候选确认
 - Level 2候选饱和状态：REACHED
 
-F5-G1 ✅ 回归基线版本化与唯一事实源收敛完成
+F5-G1 ✅ 回归基线版本化与阶段记录收敛完成
 
 - suite_id：`postgresql-f5-regression-v1`
 - case_count：15
@@ -280,7 +280,7 @@ F5-G1 ✅ 回归基线版本化与唯一事实源收敛完成
 - 隔离复验：15/15
 - 正式目录监控：18/18
 - 正式Chroma：197条，`222bc79b0d08ee895ded4cd0f8beaf641e4faba8b7c55b2b6c333d089a837b26`
-- `docs/project_master_roadmap.md`：唯一当前状态源
+- `docs/project_master_roadmap.md`：历史阶段状态与任务记录
 - `docs/training_master_route.md`：训练规范与历史记录
 
 F5-G1期间发现旧Runner父进程误开正式Chroma；正式目录已从精确备份完成目录级恢复；Runner父进程Memory链已切断并通过全新副本隔离复验。
@@ -412,7 +412,7 @@ Level 2 / Level 3 Tool Memory 应优先补充：
 2. 完成 F5 Level 2 收口审计 ✅
 3. 完成4张指定表最后定向只读发现与Batch 10范围冻结 ✅
 4. 正式交付1条rs_sewage_info_v2标准Level 2 Tool Memory ✅
-5. 版本化PostgreSQL F5回归基线并收敛唯一事实源 ✅
+5. 版本化 PostgreSQL F5 回归基线并收敛阶段记录 ✅
 6. 整理数据缺失、暂缓和受控特例登记 ✅
 7. 盘点现有64条LEGACY_READ_ONLY Tool Memory的实际能力 ✅
 8. 识别并真实验证5个高价值 Level 3 缺口 ✅
@@ -1660,7 +1660,7 @@ M vanna_data/chroma.sqlite3
 当前训练资产
 当前阶段
 已完成批次
-当前唯一动作
+当时记录的下一步
 后续任务顺序
 新增技术债
 ```
@@ -1713,7 +1713,7 @@ B3 本身不包含日报月报；该能力已在后续独立 B4 板块完成。
 
 ---
 
-# 37. 当前唯一动作
+# 37. 当时记录的下一步
 
 ```text
 B4 确认优先交互已完成；下一动作按业务优先级进入外部网站机器人或生产化治理。
@@ -1764,7 +1764,7 @@ B5 已将静态双数据源注册升级为 SQLite 动态目录。默认目录为
 
 正式设计与 API 见 `docs/dynamic_data_source_management.md`。
 
-# 39. 当前唯一动作
+# 39. 当时记录的下一步
 
 ```text
 B5 已完成；停止本板块，不自动开始后续新板块。
@@ -1782,7 +1782,7 @@ B5 已完成；停止本板块，不自动开始后续新板块。
 - 全库一致性、147/147 只读可达性、B5 故障恢复、MySQL/PostgreSQL Runtime、路由会话、报表和前端契约回归均已完成。
 - 详细结论见 `docs/mysql_general_agent_expansion.md`、`docs/mysql_full_schema_inventory.md` 和 `docs/mysql_verified_relationships.md`。
 
-## 40.1 当前唯一动作
+## 40.1 当时记录的下一步
 
 ```text
 由业务人员确认 5 张待定表；未取得可靠语义证据前不扩入 Agent。
