@@ -198,7 +198,7 @@ class RuntimeLearningService:
         now = now if now is not None else time.time()
         sources: dict[str, list[LearningCandidate]] = {}
         for candidate in self._store.list_candidates(
-            statuses=["pass", "publish_pending"]
+            statuses=["pass", "publish_pending", "publish_failed"]
         ):
             sources.setdefault(candidate.source_id, []).append(candidate)
         ready: list[str] = []
@@ -342,15 +342,16 @@ class RuntimeLearningService:
 
     async def _publish_locked(self, source_id: str) -> dict[str, Any]:
         candidates = self._store.list_candidates(
-            statuses=["pass", "publish_pending"],
+            statuses=["pass", "publish_pending", "publish_failed"],
             source_id=source_id,
             limit=self._settings.batch_size,
         )
         if not candidates:
             return {"source_id": source_id, "published": 0, "skipped": 0}
-        # pass 候选提升为 publish_pending 进入发布队列
+        # pass / publish_failed 候选提升为 publish_pending 进入发布队列
+        # （publish_failed 为瞬时冲突后的重试入口，避免一次失败永久搁浅）
         for candidate in candidates:
-            if candidate.status == "pass":
+            if candidate.status in {"pass", "publish_failed"}:
                 self._store.transition(candidate.candidate_id, "publish_pending")
 
         record = self._catalog.require(source_id)
@@ -586,6 +587,15 @@ class RuntimeLearningService:
                 except Exception:
                     pass
                 memory._collection = None
+                # 与 DataSourceAssetPreparer._close_memory 一致：显式关闭 client，
+                # 避免 Windows 上 Chroma 文件句柄未释放导致后续 os.replace 记忆目录失败。
+                client = getattr(memory, "_client", None)
+                close = getattr(client, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
                 memory._client = None
             out: list[dict[str, Any]] = []
             for metadata in result.get("metadatas") or []:

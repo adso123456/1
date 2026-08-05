@@ -260,7 +260,9 @@ class DataSourceChatHandler:
             write_performance_evidence(state)
             if self._capture_hook is not None:
                 try:
-                    self._capture_hook(
+                    # 捕获走线程：候选库 SQLite 写（busy_timeout 最长 30s）绝不阻塞事件循环。
+                    await asyncio.to_thread(
+                        self._capture_hook,
                         state=state,
                         source_id=context.source_id,
                         database_type=context.config.database_type,

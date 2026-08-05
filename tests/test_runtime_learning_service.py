@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -510,6 +511,57 @@ async def test_capture_hook_contract_keyword_state(tmp_path):
     service, store = _make_service(tmp_path, record)
     state = _live_like_state()
     candidate = service.capture(
+        state=state,
+        source_id="pg-main",
+        database_type="postgresql",
+        runtime_revision=1,
+        final_answer="查询到 5 条记录。",
+        request_failed=False,
+    )
+    assert candidate is not None
+    assert store.get_candidate(candidate.candidate_id).status == "staged"
+
+
+async def test_publish_failed_retry_on_next_publish(tmp_path, monkeypatch):
+    """publish_failed 候选可被下一次发布重试，不再永久搁浅。
+
+    回归：此前 publish_failed 无任何代码路径可迁出，一次瞬时冲突
+    （prepare 并发占用等）即永久丢失整批学习样本。
+    """
+    record = _record(tmp_path, revision=3)
+    service, store = _make_service(tmp_path, record)
+    store.save_candidate(
+        _candidate(tmp_path, candidate_id="c1", status="publish_failed")
+    )
+
+    class FakePreparer:
+        def __init__(self, catalog, runtime_manager):
+            pass
+
+        def prepare(self, source_id, *, extra_sql_tool_records=None):
+            return {"runtime_revision": 4, "status": "ready", "sql_tool_memory_count": 0}
+
+    monkeypatch.setattr(
+        "backend.runtime_learning_service.DataSourceAssetPreparer",
+        FakePreparer,
+    )
+    result = await service.publish_source("pg-main", force=True)
+    assert result["published"] == 1
+    assert store.get_candidate("c1").status == "published"
+    assert store.get_candidate("c1").published_runtime_revision == 4
+
+
+async def test_capture_hook_runs_in_thread(tmp_path):
+    """capture hook 经 asyncio.to_thread 调用须落库且不抛异常（F2 回归）。
+
+    handler 的 finally 用 await asyncio.to_thread 调用 capture，候选库写入
+    （busy_timeout 最长 30s）不得阻塞事件循环；此处验证该线程调用模式契约。
+    """
+    record = _record(tmp_path, revision=1)
+    service, store = _make_service(tmp_path, record)
+    state = _live_like_state()
+    candidate = await asyncio.to_thread(
+        service.capture,
         state=state,
         source_id="pg-main",
         database_type="postgresql",

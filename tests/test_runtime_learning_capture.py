@@ -285,6 +285,87 @@ def test_evidence_small_aggregate_full():
     }
 
 
+def test_evidence_non_json_native_cells_serializable():
+    """datetime/Decimal/date 等非 JSON 原生单元格必须字符串化，不得抛 TypeError。
+
+    回归：PG runner 用 RealDictCursor 返回原生 datetime/Decimal，
+    旧逻辑未截断时原样保留对象，json.dumps(evidence) 抛 TypeError，
+    导致监控类含时间/数值列的查询捕获被静默丢弃。
+    """
+    from datetime import date, datetime
+    from decimal import Decimal
+
+    metadata = {
+        "row_count": 2,
+        "columns": ["monitor_time", "station_id", "value"],
+        "query_type": "SELECT",
+        "results": [
+            {
+                "monitor_time": datetime(2026, 8, 1, 10, 30),
+                "station_id": "s1",
+                "value": Decimal("1.2345"),
+            },
+            {
+                "monitor_time": date(2026, 8, 1),
+                "station_id": "s2",
+                "value": 2.5,
+            },
+        ],
+    }
+    evidence = build_result_evidence(metadata, max_rows=20, max_bytes=65536)
+    assert evidence is not None
+    # datetime/Decimal 被字符串化，且 JSON 可序列化
+    assert isinstance(evidence.rows[0][0], str)
+    assert isinstance(evidence.rows[0][2], str)
+    # 原生 float 保留供 numeric_summary 使用
+    assert evidence.rows[1][2] == 2.5
+    # Decimal 本就排除在 numeric_summary 之外（仅 int/float 参与），行为与修复前一致
+    assert evidence.numeric_summary["value"] == {
+        "min": 2.5,
+        "max": 2.5,
+        "sum": 2.5,
+        "avg": 2.5,
+    }
+    import json as _json
+
+    _json.dumps(evidence.model_dump())  # 必须可序列化
+
+
+def test_capture_datetime_result_saves_candidate(tmp_path):
+    """带 datetime 结果的 run_sql 捕获应落库，而非被 TypeError 静默丢弃。"""
+    from datetime import datetime
+
+    from backend.runtime_learning_capture import capture_candidate
+
+    metadata = {
+        "row_count": 1,
+        "columns": ["monitor_time", "value"],
+        "query_type": "SELECT",
+        "results": [
+            {"monitor_time": datetime(2026, 8, 1, 10, 30), "value": 1.5}
+        ],
+        "sql_guard": _guard(used_tables=["t1"], used_columns=["t1.value"]),
+    }
+    state = _state(question="查询最近1条记录")
+    state.successful_run_sql_count = 1
+    state.last_sql = "SELECT monitor_time, value FROM t1 LIMIT 1"
+    state.last_result_metadata = metadata
+    store = LearningCandidateStore(_settings(tmp_path).candidate_db_path)
+    candidate = capture_candidate(
+        state=state,
+        source_id="pg-main",
+        database_type="postgresql",
+        runtime_revision=1,
+        final_answer="查到 1 条记录。",
+        request_failed=False,
+        store=store,
+        settings=_settings(tmp_path),
+    )
+    assert candidate is not None
+    assert store.get_candidate(candidate.candidate_id).status == "staged"
+    assert candidate.result_truncated is False
+
+
 def test_sql_classifiers():
     assert is_select_sql("SELECT a FROM t")
     assert is_select_sql("WITH x AS (SELECT 1) SELECT * FROM x")

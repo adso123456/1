@@ -94,8 +94,12 @@ def _truncate_cell(value: Any, max_cell_chars: int = 200) -> Any:
         text = str(value)
     if len(text) > max_cell_chars:
         return text[:max_cell_chars] + "..."
-    # 未截断返回原值，保留数值类型供 numeric_summary 使用
-    return value
+    # 仅 JSON 原生标量原样返回（保留数值类型供 numeric_summary 使用）；
+    # datetime/Decimal 等非 JSON 原生对象一律字符串化，
+    # 避免后续 json.dumps(evidence) 抛 TypeError 导致整条候选被静默丢弃。
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return text
 
 
 def build_result_evidence(
