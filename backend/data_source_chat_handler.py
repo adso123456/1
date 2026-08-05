@@ -12,6 +12,7 @@ from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.query_context import finalize_request_context
 from backend.query_performance import (
+    QueryPerformanceState,
     begin_query_performance,
     clear_query_performance,
     emit_progress,
@@ -42,6 +43,8 @@ class DataSourceChatHandler:
             [], dict[str, dict[str, object]]
         ]
         | None = None,
+        *,
+        capture_hook: Callable[..., None] | None = None,
     ) -> None:
         if not isinstance(coordinator, DataSourceRequestCoordinator):
             raise TypeError("coordinator 必须是 DataSourceRequestCoordinator")
@@ -50,6 +53,24 @@ class DataSourceChatHandler:
         self._coordinator = coordinator
         self._runtime_manager = runtime_manager
         self._prewarm_status_provider = prewarm_status_provider
+        # 运行时学习捕获钩子：仅在 finally 收敛点调用，绝不阻塞 SSE 主链路。
+        self._capture_hook = capture_hook
+
+    @staticmethod
+    def _collect_final_answer(
+        chunk: ChatStreamChunk, current: str
+    ) -> str:
+        """只保留最后一个 type=="text" 的 rich 组件的完整内容，避免重复拼接。"""
+        rich = chunk.rich
+        if not isinstance(rich, dict):
+            return current
+        if rich.get("type") != "text":
+            return current
+        data = rich.get("data")
+        content = data.get("content") if isinstance(data, dict) else None
+        if isinstance(content, str) and content.strip():
+            return content
+        return current
 
     @staticmethod
     def _event_chunk(
@@ -120,6 +141,8 @@ class DataSourceChatHandler:
         state.runtime_was_cached = (
             self._runtime_manager.runtime_revision(context.source_id) is not None
         )
+        captured_runtime_revision: int | None = None
+        final_answer = ""
         producer: asyncio.Task[None] | None = None
         request_failed = False
         try:
@@ -139,6 +162,9 @@ class DataSourceChatHandler:
                     return
             await asyncio.to_thread(
                 self._runtime_manager.require, context.source_id
+            )
+            captured_runtime_revision = self._runtime_manager.runtime_revision(
+                context.source_id
             )
             record_timing(
                 "runtime_acquire_ms",
@@ -179,6 +205,9 @@ class DataSourceChatHandler:
                 if kind == "event":
                     yield self._event_chunk(value, conversation_id, request_id)
                 elif kind == "chunk":
+                    final_answer = self._collect_final_answer(
+                        value, final_answer
+                    )
                     yield value
                 elif kind == "error":
                     request_failed = True
@@ -229,6 +258,19 @@ class DataSourceChatHandler:
                     pass
             state.timings["total_ms"] = round(state.elapsed_ms(), 3)
             write_performance_evidence(state)
+            if self._capture_hook is not None:
+                try:
+                    self._capture_hook(
+                        state,
+                        source_id=context.source_id,
+                        database_type=context.config.database_type,
+                        runtime_revision=captured_runtime_revision,
+                        final_answer=final_answer,
+                        request_failed=request_failed,
+                    )
+                except Exception:
+                    # 学习捕获失败绝不能反向影响用户问答。
+                    pass
             if get_request_diagnostics() is not None:
                 finalize_request_context(
                     status=(

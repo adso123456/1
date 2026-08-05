@@ -197,8 +197,8 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
             return example, "sql is empty"
         if not self._is_select_sql(sql):
             return example, "sql is not SELECT"
-        if not self._has_limit(sql):
-            return example, "sql has no LIMIT"
+        if not self._has_limit(sql) and not self._is_aggregate_query(sql):
+            return example, "sql has no LIMIT and is not aggregate"
         if self._has_select_star(sql):
             return example, "sql contains SELECT *"
 
@@ -230,6 +230,18 @@ class SqlExampleContextEnhancer(LlmContextEnhancer):
     @staticmethod
     def _has_select_star(sql: str) -> bool:
         return bool(re.search(r"\bselect\s+\*", sql, flags=re.I | re.S))
+
+    @staticmethod
+    def _is_aggregate_query(sql: str) -> bool:
+        """聚合查询（结果规模天然受控）可无 LIMIT。"""
+        return bool(
+            re.search(
+                r"\b(count|sum|avg|min|max|stddev|var_pop|var_samp)\s*\("
+                r"|\bgroup\s+by\b",
+                sql,
+                flags=re.I,
+            )
+        )
 
     @staticmethod
     def _normalize_question(question: str) -> str:

@@ -19,6 +19,11 @@ from backend.assistant_admin_api import (
     create_admin_router,
 )
 from backend.data_source_chat_handler import DataSourceChatHandler
+from backend.learning_candidate_store import LearningCandidateStore
+from backend.runtime_learning_api import create_runtime_learning_router
+from backend.runtime_learning_judge import RuntimeLearningJudge
+from backend.runtime_learning_service import RuntimeLearningService
+from backend.runtime_learning_worker import RuntimeLearningWorker
 from backend.data_source_catalog import (
     CredentialCipher,
     DataSourceCatalog,
@@ -57,6 +62,9 @@ from backend.water_quality_reports.chat_handler import WaterQualityReportChatHan
 from backend.water_quality_reports.embed_api import create_embed_report_router
 from backend.water_quality_reports.repository import ReportRepository
 from backend.water_quality_reports.service import WaterQualityReportService
+from backend.tracing_llm_service import TracingOpenAILlmService
+from config.learning_settings import OnlineLearningSettings
+from config.performance_settings import QueryPerformanceSettings
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -104,10 +112,43 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         self.runtime_prewarmer = RuntimePrewarmer(
             resources.runtime_manager
         )
+        # 运行时受控自学习基础设施（候选库 / Judge / Service / Worker）。
+        self.learning_settings = OnlineLearningSettings.from_environment()
+        self.learning_store = LearningCandidateStore(
+            self.learning_settings.candidate_db_path
+        )
+        learning_llm: TracingOpenAILlmService | None = None
+        if self.learning_settings.enabled:
+            learning_llm = TracingOpenAILlmService(
+                model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"),
+                api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
+                base_url=os.environ.get(
+                    "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+                ),
+                settings=QueryPerformanceSettings.from_environment(),
+            )
+        self.learning_judge: RuntimeLearningJudge | None = None
+        if learning_llm is not None and self.learning_settings.judge_enabled:
+            self.learning_judge = RuntimeLearningJudge(
+                learning_llm, self.learning_settings
+            )
+        self.learning_service = RuntimeLearningService(
+            catalog=resources.catalog,
+            runtime_manager=resources.runtime_manager,
+            store=self.learning_store,
+            judge=self.learning_judge or RuntimeLearningJudge(
+                object(), self.learning_settings
+            ),
+            settings=self.learning_settings,
+        )
+        self.learning_worker = RuntimeLearningWorker(
+            self.learning_service, self.learning_settings
+        )
         self.chat_handler = DataSourceChatHandler(
             resources.coordinator,
             resources.runtime_manager,
             self.runtime_prewarmer.snapshot,
+            capture_hook=self.learning_service.capture,
         )
         fastapi_config = dict(self.config.get("fastapi") or {})
         fastapi_config.setdefault("lifespan", self._lifespan)
@@ -116,7 +157,17 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI):
         await self.runtime_prewarmer.warm_ready_sources()
-        yield
+        if self.learning_settings.enabled:
+            try:
+                self.learning_service.recover_interrupted()
+            except Exception:
+                pass
+            self.learning_worker.start()
+        try:
+            yield
+        finally:
+            if self.learning_settings.enabled:
+                await self.learning_worker.stop()
 
     def create_app(self) -> FastAPI:
         report_service_factory = None
@@ -438,6 +489,13 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     runtime_manager=self.resources.runtime_manager,
                 )
             )
+            if self.learning_settings.enabled:
+                app.include_router(
+                    create_runtime_learning_router(
+                        self.learning_service,
+                        self.learning_worker,
+                    )
+                )
             app.include_router(
                 create_question_suggestion_router(
                     catalog=self.resources.catalog,

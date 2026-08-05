@@ -887,6 +887,75 @@ embedding 模型变化时重建索引，不直接混用旧向量。
 
 第一版在线学习只允许用户明确确认后形成候选，不自动写正式 Memory。
 
+### 5.1 运行时受控自学习闭环（V1，2026-08）
+
+**前提事实（务必准确，避免误读）：**
+
+- 本项目 Vanna 版本是 **2.0.2**（Agent 架构）。
+- **不使用 legacy `vn.train()` / `add_question_sql` / `VannaBase`**。
+- **Vanna 2.0 不会在 run_sql 成功后自动 `save_tool_usage()`**——线上服务默认没有任何训练写入。
+- 本功能是项目**自建**的运行时学习扩展，不是 Vanna 上游能力。
+
+**链路：**
+
+```text
+线上正常问答 -> run_sql 成功 -> 服务端捕获(问题/最终SQL/SQLGuard/结果证据/最终回答)
+  -> 独立候选库 learning_candidates.sqlite3 (staged)
+  -> 独立 LLM Judge (PASS/NEEDS_REVIEW/REJECT, 固定 JSON, temperature=0)
+  -> PASS 候选 去重/冲突/Metadata+SQLGuard 复检
+  -> 按 source_id 组成微批次
+  -> 转换为标准 sql_example Tool Memory 记录 (toolmem-v1- 确定性 id)
+  -> 复用 DataSourceAssetPreparer 候选 revision/备份/原子安装/catalog.publish()/回滚/Runtime 切换
+  -> runtime_revision +1 -> 新 Runtime 通过 search_similar_usage() 召回
+```
+
+**关键原则：**
+
+- **运行时只捕获候选，绝不直接写正式 Memory**；`save_tool_usage()` 只在离线发布链中由现有发布代码写入。
+- **Judge 只是候选审核信号**，不是发布依据；自动 PASS 还需 `confidence >= 0.95` 且全部对齐标志为真。
+- **正式写入必须通过现有 sql_example Tool Memory 结构 + DataSourceAssetPreparer revision 发布链**，不新建第二套 Chroma 发布系统。
+- **自动发布默认关闭**（`ONLINE_LEARNING_AUTO_PUBLISH=false`）；开启自动发布前必须通过全部测试与烟雾验证。
+- 捕获默认开启，但整个功能由 `ONLINE_LEARNING_ENABLED` 总开关控制，默认关闭。
+
+**启用/停用：**
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `ONLINE_LEARNING_ENABLED` | `false` | 总开关；关闭时捕获/Judge/发布全部停止，Worker 不启动 |
+| `ONLINE_LEARNING_CAPTURE_ENABLED` | `true` | 捕获开关 |
+| `ONLINE_LEARNING_JUDGE_ENABLED` | `true` | Judge 开关 |
+| `ONLINE_LEARNING_AUTO_PUBLISH` | `false` | 自动发布开关 |
+| `ONLINE_LEARNING_JUDGE_MIN_CONFIDENCE` | `0.95` | 自动 PASS 最低置信度 |
+| `ONLINE_LEARNING_BATCH_SIZE` | `10` | 微批次最大样本数 |
+| `ONLINE_LEARNING_BATCH_MAX_WAIT_SECONDS` | `600` | 最老 PASS 等待时长 |
+| `ONLINE_LEARNING_WORKER_INTERVAL_SECONDS` | `30` | Worker 轮询间隔 |
+| `ONLINE_LEARNING_MAX_RESULT_ROWS` | `20` | 结果证据保留最大行数 |
+| `ONLINE_LEARNING_MAX_RESULT_BYTES` | `65536` | 结果证据最大字节数 |
+| `ONLINE_LEARNING_MAX_JUDGE_ATTEMPTS` | `3` | Judge 重试上限 |
+| `LEARNING_CANDIDATE_DB` | `agent_data/learning_candidates.sqlite3` | 候选库路径（相对项目根或绝对路径） |
+
+**查看候选与手动发布（仅本机管理员）：**
+
+```text
+GET  /api/admin/runtime-learning/status
+GET  /api/admin/runtime-learning/candidates?status=staged&source_id=...
+GET  /api/admin/runtime-learning/candidates/{candidate_id}
+POST /api/admin/runtime-learning/candidates/{candidate_id}/judge     # 触发 Judge
+POST /api/admin/runtime-learning/candidates/{candidate_id}/approve   # needs_review -> 入发布队列
+POST /api/admin/runtime-learning/candidates/{candidate_id}/reject
+POST /api/admin/runtime-learning/sources/{source_id}/publish         # 手动触发该源发布
+POST /api/admin/runtime-learning/worker/run                          # Worker 单轮
+```
+
+**完全关闭运行时学习：** 设 `ONLINE_LEARNING_ENABLED=false`（不设也行，默认即关）。关闭后：
+不捕获、不写候选库、Worker 不启动、管理 API 不注册、正式 Chroma 与 runtime_revision 完全不受影响。
+
+**备份候选库：** 候选库是独立 SQLite（`agent_data/learning_candidates.sqlite3`，WAL 模式）。备份时连同 `-wal`/`-shm` 文件一起拷贝，或先执行一次服务内 `recover_interrupted()` 后再拷贝；恢复时放回原路径即可。
+
+**Docker 打包：** `agent_data/` 已挂载为命名卷，候选库默认落在其中，随卷持久；如需在镜像内预置空库，`agent_data/learning_candidates.sqlite3` 可为不存在（首次启动自动建库）。代码改动仍需 `docker compose up --build -d` 重建镜像。
+
+**发布失败与回滚：** 发布复用 `DataSourceAssetPreparer` 的 CAS（`expected_runtime_revision`）+ 备份 + `os.replace` 原子安装 + `restore_publication_state`/`mark_recovery_failed`。失败时：正式 Memory 与旧 Runtime 保持不变，候选标记 `publish_failed`（保留错误证据，可重试）；`catalog.publish()` 未成功时 `runtime_revision` 不变；回滚失败会关闭该数据源问数入口并保留证据。同批次重试幂等（`toolmem-v1-` 确定性 id + content_fingerprint 去重）。
+
 ---
 
 ## 十一、阶段状态与汇报规则

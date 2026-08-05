@@ -1120,18 +1120,59 @@ class DataSourceAssetPreparer:
             payload.append((str(record_id), str(document), item))
         return payload
 
-    def prepare(self, source_id: str) -> dict[str, Any]:
+    @staticmethod
+    def _merge_extra_sql_tool_records(
+        preserved: list[tuple[str, str, dict[str, Any]]],
+        extra: list[tuple[str, str, dict[str, Any]]],
+        *,
+        source_id: str,
+    ) -> list[tuple[str, str, dict[str, Any]]]:
+        """合并运行时学习候选提供的额外 SQL Tool Memory。
+
+        结构校验 + 按 record_id 幂等去重；不在此处做 SQLGuard 复检
+        （调用方发布前已用当前 Metadata 复检过）。
+        """
+        existing_ids = {record_id for record_id, _, _ in preserved}
+        merged: list[tuple[str, str, dict[str, Any]]] = list(preserved)
+        for record_id, document, metadata in extra:
+            item = dict(metadata or {})
+            if str(item.get("tool_name") or "") != "run_sql":
+                raise DataSourceCatalogError(
+                    "额外 Tool Memory 仅允许 run_sql"
+                )
+            if item.get("source_id") not in {None, "", source_id}:
+                raise DataSourceCatalogError("额外 Tool Memory 数据源不匹配")
+            record_id = str(record_id)
+            if record_id in existing_ids:
+                continue  # 幂等：重试不重复写入
+            merged.append((record_id, str(document), item))
+            existing_ids.add(record_id)
+        return merged
+
+    def prepare(
+        self,
+        source_id: str,
+        *,
+        extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
         lock = _prepare_lock(source_id)
         if not lock.acquire(blocking=False):
             raise DataSourceConflict(
                 "该数据源正在生成问数资产，请稍后重试"
             )
         try:
-            return self._prepare_locked(source_id)
+            return self._prepare_locked(
+                source_id, extra_sql_tool_records=extra_sql_tool_records
+            )
         finally:
             lock.release()
 
-    def _prepare_locked(self, source_id: str) -> dict[str, Any]:
+    def _prepare_locked(
+        self,
+        source_id: str,
+        *,
+        extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
         record = self.catalog.require(source_id)
         scope = [dict(item) for item in record.selected_scope]
         if not scope:
@@ -1318,6 +1359,7 @@ class DataSourceAssetPreparer:
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
             expected_status=expected_status,
+            extra_sql_tool_records=extra_sql_tool_records,
         )
 
     def _publish_assets(
@@ -1332,6 +1374,7 @@ class DataSourceAssetPreparer:
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
         expected_status: str,
+        extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         return self._publish_assets_crash_safe(
             source_id=source_id,
@@ -1343,6 +1386,7 @@ class DataSourceAssetPreparer:
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
             expected_status=expected_status,
+            extra_sql_tool_records=extra_sql_tool_records,
         )
 
     def _publish_assets_crash_safe(
@@ -1357,6 +1401,7 @@ class DataSourceAssetPreparer:
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
         expected_status: str,
+        extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         target = record.metadata_path.resolve()
         root = target.parent
@@ -1462,6 +1507,12 @@ class DataSourceAssetPreparer:
                 metadata_path=candidate_paths["metadata"],
                 database_type=record.database_type,
             )
+            if extra_sql_tool_records:
+                sql_tool_payload = self._merge_extra_sql_tool_records(
+                    sql_tool_payload,
+                    extra_sql_tool_records,
+                    source_id=source_id,
+                )
             from backend.memory import create_memory
 
             memory = create_memory(candidate_memory)
