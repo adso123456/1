@@ -261,7 +261,7 @@ class DataSourceChatHandler:
             if self._capture_hook is not None:
                 try:
                     self._capture_hook(
-                        state,
+                        state=state,
                         source_id=context.source_id,
                         database_type=context.config.database_type,
                         runtime_revision=captured_runtime_revision,

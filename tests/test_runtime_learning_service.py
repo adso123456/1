@@ -467,3 +467,102 @@ async def test_auto_publish_off_requires_force(tmp_path):
     with pytest.raises(RuntimeLearningServiceError) as exc_info:
         await service.publish_source("pg-main")
     assert "自动发布未开启" in str(exc_info.value)
+
+
+def _live_like_state():
+    from backend.query_intent import ContextProfile
+    from backend.query_performance import QueryPerformanceState
+
+    state = QueryPerformanceState(
+        conversation_id="conv-live",
+        request_id="req-live",
+        question="查询数据字典记录",
+        source_id="pg-main",
+        context_profile=ContextProfile.FULL,
+    )
+    state.successful_run_sql_count = 1
+    state.last_sql = "SELECT list_type, item_code FROM ad_dict LIMIT 5"
+    state.last_result_metadata = {
+        "row_count": 5,
+        "columns": ["list_type", "item_code"],
+        "query_type": "SELECT",
+        "results": [{"list_type": "a", "item_code": "1"}],
+        "sql_guard": {
+            "passed": True,
+            "severity": "ok",
+            "used_tables": ["ad_dict"],
+            "used_columns": ["ad_dict.list_type"],
+            "forbidden_operations": [],
+            "reason": "ok",
+        },
+    }
+    return state
+
+
+async def test_capture_hook_contract_keyword_state(tmp_path):
+    """handler 的 capture hook 以关键字 state 调用 service.capture 时须落库且不抛异常。
+
+    回归：capture 签名为全关键字（*, state, ...），但 handler 调用点曾把 state
+    以位置参数传入，导致 TypeError 被 handler 的 except 静默吞掉，线上捕获从未生效。
+    该测试锁定"handler -> service.capture"的调用契约。
+    """
+    record = _record(tmp_path, revision=1)
+    service, store = _make_service(tmp_path, record)
+    state = _live_like_state()
+    candidate = service.capture(
+        state=state,
+        source_id="pg-main",
+        database_type="postgresql",
+        runtime_revision=1,
+        final_answer="查询到 5 条记录。",
+        request_failed=False,
+    )
+    assert candidate is not None
+    assert store.get_candidate(candidate.candidate_id).status == "staged"
+
+
+async def test_judge_pass_truncated_forces_needs_review(tmp_path):
+    """截断证据即使 Judge 高置信 PASS 也禁止自动 PASS，强制人工复核。
+
+    确定性门禁独立于 Judge 提示词：LLM 可能忽略"截断证据需降置信"的指示，
+    因此 result_truncated=True 的候选一律不得进入自动发布链路。
+    """
+    record = _record(tmp_path, revision=3)
+    service, store = _make_service(tmp_path, record)
+    store.save_candidate(
+        _candidate(
+            tmp_path,
+            candidate_id="c-trunc",
+            status="staged",
+            result_truncated=True,
+            result_evidence_json=json.dumps(
+                {
+                    "columns": ["value"],
+                    "rows": [[1.0]],
+                    "row_count": 1,
+                    "total_row_count": 100,
+                    "truncated": True,
+                    "max_rows": 20,
+                    "numeric_summary": {},
+                    "result_sha256": "t",
+                },
+                ensure_ascii=False,
+            ),
+        )
+    )
+    updated = await service.judge_candidate("c-trunc")
+    # Judge 结论保留为 PASS，但门禁把目标状态降级为 needs_review
+    assert updated.judge_verdict == "PASS"
+    assert updated.judge_confidence >= 0.95
+    assert updated.status == "needs_review"
+
+
+async def test_judge_pass_not_truncated_allowed(tmp_path):
+    """未截断证据且 Judge 高置信 PASS 时才允许自动进入 pass。"""
+    record = _record(tmp_path, revision=3)
+    service, store = _make_service(tmp_path, record)
+    store.save_candidate(
+        _candidate(tmp_path, candidate_id="c-ok", status="staged")
+    )
+    updated = await service.judge_candidate("c-ok")
+    assert updated.status == "pass"

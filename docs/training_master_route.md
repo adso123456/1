@@ -913,6 +913,7 @@ embedding 模型变化时重建索引，不直接混用旧向量。
 
 - **运行时只捕获候选，绝不直接写正式 Memory**；`save_tool_usage()` 只在离线发布链中由现有发布代码写入。
 - **Judge 只是候选审核信号**，不是发布依据；自动 PASS 还需 `confidence >= 0.95` 且全部对齐标志为真。
+- **截断样本禁止自动 PASS**：`result_truncated=true` 时即使 Judge 高置信 PASS 也强制 NEEDS_REVIEW，属确定性门禁，不依赖提示词让 Judge 降置信。
 - **正式写入必须通过现有 sql_example Tool Memory 结构 + DataSourceAssetPreparer revision 发布链**，不新建第二套 Chroma 发布系统。
 - **自动发布默认关闭**（`ONLINE_LEARNING_AUTO_PUBLISH=false`）；开启自动发布前必须通过全部测试与烟雾验证。
 - 捕获默认开启，但整个功能由 `ONLINE_LEARNING_ENABLED` 总开关控制，默认关闭。

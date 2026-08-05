@@ -239,6 +239,11 @@ class RuntimeLearningService:
             target = verdict_to_target_status(
                 verdict, min_confidence=self._settings.judge_min_confidence
             )
+            # 确定性门禁：结果证据被截断时禁止自动 PASS，强制人工复核。
+            # LLM Judge 可能忽略提示词中"截断证据需降置信"的指示，因此
+            # 截断样本一律不许进入自动发布链路。
+            if target == "pass" and candidate.result_truncated:
+                target = "needs_review"
             updated = self._store.apply_judge_result(
                 candidate_id=candidate_id,
                 verdict=verdict.verdict,
