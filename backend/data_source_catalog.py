@@ -1903,7 +1903,13 @@ class DataSourceCatalog:
         source_id: str,
     ) -> dict[str, Any]:
         """首次启用审核器：把现有 selected_scope 迁移为 effective active，
-        已发现但未选中的表迁移为 effective pending（无法证明曾经过正式审核）。"""
+        已发现但未选中的表迁移为 effective pending（无法证明曾经过正式审核）。
+
+        整个迁移（含"是否已有 review"检查、全部表写入、migration run）
+        在同一个 BEGIN IMMEDIATE 事务内完成：
+          - 已有任意 review 记录 -> 原子 no-op，不覆盖人工决定；
+          - 任一表写入失败 -> 全部回滚，重试仍可完整迁移，
+            不会留下"部分迁移 + reviews 非空导致永不重试"的窗口。"""
         record = self.require(source_id)
 
         def schema_of(item: Mapping[str, Any]) -> str:
@@ -1931,41 +1937,79 @@ class DataSourceCatalog:
         run_id = f"migration-{source_id}-{time.time_ns()}-{uuid.uuid4().hex}"
         active_count = 0
         pending_count = 0
-        for schema, table in sorted(selected):
-            self.upsert_table_review(
-                source_id,
-                schema,
-                table,
-                effective_decision="active",
-                decision_source="migration",
-                decision_reason="existing_selected_scope",
-                availability_status="present",
-                reviewed_by="migration",
+        now = time.time()
+        with self._lock, self._connection(write=True) as connection:
+            existing_count = connection.execute(
+                "SELECT count(*) FROM data_source_table_reviews "
+                "WHERE source_id=?",
+                (source_id,),
+            ).fetchone()[0]
+            if existing_count > 0:
+                return {
+                    "run_id": "",
+                    "skipped": True,
+                    "reason": "已有审核记录，跳过迁移",
+                    "active": 0,
+                    "pending": 0,
+                    "discovered": len(discovered),
+                    "selected": len(selected),
+                }
+            for schema, table in sorted(selected):
+                self._upsert_review_row(
+                    connection,
+                    source_id,
+                    schema,
+                    table,
+                    {
+                        "effective_decision": "active",
+                        "decision_source": "migration",
+                        "decision_reason": "existing_selected_scope",
+                        "availability_status": "present",
+                        "reviewed_by": "migration",
+                    },
+                    now=now,
+                )
+                active_count += 1
+            for schema, table in sorted(discovered - selected):
+                self._upsert_review_row(
+                    connection,
+                    source_id,
+                    schema,
+                    table,
+                    {
+                        "effective_decision": "pending",
+                        "decision_source": "migration",
+                        "decision_reason": "legacy_unclassified",
+                        "availability_status": "present",
+                        "reviewed_by": "migration",
+                    },
+                    now=now,
+                )
+                pending_count += 1
+            connection.execute(
+                """
+                INSERT INTO data_source_review_runs (
+                    run_id, source_id, review_version, status,
+                    discovered_tables, profiled_tables, started_at,
+                    finished_at, error, created_by
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    run_id,
+                    source_id,
+                    0,
+                    "migration",
+                    len(discovered),
+                    0,
+                    now,
+                    now,
+                    "",
+                    "migration",
+                ),
             )
-            active_count += 1
-        for schema, table in sorted(discovered - selected):
-            self.upsert_table_review(
-                source_id,
-                schema,
-                table,
-                effective_decision="pending",
-                decision_source="migration",
-                decision_reason="legacy_unclassified",
-                availability_status="present",
-                reviewed_by="migration",
-            )
-            pending_count += 1
-        self.record_review_run(
-            run_id=run_id,
-            source_id=source_id,
-            review_version=0,
-            status="migration",
-            discovered_tables=len(discovered),
-            profiled_tables=0,
-            created_by="migration",
-        )
         return {
             "run_id": run_id,
+            "skipped": False,
             "active": active_count,
             "pending": pending_count,
             "discovered": len(discovered),

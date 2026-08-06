@@ -1,9 +1,12 @@
 """F1 回归：首次启用审核器时按 selected_scope 安全迁移。
 
-场景：旧 Catalog 已有 discovered_metadata + selected_scope，reviews 为空。
-  - 首次 review -> 已选表 effective=active（migration），未选表 pending；
-  - selected_scope / runtime_revision 不变；
-  - 第二次 review 不重新迁移，也不覆盖人工决定。
+覆盖：
+  - 正常首次迁移：已选表 effective=active（migration），未选表 pending；
+    selected_scope / runtime_revision 不变；
+  - 第二次运行不重新迁移，也不覆盖人工决定；
+  - 迁移中途失败（第 2 张表写入抛异常）整体回滚：reviews 为 0、
+    migration run 为 0，重试后仍完整迁移；
+  - 已有 review 时方法级原子 no-op。
 """
 
 from __future__ import annotations
@@ -90,6 +93,33 @@ class FakeProfiler:
         return profiles
 
 
+def _setup(directory: Path):
+    catalog = DataSourceCatalog(
+        directory / "catalog.sqlite3",
+        cipher=CredentialCipher(Fernet.generate_key().decode("ascii")),
+    )
+    catalog.initialize()
+    source = catalog.create(
+        display_name="迁移测试",
+        description="",
+        database_type="postgresql",
+        host="127.0.0.1",
+        port=5432,
+        database_name="gt_monitor",
+        schema_name="public",
+        username="readonly",
+        password="secret",
+    )
+    catalog.save_discovery(source.source_id, METADATA)
+    selected = [
+        item
+        for item in METADATA
+        if item["table"] in {"monitor_data", "station_dict"}
+    ]
+    catalog.save_scope(source.source_id, selected)
+    return catalog, source.source_id
+
+
 def _reviews(catalog: DataSourceCatalog, source_id: str) -> dict[str, dict]:
     return {
         row["table_name"]: row
@@ -97,47 +127,20 @@ def _reviews(catalog: DataSourceCatalog, source_id: str) -> dict[str, dict]:
     }
 
 
-def main() -> int:
+def test_first_run_migration_and_no_override() -> None:
     with tempfile.TemporaryDirectory(prefix="review-migration-") as directory:
-        catalog = DataSourceCatalog(
-            Path(directory) / "catalog.sqlite3",
-            cipher=CredentialCipher(Fernet.generate_key().decode("ascii")),
-        )
-        catalog.initialize()
-        source = catalog.create(
-            display_name="迁移测试",
-            description="",
-            database_type="postgresql",
-            host="127.0.0.1",
-            port=5432,
-            database_name="gt_monitor",
-            schema_name="public",
-            username="readonly",
-            password="secret",
-        )
-        # 旧 Catalog 状态：discovered 全部表，selected_scope 只选两张。
-        catalog.save_discovery(source.source_id, METADATA)
-        selected = [
-            item
-            for item in METADATA
-            if item["table"] in {"monitor_data", "station_dict"}
-        ]
-        catalog.save_scope(source.source_id, selected)
-        scope_before = len(catalog.require(source.source_id).selected_scope)
-        revision_before = catalog.require(source.source_id).runtime_revision
+        catalog, source_id = _setup(Path(directory))
+        scope_before = len(catalog.require(source_id).selected_scope)
+        revision_before = catalog.require(source_id).runtime_revision
 
         reviewer = DataSourceTableReviewer(
             catalog,
             FakeConnector(),
             FakeProfiler(),
         )
-        # 第一次 review：reviews 为空 -> 先安全迁移再审核。
-        first = reviewer.run_review(
-            source.source_id,
-            created_by="migration-test",
-        )
+        first = reviewer.run_review(source_id, created_by="migration-test")
         assert first["discovered"] == 3
-        reviews = _reviews(catalog, source.source_id)
+        reviews = _reviews(catalog, source_id)
         assert set(reviews) == {
             "monitor_data",
             "station_dict",
@@ -151,15 +154,12 @@ def main() -> int:
             reviews["water_data_old"]["decision_reason"]
             == "legacy_unclassified"
         )
-        # 已选表、revision 不变；正式资产未被触碰。
-        assert len(catalog.require(source.source_id).selected_scope) == scope_before
-        assert (
-            catalog.require(source.source_id).runtime_revision == revision_before
-        )
+        assert len(catalog.require(source_id).selected_scope) == scope_before
+        assert catalog.require(source_id).runtime_revision == revision_before
 
         # 人工决定：把未选表提升为 active。
         catalog.upsert_table_review(
-            source.source_id,
+            source_id,
             "public",
             "water_data_old",
             effective_decision="active",
@@ -167,8 +167,8 @@ def main() -> int:
             decision_reason="人工确认",
         )
         # 第二次 review：不得重新迁移、不得覆盖人工决定。
-        reviewer.run_review(source.source_id, created_by="migration-test-2")
-        reviews = _reviews(catalog, source.source_id)
+        reviewer.run_review(source_id, created_by="migration-test-2")
+        reviews = _reviews(catalog, source_id)
         assert reviews["water_data_old"]["effective_decision"] == "active"
         assert reviews["water_data_old"]["decision_source"] == "manual"
         assert reviews["monitor_data"]["effective_decision"] == "active"
@@ -177,15 +177,120 @@ def main() -> int:
             migration_runs = connection.execute(
                 "SELECT count(*) FROM data_source_review_runs "
                 "WHERE source_id=? AND status='migration'",
-                (source.source_id,),
+                (source_id,),
             ).fetchone()[0]
-            assert migration_runs == 1
         finally:
             connection.close()
+        assert migration_runs == 1
 
-    print("data source review migration tests passed")
-    return 0
+
+def test_migration_midway_failure_rolls_back_and_retries() -> None:
+    with tempfile.TemporaryDirectory(prefix="review-migration-fault-") as directory:
+        catalog, source_id = _setup(Path(directory))
+        original = catalog._upsert_review_row
+        call_count = {"value": 0}
+
+        def failing(
+            connection,
+            source_id,
+            schema_name,
+            table_name,
+            fields,
+            *,
+            now,
+        ):
+            call_count["value"] += 1
+            if call_count["value"] == 2:
+                raise RuntimeError("模拟迁移第 2 张表写入失败")
+            return original(
+                connection,
+                source_id,
+                schema_name,
+                table_name,
+                fields,
+                now=now,
+            )
+
+        catalog._upsert_review_row = failing
+        try:
+            try:
+                catalog.migrate_table_reviews_from_existing(source_id)
+            except RuntimeError as exc:
+                assert "第 2 张表" in str(exc)
+            else:
+                raise AssertionError("迁移应抛出 RuntimeError")
+        finally:
+            catalog._upsert_review_row = original
+
+        # 整体回滚：无任何 review、无任何 migration run。
+        assert catalog.list_table_reviews(source_id) == []
+        connection = sqlite3.connect(Path(directory) / "catalog.sqlite3")
+        try:
+            runs = connection.execute(
+                "SELECT count(*) FROM data_source_review_runs "
+                "WHERE source_id=?",
+                (source_id,),
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        assert runs == 0
+
+        # 重试成功：selected_scope 全部 active、未选表全部 pending。
+        result = catalog.migrate_table_reviews_from_existing(source_id)
+        assert result["skipped"] is False
+        assert result["active"] == 2
+        assert result["pending"] == 1
+        reviews = _reviews(catalog, source_id)
+        assert reviews["monitor_data"]["effective_decision"] == "active"
+        assert reviews["station_dict"]["effective_decision"] == "active"
+        assert reviews["water_data_old"]["effective_decision"] == "pending"
+
+
+def test_migration_noop_when_reviews_exist() -> None:
+    with tempfile.TemporaryDirectory(prefix="review-migration-noop-") as directory:
+        catalog, source_id = _setup(Path(directory))
+        catalog.upsert_table_review(
+            source_id,
+            "public",
+            "monitor_data",
+            effective_decision="active",
+            decision_source="manual",
+            decision_reason="人工决定",
+        )
+        result = catalog.migrate_table_reviews_from_existing(source_id)
+        assert result["skipped"] is True
+        reviews = _reviews(catalog, source_id)
+        # 只有人工预置的一行，未新增迁移行、未覆盖决定。
+        assert set(reviews) == {"monitor_data"}
+        assert reviews["monitor_data"]["decision_source"] == "manual"
+        connection = sqlite3.connect(Path(directory) / "catalog.sqlite3")
+        try:
+            runs = connection.execute(
+                "SELECT count(*) FROM data_source_review_runs "
+                "WHERE source_id=? AND status='migration'",
+                (source_id,),
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        assert runs == 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import traceback
+
+    failed = 0
+    for name, func in sorted(globals().items()):
+        if not name.startswith("test_") or not callable(func):
+            continue
+        try:
+            func()
+            print(f"PASS {name}")
+        except Exception:
+            failed += 1
+            print(f"FAIL {name}")
+            traceback.print_exc()
+    print(
+        f"\n{len([1 for n in globals() if n.startswith('test_')]) - failed}/"
+        f"{len([1 for n in globals() if n.startswith('test_')])} passed"
+    )
+    raise SystemExit(1 if failed else 0)
