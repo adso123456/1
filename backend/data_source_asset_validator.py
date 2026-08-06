@@ -93,8 +93,7 @@ def _split_outside(
             current.append(char)
         index += 1
     tail = "".join(current).strip()
-    if tail:
-        parts.append(tail)
+    parts.append(tail)
     return parts
 
 
@@ -126,11 +125,15 @@ def _parse_pk_columns(
     table: str,
     database_type: str,
 ) -> list[str]:
+    if not columns_text.strip():
+        return []
     result: list[str] = []
     for entry in _split_top_level_commas(columns_text):
         entry = entry.strip()
         if not entry:
-            continue
+            raise DataSourceCatalogError(
+                f"DDL \u65e0\u6cd5\u89e3\u6790\uff1a{table} \u7684 PRIMARY KEY \u5b58\u5728\u7a7a\u5217\u9879"
+            )
         match = re.match(
             rf"^(?P<ident>{_quote_pattern(database_type)})\s*$",
             entry,
@@ -141,6 +144,10 @@ def _parse_pk_columns(
                 f"DDL 无法解析：{table} 的 PRIMARY KEY 列 '{entry[:40]}'"
             )
         result.append(_unquote(match.group("ident")))
+    if len(result) != len(set(result)):
+        raise DataSourceCatalogError(
+            "DDL \u91cd\u590d PRIMARY KEY \u5217\uff1a{table}"
+        )
     return result
 
 
@@ -182,6 +189,7 @@ def _parse_create_table(
         raise DataSourceCatalogError(f"DDL 重复表：{schema}.{table}")
     declared: list[str] = []
     primary: list[str] = []
+    primary_seen = False
     for item in _split_top_level_commas(match.group("body")):
         if not item:
             raise DataSourceCatalogError(f"DDL 无法解析：{table} 存在空定义项")
@@ -191,10 +199,11 @@ def _parse_create_table(
             re.S,
         )
         if pk_match is not None:
-            if primary:
+            if primary_seen:
                 raise DataSourceCatalogError(
                     f"DDL 重复 PRIMARY KEY 约束：{schema}.{table}"
                 )
+            primary_seen = True
             primary = _parse_pk_columns(
                 pk_match.group("cols"),
                 table,
@@ -202,6 +211,10 @@ def _parse_create_table(
             )
             continue
         declared.append(_parse_column_definition(item, table, database_type))
+    if primary_seen and not primary:
+        raise DataSourceCatalogError(
+            "DDL \u65e0\u6cd5\u89e3\u6790\uff1a{schema}.{table} \u7684 PRIMARY KEY \u4e3a\u7a7a"
+        )
     if not declared:
         raise DataSourceCatalogError(f"DDL 无法解析：{schema}.{table} 没有列定义")
     if len(declared) != len(set(declared)):

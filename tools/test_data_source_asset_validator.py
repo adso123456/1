@@ -880,6 +880,77 @@ def test_mysql_two_segment_qualified_rejected() -> None:
             metadata=metadata, ddls=ddls, keyword="DDL 无法解析",
         )
 
+
+def test_empty_primary_key_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-pkempty-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = (
+            'CREATE TABLE "public"."water_data" (\n'
+            '  "id" bigint,\n'
+            '  "value" numeric,\n'
+            '  PRIMARY KEY ()\n'
+            ');'
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls, keyword="PRIMARY KEY",
+        )
+
+
+def test_empty_then_legal_primary_key_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-pkempty2-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = (
+            'CREATE TABLE "public"."water_data" (\n'
+            '  "id" bigint,\n'
+            '  "value" numeric,\n'
+            '  PRIMARY KEY (),\n'
+            '  PRIMARY KEY ("id")\n'
+            ');'
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls,
+            keyword="\u91cd\u590d PRIMARY KEY",
+        )
+
+
+def test_primary_key_trailing_comma_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-pktrail-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = (
+            'CREATE TABLE "public"."water_data" (\n'
+            '  "id" bigint,\n'
+            '  "value" numeric,\n'
+            '  PRIMARY KEY ("id",)\n'
+            ');'
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls, keyword="PRIMARY KEY",
+        )
+
+
+def test_primary_key_duplicate_column_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-pkdupcol-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = (
+            'CREATE TABLE "public"."water_data" (\n'
+            '  "id" bigint,\n'
+            '  "value" numeric,\n'
+            '  PRIMARY KEY ("id", "id")\n'
+            ');'
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls,
+            keyword="\u91cd\u590d PRIMARY KEY \u5217",
+        )
+
 if __name__ == "__main__":
     import traceback
 
