@@ -488,6 +488,300 @@ def test_mysql_schema_not_normalized() -> None:
         )
 
 
+
+
+def test_primary_key_references_nondeclared_column() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f1a-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql",
+            "public",
+            "water_data",
+            ["id", "value"],
+            primary=["secret_new"],
+        )
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="PRIMARY KEY 引用未声明列",
+        )
+
+
+def test_primary_key_references_unselected_column() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f1b-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql",
+            "public",
+            "water_data",
+            ["id", "value", "secret_new"],
+            primary=["secret_new"],
+        )
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="selected_scope",
+        )
+
+
+def test_index_references_nondeclared_column() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f1c-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql",
+            "public",
+            "water_data",
+            ["id", "value"],
+            primary=["id"],
+            indexes=[("idx_secret", ["secret_new"])],
+        )
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="索引引用未声明列",
+        )
+
+
+def test_index_references_unselected_column() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f1d-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql",
+            "public",
+            "water_data",
+            ["id", "value", "secret_new"],
+            primary=["id"],
+            indexes=[("idx_secret", ["secret_new"])],
+        )
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="selected_scope",
+        )
+
+
+def test_index_mixed_valid_and_invalid_columns() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f1e-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql",
+            "public",
+            "water_data",
+            ["id", "value"],
+            primary=["id"],
+            indexes=[("idx_mix", ["id", "secret_new"])],
+        )
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="索引引用未声明列",
+        )
+
+
+def test_ddl_extra_token_before_table_name() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f2a-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = "CREATE TABLE unexpected_token \"public\".\"water_data\" ("
+        ddls[0] += "\n  \"id\" bigint,\n  \"value\" numeric\n);"
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="DDL 无法解析",
+        )
+
+
+def test_ddl_extra_token_after_table_name() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f2b-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = "CREATE TABLE \"public\".\"water_data\" junk ("
+        ddls[0] += "\n  \"id\" bigint,\n  \"value\" numeric\n);"
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="DDL 无法解析",
+        )
+
+
+def test_pg_ddl_uses_backticks_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f2c-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = "CREATE TABLE `public`.`water_data` ("
+        ddls[0] += "\n  `id` bigint,\n  `value` numeric\n);"
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="DDL 无法解析",
+        )
+
+
+def test_mysql_ddl_uses_double_quotes_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f2d-") as directory:
+        scope, allowed, metadata, ddls = _mysql_fixtures()
+        ddls[0] = "CREATE TABLE \"water_data\" ("
+        ddls[0] += "\n  \"id\" bigint,\n  \"value\" numeric\n);"
+        _expect_error(
+            Path(directory),
+            database_type="mysql",
+            database_name="lzh_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="DDL 无法解析",
+        )
+
+
+def test_ddl_three_level_qualified_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f2e-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = "CREATE TABLE \"a\".\"b\".\"c\" ("
+        ddls[0] += "\n  \"id\" bigint\n);"
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="DDL 无法解析",
+        )
+
+
+def test_ddl_quoted_identifier_with_semicolon_passes() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f3a-") as directory:
+        scope = [_meta_item("public", "monitor;archive", "id")]
+        allowed = {("public", "monitor;archive")}
+        metadata = list(scope)
+        ddls = [_ddl(
+            "postgresql",
+            "public",
+            "monitor;archive",
+            ["id"],
+            primary=["id"],
+        )]
+        result = _run(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+        )
+        assert result["ddl_tables"] == 1
+
+
+def test_ddl_quoted_identifier_with_parens_passes() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f3b-") as directory:
+        scope = [_meta_item("public", "water_data", "value(t)")]
+        allowed = {("public", "water_data")}
+        metadata = list(scope)
+        ddls = [_ddl(
+            "postgresql",
+            "public",
+            "water_data",
+            ["value(t)"],
+            primary=["value(t)"],
+        )]
+        result = _run(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+        )
+        assert result["ddl_columns"] == 1
+
+
+def test_metadata_contains_string_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f4a-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        metadata = [*metadata, "unexpected-content"]
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="不是对象",
+        )
+
+
+def test_metadata_contains_null_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f4b-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        metadata = [*metadata, None]
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="不是对象",
+        )
+
+
+def test_metadata_contains_array_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-f4c-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        metadata = [*metadata, [1, 2]]
+        _expect_error(
+            Path(directory),
+            database_type="postgresql",
+            database_name="gt_monitor",
+            scope=scope,
+            allowed=allowed,
+            metadata=metadata,
+            ddls=ddls,
+            keyword="不是对象",
+        )
 if __name__ == "__main__":
     import traceback
 

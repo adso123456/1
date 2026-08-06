@@ -11,10 +11,13 @@
   DDL tables      == allowed_tables
   Metadata (schema, table, column) == selected_scope (schema, table, column)
   DDL      (schema, table, column) == selected_scope (schema, table, column)
+  PRIMARY KEY / INDEX 引用列 ⊆ DDL 声明列 ⊆ selected_scope
 
 严格失败关闭：非 allowed 表、active 表遗漏、未选择字段、字段遗漏、
-重复表/重复列、无法解析或身份不明确的 DDL、MySQL schema 未按数据库名
-规范化，均抛 DataSourceCatalogError。
+重复表/重复列、PK/索引引用未声明或未选择字段、无法解析或身份不明确的
+DDL（含方言不匹配、多余 token、多层限定名）、引号内未按本项目生成格式
+转义的内容、MySQL schema 未按数据库名规范化、Metadata 含非法元素，
+均抛 DataSourceCatalogError。
 """
 
 from __future__ import annotations
@@ -27,11 +30,18 @@ from typing import Any, Iterable, Mapping
 from backend.data_source_catalog import DataSourceCatalogError
 
 
-_IDENT_PATTERN = r'"(?:[^"]|"")+"|`(?:[^`]|``)+`'
-_IDENT_RE = re.compile(_IDENT_PATTERN)
-_QUALIFIED_PATTERN = (
-    rf"(?:(?:{_IDENT_PATTERN})(?:\.(?:{_IDENT_PATTERN}))*)"
-)
+def _quote_pattern(database_type: str) -> str:
+    """按方言返回引用标识符模式：PG 双引号，MySQL 反引号。"""
+    if database_type == "mysql":
+        return r"`(?:[^`]|``)+`"
+    return r'"(?:[^"]|"")+"'
+
+
+def _qualified_pattern(database_type: str) -> str:
+    """限定表名全匹配模式：PG 允许 "schema"."table" 或 "table"；
+    MySQL 仅 `table`。"""
+    identifier = _quote_pattern(database_type)
+    return rf"{identifier}(?:\.{identifier})?"
 
 
 def _unquote(identifier: str) -> str:
@@ -39,102 +49,221 @@ def _unquote(identifier: str) -> str:
     return identifier[1:-1].replace(quote * 2, quote)
 
 
-def _iter_identifiers(text: str) -> list[str]:
-    return [_unquote(item) for item in _IDENT_RE.findall(text)]
-
-
-def _parse_qualified(qualified: str) -> list[str]:
-    parts = _iter_identifiers(qualified)
-    if not parts:
-        raise DataSourceCatalogError("DDL 无法解析：限定表名缺少标识符")
+def _split_outside(
+    text: str,
+    delimiter: str,
+    *,
+    track_depth: bool = False,
+) -> list[str]:
+    """引号感知的切分：跟踪引号类型，处理 "" / `` 转义；
+    track_depth=True 时仅在括号深度 0 处切分（用于列定义逗号）。"""
+    parts: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    depth = 0
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if quote is not None:
+            current.append(char)
+            if char == quote:
+                if index + 1 < length and text[index + 1] == quote:
+                    current.append(text[index + 1])
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+        if char in ('"', "`"):
+            quote = char
+            current.append(char)
+        elif track_depth and char == "(":
+            depth += 1
+            current.append(char)
+        elif track_depth and char == ")":
+            depth = max(0, depth - 1)
+            current.append(char)
+        elif char == delimiter and (not track_depth or depth == 0):
+            parts.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    tail = "".join(current).strip()
+    if tail:
+        parts.append(tail)
     return parts
 
 
-def _split_table_identity(names: list[str]) -> tuple[str, str]:
-    if len(names) == 1:
-        return "", names[0]
-    if len(names) == 2:
-        return names[0], names[1]
-    raise DataSourceCatalogError("DDL 无法解析：限定表名层级不明确")
+def _split_statements(text: str) -> list[str]:
+    return _split_outside(text, ";")
+
+
+def _split_top_level_commas(text: str) -> list[str]:
+    return _split_outside(text, ",", track_depth=True)
+
+
+def _parse_table_qualified(
+    qualified: str,
+    database_type: str,
+) -> tuple[str, str]:
+    pattern = rf"^{_qualified_pattern(database_type)}$"
+    if re.match(pattern, qualified) is None:
+        raise DataSourceCatalogError("DDL 无法解析：限定表名格式不明确")
+    identifiers = [
+        part.strip() for part in _split_outside(qualified, ".")
+    ]
+    if len(identifiers) == 1:
+        return "", _unquote(identifiers[0])
+    return _unquote(identifiers[0]), _unquote(identifiers[1])
+
+
+def _parse_pk_columns(
+    columns_text: str,
+    table: str,
+    database_type: str,
+) -> list[str]:
+    result: list[str] = []
+    for entry in _split_top_level_commas(columns_text):
+        entry = entry.strip()
+        if not entry:
+            continue
+        match = re.match(
+            rf"^(?P<ident>{_quote_pattern(database_type)})\s*$",
+            entry,
+            re.S,
+        )
+        if match is None:
+            raise DataSourceCatalogError(
+                f"DDL 无法解析：{table} 的 PRIMARY KEY 列 '{entry[:40]}'"
+            )
+        result.append(_unquote(match.group("ident")))
+    return result
+
+
+def _parse_column_definition(
+    item: str,
+    table: str,
+    database_type: str,
+) -> str:
+    match = re.match(
+        rf"^(?P<ident>{_quote_pattern(database_type)})\s+(?P<type>\S.*)$",
+        item,
+        re.S,
+    )
+    if match is None:
+        raise DataSourceCatalogError(
+            f"DDL 无法解析：{table} 的定义项 '{item[:60]}'"
+        )
+    return _unquote(match.group("ident"))
 
 
 def _parse_create_table(
     statement: str,
-    tables: dict[tuple[str, str], list[str]],
+    tables: dict,
+    database_type: str,
 ) -> None:
-    match = re.match(
-        r"^CREATE TABLE\s+(?P<qualified>[^(]+?)\s*\((?P<body>.*)\)\s*$",
-        statement,
-        re.S,
+    pattern = (
+        r"^CREATE\s+TABLE\s+"
+        + rf"(?P<qualified>{_qualified_pattern(database_type)})"
+        + r"\s*\(\s*(?P<body>.*?)\s*\)\s*$"
     )
+    match = re.match(pattern, statement, re.S)
     if match is None:
         raise DataSourceCatalogError("DDL 无法解析：CREATE TABLE 结构不完整")
-    names = _parse_qualified(match.group("qualified").strip())
-    schema, table = _split_table_identity(names)
+    schema, table = _parse_table_qualified(
+        match.group("qualified"),
+        database_type,
+    )
     if (schema, table) in tables:
         raise DataSourceCatalogError(f"DDL 重复表：{schema}.{table}")
-    body = match.group("body")
-    columns: list[str] = []
-    for raw_line in body.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith("PRIMARY KEY ("):
-            continue
-        column_match = re.match(
-            rf"^(?P<ident>{_IDENT_PATTERN})\s+(?P<type>\S.*)$",
-            line,
+    declared: list[str] = []
+    primary: list[str] = []
+    for item in _split_top_level_commas(match.group("body")):
+        if not item:
+            raise DataSourceCatalogError(f"DDL 无法解析：{table} 存在空定义项")
+        pk_match = re.match(
+            r"^PRIMARY\s+KEY\s*\(\s*(?P<cols>.*?)\s*\)\s*$",
+            item,
+            re.S,
         )
-        if column_match is None:
-            raise DataSourceCatalogError(
-                f"DDL 无法解析：{table} 的定义行 '{line}'"
+        if pk_match is not None:
+            primary = _parse_pk_columns(
+                pk_match.group("cols"),
+                table,
+                database_type,
             )
-        columns.append(_unquote(column_match.group("ident")))
-    if not columns:
+            continue
+        declared.append(_parse_column_definition(item, table, database_type))
+    if not declared:
         raise DataSourceCatalogError(f"DDL 无法解析：{schema}.{table} 没有列定义")
-    if len(columns) != len(set(columns)):
+    if len(declared) != len(set(declared)):
         raise DataSourceCatalogError(f"DDL 重复列：{schema}.{table}")
-    tables[(schema, table)] = columns
+    tables[(schema, table)] = {
+        "declared_columns": declared,
+        "primary_key_columns": primary,
+        "index_columns": [],
+    }
 
 
 def _parse_index_statement(
     statement: str,
-    tables: dict[tuple[str, str], list[str]],
-) -> tuple[str, str]:
-    match = re.match(
+    tables: dict,
+    database_type: str,
+) -> None:
+    pattern = (
         r"^CREATE\s+(?:UNIQUE\s+)?INDEX\s+"
-        + rf"(?P<ident>{_IDENT_PATTERN})\s+ON\s+"
-        + rf"(?P<qualified>{_QUALIFIED_PATTERN})"
-        + r"(?:\s+USING\s+[^\s(]+)?\s*\((?P<cols>.*)\)\s*$",
-        statement,
-        re.S,
+        + rf"(?P<ident>{_quote_pattern(database_type)})\s+ON\s+"
+        + rf"(?P<qualified>{_qualified_pattern(database_type)})"
+        + r"(?:\s+USING\s+[^\s(]+)?\s*\(\s*(?P<cols>.*?)\s*\)\s*$"
     )
+    match = re.match(pattern, statement, re.S)
     if match is None:
         raise DataSourceCatalogError("DDL 无法解析：索引语句结构不完整")
-    names = _parse_qualified(match.group("qualified"))
-    schema, table = _split_table_identity(names)
-    if not _IDENT_RE.findall(match.group("cols")):
-        raise DataSourceCatalogError("DDL 无法解析：索引缺少列")
+    schema, table = _parse_table_qualified(
+        match.group("qualified"),
+        database_type,
+    )
     if (schema, table) not in tables:
         raise DataSourceCatalogError(
             f"DDL 索引引用未知表：{schema}.{table}"
         )
-    return schema, table
+    index_columns: list[str] = []
+    for entry in _split_top_level_commas(match.group("cols")):
+        entry = entry.strip()
+        if not entry:
+            continue
+        column_match = re.match(
+            rf"^(?P<ident>{_quote_pattern(database_type)})"
+            r"(?:\s+(?:ASC|DESC))?$",
+            entry,
+            re.S,
+        )
+        if column_match is None:
+            raise DataSourceCatalogError(
+                f"DDL 无法解析：索引列 '{entry[:40]}'"
+            )
+        index_columns.append(_unquote(column_match.group("ident")))
+    if not index_columns:
+        raise DataSourceCatalogError("DDL 无法解析：索引缺少列")
+    tables[(schema, table)]["index_columns"] = index_columns
 
 
-def _parse_ddl_text(ddl_text: str) -> dict[tuple[str, str], list[str]]:
-    """严格解析单个 DDL 文本（一个 CREATE TABLE + 若干索引语句）。"""
-    tables: dict[tuple[str, str], list[str]] = {}
-    for raw in re.split(r";\s*", ddl_text.strip()):
-        statement = raw.strip()
+def _parse_ddl_text(
+    ddl_text: str,
+    database_type: str,
+) -> dict:
+    tables: dict = {}
+    for statement in _split_statements(ddl_text):
         if not statement:
             continue
         if statement.startswith("CREATE TABLE "):
-            _parse_create_table(statement, tables)
+            _parse_create_table(statement, tables, database_type)
         elif statement.startswith("CREATE UNIQUE INDEX ") or statement.startswith(
             "CREATE INDEX "
         ):
-            _parse_index_statement(statement, tables)
+            _parse_index_statement(statement, tables, database_type)
         else:
             raise DataSourceCatalogError("DDL 无法解析：不支持的语句")
     if not tables:
@@ -149,7 +278,14 @@ def _load_metadata(path: Path) -> list[dict[str, Any]]:
         raise DataSourceCatalogError("候选 Metadata 不可读") from exc
     if not isinstance(payload, list):
         raise DataSourceCatalogError("候选 Metadata 必须是数组")
-    return [dict(item) for item in payload if isinstance(item, Mapping)]
+    items: list[dict[str, Any]] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, Mapping):
+            raise DataSourceCatalogError(
+                f"候选 Metadata 第 {index + 1} 项不是对象"
+            )
+        items.append(dict(item))
+    return items
 
 
 def _load_ddl(path: Path) -> list[str]:
@@ -244,26 +380,49 @@ def _ddl_keys(
     seen_tables: set[tuple[str, str]] = set()
     column_keys: set[tuple[str, str, str]] = set()
     for ddl_text in ddls:
-        parsed = _parse_ddl_text(ddl_text)
-        for (schema, table), columns in parsed.items():
+        parsed = _parse_ddl_text(ddl_text, database_type)
+        for (schema, table), info in parsed.items():
             normalized_schema = _normalize_schema(
                 database_type,
                 database_name,
                 schema,
             )
-            if (normalized_schema, table) in seen_tables:
+            key = (normalized_schema, table)
+            if key in seen_tables:
                 raise DataSourceCatalogError(
                     f"DDL 重复表：{normalized_schema}.{table}"
                 )
-            seen_tables.add((normalized_schema, table))
-            table_keys.add((normalized_schema, table))
-            for column in columns:
+            seen_tables.add(key)
+            table_keys.add(key)
+            declared = info["declared_columns"]
+            primary = info["primary_key_columns"]
+            index_columns = info["index_columns"]
+            missing_primary = [col for col in primary if col not in declared]
+            if missing_primary:
+                raise DataSourceCatalogError(
+                    "DDL PRIMARY KEY 引用未声明列："
+                    f"{normalized_schema}.{table}."
+                    + "、".join(missing_primary)
+                )
+            missing_index = [
+                col for col in index_columns if col not in declared
+            ]
+            if missing_index:
+                raise DataSourceCatalogError(
+                    "DDL 索引引用未声明列："
+                    f"{normalized_schema}.{table}."
+                    + "、".join(missing_index)
+                )
+            referenced = set(declared) | set(primary) | set(index_columns)
+            for column in referenced:
                 column_keys.add((normalized_schema, table, column))
     return table_keys, column_keys
 
 
 def _fmt_keys(keys: Iterable[tuple[str, ...]]) -> str:
-    return "、".join(".".join(part for part in key if part) for key in sorted(keys))
+    return "、".join(
+        ".".join(part for part in key if part) for key in sorted(keys)
+    )
 
 
 def _require_equal(
@@ -323,7 +482,12 @@ def validate_candidate_assets(
         database_name,
         ddls,
     )
-    _require_equal(metadata_tables, allowed, "候选 Metadata 表集合", "allowed_tables")
+    _require_equal(
+        metadata_tables,
+        allowed,
+        "候选 Metadata 表集合",
+        "allowed_tables",
+    )
     _require_equal(ddl_tables, allowed, "候选 DDL 表集合", "allowed_tables")
     _require_equal(
         metadata_columns,
