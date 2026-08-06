@@ -50,6 +50,14 @@ _BACKUP_MARKS_EN = ("old", "backup", "copy", "tmp", "bak")
 
 _HISTORY_MARKS = ("log", "日志", "history", "历史", "audit", "流水")
 
+# 审计类列：全空不影响业务判断，不计入"大量空值"。
+_AUDIT_COLUMN_MARKS = (
+    "create_by", "created_by", "create_time", "created_at",
+    "update_by", "updated_by", "update_time", "updated_at",
+    "modify_by", "modify_time", "delete_flag", "is_deleted",
+    "del_flag", "deleted_at",
+)
+
 # 时间粒度标记：同一业务组内出现多种粒度（日/时/月/年）视为需人工确认。
 _GRANULARITY_MARKS = (
     "minute", "hour", "day", "month", "year", "旬",
@@ -142,6 +150,30 @@ def _is_history_like(table_name: str, role: str) -> bool:
         return True
     text = str(table_name).lower()
     return any(mark in text for mark in _HISTORY_MARKS)
+
+
+def _mostly_null_business_ratio(profile: Mapping[str, Any]) -> float:
+    """业务列中空值率 >= 0.8 的比例（排除审计列）。
+
+    监测表常含大量可选参数列（bod/flow 等按指标为空），
+    用"多数业务列整体为空"而不是全表单元格空值率，避免误伤。"""
+    columns = profile.get("columns") or []
+    business = [
+        column
+        for column in columns
+        if not any(
+            mark in str(column.get("column") or "").lower()
+            for mark in _AUDIT_COLUMN_MARKS
+        )
+    ]
+    if not business:
+        return 0.0
+    mostly_null = [
+        column
+        for column in business
+        if (column.get("sample_null_rate") or 0) >= 0.8
+    ]
+    return len(mostly_null) / len(business)
 
 
 def group_tables(
@@ -316,7 +348,6 @@ def score_table(
     has_primary_key = bool(quality.get("has_primary_key"))
     has_unique_key = bool(quality.get("has_unique_key"))
     duplicate_ratio = quality.get("duplicate_key_ratio")
-    null_rate = quality.get("sample_null_rate")
     error = str(profile.get("error") or "")
     skipped = bool(quality.get("skipped_by_total_timeout"))
     time_column = str(profile.get("time_column_candidate") or "")
@@ -421,13 +452,13 @@ def score_table(
     score = sum(breakdown.values())
 
     # 扣分项（全部有明确依据，且不把"无法计算"当作质量差）
-    if null_rate is not None:
-        if null_rate >= 0.5:
-            deductions.append(("大量空值", 15.0))
-        elif null_rate >= 0.3:
-            deductions.append(("大量空值", 10.0))
-        elif null_rate >= 0.1:
-            deductions.append(("大量空值", 5.0))
+    mostly_null_ratio = _mostly_null_business_ratio(profile)
+    if mostly_null_ratio >= 0.6:
+        deductions.append(("大量空值", 15.0))
+    elif mostly_null_ratio >= 0.4:
+        deductions.append(("大量空值", 10.0))
+    elif mostly_null_ratio >= 0.2:
+        deductions.append(("大量空值", 5.0))
     # 长期没有新数据：更新周期可信时才扣分；V1 恒为未知，只展示不扣分。
     if qcols == 0:
         deductions.append(("缺少可用的业务字段", 30.0))

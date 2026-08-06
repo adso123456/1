@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import time
 from collections import defaultdict
@@ -14,6 +15,8 @@ from typing import Any
 from backend.data_source_catalog import DataSourceCatalog, DataSourceCatalogError
 from backend.data_source_connectors import DirectDatabaseConnector
 
+
+logger = logging.getLogger(__name__)
 
 _SENSITIVE_WORDS = (
     "password", "passwd", "pwd", "secret", "token", "api_key", "apikey",
@@ -403,45 +406,60 @@ class DataSourceProfiler:
         quality["sample_null_rate"] = (
             round(sampled_nulls / sampled_cells, 4) if sampled_cells else None
         )
+        # 初版无法推断更新周期，只记录最新时间，不做固定天数扣分。
+        quality["observed_update_interval"] = None
+        quality["staleness_ratio"] = None
+        quality["freshness_confidence"] = 0.0
         if not error and time_candidates:
-            time_column = time_candidates[0]
-            quoted_time = _quote_identifier(
-                database_type, str(time_column)
-            )
-            try:
-                cursor.execute("SAVEPOINT water_agent_profile_time")
-                cursor.execute(
-                    f"SELECT MIN({quoted_time}), MAX({quoted_time}) "
-                    f"FROM {quoted_table}"
+            # 依次尝试时间候选列（最多 3 个），取第一个有数据的时间列；
+            # 避免首列恰好为空（如 build_time 全空、create_time 有数据）时
+            # 把表误判为"没有最新数据时间"。
+            for time_column in time_candidates[:3]:
+                quoted_time = _quote_identifier(
+                    database_type, str(time_column)
                 )
-                time_row = cursor.fetchone()
-                min_time = time_row["min"] if time_row else None
-                max_time = time_row["max"] if time_row else None
-                cursor.execute("RELEASE SAVEPOINT water_agent_profile_time")
-                if max_time is not None:
-                    quality["latest_data_at"] = _json_value(max_time)
-                    if min_time is not None:
-                        try:
-                            span = (max_time - min_time).total_seconds()
-                            quality["time_coverage_days"] = round(
-                                span / 86400.0, 3
-                            )
-                        except (AttributeError, TypeError):
-                            quality["time_coverage_days"] = None
-                # 初版无法推断更新周期，只记录最新时间，不做固定天数扣分。
-                quality["observed_update_interval"] = None
-                quality["staleness_ratio"] = None
-                quality["freshness_confidence"] = 0.0
-            except Exception:
                 try:
+                    cursor.execute("SAVEPOINT water_agent_profile_time")
                     cursor.execute(
-                        "ROLLBACK TO SAVEPOINT water_agent_profile_time"
+                        f"SELECT MIN({quoted_time}) AS profile_min, "
+                        f"MAX({quoted_time}) AS profile_max "
+                        f"FROM {quoted_table}"
                     )
-                    cursor.execute(
-                        "RELEASE SAVEPOINT water_agent_profile_time"
-                    )
+                    time_row = cursor.fetchone()
+                    # 显式别名：MySQL 无别名时返回 MIN(col)/MAX(col)，
+                    # 与 PG 的小写 min/max 不一致，按 "min" 取键会静默失败。
+                    min_time = time_row["profile_min"] if time_row else None
+                    max_time = time_row["profile_max"] if time_row else None
+                    cursor.execute("RELEASE SAVEPOINT water_agent_profile_time")
                 except Exception:
-                    pass
+                    logger.debug(
+                        "表 %s 时间列 %s 读取失败，尝试下一个候选",
+                        table,
+                        time_column,
+                    )
+                    try:
+                        cursor.execute(
+                            "ROLLBACK TO SAVEPOINT water_agent_profile_time"
+                        )
+                        cursor.execute(
+                            "RELEASE SAVEPOINT water_agent_profile_time"
+                        )
+                    except Exception:
+                        pass
+                    continue
+                if max_time is None:
+                    continue
+                quality["latest_data_at"] = _json_value(max_time)
+                quality["time_column_used"] = str(time_column)
+                if min_time is not None:
+                    try:
+                        span = (max_time - min_time).total_seconds()
+                        quality["time_coverage_days"] = round(
+                            span / 86400.0, 3
+                        )
+                    except (AttributeError, TypeError):
+                        quality["time_coverage_days"] = None
+                break
         key_columns = list(pk_columns) or list(unique_columns)
         if not error and key_columns:
             key_sql = ", ".join(

@@ -136,6 +136,28 @@ def test_score_static_dict_without_time_is_not_blocked() -> None:
     assert result["confidence"] >= 0.55
 
 
+def test_score_null_deduction_ignores_audit_columns() -> None:
+    null_rates = {
+        "create_by": 1.0,
+        "create_time": 1.0,
+        "update_by": 1.0,
+        "update_time": 1.0,
+        "ph": 0.0,
+        "cod": 0.0,
+    }
+    columns = ["create_by", "create_time", "update_by", "update_time", "ph", "cod"]
+    profile = _profile("monitor_data", columns, null_rates=null_rates)
+    result = score_table(profile, profile["quality"], 0.5)
+    assert not any(label == "大量空值" for label, _ in result["deductions"])
+
+
+def test_score_null_deduction_fires_for_business_columns() -> None:
+    null_rates = {name: 0.95 for name in WATER_COLUMNS[:8]}
+    profile = _profile("monitor_data", WATER_COLUMNS, null_rates=null_rates)
+    result = score_table(profile, profile["quality"], 0.5)
+    assert any(label == "大量空值" for label, _ in result["deductions"])
+
+
 def test_group_detects_backup_family() -> None:
     profiles = [
         _profile("water_data", WATER_COLUMNS),
