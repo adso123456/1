@@ -41,6 +41,8 @@ def _qualified_pattern(database_type: str) -> str:
     """限定表名全匹配模式：PG 允许 "schema"."table" 或 "table"；
     MySQL 仅 `table`。"""
     identifier = _quote_pattern(database_type)
+    if database_type == "mysql":
+        return identifier
     return rf"{identifier}(?:\.{identifier})?"
 
 
@@ -189,6 +191,10 @@ def _parse_create_table(
             re.S,
         )
         if pk_match is not None:
+            if primary:
+                raise DataSourceCatalogError(
+                    f"DDL 重复 PRIMARY KEY 约束：{schema}.{table}"
+                )
             primary = _parse_pk_columns(
                 pk_match.group("cols"),
                 table,
@@ -203,7 +209,7 @@ def _parse_create_table(
     tables[(schema, table)] = {
         "declared_columns": declared,
         "primary_key_columns": primary,
-        "index_columns": [],
+        "indexes": [],
     }
 
 
@@ -247,7 +253,10 @@ def _parse_index_statement(
         index_columns.append(_unquote(column_match.group("ident")))
     if not index_columns:
         raise DataSourceCatalogError("DDL 无法解析：索引缺少列")
-    tables[(schema, table)]["index_columns"] = index_columns
+    index_name = _unquote(match.group("ident"))
+    tables[(schema, table)].setdefault("indexes", []).append(
+        {"name": index_name, "columns": index_columns}
+    )
 
 
 def _parse_ddl_text(
@@ -396,7 +405,7 @@ def _ddl_keys(
             table_keys.add(key)
             declared = info["declared_columns"]
             primary = info["primary_key_columns"]
-            index_columns = info["index_columns"]
+            indexes = info.get("indexes", [])
             missing_primary = [col for col in primary if col not in declared]
             if missing_primary:
                 raise DataSourceCatalogError(
@@ -404,15 +413,19 @@ def _ddl_keys(
                     f"{normalized_schema}.{table}."
                     + "、".join(missing_primary)
                 )
-            missing_index = [
-                col for col in index_columns if col not in declared
+            for index in indexes:
+                missing_index = [
+                    col for col in index["columns"] if col not in declared
+                ]
+                if missing_index:
+                    raise DataSourceCatalogError(
+                        "DDL 索引引用未声明列："
+                        f"{normalized_schema}.{table}.{index['name']}."
+                        + "、".join(missing_index)
+                    )
+            index_columns = [
+                col for index in indexes for col in index["columns"]
             ]
-            if missing_index:
-                raise DataSourceCatalogError(
-                    "DDL 索引引用未声明列："
-                    f"{normalized_schema}.{table}."
-                    + "、".join(missing_index)
-                )
             referenced = set(declared) | set(primary) | set(index_columns)
             for column in referenced:
                 column_keys.add((normalized_schema, table, column))

@@ -782,6 +782,104 @@ def test_metadata_contains_array_rejected() -> None:
             ddls=ddls,
             keyword="不是对象",
         )
+
+def test_index_illegal_first_then_legal_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-midx1-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql", "public", "water_data", ["id", "value"],
+            primary=["id"],
+            indexes=[("idx_illegal", ["secret_new"]), ("idx_valid", ["id"])],
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls, keyword="索引引用未声明列",
+        )
+
+
+def test_index_legal_first_then_illegal_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-midx2-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql", "public", "water_data", ["id", "value"],
+            primary=["id"],
+            indexes=[("idx_valid", ["id"]), ("idx_illegal", ["secret_new"])],
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls, keyword="索引引用未声明列",
+        )
+
+
+def test_two_legal_indexes_pass() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-midx3-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = _ddl(
+            "postgresql", "public", "water_data", ["id", "value"],
+            primary=["id"],
+            indexes=[("idx_id", ["id"]), ("idx_value", ["value"])],
+        )
+        result = _run(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls,
+        )
+        assert result["ddl_tables"] == 2
+
+
+def test_duplicate_primary_key_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-pkdup-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = (
+            'CREATE TABLE "public"."water_data" (\n'
+            '  "id" bigint,\n'
+            '  "value" numeric,\n'
+            '  PRIMARY KEY ("id"),\n'
+            '  PRIMARY KEY ("value")\n'
+            ');'
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls, keyword="重复 PRIMARY KEY",
+        )
+
+
+def test_first_illegal_pk_then_legal_pk_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-pkmix-") as directory:
+        scope, allowed, metadata, ddls = _pg_fixtures()
+        ddls[0] = (
+            'CREATE TABLE "public"."water_data" (\n'
+            '  "id" bigint,\n'
+            '  "value" numeric,\n'
+            '  PRIMARY KEY ("secret_new"),\n'
+            '  PRIMARY KEY ("id")\n'
+            ');'
+        )
+        _expect_error(
+            Path(directory), database_type="postgresql",
+            database_name="gt_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls, keyword="重复 PRIMARY KEY",
+        )
+
+
+def test_mysql_two_segment_qualified_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e2a-mydot-") as directory:
+        scope, allowed, metadata, ddls = _mysql_fixtures()
+        ddls[0] = (
+            'CREATE TABLE `lzh_monitor`.`water_data` (\n'
+            '  `id` bigint,\n'
+            '  `value` numeric\n'
+            ');'
+        )
+        _expect_error(
+            Path(directory), database_type="mysql",
+            database_name="lzh_monitor", scope=scope, allowed=allowed,
+            metadata=metadata, ddls=ddls, keyword="DDL 无法解析",
+        )
+
 if __name__ == "__main__":
     import traceback
 
