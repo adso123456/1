@@ -323,6 +323,30 @@ class BuiltinDataSourceClaimService:
                 for item in profiles
                 if not item.get("error")
             }
+            candidate_tables = {
+                (str(item.get("schema") or ""), str(item.get("table") or ""))
+                for item in candidate
+                if (
+                    str(item.get("schema") or ""),
+                    str(item.get("table") or ""),
+                )
+                in usable_tables
+            }
+            policy = self.catalog.review_policy(source_id)
+            if policy["review_count"] == 0:
+                raise DataSourceCatalogError(
+                    "数据源尚未完成表准入审核，请先执行 review"
+                )
+            allowed_tables = set(policy["allowed_tables"])
+            missing_allowed = sorted(allowed_tables - candidate_tables)
+            if missing_allowed:
+                raise DataSourceCatalogError(
+                    "远程本尊缺少审核允许的表："
+                    + "、".join(f"{s}.{t}" for s, t in missing_allowed)
+                    + "；请重新审核后再认领发布"
+                )
+            # 认领范围只从 allowed_tables 生成；candidate 中新增但
+            # pending 的表不进入正式资产。
             scope = [
                 item
                 for item in candidate
@@ -330,10 +354,12 @@ class BuiltinDataSourceClaimService:
                     str(item.get("schema") or ""),
                     str(item.get("table") or ""),
                 )
-                in usable_tables
+                in allowed_tables
             ]
             if not scope:
-                raise DataSourceCatalogError("没有远程业务表通过受限只读画像")
+                raise DataSourceCatalogError(
+                    "审核允许范围内没有可发布的远程业务表"
+                )
             self.catalog.save_discovery(source_id, candidate)
             self.catalog.save_scope(source_id, scope)
             result = self.preparer.prepare(

@@ -1552,6 +1552,9 @@ class DataSourceAssetPreparer:
             published_memory_path=published_memory_path,
             snapshot=snapshot,
             asset_plan=plan,
+            expected_review_policy_fingerprint=(
+                expected_review_policy_fingerprint
+            ),
         )
         self._inject("after_batch_registered")
         sql_tool_payload: list[tuple[str, str, dict[str, Any]]] = []

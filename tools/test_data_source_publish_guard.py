@@ -1,16 +1,15 @@
-"""阶段 E-1：发布硬校验（前置范围门 + 审核策略指纹并发保护）回归测试。
+"""阶段 E-1：发布硬校验回归测试。
 
 覆盖：
-  - 正常 active+present 范围通过，manifest/asset identity 写入指纹；
-  - reviews 为空时 prepare 失败关闭；
-  - selected_scope 含 pending 表 / 缺失 active+present 表 /
-    active+missing 表导致范围不一致时阻止；
-  - 候选构建期间 review policy 改变 -> 回滚；
-  - catalog.publish 前 policy 改变 -> 事务内原子拒绝；
-  - 失败后旧正式资产与 runtime_revision 保持不变。
-
-数据源资产根目录使用规范路径（agent_data/data_sources/<source_id>），
-每个用例结束后清理该源目录，不污染仓库。
+  - 前置范围门：reviews 为空失败关闭；selected_scope 必须精确等于
+    allowed_tables（pending/缺失/active+missing 均阻止）；
+  - 正常发布：manifest / asset identity 写入 review_policy_fingerprint；
+  - F1 复用旧资产门：disable 后修改 effective/availability，enable 必须失败，
+    恢复策略后 enable 成功，revision 与正式资产哈希全程不变；
+  - F3 发布租约：begin_asset_batch 注册租约后，审核写入口（upsert /
+    apply_review_results / 迁移）禁止修改 effective/availability，
+    批次结束释放；
+  - F4 指纹规范 JSON：|、换行、Unicode 表名无序列化歧义。
 """
 
 from __future__ import annotations
@@ -29,7 +28,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
+from backend.data_source_catalog import (
+    CredentialCipher,
+    DataSourceCatalog,
+    DataSourceCatalogError,
+    DataSourceConflict,
+)
 from backend.data_source_connectors import DataSourceAssetPreparer
 
 
@@ -349,59 +353,251 @@ def test_active_missing_in_scope_blocks() -> None:
             shutil.rmtree(asset_root, ignore_errors=True)
 
 
-def _assert_policy_change_rolls_back(directory: Path, inject_point: str) -> None:
+def _published_source(directory: Path):
     catalog, source_id, asset_root = _setup(directory)
-    try:
-        _save_scope(catalog, source_id, TABLES)
-        _seed_all_active(catalog, source_id)
-        first = _prepare_with_memory(
-            DataSourceAssetPreparer(catalog),
-            source_id,
-        )
-        assert first["runtime_revision"] == 1
-        hashes_before = _formal_hashes(catalog, source_id)
+    _save_scope(catalog, source_id, TABLES)
+    _seed_all_active(catalog, source_id)
+    result = _prepare_with_memory(
+        DataSourceAssetPreparer(catalog),
+        source_id,
+    )
+    assert result["runtime_revision"] == 1
+    return catalog, source_id, asset_root
 
-        def inject(point: str) -> None:
-            if point == inject_point:
+
+def test_enable_gate_blocks_stale_effective() -> None:
+    with tempfile.TemporaryDirectory(prefix="e1-f1a-") as directory:
+        catalog, source_id, asset_root = _published_source(Path(directory))
+        try:
+            catalog.set_enabled(source_id, False)
+            hashes_before = _formal_hashes(catalog, source_id)
+            catalog.upsert_table_review(
+                source_id,
+                "public",
+                "station_dict",
+                effective_decision="pending",
+            )
+            try:
+                catalog.set_enabled(source_id, True)
+            except DataSourceCatalogError as exc:
+                assert "不一致" in str(exc)
+            else:
+                raise AssertionError("策略变化后 enable 应被拒绝")
+            record = catalog.require(source_id)
+            assert record.status == "disabled"
+            assert record.enabled_for_chat is False
+            assert record.runtime_revision == 1
+            assert _formal_hashes(catalog, source_id) == hashes_before
+            # 恢复策略 -> enable 成功。
+            catalog.upsert_table_review(
+                source_id,
+                "public",
+                "station_dict",
+                effective_decision="active",
+                availability_status="present",
+            )
+            catalog.set_enabled(source_id, True)
+            record = catalog.require(source_id)
+            assert record.status == "ready"
+            assert record.enabled_for_chat is True
+            assert record.runtime_revision == 1
+            assert _formal_hashes(catalog, source_id) == hashes_before
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_enable_gate_blocks_stale_availability() -> None:
+    with tempfile.TemporaryDirectory(prefix="e1-f1b-") as directory:
+        catalog, source_id, asset_root = _published_source(Path(directory))
+        try:
+            catalog.set_enabled(source_id, False)
+            hashes_before = _formal_hashes(catalog, source_id)
+            catalog.upsert_table_review(
+                source_id,
+                "public",
+                "station_dict",
+                availability_status="missing",
+            )
+            try:
+                catalog.set_enabled(source_id, True)
+            except DataSourceCatalogError as exc:
+                assert "不一致" in str(exc)
+            else:
+                raise AssertionError("availability 变化后 enable 应被拒绝")
+            record = catalog.require(source_id)
+            assert record.status == "disabled"
+            assert record.runtime_revision == 1
+            assert _formal_hashes(catalog, source_id) == hashes_before
+            catalog.upsert_table_review(
+                source_id,
+                "public",
+                "station_dict",
+                availability_status="present",
+            )
+            catalog.set_enabled(source_id, True)
+            assert catalog.require(source_id).status == "ready"
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_policy_lease_blocks_review_writes() -> None:
+    with tempfile.TemporaryDirectory(prefix="e1-f3-") as directory:
+        catalog, source_id, asset_root = _setup(Path(directory))
+        try:
+            _save_scope(catalog, source_id, TABLES)
+            _seed_all_active(catalog, source_id)
+            policy = catalog.review_policy(source_id)
+            record = catalog.require(source_id)
+            root = record.metadata_path.parent
+            batch_id = "lease-test-1"
+            catalog.begin_asset_batch(
+                source_id,
+                batch_id=batch_id,
+                candidate_root=root / "candidate-lease",
+                candidate_memory=root / "memory-lease",
+                published_memory_path=root / "memory-lease-rev",
+                snapshot={},
+                asset_plan=[],
+                expected_review_policy_fingerprint=policy["fingerprint"],
+            )
+            try:
+                for fields in (
+                    {"effective_decision": "pending"},
+                    {"availability_status": "missing"},
+                ):
+                    try:
+                        catalog.upsert_table_review(
+                            source_id,
+                            "public",
+                            "station_dict",
+                            **fields,
+                        )
+                    except DataSourceConflict:
+                        pass
+                    else:
+                        raise AssertionError(
+                            f"租约应阻止 {list(fields)} 修改"
+                        )
+                # 非策略字段允许。
                 catalog.upsert_table_review(
                     source_id,
                     "public",
                     "station_dict",
-                    effective_decision="pending",
+                    proposed_decision="pending",
                 )
+                try:
+                    catalog.apply_review_results(
+                        source_id,
+                        "lease-run",
+                        review_updates=[],
+                        missing_keys=[],
+                        history_snapshots=[],
+                        profiled_tables=0,
+                    )
+                except DataSourceConflict:
+                    pass
+                else:
+                    raise AssertionError("租约应阻止 apply_review_results")
+                try:
+                    catalog.migrate_table_reviews_from_existing(source_id)
+                except DataSourceConflict:
+                    pass
+                else:
+                    raise AssertionError("租约应阻止首次迁移")
+            finally:
+                catalog.finish_asset_batch(source_id, batch_id)
+            # 释放后允许修改策略字段。
+            catalog.upsert_table_review(
+                source_id,
+                "public",
+                "station_dict",
+                effective_decision="pending",
+            )
+            assert (
+                catalog.get_table_review(
+                    source_id,
+                    "public",
+                    "station_dict",
+                )["effective_decision"]
+                == "pending"
+            )
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
 
-        preparer = DataSourceAssetPreparer(
-            catalog,
-            fault_injector=inject,
-        )
+
+def test_begin_asset_batch_rejects_stale_fingerprint() -> None:
+    with tempfile.TemporaryDirectory(prefix="e1-f3b-") as directory:
+        catalog, source_id, asset_root = _setup(Path(directory))
         try:
-            _prepare_with_memory(preparer, source_id)
-        except Exception as exc:
-            assert "审核策略已变化" in str(exc)
-        else:
-            raise AssertionError(f"{inject_point} 处应检测到策略变化")
-        record = catalog.require(source_id)
-        assert record.runtime_revision == 1
-        assert _formal_hashes(catalog, source_id) == hashes_before
-        assert not catalog.active_asset_batches(source_id)
-    finally:
-        shutil.rmtree(asset_root, ignore_errors=True)
+            _save_scope(catalog, source_id, TABLES)
+            _seed_all_active(catalog, source_id)
+            record = catalog.require(source_id)
+            root = record.metadata_path.parent
+            try:
+                catalog.begin_asset_batch(
+                    source_id,
+                    batch_id="stale-lease",
+                    candidate_root=root / "candidate-stale",
+                    candidate_memory=root / "memory-stale",
+                    published_memory_path=root / "memory-stale-rev",
+                    snapshot={},
+                    asset_plan=[],
+                    expected_review_policy_fingerprint="stale-fingerprint",
+                )
+            except DataSourceConflict as exc:
+                assert "审核策略已变化" in str(exc)
+            else:
+                raise AssertionError("过期指纹应被 begin_asset_batch 拒绝")
+            assert not catalog.active_asset_batches(source_id)
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
 
 
-def test_policy_change_during_candidate_build_rolls_back() -> None:
-    with tempfile.TemporaryDirectory(prefix="e1-build-") as directory:
-        _assert_policy_change_rolls_back(
-            Path(directory),
-            "after_candidate_documentation",
-        )
-
-
-def test_policy_change_before_publish_atomic_reject() -> None:
-    with tempfile.TemporaryDirectory(prefix="e1-publish-") as directory:
-        _assert_policy_change_rolls_back(
-            Path(directory),
-            "before_catalog_publish",
-        )
+def test_fingerprint_serialization_no_ambiguity() -> None:
+    fingerprint = DataSourceCatalog._review_policy_fingerprint
+    pipe_a = [
+        {
+            "schema_name": "a|b",
+            "table_name": "c",
+            "effective_decision": "active",
+            "availability_status": "present",
+        }
+    ]
+    pipe_b = [
+        {
+            "schema_name": "a",
+            "table_name": "b|c",
+            "effective_decision": "active",
+            "availability_status": "present",
+        }
+    ]
+    assert fingerprint(pipe_a) != fingerprint(pipe_b)
+    unicode_rows = [
+        {
+            "schema_name": "水 域\n表",
+            "table_name": "监测|表",
+            "effective_decision": "active",
+            "availability_status": "present",
+        }
+    ]
+    assert fingerprint(unicode_rows) == fingerprint(unicode_rows)
+    assert fingerprint(pipe_a) != fingerprint(unicode_rows)
+    # 行顺序不同 -> 指纹不同（输入约定已排序，防御性验证）。
+    ordered = [
+        {
+            "schema_name": "s1",
+            "table_name": "t1",
+            "effective_decision": "active",
+            "availability_status": "present",
+        },
+        {
+            "schema_name": "s1",
+            "table_name": "t2",
+            "effective_decision": "pending",
+            "availability_status": "present",
+        },
+    ]
+    assert fingerprint(ordered) != fingerprint(list(reversed(ordered)))
 
 
 if __name__ == "__main__":

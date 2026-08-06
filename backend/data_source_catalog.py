@@ -1691,6 +1691,31 @@ class DataSourceCatalog:
                 ),
             )
 
+    @staticmethod
+    def _raise_if_review_lease_blocks(
+        connection: sqlite3.Connection,
+        source_id: str,
+        fields: Mapping[str, Any],
+    ) -> None:
+        """发布租约：存在 active batch 时禁止修改 effective/availability。
+
+        候选生成、备份、安装与 publish() 期间审核策略必须保持稳定，
+        因此审核写入口在租约持有期间拒绝变更策略字段。
+        """
+        if (
+            "effective_decision" not in fields
+            and "availability_status" not in fields
+        ):
+            return
+        row = connection.execute(
+            "SELECT count(*) FROM active_asset_batches WHERE source_id=?",
+            (source_id,),
+        ).fetchone()
+        if row[0] > 0:
+            raise DataSourceConflict(
+                "数据源正在生成问数资产，审核策略已加锁，请稍后重试"
+            )
+
     def upsert_table_review(
         self,
         source_id: str,
@@ -1700,6 +1725,11 @@ class DataSourceCatalog:
     ) -> dict[str, Any]:
         """写入/更新单表审核状态（独立事务）。"""
         with self._lock, self._connection(write=True) as connection:
+            self._raise_if_review_lease_blocks(
+                connection,
+                source_id,
+                fields,
+            )
             self._upsert_review_row(
                 connection,
                 source_id,
@@ -1747,15 +1777,26 @@ class DataSourceCatalog:
     def _review_policy_fingerprint(
         rows: Iterable[Mapping[str, Any]],
     ) -> str:
-        """基于排序后的 (schema, table, effective, availability) 生成策略指纹。"""
-        source = "\n".join(
-            f"{str(row['schema_name'] or '')}|"
-            f"{str(row['table_name'] or '')}|"
-            f"{str(row['effective_decision'] or '')}|"
-            f"{str(row['availability_status'] or '')}"
+        """基于排序后的 (schema, table, effective, availability) 生成策略指纹。
+
+        使用规范 JSON 序列化，避免未转义分隔符拼接带来的序列化歧义
+        （例如 schema="a|b" 与 table="b|c" 可能产生相同原始字符串）。
+        """
+        payload = [
+            [
+                str(row["schema_name"] or ""),
+                str(row["table_name"] or ""),
+                str(row["effective_decision"] or ""),
+                str(row["availability_status"] or ""),
+            ]
             for row in rows
-        )
-        return hashlib.sha256(source.encode("utf-8")).hexdigest()
+        ]
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     def review_policy(self, source_id: str) -> dict[str, Any]:
         """审核策略快照：allowed_tables（active+present）与全量策略指纹。
@@ -1891,6 +1932,11 @@ class DataSourceCatalog:
         """
         now = time.time()
         with self._lock, self._connection(write=True) as connection:
+            self._raise_if_review_lease_blocks(
+                connection,
+                source_id,
+                {"availability_status": "present"},
+            )
             for schema_name, table_name, fields in review_updates:
                 self._upsert_review_row(
                     connection,
@@ -1979,6 +2025,11 @@ class DataSourceCatalog:
         pending_count = 0
         now = time.time()
         with self._lock, self._connection(write=True) as connection:
+            self._raise_if_review_lease_blocks(
+                connection,
+                source_id,
+                {"effective_decision": "pending"},
+            )
             existing_count = connection.execute(
                 "SELECT count(*) FROM data_source_table_reviews "
                 "WHERE source_id=?",
@@ -2459,6 +2510,7 @@ class DataSourceCatalog:
             row = connection.execute(
                 """
                 SELECT source_id, status, runtime_revision, metadata_path,
+                    selected_scope_json,
                     memory_path, is_builtin
                 FROM data_sources WHERE source_id = ?
                 """,
@@ -2531,6 +2583,69 @@ class DataSourceCatalog:
                     raise DataSourceCatalogError(
                         "当前正式资产与 Catalog 版本不一致"
                     )
+            if enabled:
+                # E-1：复用旧资产门 —— 审核策略必须与正式资产一致。
+                policy_rows = connection.execute(
+                    "SELECT schema_name, table_name, effective_decision, "
+                    "availability_status FROM data_source_table_reviews "
+                    "WHERE source_id=? ORDER BY schema_name, table_name",
+                    (source_id,),
+                ).fetchall()
+                if not policy_rows:
+                    raise DataSourceCatalogError(
+                        "数据源尚未完成表准入审核，请先执行 review"
+                    )
+                current_fingerprint = self._review_policy_fingerprint(
+                    policy_rows
+                )
+                allowed_tables = {
+                    (str(item["schema_name"]), str(item["table_name"]))
+                    for item in policy_rows
+                    if str(item["effective_decision"]) == "active"
+                    and str(item["availability_status"]) == "present"
+                }
+                try:
+                    scope_payload = json.loads(
+                        row["selected_scope_json"] or "[]"
+                    )
+                except (TypeError, ValueError):
+                    scope_payload = []
+                scope_tables = {
+                    (
+                        str(item.get("schema") or ""),
+                        str(item.get("table") or ""),
+                    )
+                    for item in scope_payload
+                    if item.get("table")
+                }
+                if scope_tables != allowed_tables:
+                    raise DataSourceCatalogError(
+                        "selected_scope 表集合与审核允许表不一致，请重新生成问数资产"
+                    )
+                root = asset_paths[0].parent
+                manifest_path = root / "asset_manifest.json"
+                identity_path = asset_paths[1] / ".asset_identity.json"
+                try:
+                    manifest = json.loads(
+                        manifest_path.read_text(encoding="utf-8")
+                    )
+                    identity = json.loads(
+                        identity_path.read_text(encoding="utf-8")
+                    )
+                except Exception:
+                    raise DataSourceCatalogError(
+                        "当前正式资产 manifest 或 asset identity 不可读，"
+                        "请重新生成问数资产"
+                    ) from None
+                if (
+                    manifest.get("review_policy_fingerprint")
+                    != current_fingerprint
+                    or identity.get("review_policy_fingerprint")
+                    != manifest.get("review_policy_fingerprint")
+                ):
+                    raise DataSourceCatalogError(
+                        "审核策略与正式资产不一致，请重新生成问数资产"
+                    )
             result = connection.execute(
                 """
                 UPDATE data_sources SET status = ?, enabled_for_chat = ?,
@@ -2590,11 +2705,26 @@ class DataSourceCatalog:
         asset_plan: Iterable[Mapping[str, Any]] = (),
         phase: str = "prepared",
         started_at: int | None = None,
+        expected_review_policy_fingerprint: str | None = None,
     ) -> None:
         self.require(source_id)
         now = started_at if started_at is not None else int(time.time())
         try:
             with self._lock, self._connection(write=True) as connection:
+                if expected_review_policy_fingerprint is not None:
+                    policy_rows = connection.execute(
+                        "SELECT schema_name, table_name, effective_decision, "
+                        "availability_status FROM data_source_table_reviews "
+                        "WHERE source_id=? ORDER BY schema_name, table_name",
+                        (source_id,),
+                    ).fetchall()
+                    if (
+                        self._review_policy_fingerprint(policy_rows)
+                        != expected_review_policy_fingerprint
+                    ):
+                        raise DataSourceConflict(
+                            "审核策略已变化，请重新生成问数资产"
+                        )
                 connection.execute(
                     """
                     INSERT INTO active_asset_batches(

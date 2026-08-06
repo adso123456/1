@@ -1591,7 +1591,6 @@ def test_prepare_coordination(root: Path) -> None:
         changed_thread.start()
         check(changed_entered.wait(10), "旧批次已在发布前暂停")
         catalog.save_scope(first_source, metadata)
-        _set_review_policy(catalog, first_source, metadata)
         changed_release.set()
         changed_thread.join(10)
     check(
