@@ -1,7 +1,12 @@
-"""数据源问数资产准入审核器（阶段 A + 阶段 B）。
+"""数据源问数资产准入审核器（阶段 A + 阶段 B + 正式审查修复）。
 
 职责：只读重发现 + 受限画像 + 质量指标（阶段 A）
       + 确定性评分 + 同业务表分组 -> 建议字段（阶段 B）。
+
+正式审查修复：
+  - 首次启用时按 selected_scope 安全迁移（已有 review 记录则禁止重迁）；
+  - run_id 使用纳秒时间戳 + uuid，避免 append-only 记录被吞；
+  - reviews/missing/history/run 成功标记作为一个事务原子提交。
 
 阶段 B 只写 proposed_decision / proposed_score / proposed_reason /
 business_group / group_confidence / compared_tables_json / group_reason；
@@ -14,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -105,8 +111,21 @@ class DataSourceTableReviewer:
         created_by: str = "review",
     ) -> dict[str, Any]:
         record = self.catalog.require(source_id)
-        run_id = f"review-{source_id}-{int(time.time())}"
+        # 无碰撞身份：纳秒时间戳 + uuid，避免同一秒连续审核
+        # 被 append-only 的 run/history 表静默吞掉。
+        run_id = f"review-{source_id}-{time.time_ns()}-{uuid.uuid4().hex}"
         try:
+            # 首次启用审核器时按 selected_scope 安全迁移；
+            # 已有任意 review 记录则禁止重新迁移，避免覆盖人工决定。
+            if not self.catalog.list_table_reviews(source_id):
+                migration = self.catalog.migrate_table_reviews_from_existing(
+                    source_id
+                )
+                logger.info(
+                    "数据源 %s 首次启用审核器：安全迁移 %s",
+                    source_id,
+                    migration,
+                )
             # persist=False：审核只读，不写入 discovered_metadata，不改变数据源状态。
             metadata = self.connector.discover(source_id, persist=False)
             discovered_keys = {
@@ -127,15 +146,29 @@ class DataSourceTableReviewer:
                 metadata,
                 progress=progress,
             )
-            # 阶段 A：更新可用性与质量指标（不触碰 effective_decision）。
+            existing = {
+                (
+                    str(review.get("schema_name") or ""),
+                    str(review.get("table_name") or ""),
+                ): review
+                for review in self.catalog.list_table_reviews(source_id)
+            }
+            present_keys = {
+                (str(profile.get("schema") or ""), str(profile.get("table") or ""))
+                for profile in profiles
+                if profile.get("schema") and profile.get("table")
+            }
+            # 阶段 A：在内存合并可用性与质量指标（不落库、不触碰 effective）。
+            merged: dict[tuple[str, str], dict[str, Any]] = {}
             for profile in profiles:
                 schema = str(profile.get("schema") or "")
                 table = str(profile.get("table") or "")
                 if not schema or not table:
                     continue
-                review = self.catalog.get_table_review(source_id, schema, table)
+                key = (schema, table)
+                review = existing.get(key) or {}
                 next_version = max(
-                    int((review or {}).get("review_version") or 0),
+                    int(review.get("review_version") or 0),
                     REVIEW_VERSION,
                 )
                 legacy_classification = (
@@ -144,112 +177,81 @@ class DataSourceTableReviewer:
                         "decision_source": "migration",
                         "decision_reason": "legacy_unclassified",
                     }
-                    if review is None
+                    if not review
                     else {}
                 )
-                self.catalog.upsert_table_review(
-                    source_id,
-                    schema,
-                    table,
-                    **legacy_classification,
-                    availability_status="present",
-                    quality_metrics_json=json.dumps(
-                        _quality_metrics(profile),
-                        ensure_ascii=False,
+                merged[key] = {
+                    "fields": {
+                        **legacy_classification,
+                        "availability_status": "present",
+                        "quality_metrics_json": json.dumps(
+                            _quality_metrics(profile),
+                            ensure_ascii=False,
+                        ),
+                        "structure_fingerprint": (
+                            profile.get("quality", {}).get(
+                                "structure_fingerprint", ""
+                            )
+                            or ""
+                        ),
+                        "data_fingerprint": (
+                            profile.get("quality", {}).get(
+                                "data_fingerprint", ""
+                            )
+                            or ""
+                        ),
+                        "review_version": next_version,
+                        "last_profiled_at": time.time(),
+                        "reviewed_by": created_by,
+                    },
+                    "effective_decision": str(
+                        review.get("effective_decision")
+                        or legacy_classification.get("effective_decision")
+                        or "pending"
                     ),
-                    structure_fingerprint=(
-                        profile.get("quality", {}).get(
-                            "structure_fingerprint", ""
-                        )
-                        or ""
-                    ),
-                    data_fingerprint=(
-                        profile.get("quality", {}).get("data_fingerprint", "")
-                        or ""
-                    ),
-                    review_version=next_version,
-                    last_profiled_at=time.time(),
-                    reviewed_by=created_by,
-                )
-            existing = {
-                (
-                    str(review.get("schema_name") or ""),
-                    str(review.get("table_name") or ""),
-                ): review
-                for review in self.catalog.list_table_reviews(source_id)
-            }
+                }
             # 阶段 B：确定性评分 + 同业务表分组，只写建议字段。
             proposals = compute_proposals(
                 profiles,
                 _column_comment_ratios(metadata),
                 existing,
             )
-            present_keys = {
-                (str(profile.get("schema") or ""), str(profile.get("table") or ""))
-                for profile in profiles
-                if profile.get("schema") and profile.get("table")
-            }
             for key, fields in proposals.items():
-                if key not in present_keys:
-                    continue
-                self.catalog.upsert_table_review(
-                    source_id,
-                    key[0],
-                    key[1],
-                    review_version=REVIEW_VERSION,
-                    **fields,
-                )
-            discovered = discovered_keys
+                if key in present_keys and key in merged:
+                    merged[key]["fields"].update(fields)
             reviewed: list[dict[str, Any]] = []
-            for schema, table in sorted(present_keys):
-                review = self.catalog.get_table_review(source_id, schema, table)
+            for key, merged_state in sorted(merged.items()):
+                fields = merged_state["fields"]
                 reviewed.append(
                     {
                         "source_id": source_id,
-                        "schema_name": schema,
-                        "table_name": table,
+                        "schema_name": key[0],
+                        "table_name": key[1],
                         "proposed_decision": (
-                            (review or {}).get("proposed_decision") or ""
+                            fields.get("proposed_decision") or ""
                         ),
-                        "proposed_score": (review or {}).get("proposed_score"),
-                        "proposed_reason": (
-                            (review or {}).get("proposed_reason") or ""
-                        ),
-                        "effective_decision": (
-                            (review or {}).get("effective_decision") or ""
-                        ),
+                        "proposed_score": fields.get("proposed_score"),
+                        "proposed_reason": fields.get("proposed_reason") or "",
+                        "effective_decision": merged_state["effective_decision"],
                         "availability_status": "present",
                         "quality_metrics_json": (
-                            (review or {}).get("quality_metrics_json") or "{}"
+                            fields.get("quality_metrics_json") or "{}"
                         ),
                         "compared_tables_json": (
-                            (review or {}).get("compared_tables_json") or "[]"
+                            fields.get("compared_tables_json") or "[]"
                         ),
-                        "business_group": (
-                            (review or {}).get("business_group") or ""
-                        ),
+                        "business_group": fields.get("business_group") or "",
                     }
                 )
-
             # 上次存在、本次未发现 -> missing（保留 effective_decision）
-            existing = self.catalog.list_table_reviews(source_id)
             missing: list[dict[str, Any]] = []
-            for review in existing:
-                key = (
-                    str(review.get("schema_name") or ""),
-                    str(review.get("table_name") or ""),
-                )
-                if key in discovered:
+            missing_keys: list[tuple[str, str]] = []
+            for key, review in existing.items():
+                if key in discovered_keys:
                     continue
                 if str(review.get("availability_status") or "") == "missing":
                     continue
-                self.catalog.upsert_table_review(
-                    source_id,
-                    key[0],
-                    key[1],
-                    availability_status="missing",
-                    reviewed_by=created_by,
-                )
+                missing_keys.append(key)
                 missing.append(
                     {
                         "source_id": source_id,
@@ -267,11 +269,17 @@ class DataSourceTableReviewer:
                         "compared_tables_json": "[]",
                     }
                 )
-
-            self.catalog.append_review_history(run_id, reviewed + missing)
-            self.catalog.finish_review_run(
+            # reviews / missing / history / run 成功标记作为一个事务原子提交；
+            # 任一失败整体回滚，只保留 run=failed 与错误信息。
+            self.catalog.apply_review_results(
+                source_id,
                 run_id,
-                status="succeeded",
+                review_updates=[
+                    (key[0], key[1], state["fields"])
+                    for key, state in sorted(merged.items())
+                ],
+                missing_keys=missing_keys,
+                history_snapshots=reviewed + missing,
                 profiled_tables=len(profiles),
             )
             decision_counts: dict[str, int] = {}
@@ -292,7 +300,7 @@ class DataSourceTableReviewer:
                 "数据源 %s 审核完成：发现 %d 张，画像 %d 张，标记 missing %d 张，"
                 "建议分布 %s，业务组 %d 个",
                 source_id,
-                len(discovered),
+                len(discovered_keys),
                 len(profiles),
                 len(missing),
                 decision_counts,
@@ -300,7 +308,7 @@ class DataSourceTableReviewer:
             )
             return {
                 "run_id": run_id,
-                "discovered": len(discovered),
+                "discovered": len(discovered_keys),
                 "profiled": len(profiles),
                 "missing": len(missing),
                 "proposed": decision_counts,

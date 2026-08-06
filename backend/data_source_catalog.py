@@ -1590,6 +1590,107 @@ class DataSourceCatalog:
         "reviewed_by",
     }
 
+    def _upsert_review_row(
+        self,
+        connection: sqlite3.Connection,
+        source_id: str,
+        schema_name: str,
+        table_name: str,
+        fields: Mapping[str, Any],
+        *,
+        now: float,
+    ) -> None:
+        """在给定连接上写入/更新单表审核状态（不管理事务，供原子批处理复用）。
+        effective_decision 默认保留已有值，调用方显式传入时才会变更。"""
+        allowed = {
+            key: value
+            for key, value in fields.items()
+            if key in self._REVIEW_UPDATE_FIELDS
+        }
+        existing = connection.execute(
+            "SELECT * FROM data_source_table_reviews "
+            "WHERE source_id=? AND schema_name=? AND table_name=?",
+            (source_id, schema_name, table_name),
+        ).fetchone()
+        if existing is not None:
+            current = dict(existing)
+            if (
+                "effective_decision" not in allowed
+                and current.get("effective_decision")
+            ):
+                allowed["effective_decision"] = current["effective_decision"]
+            sets = ["updated_at = ?"]
+            params: list[Any] = [now]
+            for key, value in allowed.items():
+                sets.append(f"{key} = ?")
+                params.append(value)
+            params.extend((source_id, schema_name, table_name))
+            connection.execute(
+                "UPDATE data_source_table_reviews SET "
+                + ", ".join(sets)
+                + " WHERE source_id=? AND schema_name=? AND table_name=?",
+                params,
+            )
+        else:
+            defaults: dict[str, Any] = {
+                "business_group": "",
+                "group_confidence": 0,
+                "compared_tables_json": "[]",
+                "group_reason": "",
+                "proposed_decision": "",
+                "proposed_score": None,
+                "proposed_reason": "",
+                "effective_decision": "pending",
+                "decision_source": "",
+                "decision_reason": "",
+                "availability_status": "present",
+                "quality_metrics_json": "{}",
+                "structure_fingerprint": "",
+                "data_fingerprint": "",
+                "review_version": 0,
+                "last_profiled_at": None,
+                "reviewed_by": "",
+            }
+            defaults.update(allowed)
+            connection.execute(
+                """
+                INSERT INTO data_source_table_reviews (
+                    source_id, schema_name, table_name,
+                    business_group, group_confidence, compared_tables_json,
+                    group_reason, proposed_decision, proposed_score,
+                    proposed_reason, effective_decision, decision_source,
+                    decision_reason, availability_status,
+                    quality_metrics_json, structure_fingerprint,
+                    data_fingerprint, review_version, last_profiled_at,
+                    reviewed_by, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    source_id,
+                    schema_name,
+                    table_name,
+                    defaults["business_group"],
+                    defaults["group_confidence"],
+                    defaults["compared_tables_json"],
+                    defaults["group_reason"],
+                    defaults["proposed_decision"],
+                    defaults["proposed_score"],
+                    defaults["proposed_reason"],
+                    defaults["effective_decision"],
+                    defaults["decision_source"],
+                    defaults["decision_reason"],
+                    defaults["availability_status"],
+                    defaults["quality_metrics_json"],
+                    defaults["structure_fingerprint"],
+                    defaults["data_fingerprint"],
+                    defaults["review_version"],
+                    defaults["last_profiled_at"],
+                    defaults["reviewed_by"],
+                    now,
+                    now,
+                ),
+            )
+
     def upsert_table_review(
         self,
         source_id: str,
@@ -1597,98 +1698,16 @@ class DataSourceCatalog:
         table_name: str,
         **fields: Any,
     ) -> dict[str, Any]:
-        """写入/更新单表审核状态。effective_decision 默认保留已有值，
-        除非调用方显式传入且 allow_effective_change=True。"""
-        allowed = {
-            key: value
-            for key, value in fields.items()
-            if key in self._REVIEW_UPDATE_FIELDS
-        }
-        now = time.time()
+        """写入/更新单表审核状态（独立事务）。"""
         with self._lock, self._connection(write=True) as connection:
-            existing = connection.execute(
-                "SELECT * FROM data_source_table_reviews "
-                "WHERE source_id=? AND schema_name=? AND table_name=?",
-                (source_id, schema_name, table_name),
-            ).fetchone()
-            if existing is not None:
-                current = dict(existing)
-                if (
-                    "effective_decision" not in allowed
-                    and current.get("effective_decision")
-                ):
-                    allowed["effective_decision"] = current["effective_decision"]
-                sets = ["updated_at = ?"]
-                params: list[Any] = [now]
-                for key, value in allowed.items():
-                    sets.append(f"{key} = ?")
-                    params.append(value)
-                params.extend((source_id, schema_name, table_name))
-                connection.execute(
-                    "UPDATE data_source_table_reviews SET "
-                    + ", ".join(sets)
-                    + " WHERE source_id=? AND schema_name=? AND table_name=?",
-                    params,
-                )
-            else:
-                defaults: dict[str, Any] = {
-                    "business_group": "",
-                    "group_confidence": 0,
-                    "compared_tables_json": "[]",
-                    "group_reason": "",
-                    "proposed_decision": "",
-                    "proposed_score": None,
-                    "proposed_reason": "",
-                    "effective_decision": "pending",
-                    "decision_source": "",
-                    "decision_reason": "",
-                    "availability_status": "present",
-                    "quality_metrics_json": "{}",
-                    "structure_fingerprint": "",
-                    "data_fingerprint": "",
-                    "review_version": 0,
-                    "last_profiled_at": None,
-                    "reviewed_by": "",
-                }
-                defaults.update(allowed)
-                connection.execute(
-                    """
-                    INSERT INTO data_source_table_reviews (
-                        source_id, schema_name, table_name,
-                        business_group, group_confidence, compared_tables_json,
-                        group_reason, proposed_decision, proposed_score,
-                        proposed_reason, effective_decision, decision_source,
-                        decision_reason, availability_status,
-                        quality_metrics_json, structure_fingerprint,
-                        data_fingerprint, review_version, last_profiled_at,
-                        reviewed_by, created_at, updated_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """,
-                    (
-                        source_id,
-                        schema_name,
-                        table_name,
-                        defaults["business_group"],
-                        defaults["group_confidence"],
-                        defaults["compared_tables_json"],
-                        defaults["group_reason"],
-                        defaults["proposed_decision"],
-                        defaults["proposed_score"],
-                        defaults["proposed_reason"],
-                        defaults["effective_decision"],
-                        defaults["decision_source"],
-                        defaults["decision_reason"],
-                        defaults["availability_status"],
-                        defaults["quality_metrics_json"],
-                        defaults["structure_fingerprint"],
-                        defaults["data_fingerprint"],
-                        defaults["review_version"],
-                        defaults["last_profiled_at"],
-                        defaults["reviewed_by"],
-                        now,
-                        now,
-                    ),
-                )
+            self._upsert_review_row(
+                connection,
+                source_id,
+                schema_name,
+                table_name,
+                fields,
+                now=time.time(),
+            )
         return self.get_table_review(source_id, schema_name, table_name)
 
     def get_table_review(
@@ -1740,7 +1759,7 @@ class DataSourceCatalog:
         with self._lock, self._connection(write=True) as connection:
             connection.execute(
                 """
-                INSERT OR IGNORE INTO data_source_review_runs (
+                INSERT INTO data_source_review_runs (
                     run_id, source_id, review_version, status,
                     discovered_tables, profiled_tables, started_at,
                     finished_at, error, created_by
@@ -1815,6 +1834,70 @@ class DataSourceCatalog:
                     ),
                 )
 
+    def apply_review_results(
+        self,
+        source_id: str,
+        run_id: str,
+        *,
+        review_updates: Iterable[tuple[str, str, Mapping[str, Any]]],
+        missing_keys: Iterable[tuple[str, str]],
+        history_snapshots: Iterable[Mapping[str, Any]],
+        profiled_tables: int,
+    ) -> None:
+        """原子写入一轮审核结果：reviews + missing + history + run 成功标记。
+
+        任一写入失败则整体回滚（_connection 异常时 rollback），
+        调用方负责把 run 标记为 failed，保证不会留下无历史对应的部分状态。
+        """
+        now = time.time()
+        with self._lock, self._connection(write=True) as connection:
+            for schema_name, table_name, fields in review_updates:
+                self._upsert_review_row(
+                    connection,
+                    source_id,
+                    schema_name,
+                    table_name,
+                    fields,
+                    now=now,
+                )
+            for schema_name, table_name in missing_keys:
+                connection.execute(
+                    "UPDATE data_source_table_reviews "
+                    "SET availability_status='missing', updated_at=? "
+                    "WHERE source_id=? AND schema_name=? AND table_name=?",
+                    (now, source_id, schema_name, table_name),
+                )
+            for item in history_snapshots:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO data_source_review_history (
+                        run_id, source_id, schema_name, table_name,
+                        proposed_decision, proposed_score,
+                        effective_decision, availability_status,
+                        quality_metrics_json, compared_tables_json, created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        run_id,
+                        str(item.get("source_id") or ""),
+                        str(item.get("schema_name") or ""),
+                        str(item.get("table_name") or ""),
+                        str(item.get("proposed_decision") or ""),
+                        item.get("proposed_score"),
+                        str(item.get("effective_decision") or ""),
+                        str(item.get("availability_status") or ""),
+                        str(item.get("quality_metrics_json") or "{}"),
+                        str(item.get("compared_tables_json") or "[]"),
+                        now,
+                    ),
+                )
+            connection.execute(
+                "UPDATE data_source_review_runs "
+                "SET status='succeeded', profiled_tables=?, "
+                "finished_at=?, error='' WHERE run_id=?",
+                (profiled_tables, now, run_id),
+            )
+
     def migrate_table_reviews_from_existing(
         self,
         source_id: str,
@@ -1845,7 +1928,7 @@ class DataSourceCatalog:
             for item in record.discovered_metadata
             if item.get("table")
         }
-        run_id = f"migration-{source_id}-{int(time.time())}"
+        run_id = f"migration-{source_id}-{time.time_ns()}-{uuid.uuid4().hex}"
         active_count = 0
         pending_count = 0
         for schema, table in sorted(selected):
