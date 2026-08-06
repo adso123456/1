@@ -334,7 +334,8 @@ def create_data_source_management_router(
         dependencies=protected,
     )
     def review(source_id: str) -> dict[str, Any]:
-        """阶段 A：只读重发现 + 画像 + 质量指标 -> reviews，不改 selected_scope。"""
+        """阶段 A+B：只读重发现 + 画像 + 评分分组 -> reviews 建议字段，
+        不修改 selected_scope 与正式资产。"""
         return _safe(lambda: onboarding.start(source_id, "review"))
 
     @router.get(
