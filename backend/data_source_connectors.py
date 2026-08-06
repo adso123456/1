@@ -1715,13 +1715,28 @@ class DataSourceAssetPreparer:
                 )
             # 候选资产门：候选全部生成后、备份正式资产前重检审核策略，
             # 防止候选按旧 allowed_tables 构建后 policy 被修改仍继续发布。
+            current_policy = self.catalog.review_policy(source_id)
             if (
-                self.catalog.review_policy(source_id)["fingerprint"]
+                current_policy["fingerprint"]
                 != expected_review_policy_fingerprint
             ):
                 raise DataSourceConflict(
                     "审核策略已变化，请重新生成问数资产"
                 )
+            # E-2A：读取已落盘的候选 Metadata / DDL 并做结构化硬校验，
+            # 通过后才允许备份正式资产。
+            from backend.data_source_asset_validator import (
+                validate_candidate_assets,
+            )
+
+            validate_candidate_assets(
+                database_type=record.database_type,
+                database_name=record.database_name,
+                selected_scope=current.selected_scope,
+                allowed_tables=current_policy["allowed_tables"],
+                metadata_path=candidate_paths["metadata"],
+                ddl_path=candidate_paths["ddl"],
+            )
             backups = [
                 Path(asset["backup"])
                 for asset in plan

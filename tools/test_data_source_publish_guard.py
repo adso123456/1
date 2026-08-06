@@ -600,6 +600,40 @@ def test_fingerprint_serialization_no_ambiguity() -> None:
     assert fingerprint(ordered) != fingerprint(list(reversed(ordered)))
 
 
+
+
+def test_asset_validation_failure_keeps_revision_and_assets() -> None:
+    import backend.data_source_asset_validator as validator_module
+
+    with tempfile.TemporaryDirectory(prefix="e2a-prep-") as directory:
+        catalog, source_id, asset_root = _published_source(Path(directory))
+        try:
+            hashes_before = _formal_hashes(catalog, source_id)
+            original = validator_module.validate_candidate_assets
+
+            def failing(**kwargs):
+                raise DataSourceCatalogError("E-2A 结构化校验失败（注入）")
+
+            validator_module.validate_candidate_assets = failing
+            try:
+                try:
+                    _prepare_with_memory(
+                        DataSourceAssetPreparer(catalog),
+                        source_id,
+                    )
+                except DataSourceCatalogError as exc:
+                    assert "E-2A 结构化校验失败" in str(exc)
+                else:
+                    raise AssertionError("E-2A 校验失败应阻断发布")
+            finally:
+                validator_module.validate_candidate_assets = original
+            record = catalog.require(source_id)
+            assert record.runtime_revision == 1
+            assert _formal_hashes(catalog, source_id) == hashes_before
+            assert not catalog.active_asset_batches(source_id)
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
 if __name__ == "__main__":
     import traceback
 
