@@ -1213,6 +1213,35 @@ class DataSourceAssetPreparer:
                 (item.get("schema", ""), item["table"]),
                 [],
             ).append(item)
+        # 前置范围门：allowed_tables 来自审核策略（effective=active 且 present），
+        # selected_scope 表集合必须与之精确相等；reviews 为空时失败关闭，
+        # 不在此处调用首次迁移（迁移只属于 /review 执行链）。
+        policy = self.catalog.review_policy(source_id)
+        if policy["review_count"] == 0:
+            raise DataSourceCatalogError(
+                "数据源尚未完成表准入审核，请先执行 review"
+            )
+        allowed_tables = set(policy["allowed_tables"])
+        scope_tables = set(grouped.keys())
+        if scope_tables != allowed_tables:
+            missing = sorted(allowed_tables - scope_tables)
+            extra = sorted(scope_tables - allowed_tables)
+            detail_parts = []
+            if missing:
+                detail_parts.append(
+                    "active+present 但未进入 selected_scope："
+                    + "、".join(f"{s}.{t}" for s, t in missing)
+                )
+            if extra:
+                detail_parts.append(
+                    "selected_scope 包含非 allowed 表："
+                    + "、".join(f"{s}.{t}" for s, t in extra)
+                )
+            raise DataSourceCatalogError(
+                "selected_scope 表集合与审核允许表不一致；"
+                + "；".join(detail_parts)
+            )
+        expected_review_policy_fingerprint = policy["fingerprint"]
         table_indexes: dict[
             tuple[str, str], dict[str, dict[str, Any]]
         ] = {}
@@ -1386,6 +1415,9 @@ class DataSourceAssetPreparer:
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
             expected_status=expected_status,
+            expected_review_policy_fingerprint=(
+                expected_review_policy_fingerprint
+            ),
             extra_sql_tool_records=extra_sql_tool_records,
             preserve_existing_sql=preserve_existing_sql,
         )
@@ -1402,6 +1434,7 @@ class DataSourceAssetPreparer:
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
         expected_status: str,
+        expected_review_policy_fingerprint: str,
         extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
         preserve_existing_sql: bool = True,
     ) -> dict[str, Any]:
@@ -1415,6 +1448,9 @@ class DataSourceAssetPreparer:
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
             expected_status=expected_status,
+            expected_review_policy_fingerprint=(
+                expected_review_policy_fingerprint
+            ),
             extra_sql_tool_records=extra_sql_tool_records,
             preserve_existing_sql=preserve_existing_sql,
         )
@@ -1431,6 +1467,7 @@ class DataSourceAssetPreparer:
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
         expected_status: str,
+        expected_review_policy_fingerprint: str,
         extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
         preserve_existing_sql: bool = True,
     ) -> dict[str, Any]:
@@ -1501,6 +1538,9 @@ class DataSourceAssetPreparer:
             "base_memory_path": str(record.memory_path.resolve()),
             "target_memory_path": str(published_memory_path),
             "base_scope_fingerprint": expected_scope_fingerprint,
+            "base_review_policy_fingerprint": (
+                expected_review_policy_fingerprint
+            ),
             "base_updated_at": record.updated_at,
             "base_last_error": record.last_error,
         }
@@ -1614,6 +1654,9 @@ class DataSourceAssetPreparer:
                         "source_id": source_id,
                         "runtime_revision": record.runtime_revision + 1,
                         "scope_fingerprint": expected_scope_fingerprint,
+                        "review_policy_fingerprint": (
+                            expected_review_policy_fingerprint
+                        ),
                         "batch_id": batch_id,
                         "memory_count": len(payload),
                     },
@@ -1634,6 +1677,9 @@ class DataSourceAssetPreparer:
                         "source_id": source_id,
                         "runtime_revision": record.runtime_revision + 1,
                         "scope_fingerprint": expected_scope_fingerprint,
+                        "review_policy_fingerprint": (
+                            expected_review_policy_fingerprint
+                        ),
                         "metadata_hash": content_hashes["metadata"],
                         "memory_identity_hash": content_hashes["memory"],
                         "ddl_hash": content_hashes["ddl"],
@@ -1663,6 +1709,15 @@ class DataSourceAssetPreparer:
             ):
                 raise DataSourceConflict(
                     "数据源范围已变化，请重新生成问数资产"
+                )
+            # 候选资产门：候选全部生成后、备份正式资产前重检审核策略，
+            # 防止候选按旧 allowed_tables 构建后 policy 被修改仍继续发布。
+            if (
+                self.catalog.review_policy(source_id)["fingerprint"]
+                != expected_review_policy_fingerprint
+            ):
+                raise DataSourceConflict(
+                    "审核策略已变化，请重新生成问数资产"
                 )
             backups = [
                 Path(asset["backup"])
@@ -1711,6 +1766,9 @@ class DataSourceAssetPreparer:
                 expected_runtime_revision=expected_runtime_revision,
                 expected_scope_fingerprint=expected_scope_fingerprint,
                 expected_status=expected_status,
+                expected_review_policy_fingerprint=(
+                    expected_review_policy_fingerprint
+                ),
             )
             self.catalog.update_asset_batch(
                 source_id, batch_id, phase="catalog_published"

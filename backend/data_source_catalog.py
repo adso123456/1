@@ -1743,6 +1743,46 @@ class DataSourceCatalog:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    @staticmethod
+    def _review_policy_fingerprint(
+        rows: Iterable[Mapping[str, Any]],
+    ) -> str:
+        """基于排序后的 (schema, table, effective, availability) 生成策略指纹。"""
+        source = "\n".join(
+            f"{str(row['schema_name'] or '')}|"
+            f"{str(row['table_name'] or '')}|"
+            f"{str(row['effective_decision'] or '')}|"
+            f"{str(row['availability_status'] or '')}"
+            for row in rows
+        )
+        return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+    def review_policy(self, source_id: str) -> dict[str, Any]:
+        """审核策略快照：allowed_tables（active+present）与全量策略指纹。
+
+        指纹覆盖该 source 全部 review 行（含 pending/standby/missing），
+        任一 effective_decision 或 availability_status 变化都会改变指纹，
+        用于发布链的并发保护。
+        """
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT schema_name, table_name, effective_decision, "
+                "availability_status FROM data_source_table_reviews "
+                "WHERE source_id=? ORDER BY schema_name, table_name",
+                (source_id,),
+            ).fetchall()
+        allowed_tables = tuple(
+            (str(row["schema_name"]), str(row["table_name"]))
+            for row in rows
+            if str(row["effective_decision"]) == "active"
+            and str(row["availability_status"]) == "present"
+        )
+        return {
+            "review_count": len(rows),
+            "allowed_tables": allowed_tables,
+            "fingerprint": self._review_policy_fingerprint(rows),
+        }
+
     def record_review_run(
         self,
         *,
@@ -2299,6 +2339,7 @@ class DataSourceCatalog:
         expected_runtime_revision: int | None = None,
         expected_scope_fingerprint: str | None = None,
         expected_status: str | None = None,
+        expected_review_policy_fingerprint: str | None = None,
     ) -> DataSourceRecord:
         now = int(time.time())
         with self._lock, self._connection(write=True) as connection:
@@ -2330,6 +2371,23 @@ class DataSourceCatalog:
                 raise DataSourceConflict(
                     "数据源范围已变化，请重新生成问数资产"
                 )
+            if expected_review_policy_fingerprint is not None:
+                policy_rows = connection.execute(
+                    "SELECT schema_name, table_name, effective_decision, "
+                    "availability_status FROM data_source_table_reviews "
+                    "WHERE source_id=? ORDER BY schema_name, table_name",
+                    (source_id,),
+                ).fetchall()
+                current_policy_fingerprint = (
+                    self._review_policy_fingerprint(policy_rows)
+                )
+                if (
+                    current_policy_fingerprint
+                    != expected_review_policy_fingerprint
+                ):
+                    raise DataSourceConflict(
+                        "审核策略已变化，请重新生成问数资产"
+                    )
             connection.execute(
                 """
                 UPDATE data_sources SET status = 'ready',

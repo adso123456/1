@@ -80,6 +80,17 @@ def _new_catalog(root: Path, key: str) -> tuple[DataSourceCatalog, str]:
     catalog.mark_connection_test(record.source_id, success=True)
     catalog.save_discovery(record.source_id, METADATA)
     catalog.save_scope(record.source_id, METADATA)
+    # E-1：prepare 前置范围门要求 reviews 与 selected_scope 精确一致。
+    for item in METADATA:
+        catalog.upsert_table_review(
+            record.source_id,
+            str(item.get("schema") or ""),
+            str(item["table"]),
+            effective_decision="active",
+            availability_status="present",
+            decision_source="test",
+            decision_reason="test",
+        )
     return catalog, record.source_id
 
 

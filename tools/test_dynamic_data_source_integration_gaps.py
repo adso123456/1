@@ -131,11 +131,54 @@ def _add_ready_source(
     catalog.mark_connection_test(record.source_id, success=True)
     catalog.save_discovery(record.source_id, metadata)
     catalog.save_scope(record.source_id, metadata)
+    _set_review_policy(catalog, record.source_id, metadata)
     published = catalog.publish(record.source_id, routing_summary=routing_summary)
     published.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     published.metadata_path.write_text("[]\n", encoding="utf-8")
     published.memory_path.mkdir(parents=True, exist_ok=True)
     return record.source_id
+
+
+def _set_review_policy(
+    catalog: DataSourceCatalog,
+    source_id: str,
+    scope_metadata: list[dict],
+) -> None:
+    """按当前 selected_scope 重置审核策略：范围内表 active+present，
+    其余发现表 pending+present，保证 E-1 前置范围门精确相等。"""
+    wanted = {
+        (str(item.get("schema") or ""), str(item["table"]))
+        for item in scope_metadata
+    }
+    discovered = {
+        (str(item.get("schema") or ""), str(item["table"]))
+        for item in catalog.require(source_id).discovered_metadata
+    }
+    reviewed = {
+        (str(item.get("schema_name") or ""), str(item.get("table_name") or ""))
+        for item in catalog.list_table_reviews(source_id)
+    }
+    for schema, table in sorted((discovered | reviewed) or wanted):
+        if (schema, table) in wanted:
+            catalog.upsert_table_review(
+                source_id,
+                schema,
+                table,
+                effective_decision="active",
+                availability_status="present",
+                decision_source="test",
+                decision_reason="test",
+            )
+        else:
+            catalog.upsert_table_review(
+                source_id,
+                schema,
+                table,
+                effective_decision="pending",
+                availability_status="present",
+                decision_source="test",
+                decision_reason="test",
+            )
 
 
 def _hash_path(path: Path) -> str:
@@ -742,6 +785,7 @@ def test_ddl_key_integrity(root: Path) -> None:
                 if item["column"] == name
             ]
             catalog.save_scope(source_id, selected)
+            _set_review_policy(catalog, source_id, selected)
             with patch.object(
                 memory_module,
                 "create_memory",
@@ -811,6 +855,7 @@ def test_ddl_key_integrity(root: Path) -> None:
             ]
             catalog.save_discovery(source_id, legacy_metadata)
             catalog.save_scope(source_id, legacy_metadata)
+            _set_review_policy(catalog, source_id, legacy_metadata)
             before = catalog.require(source_id)
             asset_paths = (
                 before.metadata_path,
@@ -852,6 +897,7 @@ def test_ddl_key_integrity(root: Path) -> None:
         ]
         catalog.save_discovery(source_id, no_primary_metadata)
         catalog.save_scope(source_id, no_primary_metadata)
+        _set_review_policy(catalog, source_id, no_primary_metadata)
         with patch.object(
             memory_module,
             "create_memory",
@@ -1242,6 +1288,7 @@ def test_asset_cleanup_and_runtime_release(root: Path) -> None:
 
     with manager.acquire(source_id):
         catalog.save_scope(source_id, metadata)
+        _set_review_policy(catalog, source_id, metadata)
         with patch.object(
             memory_module,
             "create_memory",
@@ -1544,6 +1591,7 @@ def test_prepare_coordination(root: Path) -> None:
         changed_thread.start()
         check(changed_entered.wait(10), "旧批次已在发布前暂停")
         catalog.save_scope(first_source, metadata)
+        _set_review_policy(catalog, first_source, metadata)
         changed_release.set()
         changed_thread.join(10)
     check(
