@@ -661,6 +661,7 @@ class DataSourceAssetCleaner:
             "memory",
             "ddl",
             "documentation",
+            "provenance",
             "manifest",
         }
         names = [str(asset.get("name", "")) for asset in plan]
@@ -696,6 +697,7 @@ class DataSourceAssetCleaner:
             "memory": target_memory,
             "ddl": (root / "ddl_memories.json").resolve(),
             "documentation": (root / "business_documents.json").resolve(),
+            "provenance": (root / "asset_provenance.json").resolve(),
             "manifest": (root / "asset_manifest.json").resolve(),
         }
         batch_id = str(item["batch_id"])
@@ -1015,14 +1017,17 @@ class DataSourceAssetPreparer:
         return quote + name.replace(quote, quote * 2) + quote
 
     @staticmethod
-    def _domain_documents(
+    def _build_domain_document_records(
         grouped: dict[tuple[str, str], list[dict[str, Any]]],
-        *,
-        chunk_size: int = 8,
-    ) -> list[str]:
+        source_id: str,
+    ) -> list[dict[str, Any]]:
         """按领域分块生成确定性业务文档，避免把全库 DDL 塞入单次 Prompt。"""
-        domains: dict[str, list[str]] = {}
-        for (_, table), columns in sorted(grouped.items()):
+        from backend.data_source_asset_provenance import (
+            chroma_record_id,
+            content_fingerprint,
+        )
+        domains: dict[str, list[tuple[str, str, str]]] = {}
+        for (schema, table), columns in sorted(grouped.items()):
             first = columns[0]
             domain = str(first.get("domain") or "其他业务")
             time_column = str(first.get("time_column") or "")
@@ -1037,19 +1042,54 @@ class DataSourceAssetPreparer:
                 f"{'；有效记录：' + '、'.join(map(str, rules)) if rules else ''}"
                 f"{'；可靠关系：' + '、'.join(str(item.get('column')) + '→' + str(item.get('target')) for item in relations) if relations else ''}"
             )
-            domains.setdefault(domain, []).append(summary)
-        documents = []
+            domains.setdefault(domain, []).append(
+                (schema, table, summary)
+            )
+        records = []
         for domain, tables in sorted(domains.items()):
-            for offset in range(0, len(tables), chunk_size):
-                chunk = tables[offset : offset + chunk_size]
-                documents.append(
+            for offset in range(0, len(tables), 8):
+                chunk = tables[offset : offset + 8]
+                document = (
                     f"业务领域：{domain}。可回答该领域的明细、聚合、"
                     "排名和有时间字段时的趋势问题。主要表："
-                    + "；".join(chunk)
+                    + "；".join(item[2] for item in chunk)
                     + "。只允许使用文中列出的可靠关系；不得因同名 id/name "
                     "自动 JOIN，不得跨小时/日/月粒度直接拼接。"
                 )
-        return documents
+                table_keys = sorted(
+                    {(item[0], item[1]) for item in chunk}
+                )
+                records.append(
+                    {
+                        "asset_type": "documentation",
+                        "record_id": chroma_record_id(
+                            source_id,
+                            "documentation",
+                            document,
+                        ),
+                        "document": document,
+                        "content_fingerprint": content_fingerprint(
+                            document
+                        ),
+                        "table_keys": [
+                            list(key) for key in table_keys
+                        ],
+                    }
+                )
+        return records
+
+    @staticmethod
+    def _domain_documents(
+        grouped: dict[tuple[str, str], list[dict[str, Any]]],
+        *,
+        chunk_size: int = 8,
+    ) -> list[str]:
+        """兼容入口：只返回文档字符串列表。"""
+        records = DataSourceAssetPreparer._build_domain_document_records(
+            grouped,
+            "",
+        )
+        return [item["document"] for item in records]
 
     @staticmethod
     def _preserved_sql_tool_payload(
@@ -1373,7 +1413,13 @@ class DataSourceAssetPreparer:
             if index_statements:
                 ddl += "\n" + "\n".join(index_statements)
             ddls.append(ddl)
-        documents = self._domain_documents(grouped)
+        documentation_records = self._build_domain_document_records(
+            grouped,
+            source_id,
+        )
+        documents = [
+            item["document"] for item in documentation_records
+        ]
         routing_summary = "\n".join(
             [
                 record.display_name,
@@ -1411,6 +1457,7 @@ class DataSourceAssetPreparer:
             metadata=metadata,
             ddls=ddls,
             documents=documents,
+            documentation_records=documentation_records,
             routing_summary=routing_summary,
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
@@ -1422,6 +1469,43 @@ class DataSourceAssetPreparer:
             preserve_existing_sql=preserve_existing_sql,
         )
 
+    def _sql_tool_physical_identity(
+        self,
+        *,
+        record: Any,
+        sql: str,
+        metadata_path: Path,
+    ) -> tuple[list[list[str]], list[list[str]]]:
+        """\u7528 SQLGuard \u7269\u7406\u8eab\u4efd\u5206\u6790\u63d0\u53d6 SQL \u7684\u8868/\u5217\u4e3b\u5f20\u3002"""
+        if record.database_type == "mysql":
+            from backend.mysql_sql_guard import MySQLSQLGuard
+
+            guard = MySQLSQLGuard(
+                index_path=metadata_path,
+                database_type="mysql",
+                default_schema=record.database_name,
+            )
+        else:
+            from backend.sql_guard import SQLGuard
+
+            guard = SQLGuard(
+                index_path=metadata_path,
+                database_type="postgresql",
+                default_schema=record.schema_name or "public",
+            )
+        result = guard.validate(sql, query="")
+        if not result.passed:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory \u672a\u901a\u8fc7 SQLGuard\uff1a{result.reason}"
+            )
+        table_keys = sorted(
+            [list(key) for key in result.used_physical_tables]
+        )
+        column_keys = sorted(
+            [list(key) for key in result.used_physical_columns]
+        )
+        return table_keys, column_keys
+
     def _publish_assets(
         self,
         *,
@@ -1430,6 +1514,7 @@ class DataSourceAssetPreparer:
         metadata: list[dict[str, Any]],
         ddls: list[str],
         documents: list[str],
+        documentation_records: list[dict[str, Any]],
         routing_summary: str,
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
@@ -1444,6 +1529,7 @@ class DataSourceAssetPreparer:
             metadata=metadata,
             ddls=ddls,
             documents=documents,
+            documentation_records=documentation_records,
             routing_summary=routing_summary,
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
@@ -1463,6 +1549,7 @@ class DataSourceAssetPreparer:
         metadata: list[dict[str, Any]],
         ddls: list[str],
         documents: list[str],
+        documentation_records: list[dict[str, Any]],
         routing_summary: str,
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
@@ -1500,6 +1587,7 @@ class DataSourceAssetPreparer:
             "memory": candidate_memory,
             "ddl": candidate_root / "ddl_memories.json",
             "documentation": candidate_root / "business_documents.json",
+            "provenance": candidate_root / "asset_provenance.json",
             "manifest": candidate_root / "asset_manifest.json",
         }
         formal_paths = {
@@ -1507,10 +1595,18 @@ class DataSourceAssetPreparer:
             "memory": published_memory_path,
             "ddl": root / "ddl_memories.json",
             "documentation": root / "business_documents.json",
+            "provenance": root / "asset_provenance.json",
             "manifest": root / "asset_manifest.json",
         }
         plan = []
-        for name in ("metadata", "memory", "ddl", "documentation", "manifest"):
+        for name in (
+            "metadata",
+            "memory",
+            "ddl",
+            "documentation",
+            "provenance",
+            "manifest",
+        ):
             formal = formal_paths[name]
             plan.append(
                 {
@@ -1651,6 +1747,93 @@ class DataSourceAssetPreparer:
             finally:
                 if not self._close_memory(memory):
                     raise DataSourceCatalogError("候选 Memory 资源释放失败")
+            # E-2B：生成 asset_provenance.json（结构化来源证明）。
+            from backend.data_source_asset_provenance import (
+                build_provenance,
+                provenance_fingerprint,
+                write_provenance,
+            )
+            from backend.data_source_runtime_asset_validator import (
+                parse_ddl_identity,
+            )
+
+            provenance_ddl = []
+            for ddl in ddls:
+                table_keys, column_keys = parse_ddl_identity(
+                    ddl,
+                    database_type=record.database_type,
+                    database_name=record.database_name,
+                )
+                provenance_ddl.append(
+                    {
+                        "asset_type": "chroma_ddl",
+                        "record_id": "b5-"
+                        + hashlib.sha256(
+                            f"{source_id}|ddl|DDL\n{ddl}".encode(
+                                "utf-8"
+                            )
+                        ).hexdigest(),
+                        "content_fingerprint": hashlib.sha256(
+                            ddl.encode("utf-8")
+                        ).hexdigest(),
+                        "table_keys": table_keys,
+                        "column_keys": column_keys,
+                    }
+                )
+            provenance_documentation = [
+                {
+                    "asset_type": "chroma_documentation",
+                    "record_id": item["record_id"],
+                    "content_fingerprint": item["content_fingerprint"],
+                    "table_keys": item["table_keys"],
+                }
+                for item in documentation_records
+            ]
+            provenance_sql = []
+            for record_id, _, sql_metadata in sql_tool_payload:
+                try:
+                    args = json.loads(
+                        str(sql_metadata.get("args_json") or "{}")
+                    )
+                except (TypeError, ValueError):
+                    raise DataSourceCatalogError(
+                        f"SQL Tool Memory args_json \u4e0d\u53ef\u89e3\u6790\uff1a{record_id}"
+                    ) from None
+                sql = str((args or {}).get("sql") or "")
+                table_keys, column_keys = self._sql_tool_physical_identity(
+                    record=record,
+                    sql=sql,
+                    metadata_path=candidate_paths["metadata"],
+                )
+                provenance_sql.append(
+                    {
+                        "asset_type": "sql_tool_memory",
+                        "record_id": record_id,
+                        "content_fingerprint": str(
+                            sql_metadata.get("content_fingerprint") or ""
+                        ),
+                        "table_keys": table_keys,
+                        "column_keys": column_keys,
+                    }
+                )
+            provenance_payload = build_provenance(
+                source_id=source_id,
+                runtime_revision=record.runtime_revision + 1,
+                scope_fingerprint=expected_scope_fingerprint,
+                review_policy_fingerprint=expected_review_policy_fingerprint,
+                assets={
+                    "documentation": documentation_records,
+                    "chroma_ddl": provenance_ddl,
+                    "chroma_documentation": provenance_documentation,
+                    "sql_tool_memory": provenance_sql,
+                },
+            )
+            provenance_hash = provenance_fingerprint(provenance_payload)
+            write_provenance(
+                candidate_paths["provenance"],
+                provenance_payload,
+            )
+
             (candidate_memory / ".asset_identity.json").write_text(
                 json.dumps(
                     {
@@ -1662,6 +1845,7 @@ class DataSourceAssetPreparer:
                         ),
                         "batch_id": batch_id,
                         "memory_count": len(payload),
+                        "provenance_hash": provenance_hash,
                     },
                     ensure_ascii=False,
                     sort_keys=True,
@@ -1672,7 +1856,13 @@ class DataSourceAssetPreparer:
             self._inject("after_candidate_memory")
             content_hashes = {
                 name: self.asset_cleaner._path_hash(candidate_paths[name])
-                for name in ("metadata", "memory", "ddl", "documentation")
+                for name in (
+                    "metadata",
+                    "memory",
+                    "ddl",
+                    "documentation",
+                    "provenance",
+                )
             }
             candidate_paths["manifest"].write_text(
                 json.dumps(
@@ -1689,6 +1879,7 @@ class DataSourceAssetPreparer:
                         "business_documents_hash": content_hashes[
                             "documentation"
                         ],
+                        "provenance_hash": provenance_hash,
                         "created_at": int(time.time()),
                         "batch_id": batch_id,
                     },
@@ -1736,6 +1927,48 @@ class DataSourceAssetPreparer:
                 allowed_tables=current_policy["allowed_tables"],
                 metadata_path=candidate_paths["metadata"],
                 ddl_path=candidate_paths["ddl"],
+            )
+            # E-2B：Documentation / Chroma / SQL Tool Memory \u56de\u8bfb\u786c\u95e8\u3002
+            from backend.data_source_runtime_asset_validator import (
+                validate_runtime_candidate_assets,
+            )
+
+            if record.database_type == "mysql":
+                from backend.mysql_sql_guard import MySQLSQLGuard
+
+                e2b_guard = MySQLSQLGuard(
+                    index_path=candidate_paths["metadata"],
+                    database_type="mysql",
+                    default_schema=record.database_name,
+                )
+            else:
+                from backend.sql_guard import SQLGuard
+
+                e2b_guard = SQLGuard(
+                    index_path=candidate_paths["metadata"],
+                    database_type="postgresql",
+                    default_schema=record.schema_name or "public",
+                )
+            validate_runtime_candidate_assets(
+                source_id=source_id,
+                database_type=record.database_type,
+                database_name=record.database_name,
+                allowed_tables=set(current_policy["allowed_tables"]),
+                scope=current.selected_scope,
+                scope_fingerprint=expected_scope_fingerprint,
+                review_policy_fingerprint=expected_review_policy_fingerprint,
+                target_runtime_revision=record.runtime_revision + 1,
+                business_documents_path=candidate_paths["documentation"],
+                provenance_path=candidate_paths["provenance"],
+                memory_path=candidate_memory,
+                expected_records=[
+                    (record_id, document, metadata)
+                    for record_id, (document, metadata) in zip(
+                        payload_ids,
+                        payload,
+                    )
+                ],
+                sql_guard=e2b_guard,
             )
             backups = [
                 Path(asset["backup"])

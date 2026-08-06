@@ -132,9 +132,11 @@ class _FakeCollection:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.total = 0
+        self.records = []
 
     def add(self, *, ids, documents, metadatas) -> None:
         self.total += len(ids)
+        self.records = list(zip(ids, documents, metadatas))
         (self.root / "identity.json").write_text(
             json.dumps(
                 {"ids": ids, "documents": documents, "metadatas": metadatas},
@@ -147,20 +149,43 @@ class _FakeCollection:
     def count(self) -> int:
         return self.total
 
-    def get(self, *, where=None, include=None) -> dict:
-        return {"ids": [], "documents": [], "metadatas": []}
+    def get(self, *, ids=None, where=None, include=None) -> dict:
+        records = list(self.records)
+        if where:
+            records = [
+                item
+                for item in records
+                if all(
+                    item[2].get(key) == value
+                    for key, value in where.items()
+                )
+            ]
+        if ids is not None:
+            wanted = set(ids)
+            records = [item for item in records if item[0] in wanted]
+        return {
+            "ids": [item[0] for item in records],
+            "documents": [item[1] for item in records],
+            "metadatas": [item[2] for item in records],
+        }
+
+
+_PERSISTED_COLLECTIONS: dict[str, _FakeCollection] = {}
 
 
 class _FakeMemory:
     def __init__(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
+        key = str(Path(path).resolve())
+        if key not in _PERSISTED_COLLECTIONS:
+            _PERSISTED_COLLECTIONS[key] = _FakeCollection(path)
         self._executor = type(
             "Executor",
             (),
             {"shutdown": lambda self, wait: None},
         )()
         self._client = None
-        self._collection = _FakeCollection(path)
+        self._collection = _PERSISTED_COLLECTIONS[key]
 
     def _get_collection(self):
         return self._collection

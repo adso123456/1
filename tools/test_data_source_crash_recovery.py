@@ -150,6 +150,22 @@ def _assert_consistent(catalog: DataSourceCatalog, source_id: str) -> None:
     assert manifest["business_documents_hash"] == cleaner._path_hash(
         root / "business_documents.json"
     )
+    # E-2B：provenance 必须与 manifest / asset identity 哈希一致。
+    provenance = json.loads(
+        (root / "asset_provenance.json").read_text(encoding="utf-8")
+    )
+    from backend.data_source_asset_provenance import provenance_fingerprint
+
+    provenance_hash = provenance_fingerprint(provenance)
+    assert manifest["provenance_hash"] == provenance_hash
+    identity = json.loads(
+        (record.memory_path / ".asset_identity.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert identity["provenance_hash"] == provenance_hash
+    assert provenance["source_id"] == source_id
+    assert int(provenance["runtime_revision"]) == record.runtime_revision
     assert not list(root.glob(".*.backup-*"))
     assert not list(root.glob("candidate-*"))
     assert not list(root.glob(".*.candidate-*"))
@@ -318,10 +334,12 @@ def main() -> int:
         "after_backup_metadata",
         "after_backup_ddl",
         "after_backup_documentation",
+        "after_backup_provenance",
         "after_install_metadata",
         "after_install_memory",
         "after_install_ddl",
         "after_install_documentation",
+        "after_install_provenance",
         "after_install_manifest",
         "before_catalog_publish",
         "after_catalog_publish",

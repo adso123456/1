@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +75,10 @@ SQL_FUNCTIONS = {
     "sum",
 }
 
+SQL_IDENT_PATTERN = (
+    r'"(?:[^"]|"")+"|`(?:[^`]|``)+`|[a-zA-Z_][\w]*'
+)
+
 
 @dataclass
 class SQLGuardResult:
@@ -87,6 +91,12 @@ class SQLGuardResult:
     forbidden_operations: list[str]
     candidate_mismatch: list[str]
     reason: str
+    # E-2B：物理表列身份与拒绝证据（无 schema 上下文的旧路径为空）。
+    used_physical_tables: set[tuple[str, str]] = field(default_factory=set)
+    used_physical_columns: set[tuple[str, str, str]] = field(default_factory=set)
+    wildcard_references: list[dict] = field(default_factory=list)
+    ambiguous_columns: list[dict] = field(default_factory=list)
+    unresolved_lineage: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -162,9 +172,19 @@ def _split_csv(value: str) -> list[str]:
 class SQLGuard:
     """基于本地元数据索引的 SQL 静态校验器。"""
 
-    def __init__(self, index_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        index_path: str | Path | None = None,
+        *,
+        database_type: str | None = None,
+        default_schema: str | None = None,
+    ) -> None:
         self.index_path = resolve_index_path(index_path)
+        self.database_type = database_type
+        self.default_schema = default_schema
         self.table_columns = self._load_table_columns()
+        self.schema_table_columns = self._load_schema_table_columns()
+        self.table_name_index = self._build_table_name_index()
         self.retriever = DeterministicMetadataRetriever(self.index_path)
 
     def validate(
@@ -175,6 +195,12 @@ class SQLGuard:
     ) -> SQLGuardResult:
         normalized_sql = _normalize_sql(sql)
         lower_sql = normalized_sql.lower()
+        if self.database_type is not None:
+            return self._validate_identity(
+                normalized_sql,
+                query=query,
+                deterministic_candidate_tables=deterministic_candidate_tables,
+            )
 
         forbidden_operations = self._find_forbidden_operations(lower_sql)
         used_tables, used_columns, unknown_columns = self._analyze_sql(normalized_sql)
@@ -266,6 +292,98 @@ class SQLGuard:
                 continue
             table_columns.setdefault(table, set()).add(column)
         return table_columns
+
+    def _load_schema_table_columns(
+        self,
+    ) -> dict[tuple[str, str], set[str]]:
+        """schema 感知索引：(schema, table) -> set[column]。
+
+        MySQL 一律按 default_schema（数据库名）规范化；
+        PostgreSQL 保留元数据中的 schema。"""
+        if not self.index_path.exists() or self.database_type is None:
+            return {}
+        rows = json.loads(self.index_path.read_text(encoding="utf-8"))
+        result: dict[tuple[str, str], set[str]] = {}
+        for row in rows:
+            schema = self._normalize_schema(str(row.get("schema") or ""))
+            table = _clean_identifier(str(row.get("table") or ""))
+            column = _clean_identifier(str(row.get("column") or ""))
+            if not schema or not table or not column:
+                continue
+            result.setdefault((schema, table), set()).add(column)
+        return result
+
+    def _build_table_name_index(self) -> dict[str, list[tuple[str, str]]]:
+        result: dict[str, list[tuple[str, str]]] = {}
+        for schema, table in self.schema_table_columns:
+            result.setdefault(table, []).append((schema, table))
+        for values in result.values():
+            values.sort()
+        return result
+
+    def _normalize_schema(self, schema: str) -> str:
+        if self.database_type == "mysql":
+            return str(self.default_schema or "")
+        return schema
+
+    def _resolve_table_identity(
+        self,
+        raw_table: str,
+    ) -> tuple[str, str, str, str]:
+        """按方言解析物理表身份。
+
+        返回 (status, schema, table, reason)；status 取值 ok/unknown/ambiguous。
+        """
+        parts = self._split_qualified(raw_table)
+        if len(parts) >= 2:
+            schema = self._normalize_schema(parts[-2])
+            table = parts[-1]
+            if (schema, table) in self.schema_table_columns:
+                return ("ok", schema, table, "")
+            return ("unknown", schema, table, f"表不存在：{schema}.{table}")
+        table = parts[-1] if parts else _clean_identifier(raw_table)
+        if not table:
+            return ("unknown", "", "", "table name empty")
+        if self.database_type == "mysql":
+            schema = str(self.default_schema or "")
+            if (schema, table) in self.schema_table_columns:
+                return ("ok", schema, table, "")
+            return ("unknown", schema, table, f"表不存在：{schema}.{table}")
+        candidates = self.table_name_index.get(table, [])
+        if len(candidates) == 1:
+            return ("ok", candidates[0][0], candidates[0][1], "")
+        if not candidates:
+            return ("unknown", "", table, f"表不存在：{table}")
+        return (
+            "ambiguous",
+            "",
+            table,
+            f"多 schema 同名表：{table}（{candidates}）",
+        )
+
+    @staticmethod
+    def _split_qualified(raw_table: str) -> list[str]:
+        parts: list[str] = []
+        current: list[str] = []
+        quote: str | None = None
+        for char in raw_table.strip():
+            if quote:
+                current.append(char)
+                if char == quote:
+                    quote = None
+                continue
+            if char in {'\"', '`'}:
+                quote = char
+                current.append(char)
+            elif char == '.':
+                parts.append(''.join(current).strip())
+                current = []
+            else:
+                current.append(char)
+        tail = ''.join(current).strip()
+        if tail:
+            parts.append(tail)
+        return [_clean_identifier(part) for part in parts if part]
 
     def _find_forbidden_operations(self, lower_sql: str) -> list[str]:
         found = []
@@ -458,7 +576,9 @@ class SQLGuard:
         used_tables: list[str] = []
         aliases: dict[str, str] = {}
         pattern = re.compile(
-            r"\b(?:from|join)\s+([a-zA-Z_][\w.]*|\"[^\"]+\"|`[^`]+`)"
+            r"\b(?:from|join)\s+"
+            r"((?:\"[^\"]+\"|`[^`]+`)(?:\.(?:\"[^\"]+\"|`[^`]+`))*"
+            r"|[a-zA-Z_][\w.]*)"
             r"(?:\s+(?:as\s+)?([a-zA-Z_][\w]*))?",
             flags=re.I,
         )
@@ -741,6 +861,443 @@ class SQLGuard:
 
     def _is_system_table(self, table: str) -> bool:
         return table.startswith(SYSTEM_TABLE_PREFIXES)
+
+    # ------------------------------------------------------------------
+    # E-2B：物理表列身份分析（schema 感知、通配符、歧义、lineage）
+    # ------------------------------------------------------------------
+
+    def _validate_identity(
+        self,
+        sql: str,
+        *,
+        query: str = "",
+        deterministic_candidate_tables: list[str] | None = None,
+    ) -> SQLGuardResult:
+        lower_sql = sql.lower()
+        forbidden_operations = self._find_forbidden_operations(lower_sql)
+        identity = self._analyze_identity(sql)
+        physical_tables = identity["physical_tables"]
+        physical_columns = identity["physical_columns"]
+        wildcards = identity["wildcards"]
+        ambiguous = identity["ambiguous"]
+        unresolved = identity["unresolved"]
+        unknown_tables = identity["unknown_tables"]
+        unknown_columns = identity["unknown_columns"]
+
+        system_tables = [table for table in unknown_tables if self._is_system_table(table)]
+        hard_failures: list[str] = []
+        if not self._is_select_sql(sql):
+            hard_failures.append("仅允许 SELECT SQL")
+        if forbidden_operations:
+            hard_failures.append(
+                "包含禁止操作：" + ", ".join(forbidden_operations)
+            )
+        if system_tables:
+            hard_failures.append("禁止访问系统表：" + ", ".join(system_tables))
+        if unknown_tables:
+            hard_failures.append("存在未知表：" + ", ".join(unknown_tables))
+        if unknown_columns:
+            hard_failures.append("存在未知字段：" + ", ".join(unknown_columns))
+        if wildcards:
+            hard_failures.append(
+                "存在通配符引用："
+                + ", ".join(str(item.get("expression")) for item in wildcards)
+            )
+        if ambiguous:
+            hard_failures.append(
+                "存在歧义字段："
+                + ", ".join(str(item.get("column")) for item in ambiguous)
+            )
+        if unresolved:
+            hard_failures.append(
+                "存在无法解析的身份："
+                + ", ".join(str(item.get("name")) for item in unresolved)
+            )
+
+        used_tables = sorted({table for _, table in physical_tables})
+        used_columns = sorted(
+            {f"{table}.{column}" for _, table, column in physical_columns}
+        )
+        base = dict(
+            used_tables=used_tables,
+            used_columns=used_columns,
+            unknown_tables=unknown_tables,
+            unknown_columns=unknown_columns,
+            forbidden_operations=forbidden_operations,
+            candidate_mismatch=[],
+            used_physical_tables=physical_tables,
+            used_physical_columns=physical_columns,
+            wildcard_references=wildcards,
+            ambiguous_columns=ambiguous,
+            unresolved_lineage=unresolved,
+        )
+        if hard_failures:
+            return SQLGuardResult(
+                passed=False,
+                severity="error",
+                reason="；".join(hard_failures),
+                **base,
+            )
+
+        candidate_tables = deterministic_candidate_tables
+        if candidate_tables is None and query.strip():
+            candidate_tables = [
+                item["table_name"]
+                for item in self.retriever.retrieve(query, top_n=10)
+            ]
+        candidate_tables = candidate_tables or []
+        candidate_mismatch = [
+            table
+            for table in used_tables
+            if candidate_tables and table not in candidate_tables
+        ]
+        if candidate_mismatch:
+            return SQLGuardResult(
+                passed=True,
+                severity="warning",
+                reason="SQL 表不在 deterministic candidate tables 中，需人工关注",
+                candidate_mismatch=candidate_mismatch,
+                **base,
+            )
+        return SQLGuardResult(
+            passed=True,
+            severity="ok",
+            reason="SQL 静态校验通过",
+            **base,
+        )
+
+    def _analyze_identity(
+        self,
+        sql: str,
+        *,
+        outer_relations: list[dict] | None = None,
+    ) -> dict:
+        result: dict = {
+            "physical_tables": set(),
+            "physical_columns": set(),
+            "wildcards": [],
+            "ambiguous": [],
+            "unresolved": [],
+            "unknown_tables": [],
+            "unknown_columns": [],
+            "relations": list(outer_relations or []),
+            "block_lineage": {},
+        }
+        cte_sqls, _, main_sql = self._extract_ctes(sql)
+        for cte_name, cte_sql in cte_sqls.items():
+            inner = self._analyze_identity(
+                cte_sql,
+                outer_relations=result["relations"],
+            )
+            self._merge_identity(result, inner)
+            lineage = inner["block_lineage"]
+            columns = {
+                column for values in lineage.values() for column in values
+            }
+            result["relations"].append(
+                {
+                    "name": cte_name,
+                    "tables": frozenset(inner["physical_tables"]),
+                    "columns": frozenset(columns),
+                    "lineage": lineage,
+                }
+            )
+
+        derived_tables = self._extract_derived_tables(main_sql)
+        for item in derived_tables:
+            inner = self._analyze_identity(
+                item.sql,
+                outer_relations=result["relations"],
+            )
+            self._merge_identity(result, inner)
+            lineage = inner["block_lineage"]
+            columns = {
+                column for values in lineage.values() for column in values
+            }
+            result["relations"].append(
+                {
+                    "name": item.alias,
+                    "tables": frozenset(inner["physical_tables"]),
+                    "columns": frozenset(columns),
+                    "lineage": lineage,
+                }
+            )
+
+        rewritten = self._rewrite_derived_tables(main_sql, derived_tables)
+        subqueries = self._extract_subqueries(rewritten)
+        outer_sql = self._remove_parenthesized_subqueries(rewritten)
+        for subquery in subqueries:
+            inner = self._analyze_identity(
+                subquery,
+                outer_relations=result["relations"],
+            )
+            self._merge_identity(result, inner)
+
+        virtual_names = {relation["name"] for relation in result["relations"]}
+        physical_by_name: dict[str, dict] = {}
+        for raw_table, alias in self._extract_table_tokens(outer_sql):
+            cleaned = _clean_identifier(raw_table)
+            if cleaned in virtual_names:
+                continue
+            status, schema, table, reason = self._resolve_table_identity(
+                raw_table
+            )
+            if status == "ok":
+                key = (schema, table)
+                result["physical_tables"].add(key)
+                if table not in physical_by_name:
+                    physical_by_name[table] = self._physical_relation(key)
+                if alias:
+                    alias_name = _clean_identifier(alias)
+                    source = physical_by_name[table]
+                    result["relations"].append(
+                        {
+                            "name": alias_name,
+                            "tables": source["tables"],
+                            "columns": source["columns"],
+                            "lineage": source["lineage"],
+                        }
+                    )
+            elif status == "unknown":
+                self._extend_unique(result["unknown_tables"], [raw_table])
+            else:
+                result["unresolved"].append(
+                    {
+                        "kind": "table",
+                        "name": raw_table,
+                        "reason": reason,
+                    }
+                )
+        for relation in physical_by_name.values():
+            result["relations"].append(relation)
+
+        select_part = self._extract_between_keywords(
+            outer_sql, "select", ["from"]
+        )
+        if select_part is not None and select_part.strip() == "*":
+            result["wildcards"].append(
+                {"expression": "*", "context": "select"}
+            )
+        select_expressions = self._extract_select_expressions(outer_sql)
+        for expression in self._extract_field_expressions(outer_sql):
+            wildcard = self._detect_wildcard(expression)
+            if wildcard == "wildcard":
+                result["wildcards"].append(
+                    {"expression": expression, "context": "select"}
+                )
+                continue
+            if wildcard == "count_star":
+                continue
+            columns, unknown, ambiguous = self._resolve_expression_columns(
+                expression,
+                result["relations"],
+            )
+            result["physical_columns"].update(columns)
+            for item in unknown:
+                if item not in result["unknown_columns"]:
+                    result["unknown_columns"].append(item)
+            result["ambiguous"].extend(ambiguous)
+
+        lineage: dict[str, frozenset[tuple[str, str, str]]] = {}
+        for expression in select_expressions:
+            name, body = self._expression_alias(expression)
+            if not name:
+                continue
+            wildcard = self._detect_wildcard(body)
+            if wildcard == "count_star":
+                lineage[name] = frozenset()
+                continue
+            columns, _, _ = self._resolve_expression_columns(
+                body,
+                result["relations"],
+            )
+            lineage[name] = frozenset(columns)
+        result["block_lineage"] = lineage
+        return result
+
+    def _extract_table_tokens(self, sql: str) -> list[tuple[str, str | None]]:
+        pattern = re.compile(
+            r"\b(?:from|join)\s+"
+            r"((?:\"[^\"]+\"|`[^`]+`)(?:\.(?:\"[^\"]+\"|`[^`]+`))*"
+            r"|[a-zA-Z_][\w.]*)"
+            r"(?:\s+(?:as\s+)?(?!(?:join|left|right|inner|outer|full|cross|on|where|group|order|having|limit|union)\b)([a-zA-Z_][\w]*))?",
+            flags=re.I,
+        )
+        return [
+            (match.group(1), match.group(2))
+            for match in pattern.finditer(sql)
+        ]
+
+    def _physical_relation(self, key: tuple[str, str]) -> dict:
+        schema, table = key
+        columns = self.schema_table_columns.get(key, set())
+        physical_columns = frozenset(
+            (schema, table, column) for column in columns
+        )
+        return {
+            "name": table,
+            "tables": frozenset({key}),
+            "columns": physical_columns,
+            "lineage": {
+                column: frozenset({(schema, table, column)})
+                for column in columns
+            },
+        }
+
+    @staticmethod
+    def _find_relation(
+        relations: list[dict],
+        name: str,
+    ) -> dict | None:
+        cleaned = _clean_identifier(name)
+        for relation in relations:
+            if relation["name"] == cleaned:
+                return relation
+        return None
+
+    @staticmethod
+    def _relation_column(
+        relation: dict,
+        column: str,
+    ) -> frozenset[tuple[str, str, str]] | None:
+        cleaned = _clean_identifier(column)
+        if cleaned in relation["lineage"]:
+            return relation["lineage"][cleaned]
+        return None
+
+    @staticmethod
+    def _strip_alias_text(expression: str) -> str:
+        expr = expression.strip()
+        alias_match = re.search(
+            r"\s+as\s+[a-zA-Z_][\w]*$",
+            expr,
+            flags=re.I,
+        )
+        if alias_match:
+            return expr[: alias_match.start()].strip()
+        return expr
+
+    def _detect_wildcard(self, expression: str) -> str | None:
+        expr = expression.strip()
+        if re.fullmatch(r"\*", expr):
+            return "wildcard"
+        if re.fullmatch(r"[a-zA-Z_][\w]*\.\*", expr):
+            return "wildcard"
+        if re.fullmatch(r"(?i)count\s*\(\s*\*\s*\)", expr):
+            return "count_star"
+        if re.fullmatch(r"(?i)[a-zA-Z_][\w]*\s*\(\s*\*\s*\)", expr):
+            return "wildcard"
+        return None
+
+    def _expression_alias(
+        self,
+        expression: str,
+    ) -> tuple[str, str]:
+        expr = expression.strip()
+        alias_match = re.search(
+            r"\s+as\s+([a-zA-Z_][\w]*)$",
+            expr,
+            flags=re.I,
+        )
+        if alias_match:
+            return (
+                _clean_identifier(alias_match.group(1)),
+                expr[: alias_match.start()].strip(),
+            )
+        alias_match = re.search(r"\s+([a-zA-Z_][\w]*)$", expr)
+        if alias_match and not expr.lower().endswith(")"):
+            return (
+                _clean_identifier(alias_match.group(1)),
+                expr[: alias_match.start()].strip(),
+            )
+        refs = self._columns_from_expression(expr)
+        if len(refs) == 1 and refs[0][1] != "*":
+            return refs[0][1], expr
+        return "", expr
+
+    def _extract_select_expressions(self, sql: str) -> list[str]:
+        select_part = self._extract_between_keywords(sql, "select", ["from"])
+        if not select_part or select_part.strip() == "*":
+            return []
+        return _split_csv(select_part)
+
+    def _resolve_expression_columns(
+        self,
+        expression: str,
+        relations: list[dict],
+    ) -> tuple[set[tuple[str, str, str]], list[str], list[dict]]:
+        body = self._strip_alias_text(expression)
+        body = re.sub(r"'[^']*'", " ", body)
+        columns: set[tuple[str, str, str]] = set()
+        unknown: list[str] = []
+        ambiguous: list[dict] = []
+        relation_names = {relation["name"] for relation in relations}
+        chain_pattern = re.compile(
+            rf"(?:{SQL_IDENT_PATTERN})(?:\.(?:{SQL_IDENT_PATTERN}))*"
+        )
+        for match in chain_pattern.finditer(body):
+            parts = [
+                _clean_identifier(item)
+                for item in re.findall(SQL_IDENT_PATTERN, match.group(0))
+            ]
+            if not parts:
+                continue
+            if len(parts) == 1:
+                identifier = parts[0]
+                if (
+                    identifier in relation_names
+                    or not self._is_possible_column_identifier(identifier)
+                ):
+                    continue
+                matches: list[frozenset[tuple[str, str, str]]] = []
+                for relation in relations:
+                    physical = self._relation_column(relation, identifier)
+                    if physical:
+                        matches.append(frozenset(physical))
+                distinct = list({match for match in matches})
+                if len(distinct) == 1:
+                    columns.update(distinct[0])
+                elif len(distinct) > 1:
+                    ambiguous.append(
+                        {
+                            "column": identifier,
+                            "candidates": sorted(
+                                {
+                                    column
+                                    for match in distinct
+                                    for column in match
+                                }
+                            ),
+                        }
+                    )
+                else:
+                    unknown.append(identifier)
+                continue
+            relation = self._find_relation(relations, parts[-2])
+            column = parts[-1]
+            if relation is None:
+                unknown.append(".".join(parts))
+                continue
+            physical = self._relation_column(relation, column)
+            if physical is None:
+                unknown.append(".".join(parts))
+            else:
+                columns.update(physical)
+        return columns, unknown, ambiguous
+
+    @staticmethod
+    def _merge_identity(target: dict, inner: dict) -> None:
+        target["physical_tables"].update(inner["physical_tables"])
+        target["physical_columns"].update(inner["physical_columns"])
+        target["wildcards"].extend(inner["wildcards"])
+        target["ambiguous"].extend(inner["ambiguous"])
+        target["unresolved"].extend(inner["unresolved"])
+        for table in inner["unknown_tables"]:
+            if table not in target["unknown_tables"]:
+                target["unknown_tables"].append(table)
+        for column in inner["unknown_columns"]:
+            if column not in target["unknown_columns"]:
+                target["unknown_columns"].append(column)
 
     def _business_failures(self, query: str, used_tables: list[str]) -> list[str]:
         query_compact = re.sub(r"\s+", "", query)

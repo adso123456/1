@@ -196,9 +196,11 @@ class _FakeCollection:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.total = 0
+        self.records = []
 
     def add(self, *, ids, documents, metadatas) -> None:
         self.total += len(ids)
+        self.records = list(zip(ids, documents, metadatas))
         (self.root / "identity.json").write_text(
             json.dumps(
                 {"ids": ids, "documents": documents, "metadatas": metadatas},
@@ -211,11 +213,37 @@ class _FakeCollection:
     def count(self) -> int:
         return self.total
 
+    def get(self, *, ids=None, where=None, include=None) -> dict:
+        records = list(self.records)
+        if where:
+            records = [
+                item
+                for item in records
+                if all(
+                    item[2].get(key) == value
+                    for key, value in where.items()
+                )
+            ]
+        if ids is not None:
+            wanted = set(ids)
+            records = [item for item in records if item[0] in wanted]
+        return {
+            "ids": [item[0] for item in records],
+            "documents": [item[1] for item in records],
+            "metadatas": [item[2] for item in records],
+        }
+
+
+_PERSISTED_COLLECTIONS: dict[str, _FakeCollection] = {}
+
 
 class _FakeMemory:
     def __init__(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
-        self.collection = _FakeCollection(path)
+        key = str(Path(path).resolve())
+        if key not in _PERSISTED_COLLECTIONS:
+            _PERSISTED_COLLECTIONS[key] = _FakeCollection(path)
+        self.collection = _PERSISTED_COLLECTIONS[key]
         self._executor = type(
             "Executor",
             (),
@@ -1416,7 +1444,10 @@ def test_prepare_coordination(root: Path) -> None:
     class BlockingMemory(_FakeMemory):
         def __init__(self, path: Path) -> None:
             path.mkdir(parents=True, exist_ok=True)
-            self.collection = BlockingCollection(path)
+            key = str(Path(path).resolve())
+            if key not in _PERSISTED_COLLECTIONS:
+                _PERSISTED_COLLECTIONS[key] = BlockingCollection(path)
+            self.collection = _PERSISTED_COLLECTIONS[key]
             self._executor = type(
                 "Executor",
                 (),
@@ -1496,7 +1527,10 @@ def test_prepare_coordination(root: Path) -> None:
     class BarrierMemory(_FakeMemory):
         def __init__(self, path: Path) -> None:
             path.mkdir(parents=True, exist_ok=True)
-            self.collection = BarrierCollection(path)
+            key = str(Path(path).resolve())
+            if key not in _PERSISTED_COLLECTIONS:
+                _PERSISTED_COLLECTIONS[key] = BarrierCollection(path)
+            self.collection = _PERSISTED_COLLECTIONS[key]
             self._executor = type(
                 "Executor",
                 (),
@@ -1557,7 +1591,10 @@ def test_prepare_coordination(root: Path) -> None:
     class ScopeChangeMemory(_FakeMemory):
         def __init__(self, path: Path) -> None:
             path.mkdir(parents=True, exist_ok=True)
-            self.collection = ScopeChangeCollection(path)
+            key = str(Path(path).resolve())
+            if key not in _PERSISTED_COLLECTIONS:
+                _PERSISTED_COLLECTIONS[key] = ScopeChangeCollection(path)
+            self.collection = _PERSISTED_COLLECTIONS[key]
             self._executor = type(
                 "Executor",
                 (),

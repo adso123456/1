@@ -2646,6 +2646,45 @@ class DataSourceCatalog:
                     raise DataSourceCatalogError(
                         "审核策略与正式资产不一致，请重新生成问数资产"
                     )
+                # E-2B：provenance 复用门 —— 正式 provenance 必须存在且身份一致。
+                provenance_path = root / "asset_provenance.json"
+                try:
+                    provenance = json.loads(
+                        provenance_path.read_text(encoding="utf-8")
+                    )
+                except Exception:
+                    raise DataSourceCatalogError(
+                        "当前正式资产缺少 asset_provenance.json，请重新生成问数资产"
+                    ) from None
+                from backend.data_source_asset_provenance import (
+                    provenance_fingerprint,
+                )
+
+                provenance_hash = provenance_fingerprint(provenance)
+                if (
+                    manifest.get("provenance_hash") != provenance_hash
+                    or identity.get("provenance_hash") != provenance_hash
+                ):
+                    raise DataSourceCatalogError(
+                        "asset_provenance 哈希与 manifest/identity 不一致，请重新生成问数资产"
+                    )
+                try:
+                    scope_fp = selected_scope_fingerprint(
+                        json.loads(row["selected_scope_json"] or "[]")
+                    )
+                except (TypeError, ValueError):
+                    scope_fp = ""
+                if (
+                    provenance.get("source_id") != row["source_id"]
+                    or int(provenance.get("runtime_revision") or -1)
+                    != int(row["runtime_revision"])
+                    or provenance.get("scope_fingerprint") != scope_fp
+                    or provenance.get("review_policy_fingerprint")
+                    != current_fingerprint
+                ):
+                    raise DataSourceCatalogError(
+                        "asset_provenance 身份与当前状态不一致，请重新生成问数资产"
+                    )
             result = connection.execute(
                 """
                 UPDATE data_sources SET status = ?, enabled_for_chat = ?,
