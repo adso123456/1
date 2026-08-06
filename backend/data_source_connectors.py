@@ -242,7 +242,12 @@ class DirectDatabaseConnector:
                 except Exception:
                     pass
 
-    def discover(self, source_id: str) -> list[dict[str, Any]]:
+    def discover(
+        self,
+        source_id: str,
+        *,
+        persist: bool = True,
+    ) -> list[dict[str, Any]]:
         record = self.catalog.require(source_id)
         connection = None
         try:
@@ -414,7 +419,8 @@ class DirectDatabaseConnector:
                     "indexes": owned_indexes,
                     "logical_relations": [],
                 })
-            self.catalog.save_discovery(source_id, metadata)
+            if persist:
+                self.catalog.save_discovery(source_id, metadata)
             return metadata
         except DataSourceCatalogError:
             raise
@@ -1049,15 +1055,16 @@ class DataSourceAssetPreparer:
     def _preserved_sql_tool_payload(
         *,
         source_id: str,
-        memory_path: Path,
+        memory_path: Path | None,
         metadata_path: Path,
         database_type: str,
+        generated_records: list[dict[str, Any]] | None = None,
     ) -> list[tuple[str, str, dict[str, Any]]]:
         """从旧正式 Memory 复制并重新校验已验证 SQL Tool Memory。"""
         ids: list[str] = []
         documents: list[str] = []
         metadatas: list[dict[str, Any]] = []
-        if memory_path.exists():
+        if memory_path is not None and memory_path.exists():
             from backend.memory import create_memory
 
             memory = create_memory(memory_path)
@@ -1075,7 +1082,7 @@ class DataSourceAssetPreparer:
             finally:
                 if not DataSourceAssetPreparer._close_memory(memory):
                     raise DataSourceCatalogError("旧正式 Memory 资源释放失败")
-        if not ids and source_id == "mysql-lzh-monitor":
+        if memory_path is not None and not ids and source_id == "mysql-lzh-monitor":
             from training.mysql_lzh_monitor_training import build_tool_records
 
             records, validation = build_tool_records()
@@ -1084,13 +1091,30 @@ class DataSourceAssetPreparer:
             ids = [item.record_id for item in records]
             documents = [item.document for item in records]
             metadatas = [dict(item.metadata) for item in records]
+        known_ids = set(map(str, ids))
+        for record in generated_records or []:
+            record_id = str(record.get("record_id") or "")
+            metadata = record.get("metadata")
+            if (
+                not record_id
+                or record_id in known_ids
+                or not isinstance(metadata, dict)
+            ):
+                continue
+            ids.append(record_id)
+            documents.append(str(record.get("question") or ""))
+            metadatas.append(dict(metadata))
+            known_ids.add(record_id)
         if not (len(ids) == len(documents) == len(metadatas)):
             raise DataSourceCatalogError("旧 SQL Tool Memory 结构不完整")
-        guard = None
         if database_type == "mysql":
             from backend.mysql_sql_guard import MySQLSQLGuard
 
             guard = MySQLSQLGuard(index_path=metadata_path)
+        else:
+            from backend.sql_guard import SQLGuard
+
+            guard = SQLGuard(index_path=metadata_path)
         payload = []
         for record_id, document, metadata in zip(
             ids, documents, metadatas, strict=True
@@ -1100,22 +1124,21 @@ class DataSourceAssetPreparer:
                 raise DataSourceCatalogError("SQL Tool Memory 数据源不匹配")
             if item.get("tool_name") != "run_sql":
                 raise DataSourceCatalogError("仅允许保留 run_sql Tool Memory")
-            if guard is not None:
-                try:
-                    args = json.loads(str(item["args_json"]))
-                    sql = str(args["sql"])
-                except (KeyError, TypeError, ValueError):
-                    raise DataSourceCatalogError(
+            try:
+                args = json.loads(str(item["args_json"]))
+                sql = str(args["sql"])
+            except (KeyError, TypeError, ValueError):
+                raise DataSourceCatalogError(
                         "SQL Tool Memory 参数不可解析"
-                    ) from None
-                result = guard.validate(
-                    sql=sql,
-                    query=str(item.get("question") or document),
-                )
-                if not result.passed:
-                    raise DataSourceCatalogError(
+                ) from None
+            result = guard.validate(
+                sql=sql,
+                query=str(item.get("question") or document),
+            )
+            if not result.passed:
+                raise DataSourceCatalogError(
                         "既有 SQL Tool Memory 未通过新范围 SQLGuard"
-                    )
+                )
             item["source_id"] = source_id
             payload.append((str(record_id), str(document), item))
         return payload
@@ -1154,6 +1177,7 @@ class DataSourceAssetPreparer:
         source_id: str,
         *,
         extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
+        preserve_existing_sql: bool = True,
     ) -> dict[str, Any]:
         lock = _prepare_lock(source_id)
         if not lock.acquire(blocking=False):
@@ -1162,7 +1186,9 @@ class DataSourceAssetPreparer:
             )
         try:
             return self._prepare_locked(
-                source_id, extra_sql_tool_records=extra_sql_tool_records
+                source_id,
+                extra_sql_tool_records=extra_sql_tool_records,
+                preserve_existing_sql=preserve_existing_sql,
             )
         finally:
             lock.release()
@@ -1172,6 +1198,7 @@ class DataSourceAssetPreparer:
         source_id: str,
         *,
         extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
+        preserve_existing_sql: bool = True,
     ) -> dict[str, Any]:
         record = self.catalog.require(source_id)
         scope = [dict(item) for item in record.selected_scope]
@@ -1360,6 +1387,7 @@ class DataSourceAssetPreparer:
             expected_scope_fingerprint=expected_scope_fingerprint,
             expected_status=expected_status,
             extra_sql_tool_records=extra_sql_tool_records,
+            preserve_existing_sql=preserve_existing_sql,
         )
 
     def _publish_assets(
@@ -1375,6 +1403,7 @@ class DataSourceAssetPreparer:
         expected_scope_fingerprint: str,
         expected_status: str,
         extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
+        preserve_existing_sql: bool = True,
     ) -> dict[str, Any]:
         return self._publish_assets_crash_safe(
             source_id=source_id,
@@ -1387,6 +1416,7 @@ class DataSourceAssetPreparer:
             expected_scope_fingerprint=expected_scope_fingerprint,
             expected_status=expected_status,
             extra_sql_tool_records=extra_sql_tool_records,
+            preserve_existing_sql=preserve_existing_sql,
         )
 
     def _publish_assets_crash_safe(
@@ -1402,6 +1432,7 @@ class DataSourceAssetPreparer:
         expected_scope_fingerprint: str,
         expected_status: str,
         extra_sql_tool_records: list[tuple[str, str, dict[str, Any]]] | None = None,
+        preserve_existing_sql: bool = True,
     ) -> dict[str, Any]:
         target = record.metadata_path.resolve()
         root = target.parent
@@ -1503,9 +1534,12 @@ class DataSourceAssetPreparer:
             self._inject("after_candidate_documentation")
             sql_tool_payload = self._preserved_sql_tool_payload(
                 source_id=source_id,
-                memory_path=record.memory_path,
+                memory_path=(record.memory_path if preserve_existing_sql else None),
                 metadata_path=candidate_paths["metadata"],
                 database_type=record.database_type,
+                generated_records=self.catalog.list_verified_sql_memories(
+                    source_id
+                ),
             )
             if extra_sql_tool_records:
                 sql_tool_payload = self._merge_extra_sql_tool_records(

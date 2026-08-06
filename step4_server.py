@@ -9,6 +9,7 @@ import re
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, AsyncGenerator
 
 from backend.assistant_application_registry import (
@@ -31,8 +32,10 @@ from backend.data_source_catalog import (
     resolve_catalog_path,
 )
 from backend.data_source_management_api import (
+    BindConversationRequest,
     create_data_source_management_router,
 )
+from backend.data_source_claim_identity import load_builtin_asset_lineage
 from backend.data_source_suggestion import (
     DataSourceSuggestionChatHandler,
     DataSourceSuggestionService,
@@ -230,7 +233,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 safe_app_id = app_id.strip()
                 if not safe_app_id:
                     raise EmbedAccessError(400, "缺少 app_id")
-                if not origin or not origin.strip():
+                if not origin:
                     raise EmbedAccessError(401, "浏览器 Origin 请求头缺失")
                 return authorize_embed_origin(
                     app_id=safe_app_id,
@@ -295,7 +298,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             app_id: str,
         ) -> dict[str, object]:
             origin = request.headers.get("Origin")
-            principal = authorize_embed(app_id, origin)
+            principal = authorize_embed(
+                app_id,
+                origin,
+            )
             application = principal.application
             return {
                 "app_id": application.app_id,
@@ -320,7 +326,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             app_id: str,
         ) -> list[dict[str, Any]]:
             origin = request.headers.get("Origin")
-            principal = authorize_embed(app_id, origin)
+            principal = authorize_embed(
+                app_id,
+                origin,
+            )
             if self.resources.catalog is not None:
                 return [
                     {
@@ -438,6 +447,34 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 },
             )
 
+        @app.post("/api/embed/apps/{app_id}/conversations/{conversation_id}/source")
+        async def embed_bind_conversation_source(
+            request: Request,
+            app_id: str,
+            conversation_id: str,
+            body: BindConversationRequest,
+        ) -> dict[str, str]:
+            origin = request.headers.get("Origin")
+            authorize_embed(
+                app_id,
+                origin,
+                source_id=body.source_id,
+            )
+            try:
+                context = self.resources.coordinator.bind(
+                    conversation_id,
+                    body.source_id,
+                )
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=409,
+                    detail="当前会话无法绑定该数据源",
+                ) from None
+            return {
+                "conversation_id": context.conversation_id,
+                "source_id": context.source_id,
+            }
+
         embed_report_service = (
             ReportApplicationService(report_artifact_store)
             if report_artifact_store is not None
@@ -522,82 +559,110 @@ def create_application_resources(
     if not source.get("DATA_SOURCE_CREDENTIAL_KEY", "").strip():
         if environ is None:
             source["DATA_SOURCE_CREDENTIAL_KEY"] = (
-                generate_local_credential_key()
+                _resolve_or_create_credential_key()
             )
     cipher = (
         CredentialCipher.from_environment(source)
         if source.get("DATA_SOURCE_CREDENTIAL_KEY", "").strip()
         else None
     )
-    bootstrap_registry = build_current_data_source_registry(
-        environ=source,
-        include_mysql=True,
-    )
+    # 内置数据源引导默认关闭：镜像发布到服务器后数据源为空，通过前端管理页添加。
+    # 本地开发需要在 .env 设置 DATA_SOURCE_BOOTSTRAP_BUILTINS=true。
+    bootstrap_builtins = str(
+        source.get("DATA_SOURCE_BOOTSTRAP_BUILTINS", "").strip().lower()
+    ) in {"1", "true", "yes", "on"}
     bootstrap: list[dict[str, Any]] = []
-    names = {
-        "postgresql-main": (
-            "排污口治理数据",
-            "排污口基础、监测、溯源与整治数据",
-        ),
-        "mysql-lzh-monitor": (
-            "梁子湖监测数据",
-            "梁子湖水质、水文、气象、污染源与预警数据",
-        ),
-    }
-    credential_refs = {
-        "postgresql-main": {
-            "username": "DB_USER",
-            "password": "DB_PASSWORD",
-        },
-        "mysql-lzh-monitor": {
-            "username": "MYSQL_USER",
-            "password": "MYSQL_PASSWORD",
-        },
-    }
-    for source_id in bootstrap_registry.source_ids:
-        config = bootstrap_registry.require(source_id)
-        display_name, description = names[source_id]
-        settings = config.connection_settings
-        try:
-            metadata = json.loads(config.metadata_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            metadata = []
-        bootstrap.append(
-            {
-                "source_id": source_id,
-                "display_name": display_name,
-                "description": description,
-                "database_type": config.database_type,
-                "host": settings["host"],
-                "port": settings["port"],
-                "database_name": settings["database"],
-                "schema_name": "public" if config.database_type == "postgresql" else "",
-                "ssl_mode": settings.get("sslmode", ""),
-                "connect_timeout": settings["connect_timeout"],
-                "credential_reference": credential_refs[source_id],
-                "metadata_path": config.metadata_path,
-                "memory_path": config.memory_path,
-                "selected_tables_count": len(
-                    {item.get("table") for item in metadata}
-                ),
-                "selected_columns_count": len(metadata),
-                "routing_summary": description,
-                "capabilities": (
-                    [
-                        "water_quality_daily_report",
-                        "water_quality_monthly_report",
-                    ]
-                    if source_id == "mysql-lzh-monitor"
-                    else []
-                ),
-            }
+    if bootstrap_builtins:
+        bootstrap_registry = build_current_data_source_registry(
+            environ=source,
+            include_mysql=True,
         )
+        names = {
+            "postgresql-main": (
+                "排污口治理数据",
+                "排污口基础、监测、溯源与整治数据",
+            ),
+            "mysql-lzh-monitor": (
+                "梁子湖监测数据",
+                "梁子湖水质、水文、气象、污染源与预警数据",
+            ),
+        }
+        credential_refs = {
+            "postgresql-main": {
+                "username": "DB_USER",
+                "password": "DB_PASSWORD",
+            },
+            "mysql-lzh-monitor": {
+                "username": "MYSQL_USER",
+                "password": "MYSQL_PASSWORD",
+            },
+        }
+        for source_id in bootstrap_registry.source_ids:
+            config = bootstrap_registry.require(source_id)
+            display_name, description = names[source_id]
+            settings = config.connection_settings
+            try:
+                metadata = json.loads(
+                    config.metadata_path.read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                metadata = []
+            bootstrap.append(
+                {
+                    "source_id": source_id,
+                    "display_name": display_name,
+                    "description": description,
+                    "database_type": config.database_type,
+                    "host": settings["host"],
+                    "port": settings["port"],
+                    "database_name": settings["database"],
+                    "schema_name": (
+                        "public" if config.database_type == "postgresql" else ""
+                    ),
+                    "ssl_mode": settings.get("sslmode", ""),
+                    "connect_timeout": settings["connect_timeout"],
+                    "credential_reference": credential_refs[source_id],
+                    "metadata_path": config.metadata_path,
+                    "memory_path": config.memory_path,
+                    "discovered_metadata": metadata,
+                    "selected_scope": metadata,
+                    "selected_tables_count": len(
+                        {item.get("table") for item in metadata}
+                    ),
+                    "selected_columns_count": len(metadata),
+                    "routing_summary": description,
+                    "capabilities": (
+                        [
+                            "water_quality_daily_report",
+                            "water_quality_monthly_report",
+                        ]
+                        if source_id == "mysql-lzh-monitor"
+                        else []
+                    ),
+                }
+            )
     catalog = DataSourceCatalog(
         resolve_catalog_path(source),
         cipher=cipher,
         environ=source,
     )
     catalog.initialize(bootstrap)
+    if bootstrap_builtins:
+        catalog.initialize_builtin_claims(load_builtin_asset_lineage())
+        # 修复历史引导空 scope：内置源 selected_scope 为空时从正式 Metadata 补齐，
+        # 否则数据源建议等依赖 selected_scope 的逻辑读不到任何表/字段。
+        for item in bootstrap:
+            record = catalog.require(item["source_id"])
+            if record.selected_scope:
+                continue
+            try:
+                metadata = json.loads(
+                    record.metadata_path.read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                continue
+            if isinstance(metadata, list) and metadata:
+                catalog.populate_bootstrap_scope(item["source_id"], metadata)
     registry = DataSourceRegistry.from_catalog(catalog)
     coordinator = DataSourceRequestCoordinator(registry)
     runtime_manager = DataSourceRuntimeManager(
@@ -619,6 +684,30 @@ def create_application_resources(
         runtime_manager=runtime_manager,
         assistant_application_registry=assistant_application_registry,
     )
+
+
+def _resolve_or_create_credential_key() -> str:
+    """固定凭据加密密钥：优先复用 agent_data 卷里持久化的 key，
+    没有则生成并写入卷，避免容器重建后前端配置的密码无法解密。
+    环境变量或 .env 里显式设置的值优先级最高（调用方已先检查）。"""
+    from backend.data_source_catalog import generate_local_credential_key
+    from config.settings import AGENT_DATA_DIR
+
+    persisted_path = Path(AGENT_DATA_DIR) / "system" / "credential_key"
+    if persisted_path.is_file():
+        try:
+            existing = persisted_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            existing = ""
+        if existing:
+            return existing
+    key = generate_local_credential_key()
+    try:
+        persisted_path.parent.mkdir(parents=True, exist_ok=True)
+        persisted_path.write_text(key + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return key
 
 
 def create_server(

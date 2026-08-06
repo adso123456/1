@@ -14,6 +14,7 @@ from config.settings import (
     METADATA_INDEX_PATH_ENV,
     PROJECT_ROOT,
     build_db_kwargs,
+    resolve_project_path,
     validate_db_config,
 )
 
@@ -35,7 +36,7 @@ def _resolve_metadata_path(environ: Mapping[str, str] | None) -> Path:
         selected_path = (
             environ.get(METADATA_INDEX_PATH_ENV) or DEFAULT_METADATA_INDEX_PATH
         )
-    return Path(selected_path).expanduser().resolve()
+    return resolve_project_path(selected_path)
 
 
 def _resolve_memory_path(environ: Mapping[str, str] | None) -> Path:
@@ -43,7 +44,7 @@ def _resolve_memory_path(environ: Mapping[str, str] | None) -> Path:
         return Path(CHROMA_DIR)
     configured_path = environ.get("VANNA_DATA_DIR", "").strip()
     if configured_path:
-        return Path(configured_path).expanduser().resolve()
+        return resolve_project_path(configured_path)
     return (PROJECT_ROOT / "vanna_data").resolve()
 
 
@@ -121,18 +122,18 @@ def build_mysql_data_source_config(
         "charset": "utf8mb4",
     }
     mysql_root = (PROJECT_ROOT / "agent_data" / "mysql-lzh-monitor").resolve()
-    metadata_path = Path(
+    metadata_path = resolve_project_path(
         source.get(
             "MYSQL_METADATA_INDEX_PATH",
             str(mysql_root / "column_metadata_index.json"),
         )
-    ).expanduser().resolve()
-    memory_path = Path(
+    )
+    memory_path = resolve_project_path(
         source.get(
             "MYSQL_VANNA_DATA_DIR",
             str(PROJECT_ROOT / "vanna_data" / "mysql-lzh-monitor"),
         )
-    ).expanduser().resolve()
+    )
 
     return DataSourceConfig(
         source_id=scope.get("datasource_id"),

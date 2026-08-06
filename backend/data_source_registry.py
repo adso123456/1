@@ -26,8 +26,6 @@ class DataSourceRegistry:
             snapshot = tuple(configs.values())
         else:
             snapshot = tuple(configs)
-        if not snapshot:
-            raise ValueError("DataSourceRegistry 至少需要一个数据源配置")
 
         registered: dict[str, DataSourceConfig] = {}
         for config in snapshot:

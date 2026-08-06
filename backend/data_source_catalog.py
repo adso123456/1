@@ -19,11 +19,11 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from backend.mysql_tls import build_mysql_tls_settings
 from config.data_source_config import DataSourceConfig
-from config.settings import PROJECT_ROOT
+from config.settings import PROJECT_ROOT, resolve_project_path
 
 
 SCHEMA_COMPONENT = "data_source_catalog"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 10
 VALID_DATABASE_TYPES = frozenset({"mysql", "postgresql"})
 VALID_STATUSES = frozenset(
     {
@@ -37,6 +37,58 @@ VALID_STATUSES = frozenset(
     }
 )
 CONNECTION_MODES = frozenset({"direct_database", "external_provider"})
+
+
+def _store_project_path(value: Path | str) -> str:
+    """项目内路径写入 Catalog 时只保存 POSIX 相对路径。"""
+    resolved = resolve_project_path(value)
+    try:
+        return resolved.relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        # 测试夹具和显式外部资产仍允许保留绝对路径。
+        return str(resolved)
+
+
+def _resolve_stored_path(value: Path | str) -> Path:
+    return resolve_project_path(value)
+
+
+def _store_path_mapping(values: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(values)
+    for key in ("base_memory_path", "target_memory_path"):
+        if result.get(key):
+            result[key] = _store_project_path(str(result[key]))
+    return result
+
+
+def _resolve_path_mapping(values: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(values)
+    for key in ("base_memory_path", "target_memory_path"):
+        if result.get(key):
+            result[key] = str(_resolve_stored_path(str(result[key])))
+    return result
+
+
+def _store_asset_plan(values: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for value in values:
+        item = dict(value)
+        for key in ("candidate", "formal", "backup"):
+            if item.get(key):
+                item[key] = _store_project_path(str(item[key]))
+        result.append(item)
+    return result
+
+
+def _resolve_asset_plan(values: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for value in values:
+        item = dict(value)
+        for key in ("candidate", "formal", "backup"):
+            if item.get(key):
+                item[key] = str(_resolve_stored_path(str(item[key])))
+        result.append(item)
+    return result
 
 
 def selected_scope_fingerprint(scope: Iterable[Mapping[str, Any]]) -> str:
@@ -282,6 +334,8 @@ class DataSourceCatalog:
         self._cipher = cipher
         self._environ = os.environ if environ is None else environ
         self._lock = RLock()
+        # 空卷首启时 agent_data/data_sources/ 可能不存在，先建目录再连库。
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def db_path(self) -> Path:
@@ -402,6 +456,115 @@ class DataSourceCatalog:
                     owner_pid INTEGER NOT NULL DEFAULT 0,
                     last_error TEXT NOT NULL DEFAULT ''
                 );
+                CREATE TABLE IF NOT EXISTS data_source_table_profiles (
+                    source_id TEXT NOT NULL REFERENCES data_sources(source_id)
+                        ON DELETE CASCADE,
+                    schema_name TEXT NOT NULL,
+                    table_name TEXT NOT NULL,
+                    profile_json TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (source_id, schema_name, table_name)
+                );
+                CREATE TABLE IF NOT EXISTS data_source_onboarding_jobs (
+                    job_id TEXT PRIMARY KEY,
+                    source_id TEXT NOT NULL REFERENCES data_sources(source_id)
+                        ON DELETE CASCADE,
+                    job_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    current_count INTEGER NOT NULL DEFAULT 0,
+                    total_count INTEGER NOT NULL DEFAULT 0,
+                    message TEXT NOT NULL DEFAULT '',
+                    result_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_data_source_jobs_current
+                    ON data_source_onboarding_jobs(source_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS data_source_verified_sql_memories (
+                    source_id TEXT NOT NULL REFERENCES data_sources(source_id)
+                        ON DELETE CASCADE,
+                    record_id TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    sql_text TEXT NOT NULL,
+                    memory_metadata_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (source_id, record_id)
+                );
+                CREATE TABLE IF NOT EXISTS builtin_data_source_claims (
+                    source_id TEXT PRIMARY KEY REFERENCES data_sources(source_id)
+                        ON DELETE CASCADE,
+                    status TEXT NOT NULL,
+                    origin_endpoint_fingerprint TEXT NOT NULL DEFAULT '',
+                    current_endpoint_fingerprint TEXT NOT NULL DEFAULT '',
+                    active_endpoint_fingerprint TEXT NOT NULL DEFAULT '',
+                    baseline_schema_fingerprint TEXT NOT NULL DEFAULT '',
+                    remote_schema_fingerprint TEXT NOT NULL DEFAULT '',
+                    diff_json TEXT NOT NULL DEFAULT '{}',
+                    candidate_metadata_json TEXT NOT NULL DEFAULT '[]',
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    claimed_at INTEGER
+                );
+                CREATE TABLE IF NOT EXISTS data_source_table_reviews (
+                    source_id TEXT NOT NULL,
+                    schema_name TEXT NOT NULL,
+                    table_name TEXT NOT NULL,
+                    business_group TEXT NOT NULL DEFAULT '',
+                    group_confidence REAL NOT NULL DEFAULT 0,
+                    compared_tables_json TEXT NOT NULL DEFAULT '[]',
+                    group_reason TEXT NOT NULL DEFAULT '',
+                    proposed_decision TEXT NOT NULL DEFAULT '',
+                    proposed_score REAL,
+                    proposed_reason TEXT NOT NULL DEFAULT '',
+                    effective_decision TEXT NOT NULL DEFAULT 'pending',
+                    decision_source TEXT NOT NULL DEFAULT '',
+                    decision_reason TEXT NOT NULL DEFAULT '',
+                    availability_status TEXT NOT NULL DEFAULT 'present',
+                    quality_metrics_json TEXT NOT NULL DEFAULT '{}',
+                    structure_fingerprint TEXT NOT NULL DEFAULT '',
+                    data_fingerprint TEXT NOT NULL DEFAULT '',
+                    review_version INTEGER NOT NULL DEFAULT 0,
+                    last_profiled_at REAL,
+                    reviewed_by TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (source_id, schema_name, table_name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_table_reviews_source
+                    ON data_source_table_reviews(source_id, effective_decision);
+                CREATE INDEX IF NOT EXISTS idx_table_reviews_group
+                    ON data_source_table_reviews(source_id, business_group);
+                CREATE TABLE IF NOT EXISTS data_source_review_runs (
+                    run_id TEXT PRIMARY KEY,
+                    source_id TEXT NOT NULL,
+                    review_version INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    discovered_tables INTEGER NOT NULL DEFAULT 0,
+                    profiled_tables INTEGER NOT NULL DEFAULT 0,
+                    started_at REAL NOT NULL,
+                    finished_at REAL,
+                    error TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_runs_source
+                    ON data_source_review_runs(source_id, started_at);
+                CREATE TABLE IF NOT EXISTS data_source_review_history (
+                    run_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    schema_name TEXT NOT NULL,
+                    table_name TEXT NOT NULL,
+                    proposed_decision TEXT NOT NULL DEFAULT '',
+                    proposed_score REAL,
+                    effective_decision TEXT NOT NULL DEFAULT '',
+                    availability_status TEXT NOT NULL DEFAULT '',
+                    quality_metrics_json TEXT NOT NULL DEFAULT '{}',
+                    compared_tables_json TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (run_id, source_id, schema_name, table_name)
+                );
                 """
             )
             columns = {
@@ -452,6 +615,254 @@ class DataSourceCatalog:
             for item in bootstrap:
                 self._insert_bootstrap(connection, item, now)
 
+    def initialize_builtin_claims(
+        self,
+        lineage_by_source: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        """端点离开本地副本后，强制两个内置源先进入认领隔离。"""
+        from backend.data_source_claim_identity import (
+            endpoint_fingerprint,
+            endpoint_matches_replica,
+            schema_fingerprint,
+        )
+
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            for source_id, lineage in lineage_by_source.items():
+                row = connection.execute(
+                    "SELECT * FROM data_sources WHERE source_id = ? AND is_builtin = 1",
+                    (source_id,),
+                ).fetchone()
+                if row is None:
+                    continue
+                current_fingerprint = endpoint_fingerprint(
+                    database_type=row["database_type"],
+                    host=row["host"],
+                    port=row["port"],
+                    database_name=row["database_name"],
+                    schema_name=row["schema_name"],
+                )
+                origin_fingerprint = endpoint_fingerprint(
+                    database_type=str(lineage["database_type"]),
+                    host=str((lineage.get("origin_hosts") or [""])[0]),
+                    port=int(lineage["origin_port"]),
+                    database_name=str(lineage["database_name"]),
+                    schema_name=str(lineage.get("schema_name") or ""),
+                )
+                try:
+                    baseline_metadata = json.loads(
+                        _resolve_stored_path(row["metadata_path"]).read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                except (OSError, TypeError, ValueError):
+                    baseline_metadata = []
+                baseline_fingerprint = schema_fingerprint(
+                    baseline_metadata if isinstance(baseline_metadata, list) else []
+                )
+                existing = connection.execute(
+                    "SELECT * FROM builtin_data_source_claims WHERE source_id = ?",
+                    (source_id,),
+                ).fetchone()
+                is_replica = endpoint_matches_replica(
+                    database_type=row["database_type"],
+                    host=row["host"],
+                    port=row["port"],
+                    database_name=row["database_name"],
+                    schema_name=row["schema_name"],
+                    lineage=lineage,
+                )
+                remains_claimed = (
+                    existing is not None
+                    and existing["status"] == "claimed"
+                    and existing["active_endpoint_fingerprint"]
+                    == current_fingerprint
+                )
+                preserves_pending_state = (
+                    existing is not None
+                    and existing["current_endpoint_fingerprint"]
+                    == current_fingerprint
+                    and existing["status"]
+                    in {"claim_required", "claim_review", "failed"}
+                )
+                status = (
+                    "not_required"
+                    if is_replica
+                    else "claimed"
+                    if remains_claimed
+                    else str(existing["status"])
+                    if preserves_pending_state
+                    else "claim_required"
+                )
+                active_fingerprint = (
+                    current_fingerprint
+                    if is_replica
+                    else existing["active_endpoint_fingerprint"]
+                    if existing is not None
+                    else ""
+                )
+                connection.execute(
+                    """
+                    INSERT INTO builtin_data_source_claims (
+                        source_id, status, origin_endpoint_fingerprint,
+                        current_endpoint_fingerprint,
+                        active_endpoint_fingerprint,
+                        baseline_schema_fingerprint,
+                        remote_schema_fingerprint, diff_json,
+                        candidate_metadata_json, last_error,
+                        created_at, updated_at, claimed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, '', '{}', '[]', '', ?, ?, NULL)
+                    ON CONFLICT(source_id) DO UPDATE SET
+                        status = excluded.status,
+                        origin_endpoint_fingerprint = excluded.origin_endpoint_fingerprint,
+                        current_endpoint_fingerprint = excluded.current_endpoint_fingerprint,
+                        active_endpoint_fingerprint = excluded.active_endpoint_fingerprint,
+                        baseline_schema_fingerprint = excluded.baseline_schema_fingerprint,
+                        updated_at = excluded.updated_at,
+                        last_error = CASE
+                            WHEN excluded.status = 'claim_required' THEN ''
+                            ELSE builtin_data_source_claims.last_error
+                        END
+                    """,
+                    (
+                        source_id,
+                        status,
+                        origin_fingerprint,
+                        current_fingerprint,
+                        active_fingerprint,
+                        baseline_fingerprint,
+                        now,
+                        now,
+                    ),
+                )
+                if status == "claim_required":
+                    connection.execute(
+                        """
+                        UPDATE data_sources
+                        SET status = 'disabled', enabled_for_chat = 0,
+                            last_error = '远程本尊尚未完成资产认领', updated_at = ?
+                        WHERE source_id = ?
+                        """,
+                        (now, source_id),
+                    )
+
+    def builtin_claim_summary(self, source_id: str) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM builtin_data_source_claims WHERE source_id = ?",
+                (source_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            diff = json.loads(row["diff_json"])
+        except (TypeError, ValueError):
+            diff = {}
+        return {
+            "source_id": row["source_id"],
+            "status": row["status"],
+            "baseline_schema_fingerprint": row["baseline_schema_fingerprint"],
+            "remote_schema_fingerprint": row["remote_schema_fingerprint"],
+            "diff": diff if isinstance(diff, Mapping) else {},
+            "last_error": row["last_error"],
+            "updated_at": row["updated_at"],
+            "claimed_at": row["claimed_at"],
+        }
+
+    def save_builtin_claim_preview(
+        self,
+        source_id: str,
+        *,
+        remote_schema_fingerprint: str,
+        diff: Mapping[str, Any],
+        candidate_metadata: Iterable[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        payload = [dict(item) for item in candidate_metadata]
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE builtin_data_source_claims
+                SET status = 'claim_review', remote_schema_fingerprint = ?,
+                    diff_json = ?, candidate_metadata_json = ?,
+                    last_error = '', updated_at = ?
+                WHERE source_id = ? AND status IN (
+                    'claim_required', 'claim_analyzing', 'claim_review', 'failed'
+                )
+                """,
+                (
+                    remote_schema_fingerprint,
+                    json.dumps(dict(diff), ensure_ascii=False),
+                    json.dumps(payload, ensure_ascii=False),
+                    now,
+                    source_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise DataSourceConflict("该内置数据源当前不能生成认领预览")
+        return self.builtin_claim_summary(source_id) or {}
+
+    def builtin_claim_candidate_metadata(
+        self,
+        source_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT candidate_metadata_json FROM builtin_data_source_claims
+                WHERE source_id = ? AND status = 'claim_review'
+                """,
+                (source_id,),
+            ).fetchone()
+        if row is None:
+            raise DataSourceConflict("尚未生成可发布的认领预览")
+        payload = json.loads(row["candidate_metadata_json"])
+        return [dict(item) for item in payload if isinstance(item, Mapping)]
+
+    def mark_builtin_claim_running(self, source_id: str) -> None:
+        with self._lock, self._connection(write=True) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE builtin_data_source_claims
+                SET status = 'claim_analyzing', last_error = '', updated_at = ?
+                WHERE source_id = ? AND status IN (
+                    'claim_required', 'claim_review', 'failed'
+                )
+                """,
+                (int(time.time()), source_id),
+            )
+            if cursor.rowcount != 1:
+                raise DataSourceConflict("该内置数据源当前不能开始认领")
+
+    def mark_builtin_claim_failed(self, source_id: str, error: str) -> None:
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE builtin_data_source_claims
+                SET status = 'failed', last_error = ?, updated_at = ?
+                WHERE source_id = ?
+                """,
+                (error[:1000], int(time.time()), source_id),
+            )
+
+    def mark_builtin_claimed(self, source_id: str) -> dict[str, Any]:
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE builtin_data_source_claims
+                SET status = 'claimed',
+                    active_endpoint_fingerprint = current_endpoint_fingerprint,
+                    baseline_schema_fingerprint = remote_schema_fingerprint,
+                    last_error = '', claimed_at = ?, updated_at = ?
+                WHERE source_id = ? AND status = 'claim_review'
+                """,
+                (now, now, source_id),
+            )
+            if cursor.rowcount != 1:
+                raise DataSourceConflict("认领状态已变化，不能确认发布")
+        return self.builtin_claim_summary(source_id) or {}
+
     def _insert_bootstrap(
         self,
         connection: sqlite3.Connection,
@@ -476,7 +887,7 @@ class DataSourceCatalog:
                 ?, ?, ?, ?, 'direct_database', 'ready', 1, 1,
                 ?, ?, ?, ?, ?, 'disabled', '', '', '', ?,
                 'environment', ?, '', '', ?, ?,
-                1, ?, ?, '[]', '[]', ?, ?, ?, ?, NULL, 'bootstrap', ''
+                1, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'bootstrap', ''
             )
             """,
             (
@@ -495,16 +906,60 @@ class DataSourceCatalog:
                     ensure_ascii=False,
                     sort_keys=True,
                 ),
-                str(Path(item["metadata_path"]).resolve()),
-                str(Path(item["memory_path"]).resolve()),
+                _store_project_path(item["metadata_path"]),
+                _store_project_path(item["memory_path"]),
                 item.get("selected_tables_count", 0),
                 item.get("selected_columns_count", 0),
+                json.dumps(
+                    item.get("discovered_metadata") or [],
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    item.get("selected_scope") or [],
+                    ensure_ascii=False,
+                ),
                 item.get("routing_summary", ""),
                 json.dumps(item.get("capabilities", []), ensure_ascii=False),
                 now,
                 now,
             ),
         )
+
+    def populate_bootstrap_scope(
+        self,
+        source_id: str,
+        metadata: Iterable[Mapping[str, Any]],
+    ) -> DataSourceRecord:
+        """内置引导源补齐发现元数据与问答范围（不动状态/启用标志）。
+
+        修复历史引导把 discovered_metadata_json / selected_scope_json 写成
+        '[]' 的问题：数据源建议等依赖 selected_scope 的逻辑会读不到任何表。
+        """
+        payload = [dict(item) for item in metadata]
+        if not payload:
+            raise DataSourceCatalogError("引导范围元数据为空")
+        with self._lock, self._connection(write=True) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM data_sources WHERE source_id = ?",
+                (source_id,),
+            ).fetchone()
+            if row is None:
+                raise DataSourceNotFound(f"数据源不存在：{source_id}")
+            connection.execute(
+                """
+                UPDATE data_sources
+                SET discovered_metadata_json = ?, selected_scope_json = ?,
+                    updated_at = ?
+                WHERE source_id = ?
+                """,
+                (
+                    json.dumps(payload, ensure_ascii=False),
+                    json.dumps(payload, ensure_ascii=False),
+                    int(time.time()),
+                    source_id,
+                ),
+            )
+        return self.require(source_id)
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> DataSourceRecord:
@@ -531,8 +986,8 @@ class DataSourceCatalog:
             credential_reference=json.loads(row["credential_reference_json"]),
             encrypted_username=row["encrypted_username"],
             encrypted_password=row["encrypted_password"],
-            metadata_path=Path(row["metadata_path"]),
-            memory_path=Path(row["memory_path"]),
+            metadata_path=_resolve_stored_path(row["metadata_path"]),
+            memory_path=_resolve_stored_path(row["memory_path"]),
             runtime_revision=row["runtime_revision"],
             selected_tables_count=row["selected_tables_count"],
             selected_columns_count=row["selected_columns_count"],
@@ -610,6 +1065,10 @@ class DataSourceCatalog:
         connect_timeout: int = 10,
         username: str,
         password: str,
+        source_id: str | None = None,
+        is_builtin: bool = False,
+        metadata_path: str | Path | None = None,
+        memory_path: str | Path | None = None,
     ) -> DataSourceRecord:
         if database_type not in VALID_DATABASE_TYPES:
             raise DataSourceCatalogError("只支持 mysql 或 postgresql")
@@ -633,8 +1092,25 @@ class DataSourceCatalog:
                 )
             except ValueError as exc:
                 raise DataSourceCatalogError(str(exc)) from None
-        source_id = f"ds_{uuid.uuid4().hex}"
+        source_id = source_id or f"ds_{uuid.uuid4().hex}"
+        if is_builtin:
+            try:
+                self.require(source_id)
+            except DataSourceNotFound:
+                pass
+            else:
+                raise DataSourceConflict(f"内置数据源已存在：{source_id}")
         root = PROJECT_ROOT / "agent_data" / "data_sources" / source_id
+        resolved_metadata_path = (
+            resolve_project_path(metadata_path)
+            if metadata_path is not None
+            else root / "column_metadata_index.json"
+        )
+        resolved_memory_path = (
+            resolve_project_path(memory_path)
+            if memory_path is not None
+            else root / "memory"
+        )
         now = int(time.time())
         with self._lock, self._connection(write=True) as connection:
             connection.execute(
@@ -651,7 +1127,7 @@ class DataSourceCatalog:
                     selected_scope_json, routing_summary, capabilities_json,
                     created_at, updated_at, last_connection_test_at,
                     last_connection_test_status, last_error
-                ) VALUES (?, ?, ?, ?, 'direct_database', 'draft', 0, 0,
+                ) VALUES (?, ?, ?, ?, 'direct_database', 'draft', 0, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'encrypted', '{}', ?, ?, ?, ?,
                     0, 0, 0, '[]', '[]', '', '[]', ?, ?, NULL, '', '')
                 """,
@@ -660,6 +1136,7 @@ class DataSourceCatalog:
                     display_name.strip(),
                     description.strip(),
                     database_type,
+                    int(is_builtin),
                     host.strip(),
                     port,
                     database_name.strip(),
@@ -672,8 +1149,8 @@ class DataSourceCatalog:
                     connect_timeout,
                     self._cipher.encrypt(username),
                     self._cipher.encrypt(password),
-                    str((root / "column_metadata_index.json").resolve()),
-                    str((root / "memory").resolve()),
+                    _store_project_path(resolved_metadata_path),
+                    _store_project_path(resolved_memory_path),
                     now,
                     now,
                 ),
@@ -908,14 +1385,15 @@ class DataSourceCatalog:
             ).fetchone()
             if row is None:
                 raise DataSourceNotFound("数据源不存在")
-
             published = row["runtime_revision"] > 0
             selected_scope = json.loads(row["selected_scope_json"])
             uses_formal_metadata = False
             if published and not selected_scope:
                 try:
                     formal_metadata = json.loads(
-                        Path(row["metadata_path"]).read_text(encoding="utf-8")
+                        _resolve_stored_path(row["metadata_path"]).read_text(
+                            encoding="utf-8"
+                        )
                     )
                 except (OSError, TypeError, ValueError):
                     formal_metadata = []
@@ -997,7 +1475,7 @@ class DataSourceCatalog:
                     break
 
             assets_exist = all(
-                Path(row[name]).expanduser().resolve().exists()
+                _resolve_stored_path(row[name]).exists()
                 for name in ("metadata_path", "memory_path")
             )
             if not published:
@@ -1029,6 +1507,609 @@ class DataSourceCatalog:
                 ),
             )
         return self.require(source_id)
+
+    def replace_table_profiles(
+        self,
+        source_id: str,
+        profiles: Iterable[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """原子替换一个数据源的受限数据画像。"""
+        self.require(source_id)
+        payload = [dict(item) for item in profiles]
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                "DELETE FROM data_source_table_profiles WHERE source_id = ?",
+                (source_id,),
+            )
+            for item in payload:
+                schema_name = str(item.get("schema") or "").strip()
+                table_name = str(item.get("table") or "").strip()
+                if not schema_name or not table_name:
+                    raise DataSourceCatalogError("数据画像缺少 schema 或 table")
+                connection.execute(
+                    """
+                    INSERT INTO data_source_table_profiles (
+                        source_id, schema_name, table_name,
+                        profile_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        source_id,
+                        schema_name,
+                        table_name,
+                        json.dumps(item, ensure_ascii=False),
+                        now,
+                    ),
+                )
+        return payload
+
+    def list_table_profiles(self, source_id: str) -> list[dict[str, Any]]:
+        """读取已持久化的数据画像，不返回数据库连接凭据。"""
+        self.require(source_id)
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT profile_json
+                FROM data_source_table_profiles
+                WHERE source_id = ?
+                ORDER BY schema_name, table_name
+                """,
+                (source_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                item = json.loads(row["profile_json"])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(item, Mapping):
+                result.append(dict(item))
+        return result
+
+    # ------------------------------------------------------------------
+    # 表级准入审核（reviews / runs / history）
+    # ------------------------------------------------------------------
+    _REVIEW_UPDATE_FIELDS = {
+        "business_group",
+        "group_confidence",
+        "compared_tables_json",
+        "group_reason",
+        "proposed_decision",
+        "proposed_score",
+        "proposed_reason",
+        "effective_decision",
+        "decision_source",
+        "decision_reason",
+        "availability_status",
+        "quality_metrics_json",
+        "structure_fingerprint",
+        "data_fingerprint",
+        "review_version",
+        "last_profiled_at",
+        "reviewed_by",
+    }
+
+    def upsert_table_review(
+        self,
+        source_id: str,
+        schema_name: str,
+        table_name: str,
+        **fields: Any,
+    ) -> dict[str, Any]:
+        """写入/更新单表审核状态。effective_decision 默认保留已有值，
+        除非调用方显式传入且 allow_effective_change=True。"""
+        allowed = {
+            key: value
+            for key, value in fields.items()
+            if key in self._REVIEW_UPDATE_FIELDS
+        }
+        now = time.time()
+        with self._lock, self._connection(write=True) as connection:
+            existing = connection.execute(
+                "SELECT * FROM data_source_table_reviews "
+                "WHERE source_id=? AND schema_name=? AND table_name=?",
+                (source_id, schema_name, table_name),
+            ).fetchone()
+            if existing is not None:
+                current = dict(existing)
+                if (
+                    "effective_decision" not in allowed
+                    and current.get("effective_decision")
+                ):
+                    allowed["effective_decision"] = current["effective_decision"]
+                sets = ["updated_at = ?"]
+                params: list[Any] = [now]
+                for key, value in allowed.items():
+                    sets.append(f"{key} = ?")
+                    params.append(value)
+                params.extend((source_id, schema_name, table_name))
+                connection.execute(
+                    "UPDATE data_source_table_reviews SET "
+                    + ", ".join(sets)
+                    + " WHERE source_id=? AND schema_name=? AND table_name=?",
+                    params,
+                )
+            else:
+                defaults: dict[str, Any] = {
+                    "business_group": "",
+                    "group_confidence": 0,
+                    "compared_tables_json": "[]",
+                    "group_reason": "",
+                    "proposed_decision": "",
+                    "proposed_score": None,
+                    "proposed_reason": "",
+                    "effective_decision": "pending",
+                    "decision_source": "",
+                    "decision_reason": "",
+                    "availability_status": "present",
+                    "quality_metrics_json": "{}",
+                    "structure_fingerprint": "",
+                    "data_fingerprint": "",
+                    "review_version": 0,
+                    "last_profiled_at": None,
+                    "reviewed_by": "",
+                }
+                defaults.update(allowed)
+                connection.execute(
+                    """
+                    INSERT INTO data_source_table_reviews (
+                        source_id, schema_name, table_name,
+                        business_group, group_confidence, compared_tables_json,
+                        group_reason, proposed_decision, proposed_score,
+                        proposed_reason, effective_decision, decision_source,
+                        decision_reason, availability_status,
+                        quality_metrics_json, structure_fingerprint,
+                        data_fingerprint, review_version, last_profiled_at,
+                        reviewed_by, created_at, updated_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        source_id,
+                        schema_name,
+                        table_name,
+                        defaults["business_group"],
+                        defaults["group_confidence"],
+                        defaults["compared_tables_json"],
+                        defaults["group_reason"],
+                        defaults["proposed_decision"],
+                        defaults["proposed_score"],
+                        defaults["proposed_reason"],
+                        defaults["effective_decision"],
+                        defaults["decision_source"],
+                        defaults["decision_reason"],
+                        defaults["availability_status"],
+                        defaults["quality_metrics_json"],
+                        defaults["structure_fingerprint"],
+                        defaults["data_fingerprint"],
+                        defaults["review_version"],
+                        defaults["last_profiled_at"],
+                        defaults["reviewed_by"],
+                        now,
+                        now,
+                    ),
+                )
+        return self.get_table_review(source_id, schema_name, table_name)
+
+    def get_table_review(
+        self,
+        source_id: str,
+        schema_name: str,
+        table_name: str,
+    ) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM data_source_table_reviews "
+                "WHERE source_id=? AND schema_name=? AND table_name=?",
+                (source_id, schema_name, table_name),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def list_table_reviews(
+        self,
+        source_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if source_id is not None:
+            clauses.append("source_id = ?")
+            params.append(source_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM data_source_table_reviews"
+                + where
+                + " ORDER BY source_id, schema_name, table_name",
+                params,
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def record_review_run(
+        self,
+        *,
+        run_id: str,
+        source_id: str,
+        review_version: int,
+        status: str,
+        discovered_tables: int = 0,
+        profiled_tables: int = 0,
+        error: str = "",
+        created_by: str = "",
+    ) -> dict[str, Any]:
+        now = time.time()
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO data_source_review_runs (
+                    run_id, source_id, review_version, status,
+                    discovered_tables, profiled_tables, started_at,
+                    finished_at, error, created_by
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    run_id,
+                    source_id,
+                    review_version,
+                    status,
+                    discovered_tables,
+                    profiled_tables,
+                    now,
+                    now if status in {"succeeded", "failed"} else None,
+                    error,
+                    created_by,
+                ),
+            )
+        return {
+            "run_id": run_id,
+            "source_id": source_id,
+            "status": status,
+        }
+
+    def finish_review_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        profiled_tables: int,
+        error: str = "",
+    ) -> None:
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE data_source_review_runs
+                SET status=?, profiled_tables=?, finished_at=?, error=?
+                WHERE run_id=?
+                """,
+                (status, profiled_tables, time.time(), error, run_id),
+            )
+
+    def append_review_history(
+        self,
+        run_id: str,
+        snapshots: Iterable[Mapping[str, Any]],
+    ) -> None:
+        now = time.time()
+        with self._lock, self._connection(write=True) as connection:
+            for item in snapshots:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO data_source_review_history (
+                        run_id, source_id, schema_name, table_name,
+                        proposed_decision, proposed_score,
+                        effective_decision, availability_status,
+                        quality_metrics_json, compared_tables_json, created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        run_id,
+                        str(item.get("source_id") or ""),
+                        str(item.get("schema_name") or ""),
+                        str(item.get("table_name") or ""),
+                        str(item.get("proposed_decision") or ""),
+                        item.get("proposed_score"),
+                        str(item.get("effective_decision") or ""),
+                        str(item.get("availability_status") or ""),
+                        str(item.get("quality_metrics_json") or "{}"),
+                        str(item.get("compared_tables_json") or "[]"),
+                        now,
+                    ),
+                )
+
+    def migrate_table_reviews_from_existing(
+        self,
+        source_id: str,
+    ) -> dict[str, Any]:
+        """首次启用审核器：把现有 selected_scope 迁移为 effective active，
+        已发现但未选中的表迁移为 effective pending（无法证明曾经过正式审核）。"""
+        record = self.require(source_id)
+
+        def schema_of(item: Mapping[str, Any]) -> str:
+            return str(
+                item.get("schema")
+                or record.schema_name
+                or (
+                    record.database_name
+                    if record.database_type == "mysql"
+                    else ""
+                )
+                or ""
+            )
+
+        selected = {
+            (schema_of(item), str(item.get("table") or ""))
+            for item in record.selected_scope
+            if item.get("table")
+        }
+        discovered = {
+            (schema_of(item), str(item.get("table") or ""))
+            for item in record.discovered_metadata
+            if item.get("table")
+        }
+        run_id = f"migration-{source_id}-{int(time.time())}"
+        active_count = 0
+        pending_count = 0
+        for schema, table in sorted(selected):
+            self.upsert_table_review(
+                source_id,
+                schema,
+                table,
+                effective_decision="active",
+                decision_source="migration",
+                decision_reason="existing_selected_scope",
+                availability_status="present",
+                reviewed_by="migration",
+            )
+            active_count += 1
+        for schema, table in sorted(discovered - selected):
+            self.upsert_table_review(
+                source_id,
+                schema,
+                table,
+                effective_decision="pending",
+                decision_source="migration",
+                decision_reason="legacy_unclassified",
+                availability_status="present",
+                reviewed_by="migration",
+            )
+            pending_count += 1
+        self.record_review_run(
+            run_id=run_id,
+            source_id=source_id,
+            review_version=0,
+            status="migration",
+            discovered_tables=len(discovered),
+            profiled_tables=0,
+            created_by="migration",
+        )
+        return {
+            "run_id": run_id,
+            "active": active_count,
+            "pending": pending_count,
+            "discovered": len(discovered),
+            "selected": len(selected),
+        }
+
+    def rollback_review_schema(self) -> dict[str, Any]:
+        """回滚审核 schema（v10 -> v9）：删除三张审核表并还原版本号。"""
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute("DROP TABLE IF EXISTS data_source_review_history")
+            connection.execute("DROP TABLE IF EXISTS data_source_review_runs")
+            connection.execute("DROP TABLE IF EXISTS data_source_table_reviews")
+            connection.execute(
+                "UPDATE system_schema_versions SET version=9, updated_at=? "
+                "WHERE component=?",
+                (int(time.time()), SCHEMA_COMPONENT),
+            )
+        return {"rolled_back_to": 9}
+
+    @staticmethod
+    def _job_dict(row: sqlite3.Row) -> dict[str, Any]:
+        try:
+            result = json.loads(row["result_json"])
+        except (TypeError, ValueError):
+            result = {}
+        return {
+            "job_id": row["job_id"],
+            "source_id": row["source_id"],
+            "job_type": row["job_type"],
+            "status": row["status"],
+            "phase": row["phase"],
+            "current_count": row["current_count"],
+            "total_count": row["total_count"],
+            "message": row["message"],
+            "result": result if isinstance(result, Mapping) else {},
+            "error": row["error"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def create_onboarding_job(
+        self,
+        source_id: str,
+        job_type: str,
+    ) -> dict[str, Any]:
+        """创建任务；同一数据源同一时刻只允许一个活动任务。"""
+        self.require(source_id)
+        if job_type not in {
+            "analyze",
+            "activate",
+            "review",
+            "claim_preview",
+            "claim_publish",
+        }:
+            raise DataSourceCatalogError("不支持的接入任务类型")
+        now = int(time.time())
+        job_id = f"job_{uuid.uuid4().hex}"
+        with self._lock, self._connection(write=True) as connection:
+            active = connection.execute(
+                """
+                SELECT job_id FROM data_source_onboarding_jobs
+                WHERE source_id = ? AND status IN ('queued', 'running')
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (source_id,),
+            ).fetchone()
+            if active is not None:
+                raise DataSourceConflict("该数据源已有分析或构建任务正在运行")
+            connection.execute(
+                """
+                INSERT INTO data_source_onboarding_jobs (
+                    job_id, source_id, job_type, status, phase,
+                    current_count, total_count, message, result_json,
+                    error, created_at, updated_at
+                ) VALUES (?, ?, ?, 'queued', 'queued', 0, 0, '', '{}', '', ?, ?)
+                """,
+                (job_id, source_id, job_type, now, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM data_source_onboarding_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return self._job_dict(row)
+
+    def update_onboarding_job(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        phase: str | None = None,
+        current_count: int | None = None,
+        total_count: int | None = None,
+        message: str | None = None,
+        result: Mapping[str, Any] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        allowed_statuses = {"queued", "running", "succeeded", "failed"}
+        if status is not None and status not in allowed_statuses:
+            raise DataSourceCatalogError("不支持的任务状态")
+        assignments = ["updated_at = ?"]
+        values: list[Any] = [int(time.time())]
+        for name, value in (
+            ("status", status),
+            ("phase", phase),
+            ("current_count", current_count),
+            ("total_count", total_count),
+            ("message", message),
+            ("error", error),
+        ):
+            if value is not None:
+                assignments.append(f"{name} = ?")
+                values.append(value)
+        if result is not None:
+            assignments.append("result_json = ?")
+            values.append(json.dumps(dict(result), ensure_ascii=False))
+        values.append(job_id)
+        with self._lock, self._connection(write=True) as connection:
+            cursor = connection.execute(
+                f"UPDATE data_source_onboarding_jobs SET {', '.join(assignments)} WHERE job_id = ?",
+                values,
+            )
+            if cursor.rowcount != 1:
+                raise DataSourceNotFound("接入任务不存在")
+            row = connection.execute(
+                "SELECT * FROM data_source_onboarding_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return self._job_dict(row)
+
+    def current_onboarding_job(self, source_id: str) -> dict[str, Any] | None:
+        self.require(source_id)
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM data_source_onboarding_jobs
+                WHERE source_id = ? ORDER BY created_at DESC LIMIT 1
+                """,
+                (source_id,),
+            ).fetchone()
+        return self._job_dict(row) if row is not None else None
+
+    def recover_onboarding_jobs(self) -> list[dict[str, Any]]:
+        """进程重启后把中断的 running 任务重新排队。"""
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE data_source_onboarding_jobs
+                SET status = 'queued', phase = 'recovered',
+                    message = '服务重启，任务已重新排队', updated_at = ?
+                WHERE status = 'running'
+                """,
+                (int(time.time()),),
+            )
+            rows = connection.execute(
+                """
+                SELECT * FROM data_source_onboarding_jobs
+                WHERE status = 'queued' ORDER BY created_at
+                """
+            ).fetchall()
+        return [self._job_dict(row) for row in rows]
+
+    def replace_verified_sql_memories(
+        self,
+        source_id: str,
+        records: Iterable[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """只保存已经通过 SQLGuard 和真实只读执行的 Tool Memory。"""
+        self.require(source_id)
+        payload = [dict(item) for item in records]
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                "DELETE FROM data_source_verified_sql_memories WHERE source_id = ?",
+                (source_id,),
+            )
+            for item in payload:
+                record_id = str(item.get("record_id") or "").strip()
+                question = str(item.get("question") or "").strip()
+                sql = str(item.get("sql") or "").strip()
+                metadata = item.get("metadata")
+                if not record_id or not question or not sql or not isinstance(metadata, Mapping):
+                    raise DataSourceCatalogError("已验证 SQL Memory 结构不完整")
+                connection.execute(
+                    """
+                    INSERT INTO data_source_verified_sql_memories (
+                        source_id, record_id, question, sql_text,
+                        memory_metadata_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        source_id,
+                        record_id,
+                        question,
+                        sql,
+                        json.dumps(dict(metadata), ensure_ascii=False),
+                        now,
+                    ),
+                )
+        return payload
+
+    def list_verified_sql_memories(self, source_id: str) -> list[dict[str, Any]]:
+        self.require(source_id)
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT record_id, question, sql_text, memory_metadata_json
+                FROM data_source_verified_sql_memories
+                WHERE source_id = ? ORDER BY record_id
+                """,
+                (source_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                metadata = json.loads(row["memory_metadata_json"])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(metadata, Mapping):
+                result.append(
+                    {
+                        "record_id": row["record_id"],
+                        "question": row["question"],
+                        "sql": row["sql_text"],
+                        "metadata": dict(metadata),
+                    }
+                )
+        return result
 
     def save_scope(
         self,
@@ -1134,7 +2215,7 @@ class DataSourceCatalog:
                 """,
                 (
                     routing_summary,
-                    str(memory_path.resolve()) if memory_path else None,
+                    _store_project_path(memory_path) if memory_path else None,
                     now,
                     source_id,
                 ),
@@ -1163,7 +2244,7 @@ class DataSourceCatalog:
                     int(snapshot.enabled_for_chat),
                     snapshot.runtime_revision,
                     snapshot.routing_summary,
-                    str(snapshot.memory_path.resolve()),
+                    _store_project_path(snapshot.memory_path),
                     snapshot.updated_at,
                     snapshot.last_error,
                     source_id,
@@ -1200,6 +2281,21 @@ class DataSourceCatalog:
             ).fetchone()
             if row is None:
                 raise DataSourceNotFound("数据源不存在")
+            if enabled and bool(row["is_builtin"]):
+                claim = connection.execute(
+                    """
+                    SELECT status FROM builtin_data_source_claims
+                    WHERE source_id = ?
+                    """,
+                    (source_id,),
+                ).fetchone()
+                if claim is not None and claim["status"] not in {
+                    "not_required",
+                    "claimed",
+                }:
+                    raise DataSourceCatalogError(
+                        "远程本尊必须完成增量认领后才能启用问数"
+                    )
             if row["status"] != expected_status:
                 action = "启用" if enabled else "停用"
                 raise DataSourceCatalogError(
@@ -1208,8 +2304,8 @@ class DataSourceCatalog:
             if row["runtime_revision"] <= 0:
                 raise DataSourceCatalogError("数据源尚未完成问数资产发布")
             asset_paths = (
-                Path(row["metadata_path"]).expanduser().resolve(),
-                Path(row["memory_path"]).expanduser().resolve(),
+                _resolve_stored_path(row["metadata_path"]),
+                _resolve_stored_path(row["memory_path"]),
             )
             if not all(path.exists() for path in asset_paths):
                 raise DataSourceCatalogError("当前正式 Metadata 或 Memory 不存在")
@@ -1290,7 +2386,7 @@ class DataSourceCatalog:
                 """,
                 (
                     source_id,
-                    str(path.expanduser().resolve()),
+                    _store_project_path(path),
                     asset_type,
                     int(time.time()),
                     error[:1000],
@@ -1327,12 +2423,15 @@ class DataSourceCatalog:
                     (
                         source_id,
                         batch_id,
-                        str(candidate_root.expanduser().resolve()),
-                        str(candidate_memory.expanduser().resolve()),
-                        str(published_memory_path.expanduser().resolve()),
-                        json.dumps(dict(snapshot or {}), ensure_ascii=False),
+                        _store_project_path(candidate_root),
+                        _store_project_path(candidate_memory),
+                        _store_project_path(published_memory_path),
                         json.dumps(
-                            [dict(item) for item in asset_plan],
+                            _store_path_mapping(snapshot or {}),
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            _store_asset_plan(asset_plan),
                             ensure_ascii=False,
                         ),
                         phase,
@@ -1365,7 +2464,7 @@ class DataSourceCatalog:
         if backup_paths is not None:
             assignments.append("backup_paths_json = ?")
             values.append(json.dumps(
-                [str(path.expanduser().resolve()) for path in backup_paths],
+                [_store_project_path(path) for path in backup_paths],
                 ensure_ascii=False,
             ))
         if backed_up_assets is not None:
@@ -1450,11 +2549,21 @@ class DataSourceCatalog:
         return tuple(
             {
                 **dict(row),
-                "backup_paths": tuple(
-                    json.loads(row["backup_paths_json"])
+                "candidate_root": str(_resolve_stored_path(row["candidate_root"])),
+                "candidate_memory": str(_resolve_stored_path(row["candidate_memory"])),
+                "published_memory_path": str(
+                    _resolve_stored_path(row["published_memory_path"])
                 ),
-                "snapshot": json.loads(row["snapshot_json"]),
-                "asset_plan": tuple(json.loads(row["asset_plan_json"])),
+                "backup_paths": tuple(
+                    str(_resolve_stored_path(value))
+                    for value in json.loads(row["backup_paths_json"])
+                ),
+                "snapshot": _resolve_path_mapping(
+                    json.loads(row["snapshot_json"])
+                ),
+                "asset_plan": tuple(
+                    _resolve_asset_plan(json.loads(row["asset_plan_json"]))
+                ),
                 "backed_up_assets": tuple(
                     json.loads(row["backed_up_assets_json"])
                 ),
@@ -1508,7 +2617,10 @@ class DataSourceCatalog:
                 + " ORDER BY created_at, source_id, path",
                 parameters,
             ).fetchall()
-        return tuple(dict(row) for row in rows)
+        return tuple(
+            {**dict(row), "path": str(_resolve_stored_path(row["path"]))}
+            for row in rows
+        )
 
     def complete_pending_cleanup(self, source_id: str, path: Path) -> None:
         with self._lock, self._connection(write=True) as connection:
@@ -1517,7 +2629,7 @@ class DataSourceCatalog:
                 DELETE FROM pending_asset_cleanup
                 WHERE source_id = ? AND path = ?
                 """,
-                (source_id, str(path.expanduser().resolve())),
+                (source_id, _store_project_path(path)),
             )
 
     def fail_pending_cleanup(
@@ -1536,7 +2648,7 @@ class DataSourceCatalog:
                 (
                     error[:1000],
                     source_id,
-                    str(path.expanduser().resolve()),
+                    _store_project_path(path),
                 ),
             )
 

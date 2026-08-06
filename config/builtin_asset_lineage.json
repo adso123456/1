@@ -1,0 +1,18 @@
+{
+  "mysql-lzh-monitor": {
+    "database_type": "mysql",
+    "database_name": "lzh_monitor",
+    "schema_name": "",
+    "origin_role": "local_replica",
+    "origin_hosts": ["127.0.0.1", "localhost", "host.docker.internal"],
+    "origin_port": 3307
+  },
+  "postgresql-main": {
+    "database_type": "postgresql",
+    "database_name": "gt_monitor",
+    "schema_name": "public",
+    "origin_role": "local_replica",
+    "origin_hosts": ["127.0.0.1", "localhost", "host.docker.internal"],
+    "origin_port": 5433
+  }
+}

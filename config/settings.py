@@ -5,8 +5,23 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ENV_PATH = (PROJECT_ROOT / ".env").resolve()
+if PROJECT_ENV_PATH.is_file():
+    # 项目配置以 .env 为唯一部署来源，覆盖宿主机同名环境变量。
+    load_dotenv(PROJECT_ENV_PATH, override=True)
+
+
+def resolve_project_path(value: str | os.PathLike[str]) -> Path:
+    """将项目内相对路径统一解析到项目根目录。"""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path.resolve()
+
 METADATA_INDEX_PATH_ENV = "METADATA_INDEX_PATH"
 DEFAULT_METADATA_INDEX_PATH = (
     PROJECT_ROOT / "agent_data" / "column_metadata_index.json"
@@ -14,14 +29,14 @@ DEFAULT_METADATA_INDEX_PATH = (
 
 configured_path = os.getenv("VANNA_DATA_DIR", "").strip()
 CHROMA_DIR = str(
-    Path(configured_path).expanduser().resolve()
+    resolve_project_path(configured_path)
     if configured_path
     else (PROJECT_ROOT / "vanna_data").resolve()
 )
 
 configured_agent_data = os.getenv("AGENT_DATA_DIR", "").strip()
 AGENT_DATA_DIR = str(
-    Path(configured_agent_data).expanduser().resolve()
+    resolve_project_path(configured_agent_data)
     if configured_agent_data
     else (PROJECT_ROOT / "agent_data").resolve()
 )
