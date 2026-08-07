@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -324,6 +327,371 @@ def _run_candidate_root_traversal(root: Path) -> None:
     print("[PASS] 候选根目录被篡改为受管目录外时保留证据并拒绝清理")
 
 
+def _fake_record(
+    is_builtin: bool,
+    metadata_path: Path,
+    memory_path: Path,
+) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        is_builtin=is_builtin,
+        metadata_path=Path(metadata_path),
+        memory_path=Path(memory_path),
+    )
+
+
+def _run_managed_root_contract(root: Path) -> None:
+    """A/B/C：_managed_root 支持 builtin 共置布局；动态布局不变；越界失败关闭。"""
+    import backend.data_source_connectors as connectors
+
+    tmp_project = root / "project"
+    agent_data = tmp_project / "agent_data"
+
+    # A. builtin 共置布局：agent_data/<source_id>
+    sid = "mysql-lzh-monitor"
+    builtin_root = agent_data / sid
+    with patch.object(connectors, "PROJECT_ROOT", tmp_project):
+        record = _fake_record(
+            True,
+            builtin_root / "column_metadata_index.json",
+            builtin_root / "mem.revision-1-x",
+        )
+        managed = DataSourceAssetCleaner._managed_root(sid, record)
+        assert managed == builtin_root.resolve(), managed
+
+    # B. 普通动态数据源布局不变：agent_data/data_sources/<source_id>
+    sid2 = "dynamic-source"
+    dynamic_root = agent_data / "data_sources" / sid2
+    with patch.object(connectors, "PROJECT_ROOT", tmp_project):
+        record = _fake_record(
+            False,
+            dynamic_root / "column_metadata_index.json",
+            dynamic_root / "memory",
+        )
+        managed = DataSourceAssetCleaner._managed_root(sid2, record)
+        assert managed == dynamic_root.resolve(), managed
+
+    # C. 越界失败关闭
+    with patch.object(connectors, "PROJECT_ROOT", tmp_project):
+        # metadata 不在受管根
+        record = _fake_record(False, root / "elsewhere" / "m.json", dynamic_root / "memory")
+        assert DataSourceAssetCleaner._managed_root(sid2, record) is None
+        # memory 不与 metadata 共根
+        record = _fake_record(False, dynamic_root / "m.json", root / "elsewhere" / "mem")
+        assert DataSourceAssetCleaner._managed_root(sid2, record) is None
+        # builtin 路径不在 agent_data/<source_id>
+        record = _fake_record(True, agent_data / "other" / "m.json", agent_data / "other" / "mem")
+        assert DataSourceAssetCleaner._managed_root(sid, record) is None
+
+    # symlink/junction 越界（平台不支持则跳过）
+    symlink_target = root / "outside"
+    symlink_target.mkdir(parents=True)
+    link = agent_data / "builtin-link-sid"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        try:
+            link.symlink_to(symlink_target, target_is_directory=True)
+        except OSError:
+            if os.name == "nt":
+                junction = subprocess.run(
+                    ["cmd", "/c", "mklink", "/J", str(link), str(symlink_target)],
+                    capture_output=True,
+                    text=True,
+                )
+                if junction.returncode != 0:
+                    raise OSError(junction.stderr or "mklink failed")
+            else:
+                raise
+    except OSError:
+        print("[SKIP] symlink/junction 创建不被平台允许")
+        return
+    try:
+        with patch.object(connectors, "PROJECT_ROOT", tmp_project):
+            record = _fake_record(
+                True,
+                link / "column_metadata_index.json",
+                link / "mem",
+            )
+            assert DataSourceAssetCleaner._managed_root(sid, record) is None
+    finally:
+        if link.exists() or link.is_symlink():
+            link.unlink()
+    print("[PASS] managed-root contract A/B/C")
+
+
+def _run_builtin_rollback_recovery(root: Path) -> None:
+    """D：builtin rollback_failed 真实现场恢复（base 资产完整 + 候选/目标残留）。"""
+    import backend.data_source_connectors as connectors
+
+    key = Fernet.generate_key().decode("ascii")
+    catalog = DataSourceCatalog(
+        root / "catalog.sqlite3",
+        cipher=CredentialCipher(key),
+        environ={},
+    )
+    catalog.initialize()
+    tmp_project = root / "project"
+    managed_root = tmp_project / "agent_data" / "mysql-lzh-monitor"
+    source = catalog.create(
+        display_name="builtin-recovery",
+        description="builtin-recovery",
+        database_type="postgresql",
+        host="127.0.0.1",
+        port=5433,
+        database_name="test",
+        schema_name="public",
+        username="test",
+        password="test",
+        source_id="mysql-lzh-monitor",
+        metadata_path=managed_root / "column_metadata_index.json",
+        memory_path=managed_root / "mem.revision-1-base",
+    )
+    source_id = source.source_id
+    managed_root.mkdir(parents=True, exist_ok=True)
+    metadata_file = managed_root / "column_metadata_index.json"
+    metadata_bytes = json.dumps(METADATA, ensure_ascii=False).encode("utf-8")
+    metadata_file.write_bytes(metadata_bytes)
+    ddl_file = managed_root / "ddl_memories.json"
+    ddl_file.write_text(json.dumps(["CREATE TABLE x (id int)"]), encoding="utf-8")
+    docs_file = managed_root / "business_documents.json"
+    docs_file.write_text(json.dumps(["docs"]), encoding="utf-8")
+    manifest_file = managed_root / "asset_manifest.json"
+    manifest_file.write_text(json.dumps({"source_id": source_id}), encoding="utf-8")
+    base_memory = managed_root / "mem.revision-1-base"
+    base_memory.mkdir(parents=True)
+    (base_memory / ".asset_identity.json").write_text("{}", encoding="utf-8")
+    (base_memory / "chroma.sqlite3").write_text("fake-base", encoding="utf-8")
+
+    batch_id = "2-1234567890-abcdef"
+    candidate_root = managed_root / f"candidate-{batch_id}"
+    candidate_root.mkdir(parents=True)
+    for name in (
+        "column_metadata_index.json",
+        "ddl_memories.json",
+        "business_documents.json",
+        "asset_manifest.json",
+        "asset_provenance.json",
+    ):
+        (candidate_root / name).write_text("candidate", encoding="utf-8")
+    target_memory = managed_root / f"mem.revision-2-{batch_id}"
+    target_memory.mkdir(parents=True)
+    (target_memory / "chroma.sqlite3").write_text("partial", encoding="utf-8")
+
+    with catalog._lock, catalog._connection(write=True) as connection:
+        connection.execute(
+            """
+            UPDATE data_sources SET is_builtin=1, status='error',
+                enabled_for_chat=0, runtime_revision=1,
+                last_error='数据源发布回滚失败，请重启服务执行恢复',
+                metadata_path=?, memory_path=?
+            WHERE source_id=?
+            """,
+            (str(metadata_file), str(base_memory), source_id),
+        )
+    snapshot = {
+        "base_runtime_revision": 1,
+        "target_runtime_revision": 2,
+        "base_status": "metadata_ready",
+        "base_enabled_for_chat": False,
+        "base_routing_summary": "",
+        "base_memory_path": str(base_memory),
+        "target_memory_path": str(target_memory),
+        "base_scope_fingerprint": "fp",
+        "base_review_policy_fingerprint": "fp2",
+        "base_updated_at": int(time.time()),
+        "base_last_error": "",
+    }
+    cleaner = DataSourceAssetCleaner(catalog)
+    base_hashes = {
+        "metadata": cleaner._path_hash(metadata_file),
+        "ddl": cleaner._path_hash(ddl_file),
+        "documentation": cleaner._path_hash(docs_file),
+        "manifest": cleaner._path_hash(manifest_file),
+    }
+    formal_names = {
+        "metadata": "column_metadata_index.json",
+        "memory": target_memory.name,
+        "ddl": "ddl_memories.json",
+        "documentation": "business_documents.json",
+        "provenance": "asset_provenance.json",
+        "manifest": "asset_manifest.json",
+    }
+    plan = []
+    for name, formal_name in formal_names.items():
+        formal = managed_root / formal_name
+        candidate = (
+            target_memory if name == "memory" else candidate_root / formal_name
+        )
+        plan.append(
+            {
+                "name": name,
+                "candidate": str(candidate),
+                "formal": str(formal),
+                "backup": str(
+                    formal.with_name(f".{formal.name}.backup-{batch_id}")
+                ),
+                "base_existed": name not in {"memory", "provenance"},
+                "base_hash": base_hashes.get(name, ""),
+                "target_hash": "",
+            }
+        )
+    with catalog._lock, catalog._connection(write=True) as connection:
+        connection.execute(
+            """
+            INSERT INTO active_asset_batches (
+                source_id, batch_id, candidate_root, candidate_memory,
+                published_memory_path, backup_paths_json, snapshot_json,
+                asset_plan_json, backed_up_assets_json, installed_assets_json,
+                phase, started_at, updated_at, owner_pid, last_error
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                source_id,
+                batch_id,
+                str(candidate_root),
+                str(target_memory),
+                str(target_memory),
+                "[]",
+                json.dumps(snapshot, ensure_ascii=False),
+                json.dumps(plan, ensure_ascii=False),
+                "[]",
+                "[]",
+                "rollback_failed",
+                int(time.time()),
+                int(time.time()),
+                0,
+                "DataSourceCatalogError: 发布回滚失败",
+            ),
+        )
+
+    with patch.object(connectors, "PROJECT_ROOT", tmp_project):
+        DataSourceAssetCleaner(catalog, _manager(catalog)).recover_incomplete_batches(
+            source_id, grace_seconds=0
+        )
+
+    current = catalog.require(source_id)
+    assert not catalog.active_asset_batches(source_id)
+    assert current.status == "metadata_ready"
+    assert current.runtime_revision == 1
+    assert not current.enabled_for_chat
+    assert not candidate_root.exists()
+    assert not target_memory.exists()
+    assert metadata_file.read_bytes() == metadata_bytes
+    assert not (managed_root / "asset_provenance.json").exists()
+    assert base_memory.exists()
+    print("[PASS] builtin rollback_failed recovery")
+
+
+def _run_chroma_metadata_sanitize(root: Path) -> None:
+    """E/F：chroma:* 保留键在 preserved / extra 两条来源都被剥离。"""
+    sid = "mysql-lzh-monitor"
+    cleaned = DataSourceAssetPreparer._sanitize_chroma_metadata(
+        {
+            "chroma:document": "doc",
+            "chroma:future": 1,
+            "record_id": "r1",
+            "question": "q",
+            "args_json": "{}",
+            "content_fingerprint": "fp",
+            "category": "sql_example",
+            "tool_name": "run_sql",
+            "source_id": sid,
+        }
+    )
+    assert "chroma:document" not in cleaned
+    assert "chroma:future" not in cleaned
+    assert cleaned["record_id"] == "r1"
+    assert cleaned["tool_name"] == "run_sql"
+    assert cleaned["question"] == "q"
+    assert cleaned["content_fingerprint"] == "fp"
+    assert cleaned["args_json"] == "{}"
+    assert cleaned["category"] == "sql_example"
+
+    # F-extra：_merge_extra_sql_tool_records 剥离保留键
+    preserved = [("a", "qa", {"tool_name": "run_sql", "source_id": sid, "record_id": "a"})]
+    extra = [
+        (
+            "b",
+            "qb",
+            {
+                "tool_name": "run_sql",
+                "source_id": sid,
+                "record_id": "b",
+                "question": "qb",
+                "args_json": '{"sql": "SELECT 1"}',
+                "chroma:document": "hidden",
+                "chroma:future": 1,
+            },
+        )
+    ]
+    merged = DataSourceAssetPreparer._merge_extra_sql_tool_records(
+        preserved, extra, source_id=sid
+    )
+    item_b = dict(merged[1][2])
+    assert "chroma:document" not in item_b
+    assert "chroma:future" not in item_b
+    assert item_b["record_id"] == "b"
+    assert item_b["question"] == "qb"
+    assert item_b["args_json"] == '{"sql": "SELECT 1"}'
+    assert item_b["tool_name"] == "run_sql"
+
+    # F-preserved：_preserved_sql_tool_payload 从旧 Memory 回读后剥离
+    metadata_dir = root / "meta"
+    metadata_dir.mkdir(parents=True)
+    metadata_path = metadata_dir / "index.json"
+    metadata_path.write_text(
+        json.dumps(
+            [{"table": "water_data", "column": "id", "type": "int", "comment": ""}],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory_dir = root / "old-memory"
+    memory_dir.mkdir(parents=True)
+    import backend.memory as memory_module
+
+    fake = _FakeMemory(memory_dir)
+    fake.collection.add(
+        ids=["sql-1"],
+        documents=["查询 water_data"],
+        metadatas=[
+            {
+                "category": "sql_example",
+                "tool_name": "run_sql",
+                "source_id": sid,
+                "question": "查询 water_data",
+                "record_id": "sql-1",
+                "args_json": '{"sql": "SELECT id FROM water_data"}',
+                "content_fingerprint": "fp1",
+                "chroma:document": "查询 water_data",
+                "chroma:future": 2,
+            }
+        ],
+    )
+    with patch.object(
+        memory_module,
+        "create_memory",
+        side_effect=lambda path: _FakeMemory(Path(path)),
+    ):
+        payload = DataSourceAssetPreparer._preserved_sql_tool_payload(
+            source_id=sid,
+            memory_path=memory_dir,
+            metadata_path=metadata_path,
+            database_type="postgresql",
+            generated_records=[],
+        )
+    assert len(payload) == 1
+    record_id, document, item = payload[0]
+    assert record_id == "sql-1"
+    assert "chroma:document" not in item
+    assert "chroma:future" not in item
+    assert item["record_id"] == "sql-1"
+    assert item["tool_name"] == "run_sql"
+    assert item["question"] == "查询 water_data"
+    assert item["args_json"] == '{"sql": "SELECT id FROM water_data"}'
+    assert item["content_fingerprint"] == "fp1"
+    print("[PASS] chroma reserved metadata sanitized (preserved + extra)")
+
+
 def main() -> int:
     points = (
         "after_batch_registered",
@@ -360,6 +728,9 @@ def main() -> int:
             _run_second_crash(root / "second-crash")
             _run_disable_race(root / "disable-race")
             _run_candidate_root_traversal(root / "path-traversal")
+        _run_managed_root_contract(root / "managed-root-contract")
+        _run_builtin_rollback_recovery(root / "builtin-rollback-recovery")
+        _run_chroma_metadata_sanitize(root / "chroma-metadata-sanitize")
     print("data source crash recovery: all checks passed")
     return 0
 

@@ -460,17 +460,53 @@ class DataSourceAssetCleaner:
 
     @staticmethod
     def _managed_root(source_id: str, record: Any) -> Path | None:
+        """受管资产根（fail closed）。
+
+        支持两种受管布局：
+          - 普通动态数据源：PROJECT_ROOT/agent_data/data_sources/<source_id>
+          - 内置数据源共置布局：PROJECT_ROOT/agent_data/<source_id>
+        必须同时满足：
+          - metadata_path.parent == memory_path.parent == 受管根；
+          - 受管目录链不得通过 symlink/junction 越出 agent_data。
+        不满足任一条件返回 None，恢复/清理一律失败关闭。
+        """
         if record.is_builtin:
-            return None
-        expected = (
-            PROJECT_ROOT / "agent_data" / "data_sources" / source_id
-        ).resolve()
+            expected = (PROJECT_ROOT / "agent_data" / source_id).resolve()
+        else:
+            expected = (
+                PROJECT_ROOT / "agent_data" / "data_sources" / source_id
+            ).resolve()
         if (
             record.metadata_path.resolve().parent != expected
             or record.memory_path.resolve().parent != expected
         ):
             return None
+        if not DataSourceAssetCleaner._managed_chain_safe(expected):
+            return None
         return expected
+
+    @staticmethod
+    def _managed_chain_safe(root: Path) -> bool:
+        """受管目录链安全性：resolve 后必须落在 agent_data 内，
+        且链上每个 symlink/junction 的目标不得越出 agent_data。"""
+        base = (PROJECT_ROOT / "agent_data").resolve()
+        try:
+            root.resolve().relative_to(base)
+        except ValueError:
+            return False
+        current = PROJECT_ROOT
+        try:
+            relative = Path(str(root)).relative_to(PROJECT_ROOT)
+        except ValueError:
+            return False
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                try:
+                    current.resolve().relative_to(base)
+                except ValueError:
+                    return False
+        return True
 
     def cleanup_superseded_assets(self, source_id: str) -> dict[str, int]:
         record = self.catalog.require(source_id)
@@ -1092,6 +1128,22 @@ class DataSourceAssetPreparer:
         return [item["document"] for item in records]
 
     @staticmethod
+    def _sanitize_chroma_metadata(
+        metadata: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        """剥离 Chroma 保留命名空间（chroma:*），其余业务字段完全不变。
+
+        旧正式 Chroma / runtime learning 回读的 metadata 可能携带
+        chroma:document 等存储引擎保留键，直接送 collection.add() 会被
+        Chroma 拒绝（reserved key）。这些键不是 SQL Tool Memory 业务身份的一部分。
+        """
+        return {
+            str(key): value
+            for key, value in dict(metadata or {}).items()
+            if not str(key).startswith("chroma:")
+        }
+
+    @staticmethod
     def _preserved_sql_tool_payload(
         *,
         source_id: str,
@@ -1143,7 +1195,9 @@ class DataSourceAssetPreparer:
                 continue
             ids.append(record_id)
             documents.append(str(record.get("question") or ""))
-            metadatas.append(dict(metadata))
+            metadatas.append(
+                DataSourceAssetPreparer._sanitize_chroma_metadata(metadata)
+            )
             known_ids.add(record_id)
         if not (len(ids) == len(documents) == len(metadatas)):
             raise DataSourceCatalogError("旧 SQL Tool Memory 结构不完整")
@@ -1159,7 +1213,7 @@ class DataSourceAssetPreparer:
         for record_id, document, metadata in zip(
             ids, documents, metadatas, strict=True
         ):
-            item = dict(metadata or {})
+            item = DataSourceAssetPreparer._sanitize_chroma_metadata(metadata)
             if item.get("source_id") not in {None, "", source_id}:
                 raise DataSourceCatalogError("SQL Tool Memory 数据源不匹配")
             if item.get("tool_name") != "run_sql":
@@ -1198,7 +1252,7 @@ class DataSourceAssetPreparer:
         existing_ids = {record_id for record_id, _, _ in preserved}
         merged: list[tuple[str, str, dict[str, Any]]] = list(preserved)
         for record_id, document, metadata in extra:
-            item = dict(metadata or {})
+            item = DataSourceAssetPreparer._sanitize_chroma_metadata(metadata)
             if str(item.get("tool_name") or "") != "run_sql":
                 raise DataSourceCatalogError(
                     "额外 Tool Memory 仅允许 run_sql"
