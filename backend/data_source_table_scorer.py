@@ -64,6 +64,11 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
             "login_log", "oper_log", "audit_log", "system log",
             "登录日志", "操作日志", "系统日志",
         ),
+        # 复合强语义词：单独命中即为一族 strong semantic evidence。
+        "strong_semantic": (
+            "login_log", "oper_log", "audit_log", "system log",
+            "登录日志", "操作日志", "系统日志",
+        ),
         "columns": (
             "user", "operator", "ip", "request_uri", "method",
             "module", "action", "browser", "os", "login_time",
@@ -74,6 +79,7 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
             "route", "menu", "role", "permission", "oauth",
             "platform config", "路由", "菜单", "角色", "权限",
         ),
+        "strong_semantic": ("platform config",),
         "columns": (
             "path", "component", "permission", "role_id", "menu_id",
             "parent_id", "client_id", "redirect_uri",
@@ -124,6 +130,10 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
     "metadata_registry": {
         "semantic": (
             "metadata", "table_core", "data_field", "field_metadata",
+            "schema_metadata", "元数据",
+        ),
+        "strong_semantic": (
+            "table_core", "data_field", "field_metadata",
             "schema_metadata", "元数据",
         ),
         "columns": (
@@ -369,6 +379,8 @@ def _business_time_column(column: str) -> bool:
 
     create_time / updated_at / sync_time 等审计或纯时间字段不满足，不能作为时序证据。
     """
+    if _is_audit_time_column(column):
+        return False
     name = str(column or "")
     if any(mark in name for mark in _BUSINESS_TIME_CN):
         return True
@@ -517,9 +529,10 @@ def classify_non_business_evidence(
 
     返回 {role, confidence, semantic_hits, column_hits, business_counter}。
     置信规则（冻结契约）：
-      强语义 + >=2 个类别特征列 + 无业务反证 -> 0.95；
-      只有一类强证据 -> 0.75；
-      纯前缀/单关键词 -> <=0.55（不自动排除）；
+      两个及以上相互支持的语义信号，或明确复合强语义
+        （如 login_log / audit_log / 系统日志）-> 一族 strong semantic，最高 0.75；
+      strong semantic + >=2 个类别特征列 + 无业务反证 -> 0.95；
+      单一普通关键词 / 纯前缀 / 仅列结构 -> <=0.55（不自动降级）；
       业务反证命中 -> 置信封顶 0.75（最多 standby/pending，不排除）。
     """
     table = str(profile.get("table") or "")
@@ -547,23 +560,28 @@ def classify_non_business_evidence(
         ]
         has_semantic = bool(semantic_hits)
         has_columns = len(column_hits) >= 2
+        strong_terms = spec.get("strong_semantic", ())
+        semantic_strong = (
+            len(semantic_hits) >= 2
+            or any(hit in strong_terms for hit in semantic_hits)
+        )
         if max_confidence <= 0.75:
             # 中置信类别：必须语义 + 结构两族证据，封顶 0.75，
             # 避免仅凭 task/device/address 等单词或单列结构误杀业务表。
             if not (has_semantic and has_columns):
                 continue
             confidence = 0.75
-        elif not has_semantic and not has_columns:
-            continue
-        elif has_semantic and has_columns:
+        elif semantic_strong and has_columns:
             confidence = 0.95
-        elif has_semantic:
-            # 只有语义一类强证据：0.75（可降 standby）
+        elif semantic_strong:
+            # 多语义信号或复合强语义：一族 strong evidence，最高 0.75。
             confidence = 0.75
-        else:
-            # 只有列结构、无语义：不是强证据，0.55 不自动降级，
-            # 避免 lon/lat 等通用坐标列误杀业务表。
+        elif has_semantic or has_columns:
+            # 单一普通关键词 / 纯前缀 / 仅列结构：<=0.55，不自动降级，
+            # 避免普通业务表名恰好含 model/task 等词被自动压掉。
             confidence = 0.55
+        else:
+            continue
         confidence = min(confidence, max_confidence)
         if business_counter:
             confidence = min(confidence, 0.75)

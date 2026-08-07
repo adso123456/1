@@ -213,6 +213,16 @@ def test_time_column_business_layer_excludes_audit_and_plain() -> None:
     assert _business_time_column("time") is False
 
 
+def test_business_time_column_excludes_audit_prefix_combos() -> None:
+    """业务前缀 + 审计时间组合（data_update_time 等）必须先经 audit 层排除。"""
+    for column in ("data_update_time", "record_created_at", "monitor_update_time"):
+        assert _looks_time_column(column) is True, column
+        assert _is_audit_time_column(column) is True, column
+        assert _business_time_column(column) is False, column
+    for column in ("monitor_year", "sampling_time", "stat_date", "record_time"):
+        assert _business_time_column(column) is True, column
+
+
 def test_update_by_does_not_pollute_business_time_judgment() -> None:
     """真实回归：update_by 不得抢占/污染业务时间判断，monitor_year 才是证据。"""
     profile = _profile(
@@ -658,6 +668,72 @@ def test_business_counter_limits_non_business_confidence() -> None:
     assert "non_business 中置信:media_asset" in proposals[("public", "wm_raster_info")][
         "proposed_reason"
     ]
+
+
+def test_non_business_single_keyword_not_auto_downgraded() -> None:
+    """单一普通关键词（model）不得获得 0.75 并自动降级。"""
+    profile = _profile(
+        "model_business_result",
+        ["id", "result", "name"],
+        table_comment="业务结果表",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "model_artifact"
+    assert non_biz["confidence"] <= 0.55
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "model_business_result")]["proposed_decision"] == "active"
+    assert "non_business" not in proposals[("public", "model_business_result")][
+        "proposed_reason"
+    ]
+
+
+def test_non_business_two_semantic_signals_strong() -> None:
+    """model + lasso 两个相互支持的语义信号 -> 一族 strong semantic（0.75）。"""
+    profile = _profile(
+        "model_lasso_records",
+        ["id", "result", "name"],
+        table_comment="lasso 模型记录",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "model_artifact"
+    assert non_biz["confidence"] > 0.55
+    assert non_biz["confidence"] <= 0.75
+
+
+def test_non_business_strong_semantic_with_structure_095() -> None:
+    """明确语义 + >=2 个类别结构列 -> 0.95。"""
+    profile = _profile(
+        "model_runs",
+        ["id", "model_id", "algorithm", "weight"],
+        table_comment="模型运行记录表",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "model_artifact"
+    assert non_biz["confidence"] == 0.95
+
+
+def test_non_business_compound_strong_semantic_single_hit() -> None:
+    """明确复合强语义（系统日志）单独命中即为一族 strong evidence。"""
+    profile = _profile(
+        "op_log",
+        ["id", "title"],
+        table_comment="系统日志",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "system_log"
+    assert non_biz["confidence"] == 0.75
 
 
 def test_duplicate_structure_degrades_to_standby() -> None:
