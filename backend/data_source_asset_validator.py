@@ -146,7 +146,7 @@ def _parse_pk_columns(
         result.append(_unquote(match.group("ident")))
     if len(result) != len(set(result)):
         raise DataSourceCatalogError(
-            "DDL \u91cd\u590d PRIMARY KEY \u5217\uff1a{table}"
+            f"DDL 重复 PRIMARY KEY 列：{table}"
         )
     return result
 
@@ -213,7 +213,7 @@ def _parse_create_table(
         declared.append(_parse_column_definition(item, table, database_type))
     if primary_seen and not primary:
         raise DataSourceCatalogError(
-            "DDL \u65e0\u6cd5\u89e3\u6790\uff1a{schema}.{table} \u7684 PRIMARY KEY \u4e3a\u7a7a"
+            f"DDL 无法解析：{schema}.{table} 的 PRIMARY KEY 为空"
         )
     if not declared:
         raise DataSourceCatalogError(f"DDL 无法解析：{schema}.{table} 没有列定义")

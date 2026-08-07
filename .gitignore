@@ -26,6 +26,9 @@ frontend/dist/
 
 # Runtime data
 vanna_data/
+runtime/
+**/runtime/
+.cache/
 data/system/*.sqlite3
 data/system/*.sqlite3-*
 agent_data/data_sources/catalog.sqlite3

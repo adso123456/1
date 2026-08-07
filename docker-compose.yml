@@ -1,0 +1,25 @@
+services:
+  water-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: water-agent:snapshot
+    container_name: water-agent
+    env_file:
+      - .env
+    ports:
+      - "${WATER_AGENT_HOST_PORT:-18000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - water-agent-catalog:/opt/water-agent/agent_data
+      - water-agent-chroma:/opt/water-agent/vanna_data
+      - water-agent-system:/opt/water-agent/data
+      - water-agent-runtime:/opt/water-agent/runtime
+    restart: unless-stopped
+
+volumes:
+  water-agent-catalog:
+  water-agent-chroma:
+  water-agent-system:
+  water-agent-runtime:
