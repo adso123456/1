@@ -160,6 +160,21 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI):
         await self.runtime_prewarmer.warm_ready_sources()
+        question_sync_task = None
+        if self.resources.catalog is not None:
+            # E-3：启动对账（遗留 running 重置 / 旧 revision superseded /
+            # 缺失或落后资产补登记），并启动后台派生资产 worker。
+            try:
+                from backend.question_suggestion_sync import (
+                    reconcile_question_suggestion_jobs,
+                )
+
+                reconcile_question_suggestion_jobs(self.resources.catalog)
+            except Exception:
+                pass
+            question_sync_task = asyncio.create_task(
+                self._question_suggestion_worker_loop()
+            )
         if self.learning_settings.enabled:
             try:
                 self.learning_service.recover_interrupted()
@@ -171,6 +186,33 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         finally:
             if self.learning_settings.enabled:
                 await self.learning_worker.stop()
+            if question_sync_task is not None:
+                question_sync_task.cancel()
+                try:
+                    await question_sync_task
+                except Exception:
+                    pass
+
+    async def _question_suggestion_worker_loop(self) -> None:
+        """后台派生资产 worker：周期领取并执行推荐问题同步任务。"""
+        interval = float(
+            os.environ.get("QUESTION_SUGGESTION_WORKER_INTERVAL", "30")
+        )
+        while True:
+            try:
+                if self.resources.catalog is not None:
+                    from backend.question_suggestion_sync import (
+                        process_pending_question_suggestion_jobs,
+                    )
+
+                    process_pending_question_suggestion_jobs(
+                        self.resources.catalog,
+                        limit=3,
+                        no_db_verify=False,
+                    )
+            except Exception:
+                pass
+            await asyncio.sleep(interval)
 
     def create_app(self) -> FastAPI:
         report_service_factory = None

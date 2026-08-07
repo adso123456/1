@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +27,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
+from backend.data_source_catalog import selected_scope_fingerprint
+from backend.data_source_asset_provenance import provenance_fingerprint
 from backend.data_source_registry import DataSourceRegistry
 from backend.data_source_request_coordinator import DataSourceRequestCoordinator
 from backend.question_suggestion_api import create_question_suggestion_router
@@ -46,6 +49,9 @@ def _make_asset(
     enabled: bool = True,
     runtime_revision: int = 1,
     metadata_sha256: str = "test-metadata-sha",
+    scope_fingerprint: str = "test-scope-fp",
+    review_policy_fingerprint: str = "test-policy-fp",
+    provenance_hash: str = "test-provenance-hash",
 ) -> Path:
     questions = [
         {"id": f"q_{index:02d}", "text": text, "enabled": enabled}
@@ -57,11 +63,64 @@ def _make_asset(
         asset_version=asset_version,
         runtime_revision=runtime_revision,
         metadata_sha256=metadata_sha256,
+        scope_fingerprint=scope_fingerprint,
+        review_policy_fingerprint=review_policy_fingerprint,
+        provenance_hash=provenance_hash,
         generated_at="2026-01-01T00:00:00+00:00",
         generator="test",
         basis={"note": "test asset"},
     )
     return write_question_directory(directory, root=root)
+
+
+def _install_formal_identity(
+    catalog: DataSourceCatalog,
+    source_id: str,
+    *,
+    runtime_revision: int = 1,
+    metadata_sha256: str = "test-metadata-sha",
+) -> dict:
+    """为引导数据源写入正式 manifest / provenance，供在线六项身份门使用。"""
+    record = catalog.require(source_id)
+    root = Path(record.metadata_path).resolve().parent
+    root.mkdir(parents=True, exist_ok=True)
+    scope_fp = selected_scope_fingerprint(record.selected_scope)
+    policy_fp = catalog.review_policy(source_id)["fingerprint"]
+    provenance = {
+        "schema_version": 1,
+        "source_id": source_id,
+        "runtime_revision": runtime_revision,
+        "scope_fingerprint": scope_fp,
+        "review_policy_fingerprint": policy_fp,
+        "assets": {
+            "documentation": [],
+            "chroma_ddl": [],
+            "chroma_documentation": [],
+            "sql_tool_memory": [],
+        },
+    }
+    provenance_hash = provenance_fingerprint(provenance)
+    manifest = {
+        "source_id": source_id,
+        "runtime_revision": runtime_revision,
+        "scope_fingerprint": scope_fp,
+        "review_policy_fingerprint": policy_fp,
+        "metadata_hash": metadata_sha256,
+        "provenance_hash": provenance_hash,
+    }
+    (root / "asset_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    (root / "asset_provenance.json").write_text(
+        json.dumps(provenance, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    return {
+        "scope_fingerprint": scope_fp,
+        "review_policy_fingerprint": policy_fp,
+        "provenance_hash": provenance_hash,
+    }
 
 
 def _bootstrap(root: Path) -> list[dict]:
@@ -82,8 +141,8 @@ def _bootstrap(root: Path) -> list[dict]:
             "database_name": "db_a",
             "schema_name": "public",
             "credential_reference": {"username": "A_USER", "password": "A_PASSWORD"},
-            "metadata_path": root / "a.json",
-            "memory_path": root / "a-memory",
+            "metadata_path": root / "a" / "metadata.json",
+            "memory_path": root / "a" / "memory",
             "routing_summary": "a",
             "capabilities": [],
         },
@@ -96,8 +155,8 @@ def _bootstrap(root: Path) -> list[dict]:
             "port": 3307,
             "database_name": "db_b",
             "credential_reference": {"username": "B_USER", "password": "B_PASSWORD"},
-            "metadata_path": root / "b.json",
-            "memory_path": root / "b-memory",
+            "metadata_path": root / "b" / "metadata.json",
+            "memory_path": root / "b" / "memory",
             "routing_summary": "b",
             "capabilities": [],
         },
@@ -111,8 +170,8 @@ def _bootstrap(root: Path) -> list[dict]:
             "database_name": "db_c",
             "schema_name": "public",
             "credential_reference": {"username": "C_USER", "password": "C_PASSWORD"},
-            "metadata_path": root / "c.json",
-            "memory_path": root / "c-memory",
+            "metadata_path": root / "c" / "metadata.json",
+            "memory_path": root / "c" / "memory",
             "routing_summary": "c",
             "capabilities": [],
         },
@@ -281,6 +340,24 @@ def _test_asset_loading() -> list[tuple[str, bool, str]]:
             and select_suggested_questions(loaded_empty, "conv-e") == [],
         )
 
+        # 旧版 V1 资产（缺少新身份字段）→ 在线读取失败关闭
+        legacy = root / "source-legacy" / "questions_v1.json"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "source_id": "source-legacy",
+                    "questions": [{"id": "q1", "text": "旧版问题"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        check(
+            "旧版 V1 资产返回 None",
+            load_question_directory("source-legacy", root=root) is None,
+        )
+
     for name, passed, detail in results:
         print(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
     failed = sum(not passed for _, passed, _ in results)
@@ -298,12 +375,28 @@ def _test_api() -> list[tuple[str, bool, str]]:
         root = Path(directory)
         catalog, coordinator, app = _make_api(root)
         asset_root = root / "question_suggestions"
+        identity_a = _install_formal_identity(catalog, "source-a")
+        identity_b = _install_formal_identity(catalog, "source-b")
         _make_asset(
             asset_root,
             "source-a",
             [f"A 问题 {index:02d}" for index in range(12)],
+            scope_fingerprint=identity_a["scope_fingerprint"],
+            review_policy_fingerprint=identity_a[
+                "review_policy_fingerprint"
+            ],
+            provenance_hash=identity_a["provenance_hash"],
         )
-        _make_asset(asset_root, "source-b", ["B 问题一"])
+        _make_asset(
+            asset_root,
+            "source-b",
+            ["B 问题一"],
+            scope_fingerprint=identity_b["scope_fingerprint"],
+            review_policy_fingerprint=identity_b[
+                "review_policy_fingerprint"
+            ],
+            provenance_hash=identity_b["provenance_hash"],
+        )
 
         # 未绑定会话 → 404 明确安全响应
         with _client(app) as client:
@@ -406,6 +499,181 @@ def _test_api() -> list[tuple[str, bool, str]]:
                 and mismatched_rev.json()["asset_version"] == "v1",
             )
             _set_runtime_revision(catalog, "source-a", 1)
+
+            # E-3：六项正式身份门，任一不一致 → 空列表
+            def _asset_path(source_id: str) -> Path:
+                return asset_root / source_id / "questions_v1.json"
+
+            record_a = catalog.require("source-a")
+            manifest_root = Path(record_a.metadata_path).resolve().parent
+
+            # metadata hash 不一致
+            manifest = json.loads(
+                (manifest_root / "asset_manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            manifest["metadata_hash"] = "other-metadata-hash"
+            (manifest_root / "asset_manifest.json").write_text(
+                json.dumps(manifest),
+                encoding="utf-8",
+            )
+            meta_mismatch = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-meta', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "metadata hash 不一致返回空列表",
+                meta_mismatch.json()["questions"] == [],
+            )
+            manifest["metadata_hash"] = "test-metadata-sha"
+            (manifest_root / "asset_manifest.json").write_text(
+                json.dumps(manifest),
+                encoding="utf-8",
+            )
+
+            # scope fingerprint 不一致
+            payload = json.loads(_asset_path("source-a").read_text(encoding="utf-8"))
+            payload["scope_fingerprint"] = "wrong-scope"
+            _asset_path("source-a").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            scope_mismatch = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-scope', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "scope fingerprint 不一致返回空列表",
+                scope_mismatch.json()["questions"] == [],
+            )
+            _make_asset(
+                asset_root,
+                "source-a",
+                [f"A 问题 {index:02d}" for index in range(12)],
+                scope_fingerprint=identity_a["scope_fingerprint"],
+                review_policy_fingerprint=identity_a[
+                    "review_policy_fingerprint"
+                ],
+                provenance_hash=identity_a["provenance_hash"],
+            )
+
+            # review policy fingerprint 不一致
+            payload = json.loads(_asset_path("source-a").read_text(encoding="utf-8"))
+            payload["review_policy_fingerprint"] = "wrong-policy"
+            _asset_path("source-a").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            policy_mismatch = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-policy', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "review policy fingerprint 不一致返回空列表",
+                policy_mismatch.json()["questions"] == [],
+            )
+            _make_asset(
+                asset_root,
+                "source-a",
+                [f"A 问题 {index:02d}" for index in range(12)],
+                scope_fingerprint=identity_a["scope_fingerprint"],
+                review_policy_fingerprint=identity_a[
+                    "review_policy_fingerprint"
+                ],
+                provenance_hash=identity_a["provenance_hash"],
+            )
+
+            # provenance hash 不一致
+            payload = json.loads(_asset_path("source-a").read_text(encoding="utf-8"))
+            payload["provenance_hash"] = "wrong-provenance"
+            _asset_path("source-a").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            provenance_mismatch = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-prov', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "provenance hash 不一致返回空列表",
+                provenance_mismatch.json()["questions"] == [],
+            )
+            _make_asset(
+                asset_root,
+                "source-a",
+                [f"A 问题 {index:02d}" for index in range(12)],
+                scope_fingerprint=identity_a["scope_fingerprint"],
+                review_policy_fingerprint=identity_a[
+                    "review_policy_fingerprint"
+                ],
+                provenance_hash=identity_a["provenance_hash"],
+            )
+
+            # manifest 缺失 → 空
+            manifest_path = manifest_root / "asset_manifest.json"
+            manifest_path.unlink()
+            manifest_missing = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-manifest', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "manifest 缺失返回空列表",
+                manifest_missing.json()["questions"] == [],
+            )
+            (manifest_root / "asset_manifest.json").write_text(
+                json.dumps(manifest),
+                encoding="utf-8",
+            )
+
+            # 正式 provenance 文件 hash 与 manifest 不一致 → 空
+            provenance_path = manifest_root / "asset_provenance.json"
+            provenance_payload = json.loads(
+                provenance_path.read_text(encoding="utf-8")
+            )
+            provenance_payload["runtime_revision"] = 99
+            provenance_path.write_text(
+                json.dumps(provenance_payload),
+                encoding="utf-8",
+            )
+            provenance_drift = client.get(
+                f"/api/conversations/{catalog.bind_conversation('conv-provfile', 'source-a')[0]}/suggested-questions"
+            )
+            check(
+                "正式 provenance 哈希不一致返回空列表",
+                provenance_drift.json()["questions"] == [],
+            )
+            provenance_payload["runtime_revision"] = 1
+            provenance_path.write_text(
+                json.dumps(provenance_payload),
+                encoding="utf-8",
+            )
+
+            # 数据源 disabled → 空
+            _set_runtime_revision(catalog, "source-a", 1)
+            disabled_conv = catalog.bind_conversation(
+                "conv-disabled", "source-a"
+            )[0]
+            connection = __import__("sqlite3").connect(catalog.db_path)
+            try:
+                connection.execute(
+                    "UPDATE data_sources SET status='disabled', enabled_for_chat=0 "
+                    "WHERE source_id='source-a'"
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            disabled = client.get(
+                f"/api/conversations/{disabled_conv}/suggested-questions"
+            )
+            check(
+                "数据源 disabled 返回空列表",
+                disabled.json()["questions"] == [],
+            )
+            connection = __import__("sqlite3").connect(catalog.db_path)
+            try:
+                connection.execute(
+                    "UPDATE data_sources SET status='ready', enabled_for_chat=1 "
+                    "WHERE source_id='source-a'"
+                )
+                connection.commit()
+            finally:
+                connection.close()
 
             # 源损坏 → 空列表
             catalog.bind_conversation("conv-corrupt", "source-a")

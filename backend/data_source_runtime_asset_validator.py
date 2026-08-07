@@ -275,7 +275,7 @@ def _validate_chroma(
             if str(metadata.get("memory_type")) == "ddl"
         ]
         documentation_records = [
-            (record_id, document)
+            (record_id, document, metadata)
             for record_id, (document, metadata) in readback.items()
             if str(metadata.get("memory_type")) == "documentation"
         ]
@@ -302,6 +302,7 @@ def _validate_chroma(
             database_name=database_name,
             allowed_tables=allowed_tables,
             scope_tables=scope_tables,
+            expected_by_id=expected_by_id,
         )
         _validate_sql_tool_records(
             sql_tool_records,
@@ -339,6 +340,10 @@ def _validate_chroma_ddl(
     for record_id, document, metadata in records:
         if not document.startswith("DDL\n"):
             raise DataSourceCatalogError(f"Chroma DDL 前缀错误：{record_id}")
+        if metadata.get("is_text_memory") is not None:
+            raise DataSourceCatalogError(
+                f"Chroma DDL 禁止设置 is_text_memory：{record_id}"
+            )
         ddl_text = document[len("DDL\n") :]
         actual_fingerprint = content_fingerprint(ddl_text)
         table_keys, column_keys = parse_ddl_identity(
@@ -400,13 +405,14 @@ def _validate_chroma_ddl(
 
 
 def _validate_chroma_documentation(
-    records: list[tuple[str, str]],
+    records: list[tuple[str, str, Mapping[str, Any]]],
     provenance: Mapping[str, Any],
     *,
     database_type: str,
     database_name: str,
     allowed_tables: set[tuple[str, str]],
     scope_tables: set[tuple[str, str]],
+    expected_by_id: Mapping[str, tuple[str, Mapping[str, Any]]],
 ) -> None:
     documentation_provenance = {
         str(item.get("record_id") or ""): item
@@ -423,7 +429,24 @@ def _validate_chroma_documentation(
             "Chroma documentation 记录数与 chroma provenance 不一致"
         )
     seen_tables: dict[tuple[str, str], int] = {}
-    for record_id, document in records:
+    for record_id, document, metadata in records:
+        if metadata.get("is_text_memory") is not True:
+            raise DataSourceCatalogError(
+                f"Chroma documentation is_text_memory 必须为 True：{record_id}"
+            )
+        expected_metadata = expected_by_id.get(record_id, (None, None))[1]
+        if expected_metadata is None or (
+            expected_metadata.get("is_text_memory") is not True
+        ):
+            raise DataSourceCatalogError(
+                f"Chroma documentation 预期 metadata is_text_memory 必须为 True：{record_id}"
+            )
+        if str(metadata.get("is_text_memory")) != str(
+            expected_metadata.get("is_text_memory")
+        ):
+            raise DataSourceCatalogError(
+                f"Chroma documentation is_text_memory 与预期不一致：{record_id}"
+            )
         doc_provenance = documentation_provenance.get(record_id)
         chroma_provenance = chroma_documentation.get(record_id)
         if doc_provenance is None or chroma_provenance is None:
@@ -534,6 +557,10 @@ def _validate_sql_tool_records(
             raise DataSourceCatalogError("SQL Tool Memory category 必须为 sql_example")
         if str(metadata.get("tool_name") or "") != "run_sql":
             raise DataSourceCatalogError("SQL Tool Memory tool_name 必须为 run_sql")
+        if metadata.get("is_text_memory") is not None:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 禁止设置 is_text_memory：{record_id}"
+            )
         try:
             args = json.loads(str(metadata.get("args_json") or "{}"))
         except (TypeError, ValueError):

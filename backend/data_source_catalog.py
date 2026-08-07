@@ -23,7 +23,7 @@ from config.settings import PROJECT_ROOT, resolve_project_path
 
 
 SCHEMA_COMPONENT = "data_source_catalog"
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 VALID_DATABASE_TYPES = frozenset({"mysql", "postgresql"})
 VALID_STATUSES = frozenset(
     {
@@ -565,6 +565,27 @@ class DataSourceCatalog:
                     created_at REAL NOT NULL,
                     PRIMARY KEY (run_id, source_id, schema_name, table_name)
                 );
+                CREATE TABLE IF NOT EXISTS question_suggestion_jobs (
+                    job_id TEXT PRIMARY KEY,
+                    source_id TEXT NOT NULL REFERENCES data_sources(source_id)
+                        ON DELETE CASCADE,
+                    asset_type TEXT NOT NULL DEFAULT 'question_suggestions',
+                    target_runtime_revision INTEGER NOT NULL,
+                    target_metadata_sha256 TEXT NOT NULL,
+                    target_scope_fingerprint TEXT NOT NULL,
+                    target_review_policy_fingerprint TEXT NOT NULL,
+                    target_provenance_hash TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    started_at INTEGER,
+                    finished_at INTEGER,
+                    UNIQUE (source_id, asset_type, target_runtime_revision)
+                );
+                CREATE INDEX IF NOT EXISTS idx_question_jobs_status
+                    ON question_suggestion_jobs(source_id, status);
                 """
             )
             columns = {
@@ -1914,6 +1935,229 @@ class DataSourceCatalog:
                         now,
                     ),
                 )
+
+    # ------------------------------------------------------------------
+    # 推荐问题同步任务（E-3 派生资产）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _question_job_row(row: Any) -> dict[str, Any]:
+        return {
+            "job_id": str(row["job_id"]),
+            "source_id": str(row["source_id"]),
+            "asset_type": str(row["asset_type"]),
+            "target_runtime_revision": int(row["target_runtime_revision"]),
+            "target_metadata_sha256": str(row["target_metadata_sha256"]),
+            "target_scope_fingerprint": str(row["target_scope_fingerprint"]),
+            "target_review_policy_fingerprint": str(
+                row["target_review_policy_fingerprint"]
+            ),
+            "target_provenance_hash": str(row["target_provenance_hash"]),
+            "status": str(row["status"]),
+            "attempt_count": int(row["attempt_count"]),
+            "last_error": str(row["last_error"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }
+
+    def enqueue_question_suggestion_job(
+        self,
+        *,
+        source_id: str,
+        runtime_revision: int,
+        metadata_sha256: str,
+        scope_fingerprint: str,
+        review_policy_fingerprint: str,
+        provenance_hash: str,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
+        """登记推荐问题同步任务（幂等）。
+
+        同一 (source_id, asset_type, target_runtime_revision) 只保留一条有效任务：
+        pending/running/succeeded 直接返回现有任务；failed/superseded 重置为
+        pending 允许重试。
+        """
+        now = int(time.time())
+        asset_type = "question_suggestions"
+        with self._lock, self._connection(write=True) as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM question_suggestion_jobs
+                WHERE source_id=? AND asset_type=? AND target_runtime_revision=?
+                """,
+                (source_id, asset_type, runtime_revision),
+            ).fetchone()
+            if row is not None:
+                if row["status"] in {"pending", "running", "succeeded"}:
+                    return self._question_job_row(row)
+                connection.execute(
+                    """
+                    UPDATE question_suggestion_jobs
+                    SET status='pending', last_error='', updated_at=?,
+                        started_at=NULL, finished_at=NULL
+                    WHERE job_id=?
+                    """,
+                    (now, row["job_id"]),
+                )
+                refreshed = connection.execute(
+                    "SELECT * FROM question_suggestion_jobs WHERE job_id=?",
+                    (row["job_id"],),
+                ).fetchone()
+                return self._question_job_row(refreshed)
+            resolved_job_id = job_id or (
+                f"qs-{source_id}-{runtime_revision}-{uuid.uuid4().hex}"
+            )
+            connection.execute(
+                """
+                INSERT INTO question_suggestion_jobs (
+                    job_id, source_id, asset_type, target_runtime_revision,
+                    target_metadata_sha256, target_scope_fingerprint,
+                    target_review_policy_fingerprint, target_provenance_hash,
+                    status, attempt_count, last_error, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,0,'',?,?)
+                """,
+                (
+                    resolved_job_id,
+                    source_id,
+                    asset_type,
+                    runtime_revision,
+                    metadata_sha256,
+                    scope_fingerprint,
+                    review_policy_fingerprint,
+                    provenance_hash,
+                    "pending",
+                    now,
+                    now,
+                ),
+            )
+            inserted = connection.execute(
+                "SELECT * FROM question_suggestion_jobs WHERE job_id=?",
+                (resolved_job_id,),
+            ).fetchone()
+            return self._question_job_row(inserted)
+
+    def claim_question_suggestion_job(
+        self,
+        job_id: str,
+    ) -> dict[str, Any] | None:
+        """原子领取任务：仅 pending → running；防止两个 worker 同时领取。"""
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE question_suggestion_jobs
+                SET status='running', attempt_count=attempt_count+1,
+                    started_at=?, updated_at=?
+                WHERE job_id=? AND status='pending'
+                """,
+                (now, now, job_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+            row = connection.execute(
+                "SELECT * FROM question_suggestion_jobs WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+            return self._question_job_row(row)
+
+    def finish_question_suggestion_job(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        error: str = "",
+    ) -> dict[str, Any]:
+        """完成运行中任务：running → succeeded / failed。"""
+        if status not in {"succeeded", "failed"}:
+            raise ValueError("finish status 必须为 succeeded 或 failed")
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE question_suggestion_jobs
+                SET status=?, last_error=?, finished_at=?, updated_at=?
+                WHERE job_id=? AND status='running'
+                """,
+                (status, error, now, now, job_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM question_suggestion_jobs WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+            return self._question_job_row(row)
+
+    def supersede_question_suggestion_job(
+        self,
+        job_id: str,
+        *,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """把任务标记为 superseded（新 revision 已发布或身份失效）。"""
+        now = int(time.time())
+        with self._lock, self._connection(write=True) as connection:
+            connection.execute(
+                """
+                UPDATE question_suggestion_jobs
+                SET status='superseded', last_error=?, finished_at=?,
+                    updated_at=?
+                WHERE job_id=? AND status IN
+                    ('pending','running','failed','succeeded')
+                """,
+                (reason, now, now, job_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM question_suggestion_jobs WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+            return self._question_job_row(row)
+
+    def list_question_suggestion_jobs(
+        self,
+        source_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = []
+        params: list[Any] = []
+        if source_id is not None:
+            clauses.append("source_id=?")
+            params.append(source_id)
+        if status is not None:
+            clauses.append("status=?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT * FROM question_suggestion_jobs {where}
+                ORDER BY created_at DESC
+                """,
+                params,
+            ).fetchall()
+        return [self._question_job_row(row) for row in rows]
+
+    def reset_stale_question_suggestion_jobs(
+        self,
+        source_id: str | None = None,
+    ) -> int:
+        """启动恢复：遗留 running 任务安全重置为 pending。"""
+        now = int(time.time())
+        params: list[Any] = [now]
+        where = ""
+        if source_id is not None:
+            where = " AND source_id=?"
+            params.append(source_id)
+        with self._lock, self._connection(write=True) as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE question_suggestion_jobs
+                SET status='pending', started_at=NULL, updated_at=?
+                WHERE status='running'{where}
+                """,
+                params,
+            )
+            return int(cursor.rowcount)
 
     def apply_review_results(
         self,

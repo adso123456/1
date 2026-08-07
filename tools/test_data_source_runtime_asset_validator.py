@@ -367,6 +367,7 @@ class _Fixture:
                     {
                         "source_id": self.source_id,
                         "memory_type": "documentation",
+                        "is_text_memory": True,
                         "content_fingerprint": content_fingerprint(
                             document
                         ),
@@ -908,6 +909,97 @@ def test_chroma_doc_normal_passes() -> None:
         assert result["chroma_documentation_records"] == len(
             fixture.documents
         )
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_doc_missing_is_text_memory_rejected() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            collection = fx.collection()
+            doc_id = fx.expected_records[len(fx.ddls)][0]
+            document, metadata = collection.records[doc_id]
+            metadata = dict(metadata)
+            metadata.pop("is_text_memory", None)
+            collection.records[doc_id] = (document, metadata)
+        _assert_raises(fixture, mutate, "is_text_memory")
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_doc_is_text_memory_false_rejected() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            collection = fx.collection()
+            doc_id = fx.expected_records[len(fx.ddls)][0]
+            document, metadata = collection.records[doc_id]
+            metadata = dict(metadata)
+            metadata["is_text_memory"] = False
+            collection.records[doc_id] = (document, metadata)
+        _assert_raises(fixture, mutate, "is_text_memory")
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_doc_is_text_memory_string_true_rejected() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            collection = fx.collection()
+            doc_id = fx.expected_records[len(fx.ddls)][0]
+            document, metadata = collection.records[doc_id]
+            metadata = dict(metadata)
+            metadata["is_text_memory"] = "true"
+            collection.records[doc_id] = (document, metadata)
+        _assert_raises(fixture, mutate, "is_text_memory")
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_doc_expected_missing_is_text_memory_rejected() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            doc_index = len(fx.ddls)
+            record_id, document, metadata = fx.expected_records[doc_index]
+            metadata = dict(metadata)
+            metadata.pop("is_text_memory", None)
+            fx.expected_records[doc_index] = (record_id, document, metadata)
+        _assert_raises(fixture, mutate, "预期 metadata is_text_memory")
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_ddl_is_text_memory_set_rejected() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            collection = fx.collection()
+            first_id = next(iter(collection.records))
+            document, metadata = collection.records[first_id]
+            metadata = dict(metadata)
+            metadata["is_text_memory"] = True
+            collection.records[first_id] = (document, metadata)
+        _assert_raises(fixture, mutate, "禁止设置 is_text_memory")
+    finally:
+        fixture.cleanup()
+
+
+def test_sql_tool_memory_is_text_memory_set_rejected() -> None:
+    fixture = _sql_fixture(
+        'SELECT "id" FROM "public"."monitor_data"'
+    )
+    try:
+        def mutate(fx: _Fixture) -> None:
+            collection = fx.collection()
+            record_id = fx.expected_records[-1][0]
+            document, metadata = collection.records[record_id]
+            metadata = dict(metadata)
+            metadata["is_text_memory"] = True
+            collection.records[record_id] = (document, metadata)
+        _assert_raises(fixture, mutate, "禁止设置 is_text_memory")
     finally:
         fixture.cleanup()
 

@@ -1225,13 +1225,36 @@ class DataSourceAssetPreparer:
                 "该数据源正在生成问数资产，请稍后重试"
             )
         try:
-            return self._prepare_locked(
+            result = self._prepare_locked(
                 source_id,
                 extra_sql_tool_records=extra_sql_tool_records,
                 preserve_existing_sql=preserve_existing_sql,
             )
+            self._maybe_enqueue_question_suggestions(source_id)
+            return result
         finally:
             lock.release()
+
+    def _maybe_enqueue_question_suggestions(self, source_id: str) -> None:
+        """完整发布成功后登记推荐问题派生资产同步任务。
+
+        登记失败绝不改变核心发布结果，只记录安全错误日志。
+        """
+        try:
+            from backend.question_suggestion_sync import (
+                enqueue_for_published_source,
+            )
+
+            enqueue_for_published_source(self.catalog, source_id)
+        except Exception as exc:
+            import logging
+
+            logger = logging.getLogger("question_suggestion_sync")
+            logger.error(
+                "推荐问题同步登记失败 source_id=%s error=%s",
+                source_id,
+                f"{type(exc).__name__}",
+            )
 
     def _prepare_locked(
         self,
@@ -1711,6 +1734,7 @@ class DataSourceAssetPreparer:
                             {
                                 "source_id": source_id,
                                 "memory_type": "documentation",
+                                "is_text_memory": True,
                                 "content_fingerprint": hashlib.sha256(
                                     document.encode("utf-8")
                                 ).hexdigest(),

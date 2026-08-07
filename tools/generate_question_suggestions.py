@@ -513,6 +513,133 @@ def _open_catalog(catalog_path: str | None) -> DataSourceCatalog:
     return DataSourceCatalog(path, cipher=cipher)
 
 
+def _build_candidates(
+    *,
+    samples: list[dict[str, Any]],
+    metadata_tables: set[str],
+    guard: Any,
+    verifier: Any | None,
+    max_questions: int,
+    source_id: str,
+) -> tuple[list[dict[str, Any]], Counter]:
+    """对已批准样本执行确定性生成管线，返回 (候选条目, 禁用原因统计)。
+
+    与离线 CLI 共用同一套规则：占位词阻断、日期语义改写、SQLGuard 校验、
+    只读数据库验证、去重。自动同步路径与人工离线模式共用本函数。
+    """
+    disabled_reasons: Counter = Counter()
+    candidates: list[dict[str, Any]] = []
+    seen_texts: set[str] = set()
+
+    for sample in samples:
+        if len(candidates) >= max_questions:
+            break
+        entry: dict[str, Any] = {
+            "id": _stable_question_id(
+                source_id,
+                sample["sample_id"],
+                sample["question"],
+            ),
+            "related_sample_id": sample["sample_id"],
+            "related_tables": list(sample["tables"]),
+        }
+
+        # 1) 关联表必须属于该源当前发布范围
+        missing_tables = [
+            table for table in sample["tables"] if table not in metadata_tables
+        ]
+        if missing_tables:
+            entry["disabled_reason"] = "metadata_mismatch"
+            entry["metadata_missing_tables"] = missing_tables
+            disabled_reasons["metadata_mismatch"] += 1
+            candidates.append(entry)
+            continue
+
+        # 2) 日期改写：解析真实日期得到具体可执行 SQL
+        matches = _date_matches(sample["sql"])
+        if matches:
+            if verifier is None:
+                entry["disabled_reason"] = "verification_unavailable"
+                disabled_reasons["verification_unavailable"] += 1
+                candidates.append(entry)
+                continue
+            try:
+                probe_sql = _latest_day_probe_sql(sample["sql"], matches)
+                latest_day = verifier.resolve_latest_day(probe_sql)
+            except Exception:
+                latest_day = None
+            if latest_day is None:
+                entry["disabled_reason"] = "no_data"
+                disabled_reasons["no_data"] += 1
+                candidates.append(entry)
+                continue
+            granularity, phrase, window_days = _analyze_date_range(matches)
+            rewritten_sql = _substitute_dates(
+                sample["sql"],
+                matches,
+                latest_day,
+                granularity,
+                window_days,
+            )
+            question = _rewrite_question(sample["question"], phrase)
+        else:
+            rewritten_sql = sample["sql"]
+            question = _cleanup(sample["question"])
+
+        if _has_placeholder(question):
+            entry["disabled_reason"] = "placeholder"
+            disabled_reasons["placeholder"] += 1
+            candidates.append(entry)
+            continue
+
+        # 3) SQLGuard 校验改写后的实际 SQL
+        guard_result = guard.validate(rewritten_sql, query="")
+        if not guard_result.passed:
+            entry["disabled_reason"] = "sqlguard_fail"
+            entry["guard_reason"] = guard_result.reason
+            disabled_reasons["sqlguard_fail"] += 1
+            candidates.append(entry)
+            continue
+
+        # 4) 去重
+        if question in seen_texts:
+            continue
+        seen_texts.add(question)
+
+        entry["text"] = question
+        entry["related_sql"] = rewritten_sql
+        entry["enabled"] = False
+        candidates.append(entry)
+
+    # 5) 真实只读执行验证（对应最终问题及其实际 SQL）
+    if verifier is None:
+        for entry in candidates:
+            if "enabled" in entry:
+                entry["disabled_reason"] = "verification_unavailable"
+                entry["verification"] = {
+                    "verified": False,
+                    "read_only": True,
+                    "error": "verification skipped",
+                }
+                entry.pop("enabled", None)
+                disabled_reasons["verification_unavailable"] += 1
+    else:
+        for entry in candidates:
+            if "enabled" not in entry:
+                continue
+            result = verifier.verify(entry["related_sql"])
+            if result.get("verified"):
+                entry["enabled"] = True
+                entry["verification"] = result
+            else:
+                entry["disabled_reason"] = "execution_fail"
+                entry["verification"] = result
+                disabled_reasons["execution_fail"] += 1
+                entry.pop("enabled", None)
+
+    return candidates, disabled_reasons
+
+
 def generate_questions(
     *,
     source_id: str,
@@ -555,108 +682,15 @@ def generate_questions(
             own_verifier = ReadOnlySqlVerifier(catalog, source_id)
             own_verifier.connect()  # 连接失败则整体中止，不写资产
 
-    disabled_reasons: Counter = Counter()
-    candidates: list[dict[str, Any]] = []
-    seen_texts: set[str] = set()
-
     try:
-        for sample in samples:
-            if len(candidates) >= max_questions:
-                break
-            entry: dict[str, Any] = {
-                "id": _stable_question_id(source_id, sample["sample_id"], sample["question"]),
-                "related_sample_id": sample["sample_id"],
-                "related_tables": list(sample["tables"]),
-            }
-
-            # 1) 关联表必须属于该源当前发布范围
-            missing_tables = [
-                table for table in sample["tables"] if table not in metadata_tables
-            ]
-            if missing_tables:
-                entry["disabled_reason"] = "metadata_mismatch"
-                entry["metadata_missing_tables"] = missing_tables
-                disabled_reasons["metadata_mismatch"] += 1
-                candidates.append(entry)
-                continue
-
-            # 2) 日期改写：解析真实日期得到具体可执行 SQL
-            matches = _date_matches(sample["sql"])
-            if matches:
-                if own_verifier is None:
-                    entry["disabled_reason"] = "verification_unavailable"
-                    disabled_reasons["verification_unavailable"] += 1
-                    candidates.append(entry)
-                    continue
-                try:
-                    probe_sql = _latest_day_probe_sql(sample["sql"], matches)
-                    latest_day = own_verifier.resolve_latest_day(probe_sql)
-                except Exception:
-                    latest_day = None
-                if latest_day is None:
-                    entry["disabled_reason"] = "no_data"
-                    disabled_reasons["no_data"] += 1
-                    candidates.append(entry)
-                    continue
-                granularity, phrase, window_days = _analyze_date_range(matches)
-                rewritten_sql = _substitute_dates(
-                    sample["sql"], matches, latest_day, granularity, window_days
-                )
-                question = _rewrite_question(sample["question"], phrase)
-            else:
-                rewritten_sql = sample["sql"]
-                question = _cleanup(sample["question"])
-
-            if _has_placeholder(question):
-                entry["disabled_reason"] = "placeholder"
-                disabled_reasons["placeholder"] += 1
-                candidates.append(entry)
-                continue
-
-            # 3) SQLGuard 校验改写后的实际 SQL
-            guard_result = guard.validate(rewritten_sql, query="")
-            if not guard_result.passed:
-                entry["disabled_reason"] = "sqlguard_fail"
-                entry["guard_reason"] = guard_result.reason
-                disabled_reasons["sqlguard_fail"] += 1
-                candidates.append(entry)
-                continue
-
-            # 4) 去重
-            if question in seen_texts:
-                continue
-            seen_texts.add(question)
-
-            entry["text"] = question
-            entry["related_sql"] = rewritten_sql
-            entry["enabled"] = False
-            candidates.append(entry)
-
-        # 5) 真实只读执行验证（对应最终问题及其实际 SQL）
-        if own_verifier is None:
-            for entry in candidates:
-                if "enabled" in entry:
-                    entry["disabled_reason"] = "verification_unavailable"
-                    entry["verification"] = {
-                        "verified": False,
-                        "read_only": True,
-                        "error": "verification skipped",
-                    }
-                    entry.pop("enabled", None)
-                    disabled_reasons["verification_unavailable"] += 1
-        else:
-            for entry in candidates:
-                if "enabled" not in entry:
-                    continue
-                result = own_verifier.verify(entry["related_sql"])
-                if result.get("verified"):
-                    entry["enabled"] = True
-                    entry["verification"] = result
-                else:
-                    entry["disabled_reason"] = "execution_fail"
-                    entry["verification"] = result
-                    disabled_reasons["execution_fail"] += 1
-                    entry.pop("enabled", None)
+        candidates, disabled_reasons = _build_candidates(
+            samples=samples,
+            metadata_tables=metadata_tables,
+            guard=guard,
+            verifier=own_verifier,
+            max_questions=max_questions,
+            source_id=source_id,
+        )
     finally:
         if own_verifier is not None and own_verifier is not verifier:
             own_verifier.close()
@@ -708,6 +742,110 @@ def generate_questions(
     }
 
 
+def generate_questions_from_sql_tool_records(
+    *,
+    source_id: str,
+    samples: list[dict[str, Any]],
+    root: Path,
+    catalog_path: str | None,
+    metadata_path: Path | None,
+    no_db_verify: bool,
+    max_questions: int,
+    asset_version: str,
+    scope_fingerprint: str,
+    review_policy_fingerprint: str,
+    provenance_hash: str,
+    job_id: str | None = None,
+    verifier: Any | None = None,
+    candidate_name: str | None = None,
+) -> dict[str, Any]:
+    """E-3 自动同步路径：以正式 SQL Tool Memory 记录为输入生成并原子写入资产。
+
+    与离线 CLI 共用 _build_candidates 管线；输出绑定完整正式身份
+    （scope / policy / provenance），并使用唯一候选文件原子替换。
+    """
+    catalog = _open_catalog(catalog_path)
+    record = catalog.require(source_id)
+    resolved_metadata = (
+        metadata_path if metadata_path is not None else Path(record.metadata_path)
+    )
+    if not resolved_metadata.is_file():
+        raise ValueError(f"已发布 Metadata 不存在: {resolved_metadata}")
+    metadata_sha256 = _file_sha256(resolved_metadata)
+    metadata_tables = _load_published_tables(resolved_metadata)
+
+    guard = _build_guard(record.database_type, resolved_metadata)
+
+    verification_note = "skipped"
+    own_verifier: Any = verifier
+    if not no_db_verify:
+        verification_note = "verified"
+        if own_verifier is None:
+            own_verifier = ReadOnlySqlVerifier(catalog, source_id)
+            own_verifier.connect()
+    try:
+        candidates, disabled_reasons = _build_candidates(
+            samples=samples,
+            metadata_tables=metadata_tables,
+            guard=guard,
+            verifier=own_verifier,
+            max_questions=max_questions,
+            source_id=source_id,
+        )
+    finally:
+        if own_verifier is not None and own_verifier is not verifier:
+            own_verifier.close()
+
+    enabled_entries = [
+        entry for entry in candidates if entry.get("enabled") is True
+    ]
+    basis: dict[str, Any] = {
+        "source": "formal_sql_tool_memory",
+        "metadata_path": str(resolved_metadata),
+        "metadata_sha256": metadata_sha256,
+        "metadata_table_count": len(metadata_tables),
+        "sql_tool_record_count": len(samples),
+        "enabled_question_count": len(enabled_entries),
+        "db_verification": verification_note,
+        "disabled_reasons": dict(disabled_reasons),
+        "summary": (
+            f"正式 SQL Tool Memory {len(samples)} 条，"
+            f"启用 {len(enabled_entries)} 条；禁用：{dict(disabled_reasons)}"
+        ),
+    }
+    directory = build_question_directory(
+        source_id,
+        enabled_entries,
+        asset_version=asset_version,
+        runtime_revision=record.runtime_revision,
+        metadata_sha256=metadata_sha256,
+        scope_fingerprint=scope_fingerprint,
+        review_policy_fingerprint=review_policy_fingerprint,
+        provenance_hash=provenance_hash,
+        generated_at=_utc_now_iso(),
+        generator=GENERATOR_NAME,
+        basis=basis,
+    )
+    output = write_question_directory(
+        directory,
+        root=root,
+        candidate_name=candidate_name or job_id,
+    )
+    return {
+        "source_id": source_id,
+        "asset_version": asset_version,
+        "asset_path": str(output),
+        "runtime_revision": record.runtime_revision,
+        "metadata_sha256": metadata_sha256,
+        "sql_tool_record_count": len(samples),
+        "enabled_question_count": len(enabled_entries),
+        "disabled_count": len(candidates) - len(enabled_entries),
+        "db_verification": verification_note,
+        "disabled_reasons": dict(disabled_reasons),
+        "basis": basis,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="生成单一数据源的专属推荐问题资产",
@@ -734,6 +872,11 @@ def main(argv: list[str] | None = None) -> int:
         help="已发布 Metadata 路径（默认取 catalog 记录）",
     )
     parser.add_argument(
+        "--from-formal-memory",
+        action="store_true",
+        help="以当前正式 SQL Tool Memory（provenance 白名单 + Chroma 回读）为输入生成",
+    )
+    parser.add_argument(
         "--no-db-verify",
         action="store_true",
         help="跳过真实数据库只读验证（问题不启用，仅做管线校验）",
@@ -747,16 +890,48 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--asset-version", default="v1", help="资产版本号")
     args = parser.parse_args(argv)
 
-    summary = generate_questions(
-        source_id=args.source_id,
-        root=Path(args.root) if args.root else None,
-        catalog_path=args.catalog,
-        materials_dir=args.materials_dir,
-        metadata_path=Path(args.metadata_path) if args.metadata_path else None,
-        no_db_verify=args.no_db_verify,
-        max_questions=args.max_questions,
-        asset_version=args.asset_version,
-    )
+    if args.from_formal_memory:
+        from backend.question_suggestion_sync import (
+            _read_formal_sql_tool_memory,
+            formal_identity,
+        )
+
+        catalog = _open_catalog(args.catalog)
+        identity = formal_identity(catalog, args.source_id)
+        if identity is None:
+            raise ValueError("正式资产身份不完整，无法按正式 Memory 生成")
+        samples = _read_formal_sql_tool_memory(catalog, args.source_id)
+        summary = generate_questions_from_sql_tool_records(
+            source_id=args.source_id,
+            samples=samples,
+            root=Path(args.root) if args.root else Path(AGENT_DATA_DIR) / "question_suggestions",
+            catalog_path=args.catalog,
+            metadata_path=(
+                Path(args.metadata_path) if args.metadata_path else None
+            ),
+            no_db_verify=args.no_db_verify,
+            max_questions=args.max_questions,
+            asset_version=args.asset_version,
+            scope_fingerprint=identity["scope_fingerprint"],
+            review_policy_fingerprint=identity[
+                "review_policy_fingerprint"
+            ],
+            provenance_hash=identity["provenance_hash"],
+            candidate_name="cli-formal",
+        )
+    else:
+        summary = generate_questions(
+            source_id=args.source_id,
+            root=Path(args.root) if args.root else None,
+            catalog_path=args.catalog,
+            materials_dir=args.materials_dir,
+            metadata_path=(
+                Path(args.metadata_path) if args.metadata_path else None
+            ),
+            no_db_verify=args.no_db_verify,
+            max_questions=args.max_questions,
+            asset_version=args.asset_version,
+        )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 

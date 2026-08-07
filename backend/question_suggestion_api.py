@@ -8,11 +8,15 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 from backend.assistant_admin_api import _authorize
-from backend.data_source_catalog import DataSourceCatalog
+from backend.data_source_catalog import (
+    DataSourceCatalog,
+    selected_scope_fingerprint,
+)
 from backend.data_source_request_coordinator import (
     DataSourceRequestCoordinator,
 )
@@ -21,6 +25,63 @@ from backend.question_suggestion_assets import (
     select_suggested_questions,
 )
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+
+
+def _formal_identity(
+    catalog: DataSourceCatalog,
+    record: Any,
+) -> dict[str, Any] | None:
+    """轻量读取正式 manifest / provenance 并计算当前身份快照。
+
+    任一正式身份文件缺失或损坏 → 返回 None（在线读取失败关闭）。
+    """
+    try:
+        from backend.data_source_asset_provenance import (
+            provenance_fingerprint,
+        )
+
+        root = Path(record.metadata_path).resolve().parent
+        manifest = json.loads(
+            (root / "asset_manifest.json").read_text(encoding="utf-8")
+        )
+        provenance = json.loads(
+            (root / "asset_provenance.json").read_text(encoding="utf-8")
+        )
+    except Exception:
+        return None
+    if not isinstance(manifest, dict) or not isinstance(provenance, dict):
+        return None
+    if not str(manifest.get("metadata_hash") or ""):
+        return None
+    if not str(manifest.get("provenance_hash") or ""):
+        return None
+    try:
+        scope_fingerprint = selected_scope_fingerprint(record.selected_scope)
+        policy_fingerprint = catalog.review_policy(record.source_id)[
+            "fingerprint"
+        ]
+    except Exception:
+        return None
+    try:
+        provenance_hash = provenance_fingerprint(provenance)
+    except Exception:
+        provenance_hash = ""
+    return {
+        "runtime_revision": record.runtime_revision,
+        "metadata_sha256": str(manifest.get("metadata_hash") or ""),
+        "scope_fingerprint": scope_fingerprint,
+        "review_policy_fingerprint": policy_fingerprint,
+        "provenance_hash": str(manifest.get("provenance_hash") or ""),
+        "actual_provenance_hash": provenance_hash,
+    }
+
+
+def _empty(source_id: str, asset_version: Any) -> dict[str, Any]:
+    return {
+        "source_id": source_id,
+        "asset_version": asset_version,
+        "questions": [],
+    }
 
 
 def create_question_suggestion_router(
@@ -59,28 +120,31 @@ def create_question_suggestion_router(
                 detail="数据源不存在",
             ) from None
         if record.status != "ready" or not record.enabled_for_chat:
-            return {
-                "source_id": context.source_id,
-                "asset_version": None,
-                "questions": [],
-            }
+            return _empty(context.source_id, None)
         directory = load_question_directory(
             context.source_id,
             root=asset_root,
         )
         if directory is None:
-            return {
-                "source_id": context.source_id,
-                "asset_version": None,
-                "questions": [],
-            }
-        # 资产必须与当前数据源 runtime revision 严格一致，否则禁止展示
-        if directory.get("runtime_revision") != record.runtime_revision:
-            return {
-                "source_id": context.source_id,
-                "asset_version": directory["asset_version"],
-                "questions": [],
-            }
+            return _empty(context.source_id, None)
+        # E-3：六项正式身份硬门，任一不一致即空列表，绝不回退。
+        identity = _formal_identity(catalog, record)
+        if identity is None:
+            return _empty(context.source_id, directory["asset_version"])
+        if (
+            directory.get("runtime_revision") != identity["runtime_revision"]
+            or directory.get("metadata_sha256")
+            != identity["metadata_sha256"]
+            or directory.get("scope_fingerprint")
+            != identity["scope_fingerprint"]
+            or directory.get("review_policy_fingerprint")
+            != identity["review_policy_fingerprint"]
+            or directory.get("provenance_hash")
+            != identity["provenance_hash"]
+            or identity["actual_provenance_hash"]
+            != identity["provenance_hash"]
+        ):
+            return _empty(context.source_id, directory["asset_version"])
         questions = select_suggested_questions(directory, conversation_id)
         return {
             "source_id": context.source_id,
