@@ -64,14 +64,11 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
             "login_log", "oper_log", "audit_log", "system log",
             "登录日志", "操作日志", "系统日志",
         ),
-        # 复合强语义词：单独命中即为一族 strong semantic evidence。
-        "strong_semantic": (
-            "login_log", "oper_log", "audit_log", "system log",
-            "登录日志", "操作日志", "系统日志",
-        ),
         "columns": (
             "user", "operator", "ip", "request_uri", "method",
             "module", "action", "browser", "os", "login_time",
+            # 平台族稳定结构（真实画像跨表共现）：row_id/client_ip。
+            "row_id", "client_ip",
         ),
     },
     "platform_config": {
@@ -79,10 +76,11 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
             "route", "menu", "role", "permission", "oauth",
             "platform config", "路由", "菜单", "角色", "权限",
         ),
-        "strong_semantic": ("platform config",),
         "columns": (
             "path", "component", "permission", "role_id", "menu_id",
             "parent_id", "client_id", "redirect_uri",
+            # 平台族稳定结构：row_id/route_name/route_id/uri 跨表共现。
+            "row_id", "route_name", "route_id", "uri",
         ),
     },
     "media_asset": {
@@ -93,6 +91,12 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
         "columns": (
             "file", "url", "path", "image", "video", "thumbnail",
             "width", "height", "resolution", "tile", "layer",
+            # 无人机/摄像头/全景真实画像稳定结构（drone_*/gateway_* 7 表共现）。
+            "drone_sn", "drone_callsign", "drone_camera_list",
+            "drone_device_model", "drone_mode_code",
+            "gateway_sn", "gateway_callsign", "gateway_camera_list",
+            "gateway_device_model", "gateway_mode_code",
+            "device_id", "lon", "lat", "layer_id", "panorama", "station_id",
         ),
     },
     "model_artifact": {
@@ -103,6 +107,11 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
         "columns": (
             "model_id", "algorithm", "parameter", "weight",
             "coefficient", "score", "run_id", "version",
+            # EFDC/模型输出真实画像稳定结构（39 张表共现 efdc_i/efdc_j 等）。
+            "efdc_i", "efdc_j", "result_type", "time_slot",
+            "res_date", "hour", "model_name", "key_point_id",
+            "river_name", "station_id", "cod", "chl",
+            "input_name", "output_name",
         ),
     },
     "operation_trace": {
@@ -113,6 +122,8 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
         "columns": (
             "track_id", "operator", "task_id", "path",
             "geometry", "lon", "lat", "start", "end",
+            # 图形/操作轨迹稳定结构（entity_type 跨表共现）。
+            "entity_type", "operate_type", "operate_time",
         ),
     },
     "identity_platform": {
@@ -124,6 +135,8 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
             "user_id", "group_id", "role_id", "permission_id",
             "account_id", "client_id", "username", "password",
             "menu_id", "parent_id", "redirect_uri",
+            # 平台身份族稳定结构：row_id/role_name 跨表共现。
+            "row_id", "role_name", "role_description",
         ),
         "max_confidence": 0.95,
     },
@@ -132,13 +145,13 @@ _NON_BUSINESS_TAXONOMY: dict[str, dict[str, tuple[str, ...]]] = {
             "metadata", "table_core", "data_field", "field_metadata",
             "schema_metadata", "元数据",
         ),
-        "strong_semantic": (
-            "table_core", "data_field", "field_metadata",
-            "schema_metadata", "元数据",
-        ),
         "columns": (
             "table_name", "field_name", "column_name", "data_type",
             "metadata_id", "category_id", "field_type", "schema_name",
+            # 元数据注册真实画像稳定结构（aliasname/layername 等 7+ 表共现）。
+            "tablename", "fieldname", "aliasname", "authoritycode",
+            "layername", "scale", "server", "xmin", "xmax",
+            "ymin", "ymax",
         ),
         "max_confidence": 0.95,
     },
@@ -528,11 +541,10 @@ def classify_non_business_evidence(
     """非业务高置信排除层（独立于 _infer_role）。
 
     返回 {role, confidence, semantic_hits, column_hits, business_counter}。
-    置信规则（冻结契约）：
-      两个及以上相互支持的语义信号，或明确复合强语义
-        （如 login_log / audit_log / 系统日志）-> 一族 strong semantic，最高 0.75；
-      strong semantic + >=2 个类别特征列 + 无业务反证 -> 0.95；
-      单一普通关键词 / 纯前缀 / 仅列结构 -> <=0.55（不自动降级）；
+    置信规则（冻结契约，简单双证据）：
+      表名/注释语义 + >=2 个类别结构列 -> 0.95；
+      只有表名/注释语义（无结构证据）-> <=0.55（不自动降级）；
+      仅列结构、无语义 -> <=0.55（不自动降级）；
       业务反证命中 -> 置信封顶 0.75（最多 standby/pending，不排除）。
     """
     table = str(profile.get("table") or "")
@@ -560,24 +572,17 @@ def classify_non_business_evidence(
         ]
         has_semantic = bool(semantic_hits)
         has_columns = len(column_hits) >= 2
-        strong_terms = spec.get("strong_semantic", ())
-        semantic_strong = (
-            len(semantic_hits) >= 2
-            or any(hit in strong_terms for hit in semantic_hits)
-        )
         if max_confidence <= 0.75:
             # 中置信类别：必须语义 + 结构两族证据，封顶 0.75，
             # 避免仅凭 task/device/address 等单词或单列结构误杀业务表。
             if not (has_semantic and has_columns):
                 continue
             confidence = 0.75
-        elif semantic_strong and has_columns:
+        elif has_semantic and has_columns:
+            # 语义 + 结构两类独立证据：模型产物/平台身份等可确定性压 standby。
             confidence = 0.95
-        elif semantic_strong:
-            # 多语义信号或复合强语义：一族 strong evidence，最高 0.75。
-            confidence = 0.75
         elif has_semantic or has_columns:
-            # 单一普通关键词 / 纯前缀 / 仅列结构：<=0.55，不自动降级，
+            # 只有表名语义或仅列结构：<=0.55，不自动降级，
             # 避免普通业务表名恰好含 model/task 等词被自动压掉。
             confidence = 0.55
         else:

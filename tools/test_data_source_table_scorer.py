@@ -690,8 +690,8 @@ def test_non_business_single_keyword_not_auto_downgraded() -> None:
     ]
 
 
-def test_non_business_two_semantic_signals_strong() -> None:
-    """model + lasso 两个相互支持的语义信号 -> 一族 strong semantic（0.75）。"""
+def test_non_business_semantic_only_no_downgrade() -> None:
+    """只有表名语义（即使多关键词）不自动降级；必须语义 + 结构双证据。"""
     profile = _profile(
         "model_lasso_records",
         ["id", "result", "name"],
@@ -702,12 +702,13 @@ def test_non_business_two_semantic_signals_strong() -> None:
     )
     non_biz = classify_non_business_evidence(profile, profile["quality"])
     assert non_biz["role"] == "model_artifact"
-    assert non_biz["confidence"] > 0.55
-    assert non_biz["confidence"] <= 0.75
+    assert non_biz["confidence"] <= 0.55
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "model_lasso_records")]["proposed_decision"] == "active"
 
 
-def test_non_business_strong_semantic_with_structure_095() -> None:
-    """明确语义 + >=2 个类别结构列 -> 0.95。"""
+def test_non_business_semantic_with_structure_095() -> None:
+    """表名语义 + >=2 个类别结构列 -> 0.95 -> standby。"""
     profile = _profile(
         "model_runs",
         ["id", "model_id", "algorithm", "weight"],
@@ -719,10 +720,12 @@ def test_non_business_strong_semantic_with_structure_095() -> None:
     non_biz = classify_non_business_evidence(profile, profile["quality"])
     assert non_biz["role"] == "model_artifact"
     assert non_biz["confidence"] == 0.95
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "model_runs")]["proposed_decision"] == "standby"
 
 
-def test_non_business_compound_strong_semantic_single_hit() -> None:
-    """明确复合强语义（系统日志）单独命中即为一族 strong evidence。"""
+def test_non_business_compound_semantic_without_structure_no_downgrade() -> None:
+    """复合语义（系统日志）单独命中也不降级；加结构证据才 standby。"""
     profile = _profile(
         "op_log",
         ["id", "title"],
@@ -733,7 +736,101 @@ def test_non_business_compound_strong_semantic_single_hit() -> None:
     )
     non_biz = classify_non_business_evidence(profile, profile["quality"])
     assert non_biz["role"] == "system_log"
-    assert non_biz["confidence"] == 0.75
+    assert non_biz["confidence"] <= 0.55
+    profile_with_structure = _profile(
+        "op_log",
+        ["id", "user", "request_uri", "method", "title"],
+        table_comment="系统日志",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz2 = classify_non_business_evidence(
+        profile_with_structure, profile_with_structure["quality"]
+    )
+    assert non_biz2["role"] == "system_log"
+    assert non_biz2["confidence"] == 0.95
+
+
+def test_model_efdc_structure_evidence_standby() -> None:
+    """模型产物：model 语义 + EFDC 网格/结果结构 -> standby。"""
+    profile = _profile(
+        "model_efdc_output",
+        ["id", "efdc_i", "efdc_j", "res_date", "hour", "result_type"],
+        table_comment="EFDC 模型输出",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "model_artifact"
+    assert non_biz["confidence"] == 0.95
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "model_efdc_output")]["proposed_decision"] == "standby"
+
+
+def test_media_uav_structure_evidence_standby() -> None:
+    """影像/媒体：uav 语义 + drone/gateway 结构 -> standby。"""
+    profile = _profile(
+        "wm_uav_info",
+        ["id", "drone_sn", "drone_callsign", "gateway_sn", "gateway_callsign"],
+        table_comment="无人机信息",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "media_asset"
+    assert non_biz["confidence"] == 0.95
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "wm_uav_info")]["proposed_decision"] == "standby"
+
+
+def test_platform_identity_structure_evidence_standby() -> None:
+    """平台身份：role 语义 + role_name/role_description 结构 -> standby。"""
+    profile = _profile(
+        "sm_role",
+        ["row_id", "role_name", "role_description", "status"],
+        table_comment="角色",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] in {"identity_platform", "platform_config"}
+    assert non_biz["confidence"] == 0.95
+
+
+def test_metadata_registry_structure_evidence_standby() -> None:
+    """元数据注册：metadata 语义 + layername/scale/server 结构 -> standby。"""
+    profile = _profile(
+        "t_metadata_vector",
+        ["id", "layername", "scale", "server", "xmin", "xmax"],
+        table_comment="元数据矢量",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "metadata_registry"
+    assert non_biz["confidence"] == 0.95
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "t_metadata_vector")]["proposed_decision"] == "standby"
+
+
+def test_operation_trace_structure_evidence_standby() -> None:
+    """操作轨迹：graphic 语义 + entity_type/operate_type 结构 -> standby。"""
+    profile = _profile(
+        "graphic_operate_log",
+        ["id", "entity_type", "operate_type", "operate_time", "params"],
+        table_comment="图形操作日志",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "operation_trace"
+    assert non_biz["confidence"] == 0.95
 
 
 def test_duplicate_structure_degrades_to_standby() -> None:
