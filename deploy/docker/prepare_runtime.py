@@ -1,19 +1,22 @@
-"""校验镜像配置，并将 Catalog 中的项目资产路径规范为相对路径。"""
+"""显式 legacy 路径迁移工具（仅 WATER_AGENT_ENABLE_LEGACY_PATH_MIGRATION=1 时调用）。
+
+从环境变量读取配置，在单个 SQLite 事务内把 Catalog 中的项目资产路径
+规范为相对路径；缺少必要配置时安全跳过；任何失败整体回滚。
+绝不输出密码、连接串、credential key 或环境变量全集。
+"""
 
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from dotenv import dotenv_values
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ENV_PATH = PROJECT_ROOT / ".env"
-REQUIRED_KEYS = (
-    "DEEPSEEK_API_KEY",
+
+REQUIRED_ENV_KEYS = (
     "DB_HOST",
     "DB_PORT",
     "DB_NAME",
@@ -24,8 +27,11 @@ REQUIRED_KEYS = (
     "MYSQL_DATABASE",
     "MYSQL_USER",
     "MYSQL_PASSWORD",
-    "DATA_SOURCE_CREDENTIAL_KEY",
     "DATA_SOURCE_CATALOG_PATH",
+    "METADATA_INDEX_PATH",
+    "VANNA_DATA_DIR",
+    "MYSQL_METADATA_INDEX_PATH",
+    "MYSQL_VANNA_DATA_DIR",
 )
 PATH_COLUMNS = (
     "candidate_root",
@@ -39,29 +45,15 @@ PATH_COLUMNS = (
 )
 
 
-def _required_config() -> dict[str, str]:
-    if not ENV_PATH.is_file():
-        raise RuntimeError(f"镜像缺少配置文件：{ENV_PATH}")
-    values = {
-        key: str(value)
-        for key, value in dotenv_values(ENV_PATH).items()
-        if value is not None
+def _env_config() -> dict[str, str]:
+    return {
+        key: os.environ.get(key, "").strip()
+        for key in REQUIRED_ENV_KEYS
     }
-    missing = [key for key in REQUIRED_KEYS if not values.get(key, "").strip()]
-    if missing:
-        raise RuntimeError(".env 缺少必需配置：" + ", ".join(missing))
-    return values
-
-
-def _resolve_project_path(value: str) -> Path:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-    return path.resolve()
 
 
 def _portable_path(value: str) -> str:
-    """把当前根目录、旧 /app 和 Windows 项目路径收敛成相对路径。"""
+    """把 Windows / 旧 /app 项目路径收敛成 /opt/water-agent 相对路径。"""
     normalized = value.replace("\\", "/")
     lowered = normalized.lower()
     for marker in ("/posgresql/1/", "/app/", "/opt/water-agent/"):
@@ -116,63 +108,76 @@ def _rewrite_runtime_tables(connection: sqlite3.Connection) -> None:
         )
 
 
-def main() -> None:
-    if not ENV_PATH.is_file():
-        # 镜像发布模式：不烘焙 .env（无数据库凭据），数据源由服务器前端配置。
-        print("Docker runtime configuration skipped: no .env")
-        return
+def main() -> int:
+    if os.environ.get("WATER_AGENT_ENABLE_LEGACY_PATH_MIGRATION") != "1":
+        print("Legacy path migration skipped: not enabled")
+        return 0
+    config = _env_config()
+    missing = [key for key in REQUIRED_ENV_KEYS if not config[key]]
+    if missing:
+        # 安全跳过：不输出缺失字段之外的任何信息，不做任何 Catalog 修改。
+        print("Legacy path migration skipped: 缺少必要迁移配置")
+        return 0
     try:
-        values = _required_config()
-    except RuntimeError:
-        # .env 可能由运行期自动写入（如凭据加密密钥），但缺少完整数据库配置时
-        # 仍按镜像发布模式处理：跳过路径改写，不影响空数据源启动。
-        print("Docker runtime configuration skipped: .env 缺少必需配置")
-        return
-    catalog_path = _resolve_project_path(values["DATA_SOURCE_CATALOG_PATH"])
+        catalog_path = Path(config["DATA_SOURCE_CATALOG_PATH"]).expanduser().resolve()
+        # 迁移前完整校验：端口必须是整数，Catalog 必须存在。
+        int(config["DB_PORT"])
+        int(config["MYSQL_PORT"])
+    except ValueError:
+        print("Legacy path migration skipped: 端口配置无效")
+        return 0
     if not catalog_path.is_file():
-        print(f"Docker runtime configuration skipped: no catalog {catalog_path}")
-        return
+        print("Legacy path migration skipped: catalog 不存在")
+        return 0
 
+    connection = sqlite3.connect(catalog_path)
     try:
-        with sqlite3.connect(catalog_path) as connection:
-            connection.execute(
-                """
-                UPDATE data_sources
-                SET host = ?, port = ?, database_name = ?,
-                    metadata_path = ?, memory_path = ?
-                WHERE source_id = 'postgresql-main'
-                """,
-                (
-                    values["DB_HOST"],
-                    int(values["DB_PORT"]),
-                    values["DB_NAME"],
-                    _portable_path(values["METADATA_INDEX_PATH"]),
-                    _portable_path(values["VANNA_DATA_DIR"]),
-                ),
-            )
-            connection.execute(
-                """
-                UPDATE data_sources
-                SET host = ?, port = ?, database_name = ?,
-                    metadata_path = ?, memory_path = ?
-                WHERE source_id = 'mysql-lzh-monitor'
-                """,
-                (
-                    values["MYSQL_HOST"],
-                    int(values["MYSQL_PORT"]),
-                    values["MYSQL_DATABASE"],
-                    _portable_path(values["MYSQL_METADATA_INDEX_PATH"]),
-                    _portable_path(values["MYSQL_VANNA_DATA_DIR"]),
-                ),
-            )
-            _rewrite_runtime_tables(connection)
-    except sqlite3.OperationalError:
-        # 空目录（无数据源表）时跳过路径重写，不影响镜像构建与空源启动。
-        print("Docker runtime configuration skipped: catalog is empty")
-        return
+        connection.execute("BEGIN")
+        connection.execute(
+            """
+            UPDATE data_sources
+            SET host = ?, port = ?, database_name = ?,
+                metadata_path = ?, memory_path = ?
+            WHERE source_id = 'postgresql-main'
+            """,
+            (
+                config["DB_HOST"],
+                int(config["DB_PORT"]),
+                config["DB_NAME"],
+                _portable_path(config["METADATA_INDEX_PATH"]),
+                _portable_path(config["VANNA_DATA_DIR"]),
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE data_sources
+            SET host = ?, port = ?, database_name = ?,
+                metadata_path = ?, memory_path = ?
+            WHERE source_id = 'mysql-lzh-monitor'
+            """,
+            (
+                config["MYSQL_HOST"],
+                int(config["MYSQL_PORT"]),
+                config["MYSQL_DATABASE"],
+                _portable_path(config["MYSQL_METADATA_INDEX_PATH"]),
+                _portable_path(config["MYSQL_VANNA_DATA_DIR"]),
+            ),
+        )
+        _rewrite_runtime_tables(connection)
+        connection.execute("COMMIT")
+    except Exception as exc:
+        connection.rollback()
+        print(
+            "Legacy path migration failed and rolled back: "
+            + type(exc).__name__
+        )
+        return 1
+    finally:
+        connection.close()
 
-    print("Docker runtime configuration ready")
+    print("Legacy path migration ready")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

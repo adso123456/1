@@ -14,15 +14,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     HF_HOME=/opt/water-agent/.cache/huggingface
 
-# OCI 标签：通过构建参数注入，不写入主机路径或凭据。
-ARG VCS_REF=unknown
-ARG BUILD_VERSION=e4
+# 本地镜像标签：仅保留与 Git 无关的版本/时间信息。
+ARG BUILD_VERSION=e4-local
 ARG BUILD_DATE=unknown
-ARG BUILD_SOURCE=unknown
-LABEL org.opencontainers.image.revision=${VCS_REF} \
-      org.opencontainers.image.version=${BUILD_VERSION} \
-      org.opencontainers.image.created=${BUILD_DATE} \
-      org.opencontainers.image.source=${BUILD_SOURCE}
+LABEL org.opencontainers.image.version=${BUILD_VERSION}
+LABEL org.opencontainers.image.created=${BUILD_DATE}
 
 RUN sed -i \
       -e 's|http://deb.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' \

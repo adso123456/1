@@ -3,10 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: water-agent:snapshot
+    image: ${WATER_AGENT_IMAGE:-water-agent:e4-local}
     container_name: water-agent
-    env_file:
-      - .env
     ports:
       - "${WATER_AGENT_HOST_PORT:-18000}:8000"
     extra_hosts:
