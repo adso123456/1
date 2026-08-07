@@ -1,10 +1,12 @@
-"""阶段 B：确定性评分与同业务表分组的回归测试。
+"""阶段 B：确定性评分与同业务表分组的回归测试（冻结契约版）。
 
 纯函数测试，不依赖数据库，重点锁定：
-  1. 评分维度与扣分口径；
-  2. 关键指标 unknown 不能建议 active；
-  3. 同业务组规则（含正式主表 / 分差过小 / 粒度不一致）；
-  4. compute_proposals 只写建议字段，不触碰 effective_decision。
+  1. 每表独立评分、独立判定；组不再 winner-takes-all；
+  2. update_interval unknown 完全中性；非时序表时间维度 N/A-neutral；
+  3. confirmed_empty -> standby，数据状态未知 -> pending；
+  4. 非业务高置信排除（taxonomy）与业务反证；
+  5. 组内唯一自动降级：duplicate_structure / backup_mirror；
+  6. compute_proposals 只写建议字段，不触碰 effective_decision。
 """
 
 from __future__ import annotations
@@ -17,6 +19,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.data_source_table_scorer import (
+    _business_time_column,
+    _is_audit_time_column,
+    _is_time_series_like,
+    _looks_time_column,
+    classify_non_business_evidence,
     compute_proposals,
     group_tables,
     score_table,
@@ -41,6 +48,9 @@ def _profile(
     grain: str = "station_id+monitor_time",
     column_count: int | None = None,
     schema: str = "public",
+    structure_fingerprint: str = "",
+    data_fingerprint: str = "",
+    error: str = "",
 ) -> dict:
     null_rates = null_rates or {}
     quality = {
@@ -60,6 +70,8 @@ def _profile(
         "freshness_confidence": 0.0,
         "skipped_by_total_timeout": False,
         "table_comment": table_comment,
+        "structure_fingerprint": structure_fingerprint,
+        "data_fingerprint": data_fingerprint,
     }
     return {
         "schema": schema,
@@ -80,7 +92,7 @@ def _profile(
             for name in columns
         ],
         "quality": quality,
-        "error": "",
+        "error": error,
     }
 
 
@@ -130,10 +142,260 @@ def test_score_static_dict_without_time_is_not_blocked() -> None:
         role="字典表",
         time_column="",
         grain="",
+        table_comment="系统业务字典",
     )
     result = score_table(profile, profile["quality"], 1.0)
     assert result["can_propose_active"] is True
     assert result["confidence"] >= 0.55
+    # 非时序表时间维度 N/A-neutral：不缺新鲜度/覆盖/更新分
+    assert result["breakdown"]["数据新鲜度"] == 20.0
+    assert result["breakdown"]["时间覆盖连续性"] == 10.0
+    assert result["breakdown"]["持续更新迹象"] == 5.0
+
+
+def test_audit_time_column_not_time_series() -> None:
+    profile = _profile(
+        "wm_station_info",
+        ["id", "name", "create_time", "update_time", "region_code"],
+        latest=None,
+        coverage=None,
+        role="业务表",
+        time_column="create_time",
+        grain="",
+        table_comment="站点基础信息",
+    )
+    assert _is_time_series_like(profile, profile["quality"]) is False
+    result = score_table(
+        profile,
+        profile["quality"],
+        1.0,
+        static_volume=True,
+    )
+    assert result["breakdown"]["有效数据量"] == 15.0
+    assert result["can_propose_active"] is True
+
+
+def test_business_time_column_is_time_series() -> None:
+    profile = _profile("monitor_data", WATER_COLUMNS)
+    assert _is_time_series_like(profile, profile["quality"]) is True
+
+
+def test_time_column_lexical_boundary_actor_fields() -> None:
+    """_by 结尾的 actor/operator 字段、普通 id 字段不得命中时间类型识别。"""
+    for column in (
+        "update_by", "created_by", "modified_by",
+        "candidate_id", "validated_by",
+    ):
+        assert _looks_time_column(column) is False, column
+        assert _business_time_column(column) is False, column
+
+
+def test_time_column_lexical_boundary_time_tokens() -> None:
+    """独立时间 token 识别：year/month/day/hour 及业务观测前缀组合。"""
+    for column in (
+        "monitor_year", "year", "monitor_time", "sampling_time",
+        "stat_date", "record_time", "sample_date", "report_time",
+        "timestamp",
+    ):
+        assert _looks_time_column(column) is True, column
+
+
+def test_time_column_business_layer_excludes_audit_and_plain() -> None:
+    """审计/技术时间字段是时间类型，但不能作为业务观测时间证据。"""
+    for column in (
+        "create_time", "created_at", "update_time", "updated_at",
+        "modify_time", "sync_time",
+    ):
+        assert _looks_time_column(column) is True, column
+        assert _is_audit_time_column(column) is True, column
+        assert _business_time_column(column) is False, column
+    assert _business_time_column("year") is False
+    assert _business_time_column("time") is False
+
+
+def test_update_by_does_not_pollute_business_time_judgment() -> None:
+    """真实回归：update_by 不得抢占/污染业务时间判断，monitor_year 才是证据。"""
+    profile = _profile(
+        "we_fish_records",
+        [
+            "id", "water_body_id", "species", "section",
+            "monitor_year", "create_by", "create_time",
+            "update_by", "update_time",
+        ],
+        latest=None,
+        coverage=None,
+        role="业务表",
+        time_column="monitor_year",
+        grain="water_body_id+monitor_year",
+        table_comment="鱼类",
+    )
+    # monitor_year 是业务观测时间，update_by 不是。
+    assert _business_time_column("monitor_year") is True
+    assert _business_time_column("update_by") is False
+    assert _is_time_series_like(profile, profile["quality"]) is True
+    # 仅存在 update_by 时不得判为时序表。
+    only_actor = _profile(
+        "wm_station_info",
+        ["id", "name", "update_by", "update_time"],
+        latest=None,
+        coverage=None,
+        role="业务表",
+        time_column="",
+        grain="",
+        table_comment="站点基础信息",
+    )
+    assert _is_time_series_like(only_actor, only_actor["quality"]) is False
+
+
+def test_static_table_volume_full_for_nonempty() -> None:
+    profile = _profile(
+        "std_dict",
+        ["id", "code", "name", "sort_no"],
+        row_estimate=8,
+        latest=None,
+        coverage=None,
+        role="字典表",
+        time_column="",
+        grain="",
+        table_comment="业务字典",
+    )
+    result = score_table(
+        profile,
+        profile["quality"],
+        1.0,
+        static_volume=True,
+    )
+    assert result["breakdown"]["有效数据量"] == 15.0
+
+
+def test_static_table_volume_unknown_rows_with_sample() -> None:
+    profile = _profile(
+        "std_dict",
+        ["id", "code", "name"],
+        row_estimate=None,
+        latest=None,
+        coverage=None,
+        role="字典表",
+        time_column="",
+        grain="",
+        table_comment="业务字典",
+    )
+    result = score_table(
+        profile,
+        profile["quality"],
+        1.0,
+        static_volume=True,
+    )
+    assert result["breakdown"]["有效数据量"] == 12.0
+    assert any("行数估算未知" in warning for warning in result["warnings"])
+
+
+def test_time_series_volume_curve_unchanged() -> None:
+    profile = _profile("monitor_data", WATER_COLUMNS, row_estimate=5_000)
+    result = score_table(profile, profile["quality"], 0.5)
+    assert result["breakdown"]["有效数据量"] == 10.0
+
+
+def test_small_business_time_series_volume_floor() -> None:
+    # 540 行监测表：原始 volume 7 -> floor 12
+    profile = _profile(
+        "rs_outlet_records",
+        WATER_COLUMNS,
+        row_estimate=540,
+        latest="2026-08-01 10:00:00",
+        coverage=300.0,
+        table_comment="排口监测记录",
+    )
+    result = score_table(
+        profile,
+        profile["quality"],
+        0.5,
+        volume_floor_eligible=True,
+    )
+    assert result["breakdown"]["有效数据量"] == 12.0
+    assert any("volume floor" in warning for warning in result["warnings"])
+
+
+def test_small_time_series_without_strong_business_no_floor() -> None:
+    # system_log + timestamp 不是强业务时序，不得享受 floor
+    profile = _profile(
+        "system_log",
+        ["id", "user", "timestamp", "action", "method", "ip"],
+        row_estimate=300,
+        latest="2026-08-01 10:00:00",
+        coverage=300.0,
+        table_comment="系统日志",
+        role="日志表",
+        time_column="timestamp",
+        grain="",
+    )
+    result = score_table(
+        profile,
+        profile["quality"],
+        0.5,
+        volume_floor_eligible=True,
+    )
+    assert result["breakdown"]["有效数据量"] == 7.0
+
+
+def test_identity_platform_high_confidence() -> None:
+    profile = _profile(
+        "sm_user_groupmag",
+        ["id", "user_id", "group_id", "username", "role_id", "create_time"],
+        table_comment="用户组管理",
+        role="业务表",
+        time_column="create_time",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "identity_platform"
+    assert non_biz["confidence"] == 0.95
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "sm_user_groupmag")]["proposed_decision"] == "standby"
+
+
+def test_metadata_registry_high_confidence() -> None:
+    profile = _profile(
+        "t_metadata_category",
+        ["id", "category_id", "category_name", "table_name", "field_name", "data_type"],
+        table_comment="元数据目录",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "metadata_registry"
+    assert non_biz["confidence"] == 0.95
+
+
+def test_medium_confidence_workflow_support() -> None:
+    profile = _profile(
+        "dc_survey_task",
+        ["id", "task_id", "task_name", "status", "owner", "create_time"],
+        table_comment="调查任务",
+        role="业务表",
+        time_column="create_time",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "workflow_support"
+    assert non_biz["confidence"] == 0.75
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "dc_survey_task")]["proposed_decision"] == "standby"
+
+
+def test_medium_confidence_location_reference() -> None:
+    profile = _profile(
+        "yn_s_address_area",
+        ["id", "area_code", "area_name", "parent_code", "lng", "lat"],
+        table_comment="行政区划",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "location_reference"
+    assert non_biz["confidence"] == 0.75
 
 
 def test_score_null_deduction_ignores_audit_columns() -> None:
@@ -187,7 +449,7 @@ def test_group_does_not_merge_dict_with_owner_table() -> None:
     assert groups == []
 
 
-def test_proposal_group_with_active_force_pending() -> None:
+def test_proposal_group_with_active_no_longer_forces_pending() -> None:
     profiles = [
         _profile("water_data", WATER_COLUMNS),
         _profile("water_data_old", WATER_COLUMNS[:9], row_estimate=5000),
@@ -197,13 +459,14 @@ def test_proposal_group_with_active_force_pending() -> None:
         ("public", "water_data"): {"effective_decision": "active"},
     }
     proposals = compute_proposals(profiles, {}, existing)
+    assert proposals[("public", "water_data")]["proposed_decision"] == "active"
     for key, fields in proposals.items():
-        assert fields["proposed_decision"] == "pending"
+        assert "替换需人工确认" not in fields["proposed_reason"]
+        assert "同组存在正式主表" not in fields["proposed_reason"]
         assert fields["business_group"] == "waterdata"
-        assert "替换需人工确认" in fields["proposed_reason"]
 
 
-def test_proposal_group_without_active_picks_top_and_standby() -> None:
+def test_proposal_group_members_independent_decisions() -> None:
     profiles = [
         _profile("water_data", WATER_COLUMNS, row_estimate=100_000),
         _profile("water_data_old", WATER_COLUMNS[:9], row_estimate=5_000),
@@ -211,11 +474,14 @@ def test_proposal_group_without_active_picks_top_and_standby() -> None:
     ]
     proposals = compute_proposals(profiles, {}, {})
     assert proposals[("public", "water_data")]["proposed_decision"] == "active"
-    assert proposals[("public", "water_data_backup")]["proposed_decision"] == "standby"
-    assert proposals[("public", "water_data_old")]["proposed_decision"] == "standby"
+    # 同组非最高分表不再被 rank 强制 standby：按独立评分（此处为 pending/standby）
+    for key in (("public", "water_data_old"), ("public", "water_data_backup")):
+        assert proposals[key]["proposed_decision"] != "active"
+        assert "同业务组最高分" not in proposals[key]["proposed_reason"]
+    assert proposals[("public", "water_data")]["business_group"] == "waterdata"
 
 
-def test_proposal_granularity_mix_force_pending() -> None:
+def test_proposal_granularity_members_independent() -> None:
     day = _profile(
         "wm_waterquality_day_records",
         WATER_COLUMNS,
@@ -227,9 +493,12 @@ def test_proposal_granularity_mix_force_pending() -> None:
         grain="station_id+month",
     )
     proposals = compute_proposals([day, month], {}, {})
-    for key, fields in proposals.items():
-        assert fields["proposed_decision"] == "pending"
-        assert "粒度不一致" in fields["proposed_reason"]
+    decisions = {key: fields["proposed_decision"] for key, fields in proposals.items()}
+    # 不同粒度可同时 active，不再因粒度混合强制 pending
+    assert decisions[("public", "wm_waterquality_day_records")] == "active"
+    assert decisions[("public", "wm_waterquality_month_records")] == "active"
+    for fields in proposals.values():
+        assert "表时间粒度不一致" not in fields["proposed_reason"]
 
 
 def test_proposal_standalone_thresholds() -> None:
@@ -243,12 +512,20 @@ def test_proposal_standalone_thresholds() -> None:
         mid_columns,
         row_estimate=5_000,
         latest="2026-01-01 00:00:00",
-        coverage=100.0,
+        coverage=None,
         role="业务表",
         time_column="register_date",
         grain="enterprise_id",
+        table_comment="企业排污许可档案",
+        has_pk=False,
+        null_rates={
+            "license_no": 0.95,
+            "industry_type": 0.95,
+            "address": 0.95,
+            "contact": 0.95,
+        },
     )
-    low_columns = ["id", "name", "sort_no"]
+    low_columns = ["id"]
     low = _profile(
         "low_quality",
         low_columns,
@@ -258,6 +535,9 @@ def test_proposal_standalone_thresholds() -> None:
         time_column="",
         grain="",
         role="业务表",
+        table_comment="低质量测试表",
+        has_pk=False,
+        null_rates={"id": 1.0},
     )
     proposals = compute_proposals([good, mid, low], {}, {})
     assert proposals[("public", "high_quality")]["proposed_decision"] == "active"
@@ -284,6 +564,261 @@ def test_proposal_unknown_key_metrics_force_pending() -> None:
     fields = proposals[("public", "monitor_data")]
     assert fields["proposed_decision"] == "pending"
     assert "关键质量指标 unknown" in fields["proposed_reason"]
+
+
+def test_update_interval_unknown_is_neutral() -> None:
+    profile = _profile("water_data", WATER_COLUMNS)
+    result = score_table(profile, profile["quality"], 0.5)
+    assert result["breakdown"]["持续更新迹象"] == 5.0
+    assert any("按中性计分" in warning for warning in result["warnings"])
+
+
+def test_confirmed_empty_to_standby() -> None:
+    profile = _profile(
+        "empty_business",
+        WATER_COLUMNS,
+        row_estimate=0,
+        sample_count=0,
+        latest=None,
+        coverage=None,
+    )
+    proposals = compute_proposals([profile], {}, {})
+    fields = proposals[("public", "empty_business")]
+    assert fields["proposed_decision"] == "standby"
+    assert "confirmed_empty" in fields["proposed_reason"]
+
+
+def test_unknown_empty_to_pending() -> None:
+    profile = _profile(
+        "unknown_empty",
+        WATER_COLUMNS,
+        row_estimate=500,
+        sample_count=0,
+        latest=None,
+        coverage=None,
+    )
+    proposals = compute_proposals([profile], {}, {})
+    fields = proposals[("public", "unknown_empty")]
+    assert fields["proposed_decision"] == "pending"
+    assert "数据状态未知" in fields["proposed_reason"]
+
+
+def test_non_business_high_confidence_to_standby() -> None:
+    profile = _profile(
+        "sm_login_log",
+        ["id", "user", "ip", "login_time", "action", "method"],
+        table_comment="系统登录日志",
+        role="业务表",
+        time_column="login_time",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "system_log"
+    assert non_biz["confidence"] == 0.95
+    proposals = compute_proposals([profile], {}, {})
+    fields = proposals[("public", "sm_login_log")]
+    assert fields["proposed_decision"] == "standby"
+    assert "non_business:system_log" in fields["proposed_reason"]
+
+
+def test_non_business_pure_prefix_not_excluded() -> None:
+    # 词表外弱信号（无类别语义词、无特征列）不得自动排除。
+    profile = _profile(
+        "wm_asset_inventory",
+        ["id", "name", "code", "owner", "status"],
+        table_comment="资产清单",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["confidence"] <= 0.55
+    proposals = compute_proposals([profile], {}, {})
+    assert "non_business:" not in proposals[("public", "wm_asset_inventory")][
+        "proposed_reason"
+    ]
+
+
+def test_business_counter_limits_non_business_confidence() -> None:
+    profile = _profile(
+        "wm_raster_info",
+        ["id", "tile", "layer", "path", "resolution", "name"],
+        table_comment="水质栅格图层信息",
+        role="业务表",
+        time_column="",
+        grain="",
+    )
+    non_biz = classify_non_business_evidence(profile, profile["quality"])
+    assert non_biz["role"] == "media_asset"
+    assert non_biz["confidence"] == 0.75  # 业务反证封顶，不达 0.9
+    assert non_biz["business_counter"] is True
+    # 冻结契约：业务反证封顶后仍按中置信降级（最多 standby/pending，不排除、不 active）。
+    proposals = compute_proposals([profile], {}, {})
+    assert proposals[("public", "wm_raster_info")]["proposed_decision"] == "standby"
+    assert "non_business 中置信:media_asset" in proposals[("public", "wm_raster_info")][
+        "proposed_reason"
+    ]
+
+
+def test_duplicate_structure_degrades_to_standby() -> None:
+    fingerprint = "sha256-structure-a"
+    data_fingerprint = "sha256-data-a"
+    profiles = [
+        _profile(
+            "water_data",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint=data_fingerprint,
+        ),
+        _profile(
+            "water_data_dup",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint=data_fingerprint,
+        ),
+    ]
+    proposals = compute_proposals(profiles, {}, {})
+    decisions = {
+        key: fields["proposed_decision"] for key, fields in proposals.items()
+    }
+    assert decisions[("public", "water_data")] == "active"
+    assert decisions[("public", "water_data_dup")] == "standby"
+    assert "duplicate_structure" in proposals[("public", "water_data_dup")][
+        "proposed_reason"
+    ]
+
+
+def test_backup_mirror_degrades_to_standby() -> None:
+    fingerprint = "sha256-structure-b"
+    data_fingerprint = "sha256-data-b"
+    profiles = [
+        _profile(
+            "water_data",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint=data_fingerprint,
+        ),
+        _profile(
+            "water_data_old",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint=data_fingerprint,
+        ),
+    ]
+    proposals = compute_proposals(
+        profiles,
+        {("public", "water_data_old"): 1.0},
+        {},
+    )
+    assert proposals[("public", "water_data")]["proposed_decision"] == "active"
+    assert proposals[("public", "water_data_old")]["proposed_decision"] == "standby"
+    assert "backup_mirror" in proposals[("public", "water_data_old")][
+        "proposed_reason"
+    ]
+
+
+def test_physical_shard_to_standby() -> None:
+    fingerprint = "sha256-shard-struct"
+    profiles = [
+        _profile(
+            f"wh_records_{index}",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint=f"data-{index}",
+        )
+        for index in range(1, 6)
+    ]
+    profiles.append(
+        _profile(
+            "wh_hour_records",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="data-unified",
+        )
+    )
+    proposals = compute_proposals(profiles, {}, {})
+    assert proposals[("public", "wh_records_1")]["proposed_decision"] == "standby"
+    assert "physical_shard" in proposals[("public", "wh_records_1")][
+        "proposed_reason"
+    ]
+    assert proposals[("public", "wh_records_5")]["proposed_decision"] == "standby"
+    # 统一入口表不受影响
+    assert proposals[("public", "wh_hour_records")]["proposed_decision"] == "active"
+
+
+def test_physical_shard_two_siblings_different_structure_not_degraded() -> None:
+    fingerprint = "sha256-shard-struct"
+    profiles = [
+        _profile(
+            f"wh_records_{index}",
+            WATER_COLUMNS,
+            structure_fingerprint=f"{fingerprint}-{index}",
+            data_fingerprint=f"data-{index}",
+        )
+        for index in range(1, 3)
+    ]
+    profiles.append(
+        _profile(
+            "wh_hour_records",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="data-unified",
+        )
+    )
+    proposals = compute_proposals(profiles, {}, {})
+    assert "physical_shard" not in proposals[("public", "wh_records_1")][
+        "proposed_reason"
+    ]
+
+
+def test_physical_shard_two_siblings_identical_structure() -> None:
+    fingerprint = "sha256-shard-struct"
+    profiles = [
+        _profile(
+            f"wh_meteorological_records_{index}",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint=f"data-{index}",
+        )
+        for index in (5, 37)
+    ]
+    profiles.append(
+        _profile(
+            "wh_meteorological_hour_records",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="data-unified",
+        )
+    )
+    proposals = compute_proposals(profiles, {}, {})
+    assert "physical_shard" in proposals[("public", "wh_meteorological_records_5")][
+        "proposed_reason"
+    ]
+    assert "physical_shard" in proposals[("public", "wh_meteorological_records_37")][
+        "proposed_reason"
+    ]
+
+
+def test_physical_shard_single_digit_table_not_degraded() -> None:
+    fingerprint = "sha256-shard-struct"
+    profiles = [
+        _profile(
+            "wh_meteorological_records_5",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="data-5",
+        ),
+        _profile(
+            "wh_meteorological_hour_records",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="data-unified",
+        ),
+    ]
+    proposals = compute_proposals(profiles, {}, {})
+    assert "physical_shard" not in proposals[("public", "wh_meteorological_records_5")][
+        "proposed_reason"
+    ]
 
 
 if __name__ == "__main__":
