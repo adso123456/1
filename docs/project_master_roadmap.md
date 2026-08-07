@@ -1787,3 +1787,41 @@ B5 已完成；停止本板块，不自动开始后续新板块。
 ```text
 由业务人员确认 5 张待定表；未取得可靠语义证据前不扩入 Agent。
 ```
+
+---
+
+# 41. E-4 最终代码收口与本地镜像同步验收（2026-08-07）
+
+阶段 E-4 只完成代码收口与本地镜像验收，不承担真实生产迁移。本板块为历史验收记录。
+
+## 41.1 代码主线状态
+
+- Stage A+B / E-1 / E-2A / E-2B / E-3 / E-4：COMPLETED。
+- 代码与本地镜像主线：CLOSED；正式部署：DEFERRED；Harbor 推送：PROHIBITED；正式数据迁移：DEFERRED；不建立 E-5。
+- 最终镜像构建源 master SHA：`c91362588bdf931326fd4b8026df90334c99c939`。
+
+## 41.2 E-4 代码修复
+
+- Docker 构建链（Dockerfile / .dockerignore / docker-compose.yml / deploy/docker）正式纳入仓库，可从干净 master 复现构建。
+- Docker 与 Git 绝对隔离：无远程 Git build context、无 git 命令；镜像标签不含 Git SHA/分支/仓库地址；仅保留与 Git 无关的 `version`/`created` OCI 标签。
+- 默认镜像名 `water-agent:e4-local`；构建不依赖实体 `.env`。
+- 默认容器入口零 Catalog 修改；legacy 路径迁移仅 `WATER_AGENT_ENABLE_LEGACY_PATH_MIGRATION=1` 显式启用，且单事务失败回滚。
+- `.dockerignore` 排除正式数据目录、凭据、密钥、SQLite sidecar；`.gitattributes` 强制入口脚本 LF。
+- 修复 E-2A 两条错误消息未展开占位符。
+
+## 41.3 本地最终镜像
+
+- 本地镜像 tag：`water-agent:e4-local`（别名 `water-agent:e4-final`，仅本地）。
+- 镜像 ID：`sha256:3fe8389e91f092b27f35f21b4b94b21effa8a4f3c4cd5947070426d3d39248d4`。
+- OCI 标签：`org.opencontainers.image.version=e4-local`、`org.opencontainers.image.created=2026-08-07T04:29:00Z`。
+- 架构：linux/amd64；镜像大小约 3.07 GB；入口 `["/opt/water-agent/deploy/docker/entrypoint.sh"]`；暴露 8000/tcp；健康检查为 `/health`。
+
+## 41.4 镜像内容与隔离验收结果
+
+- 镜像文件系统不存在：`*.sqlite*`、`.env`、`credential_key`、密钥/证书（pem/key/p12/pfx）、`questions_v1.json`、`agent_data/`、`vanna_data/`、`data/`、`chroma/`、`backups/`、`.git/`。
+- 隔离临时容器（临时目录 + 临时 `DATA_SOURCE_CREDENTIAL_KEY`，未挂载任何正式数据卷）验收：启动成功、`/health` 200 且 healthy、前端 index/assets 200、`/api/data-sources` 200、容器内仅 1 个 `python -m deploy.docker.server` 进程、Catalog schema_version=11、active_asset_batches=0、重启后再次 healthy 且状态稳定、日志无密码/凭据/密钥内容。
+- 单进程约束：入口为单 Uvicorn 应用进程，无 `--workers`、无 Gunicorn worker 池；E-4 部署前不得未经跨进程 lease 设计改为多 worker。
+
+## 41.5 边界确认（历史记录）
+
+未部署服务器、未推送/登录 Harbor、未修改正式容器、未挂载正式数据卷、未修改正式 Catalog/Chroma/Metadata/推荐问题资产、未执行正式数据源 prepare。本地镜像验收 Runbook 见 `docs/local_image_acceptance_runbook.md`。
