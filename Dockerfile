@@ -56,7 +56,8 @@ COPY training/mysql_lzh_monitor/sql_examples.json /opt/water-agent/training/mysq
 COPY step4_server.py requirements.txt /opt/water-agent/
 COPY --from=frontend-builder /build/frontend/dist /opt/water-agent/frontend/dist
 
-RUN chmod +x /opt/water-agent/deploy/docker/entrypoint.sh \
+RUN sed -i 's/\r$//' /opt/water-agent/deploy/docker/entrypoint.sh \
+    && chmod +x /opt/water-agent/deploy/docker/entrypoint.sh \
     && mkdir -p /opt/water-agent/runtime/reports \
                  /opt/water-agent/runtime/traces
 

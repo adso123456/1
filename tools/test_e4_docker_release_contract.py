@@ -181,6 +181,8 @@ def test_compose_config_without_env() -> None:
 def test_default_entrypoint_no_prepare_runtime() -> None:
     entrypoint = _read("deploy/docker/entrypoint.sh")
     assert "exec python -m deploy.docker.server" in entrypoint
+    assert "\r\n" not in entrypoint, "entrypoint.sh 必须是 LF 行尾（CRLF 会破坏 shebang）"
+    assert entrypoint.startswith("#!/bin/sh\n")
     migration_line = next(
         line
         for line in entrypoint.splitlines()
