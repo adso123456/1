@@ -358,6 +358,25 @@ def _test_asset_loading() -> list[tuple[str, bool, str]]:
             load_question_directory("source-legacy", root=root) is None,
         )
 
+        # question 条目结构损坏 → 整体拒绝（不能把损坏文件识别为合法空资产）
+        broken_item = root / "source-broken" / "questions_v1.json"
+        broken_item.parent.mkdir(parents=True, exist_ok=True)
+        broken_payload = build_question_directory(
+            "source-broken",
+            [{"id": "q1", "text": "合法问题"}],
+            generated_at="x",
+            generator="test",
+        )
+        broken_payload["questions"].append({"id": "q2"})
+        broken_item.write_text(
+            json.dumps(broken_payload, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        check(
+            "question 条目损坏返回 None",
+            load_question_directory("source-broken", root=root) is None,
+        )
+
     for name, passed, detail in results:
         print(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
     failed = sum(not passed for _, passed, _ in results)
@@ -693,9 +712,118 @@ def _test_api() -> list[tuple[str, bool, str]]:
     return results
 
 
+def _test_path_containment() -> list[tuple[str, bool, str]]:
+    results: list[tuple[str, bool, str]] = []
+
+    def check(name: str, passed: bool, detail: str = "") -> None:
+        results.append((name, passed, detail))
+
+    from backend.question_suggestion_assets import (
+        _ensure_contained,
+        write_question_candidate,
+    )
+
+    with tempfile.TemporaryDirectory(prefix="qs-path-") as directory:
+        root = Path(directory)
+        outside = root.parent / f"outside-{root.name}"
+        outside.mkdir(exist_ok=True)
+        try:
+            # 根外路径拒绝
+            try:
+                _ensure_contained(root, outside / "x.json")
+            except ValueError:
+                check("根外路径拒绝", True)
+            else:
+                check("根外路径拒绝", False)
+
+            payload = build_question_directory(
+                "source-a",
+                [],
+                generated_at="x",
+                generator="test",
+            )
+            # 候选文件在 source 目录外 → 拒绝
+            try:
+                write_question_candidate(
+                    payload,
+                    root=root,
+                    candidate_name="x",
+                )
+            except ValueError:
+                check("写入前 containment 校验生效", False, "应可正常写入")
+            else:
+                check("写入前 containment 校验生效", True)
+
+            # source 目录为指向根外的符号链接/junction → 写入前拒绝
+            link = root / "source-link"
+            try:
+                _make_directory_link(link, outside)
+            except (OSError, NotImplementedError):
+                check(
+                    "符号链接越界拒绝",
+                    True,
+                    "SKIP：当前环境无法创建符号链接/junction",
+                )
+            else:
+                try:
+                    write_question_candidate(
+                        {
+                            **payload,
+                            "source_id": "source-link",
+                        },
+                        root=root,
+                        candidate_name="x",
+                    )
+                except ValueError:
+                    check(
+                        "符号链接越界拒绝",
+                        True,
+                    )
+                else:
+                    check(
+                        "符号链接越界拒绝",
+                        False,
+                        "越界目录内不应产生文件",
+                    )
+                leaked = list(outside.glob("*.json")) + list(
+                    outside.glob(".questions.*")
+                )
+                check(
+                    "根外不得产生文件",
+                    not leaked,
+                    f"leaked={leaked}",
+                )
+        finally:
+            import shutil
+
+            shutil.rmtree(outside, ignore_errors=True)
+
+    for name, passed, detail in results:
+        print(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
+    failed = sum(not passed for _, passed, _ in results)
+    print(f"total={len(results)} passed={len(results) - failed} failed={failed}")
+    return results
+
+
+def _make_directory_link(link: Path, target: Path) -> None:
+    """创建目录链接；Windows 优先 junction，失败则回退 symlink。"""
+    import os
+    import subprocess
+
+    if os.name == "nt":
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return
+    os.symlink(target, link, target_is_directory=True)
+
+
 def main() -> int:
     failures = 0
-    for fn in (_test_asset_loading, _test_api):
+    for fn in (_test_asset_loading, _test_api, _test_path_containment):
         results = fn()
         failures += sum(1 for _, passed, _ in results if not passed)
     return 0 if failures == 0 else 1

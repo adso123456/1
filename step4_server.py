@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -190,6 +191,8 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 question_sync_task.cancel()
                 try:
                     await question_sync_task
+                except asyncio.CancelledError:
+                    pass
                 except Exception:
                     pass
 
@@ -205,7 +208,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                         process_pending_question_suggestion_jobs,
                     )
 
-                    process_pending_question_suggestion_jobs(
+                    # 同步工作（Chroma 回读 / SQLGuard / 只读 DB 验证）移出
+                    # 事件循环，避免阻塞问数、SSE 与其他 API 请求。
+                    await asyncio.to_thread(
+                        process_pending_question_suggestion_jobs,
                         self.resources.catalog,
                         limit=3,
                         no_db_verify=False,

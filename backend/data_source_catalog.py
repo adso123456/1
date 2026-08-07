@@ -1972,12 +1972,15 @@ class DataSourceCatalog:
         review_policy_fingerprint: str,
         provenance_hash: str,
         job_id: str | None = None,
+        force_reset: bool = False,
     ) -> dict[str, Any]:
         """登记推荐问题同步任务（幂等）。
 
         同一 (source_id, asset_type, target_runtime_revision) 只保留一条有效任务：
-        pending/running/succeeded 直接返回现有任务；failed/superseded 重置为
-        pending 允许重试。
+        - 普通发布 enqueue：pending/running/succeeded 幂等返回；failed/
+          superseded 重置为 pending 并刷新五项冻结身份；
+        - force_reset（reconcile / 手工重试）：succeeded/failed/superseded
+          重置为 pending 并刷新五项冻结身份；pending/running 保持不动。
         """
         now = int(time.time())
         asset_type = "question_suggestions"
@@ -1990,16 +1993,29 @@ class DataSourceCatalog:
                 (source_id, asset_type, runtime_revision),
             ).fetchone()
             if row is not None:
-                if row["status"] in {"pending", "running", "succeeded"}:
+                if row["status"] in {"pending", "running"}:
+                    return self._question_job_row(row)
+                if row["status"] == "succeeded" and not force_reset:
                     return self._question_job_row(row)
                 connection.execute(
                     """
                     UPDATE question_suggestion_jobs
                     SET status='pending', last_error='', updated_at=?,
-                        started_at=NULL, finished_at=NULL
+                        started_at=NULL, finished_at=NULL,
+                        target_metadata_sha256=?,
+                        target_scope_fingerprint=?,
+                        target_review_policy_fingerprint=?,
+                        target_provenance_hash=?
                     WHERE job_id=?
                     """,
-                    (now, row["job_id"]),
+                    (
+                        now,
+                        metadata_sha256,
+                        scope_fingerprint,
+                        review_policy_fingerprint,
+                        provenance_hash,
+                        row["job_id"],
+                    ),
                 )
                 refreshed = connection.execute(
                     "SELECT * FROM question_suggestion_jobs WHERE job_id=?",

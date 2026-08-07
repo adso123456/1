@@ -41,6 +41,30 @@ def question_suggestions_root(*, environ: Mapping[str, str] | None = None) -> Pa
     return (Path(AGENT_DATA_DIR).resolve() / "question_suggestions").resolve()
 
 
+def _ensure_contained(root: Path, target: Path) -> Path:
+    """校验 target 位于 root 内且受管路径链无符号链接/junction。
+
+    在第一次文件写入之前调用；越界或链上符号链接一律拒绝。
+    """
+    root_resolved = Path(root).expanduser().resolve()
+    target_resolved = Path(target).expanduser().resolve()
+    if (
+        target_resolved != root_resolved
+        and not target_resolved.is_relative_to(root_resolved)
+    ):
+        raise ValueError("受管路径越界")
+    try:
+        relative = target_resolved.relative_to(root_resolved)
+    except ValueError:
+        raise ValueError("受管路径越界") from None
+    cursor = root_resolved
+    for part in relative.parts:
+        cursor = cursor / part
+        if cursor.is_symlink() or cursor.is_junction():
+            raise ValueError("受管路径链不允许符号链接")
+    return target_resolved
+
+
 def asset_path(
     source_id: str,
     *,
@@ -50,7 +74,7 @@ def asset_path(
     """返回指定 source_id 的问题资产文件路径。"""
     source_id = _require_source_id(source_id)
     base = root if root is not None else question_suggestions_root(environ=environ)
-    return base / source_id / ASSET_FILENAME
+    return _ensure_contained(base, base / source_id / ASSET_FILENAME)
 
 
 def _require_source_id(source_id: Any) -> str:
@@ -76,6 +100,30 @@ def _payload_bytes(directory: Mapping[str, Any]) -> str:
     )
 
 
+def _strict_questions(raw_questions: Any) -> list[dict[str, Any]] | None:
+    """严格校验 question 数组：任一条目结构非法则整体拒绝。"""
+    if not isinstance(raw_questions, list):
+        return None
+    questions: list[dict[str, Any]] = []
+    for item in raw_questions:
+        if not isinstance(item, dict):
+            return None
+        qid = item.get("id")
+        text = item.get("text")
+        if not isinstance(qid, str) or not qid.strip():
+            return None
+        if not isinstance(text, str) or not text.strip():
+            return None
+        questions.append(
+            {
+                "id": qid.strip(),
+                "text": text.strip(),
+                "enabled": bool(item.get("enabled", True)),
+            }
+        )
+    return questions
+
+
 def write_question_candidate(
     directory: Mapping[str, Any],
     *,
@@ -86,7 +134,8 @@ def write_question_candidate(
     """写入唯一候选文件，不替换正式文件。"""
     source_id = _require_source_id(directory.get("source_id"))
     target = asset_path(source_id, root=root, environ=environ)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    source_dir = _ensure_contained(root or question_suggestions_root(environ=environ), target.parent)
+    source_dir.mkdir(parents=True, exist_ok=True)
     candidate_name = str(candidate_name or "")
     if (
         not candidate_name
@@ -98,6 +147,7 @@ def write_question_candidate(
     candidate = target.with_name(
         f".questions.candidate-{candidate_name}.json"
     )
+    _ensure_contained(root or question_suggestions_root(environ=environ), candidate)
     candidate.write_text(
         _payload_bytes(directory),
         encoding="utf-8",
@@ -116,7 +166,9 @@ def commit_question_candidate(
 ) -> Path:
     """候选文件原子替换正式文件并返回正式路径。"""
     source_id = _require_source_id(source_id)
+    base = root if root is not None else question_suggestions_root(environ=environ)
     candidate = candidate.expanduser().resolve()
+    _ensure_contained(base, candidate)
     target = asset_path(source_id, root=root, environ=environ)
     if candidate.parent != target.parent:
         raise ValueError("候选文件越界")
@@ -231,7 +283,7 @@ def load_question_directory_file(
         return None
     if payload.get("source_id") != source_id:
         return None
-    if not isinstance(payload.get("questions"), list):
+    if _strict_questions(payload.get("questions")) is None:
         return None
     return dict(payload)
 
@@ -253,7 +305,7 @@ def validate_question_directory_payload(
         raise ValueError("推荐问题资产 schema_version 不正确")
     if payload.get("source_id") != source_id:
         raise ValueError("推荐问题资产 source_id 不匹配")
-    if not isinstance(payload.get("questions"), list):
+    if _strict_questions(payload.get("questions")) is None:
         raise ValueError("推荐问题资产 questions 必须是数组")
     if int(payload.get("runtime_revision") or -1) != runtime_revision:
         raise ValueError("推荐问题资产 runtime_revision 不匹配")
@@ -288,26 +340,9 @@ def load_question_directory(
         return None
     if payload.get("source_id") != source_id:
         return None
-    raw_questions = payload.get("questions")
-    if not isinstance(raw_questions, list):
+    questions = _strict_questions(payload.get("questions"))
+    if questions is None:
         return None
-    questions: list[dict[str, Any]] = []
-    for item in raw_questions:
-        if not isinstance(item, dict):
-            continue
-        qid = item.get("id")
-        text = item.get("text")
-        if not isinstance(qid, str) or not qid.strip():
-            continue
-        if not isinstance(text, str) or not text.strip():
-            continue
-        questions.append(
-            {
-                "id": qid.strip(),
-                "text": text.strip(),
-                "enabled": bool(item.get("enabled", True)),
-            }
-        )
     asset_version = payload.get("asset_version")
     if not isinstance(asset_version, str) or not asset_version.strip():
         asset_version = "v1"

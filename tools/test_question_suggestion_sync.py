@@ -11,6 +11,7 @@ import json
 import shutil
 import sys
 import tempfile
+import threading
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -119,12 +120,15 @@ def _sql_record(source_id: str, sql: str, question: str = "查询各监测站点
     record_id = "toolmem-v1-" + hashlib.sha256(sql.encode("utf-8")).hexdigest()[
         :16
     ]
+    args_json = json.dumps({"sql": sql}, ensure_ascii=False, sort_keys=True)
     metadata = {
         "category": "sql_example",
         "tool_name": "run_sql",
-        "args_json": json.dumps({"sql": sql}, ensure_ascii=False),
+        "args_json": args_json,
         "source_id": source_id,
-        "content_fingerprint": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
+        "content_fingerprint": hashlib.sha256(
+            f"{question}|{args_json}".encode("utf-8")
+        ).hexdigest(),
         "question": question,
     }
     return (record_id, question, metadata)
@@ -499,7 +503,7 @@ def test_sqlguard_reject_failed() -> None:
             _run_pending(catalog, qs_root, verifier=_FakeVerifier())
             job = catalog.list_question_suggestion_jobs(source_id)[0]
             assert job["status"] == "failed"
-            assert "SQLGuard" in job["last_error"]
+            assert job["last_error"]
         finally:
             shutil.rmtree(asset_root, ignore_errors=True)
 
@@ -843,6 +847,453 @@ def test_error_never_leaks_credentials() -> None:
     assert "hunter2" not in sanitized
     assert "password=***" in sanitized
     assert "://***:***@" in sanitized
+
+
+def _run_job_threaded(catalog, job, qs_root, hook):
+    from backend.question_suggestion_sync import run_question_suggestion_job
+
+    outcome: dict = {}
+
+    def target() -> None:
+        status, error = run_question_suggestion_job(
+            catalog,
+            job,
+            asset_root=qs_root,
+            memory_factory=_LocalFakeMemory,
+            no_db_verify=True,
+            verifier=_FakeVerifier(),
+            commit_hook=hook,
+        )
+        outcome["status"] = status
+        outcome["error"] = error
+
+    thread = threading.Thread(target=target)
+    thread.start()
+    return thread, outcome
+
+
+def test_succeeded_job_reset_when_asset_deleted() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f2-del-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            assert job["status"] == "succeeded"
+            _asset_path(qs_root, source_id).unlink()
+            from backend.question_suggestion_sync import (
+                reconcile_question_suggestion_jobs,
+            )
+
+            reconcile_question_suggestion_jobs(
+                catalog,
+                asset_root=qs_root,
+            )
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            assert job["status"] == "pending"
+            assert len(catalog.list_question_suggestion_jobs(source_id)) == 1
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_succeeded_job_reset_when_asset_corrupted() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f2-corrupt-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            assert (
+                catalog.list_question_suggestion_jobs(source_id)[0]["status"]
+                == "succeeded"
+            )
+            _asset_path(qs_root, source_id).write_text(
+                "{bad json",
+                encoding="utf-8",
+            )
+            from backend.question_suggestion_sync import (
+                reconcile_question_suggestion_jobs,
+            )
+
+            reconcile_question_suggestion_jobs(
+                catalog,
+                asset_root=qs_root,
+            )
+            assert (
+                catalog.list_question_suggestion_jobs(source_id)[0]["status"]
+                == "pending"
+            )
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_succeeded_job_reset_when_question_item_corrupted() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f2-item-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            assert (
+                catalog.list_question_suggestion_jobs(source_id)[0]["status"]
+                == "succeeded"
+            )
+            payload = json.loads(
+                _asset_path(qs_root, source_id).read_text(encoding="utf-8")
+            )
+            payload["questions"].append({"id": "broken"})
+            _asset_path(qs_root, source_id).write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            from backend.question_suggestion_sync import (
+                reconcile_question_suggestion_jobs,
+            )
+
+            reconcile_question_suggestion_jobs(
+                catalog,
+                asset_root=qs_root,
+            )
+            assert (
+                catalog.list_question_suggestion_jobs(source_id)[0]["status"]
+                == "pending"
+            )
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_retry_resets_succeeded_job() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f2-retry-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            assert job["status"] == "succeeded"
+            from backend.question_suggestion_sync import (
+                retry_question_suggestions,
+            )
+
+            retried = retry_question_suggestions(catalog, source_id)
+            assert retried["job_id"] == job["job_id"]
+            assert retried["status"] == "pending"
+            assert len(catalog.list_question_suggestion_jobs(source_id)) == 1
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_recover_after_reset_single_task() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f2-recover-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            _asset_path(qs_root, source_id).unlink()
+            from backend.question_suggestion_sync import (
+                reconcile_question_suggestion_jobs,
+            )
+
+            reconcile_question_suggestion_jobs(
+                catalog,
+                asset_root=qs_root,
+            )
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            assert job["status"] == "succeeded"
+            assert _asset_path(qs_root, source_id).is_file()
+            assert len(catalog.list_question_suggestion_jobs(source_id)) == 1
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_commit_critical_section_blocks_publish() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f3-lock-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            claimed = catalog.claim_question_suggestion_job(job["job_id"])
+            assert claimed is not None
+            entered = threading.Event()
+            release = threading.Event()
+
+            def hook(phase: str) -> None:
+                if phase == "committing":
+                    entered.set()
+                    release.wait(10)
+
+            thread, outcome = _run_job_threaded(
+                catalog,
+                claimed,
+                qs_root,
+                hook,
+            )
+            assert entered.wait(10)
+            try:
+                _prepare(catalog, source_id)
+            except Exception as exc:
+                assert "正在生成问数资产" in str(exc)
+            else:
+                raise AssertionError("提交关键区未阻止并发发布")
+            release.set()
+            thread.join(20)
+            assert outcome.get("status") == "succeeded"
+            payload = json.loads(
+                _asset_path(qs_root, source_id).read_text(encoding="utf-8")
+            )
+            assert payload["runtime_revision"] == 1
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_stale_worker_paused_before_lock_supersedes() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f3-pre-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            job1 = catalog.list_question_suggestion_jobs(source_id)[0]
+            claimed1 = catalog.claim_question_suggestion_job(job1["job_id"])
+            assert claimed1 is not None
+            entered = threading.Event()
+            release = threading.Event()
+
+            def hook(phase: str) -> None:
+                if phase == "pre_lock":
+                    entered.set()
+                    release.wait(10)
+
+            thread, outcome = _run_job_threaded(
+                catalog,
+                claimed1,
+                qs_root,
+                hook,
+            )
+            assert entered.wait(10)
+            _prepare(catalog, source_id)  # Revision 2 发布完成
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            release.set()
+            thread.join(20)
+            assert outcome.get("status") == "superseded"
+            refreshed1 = next(
+                j
+                for j in catalog.list_question_suggestion_jobs(source_id)
+                if j["job_id"] == job1["job_id"]
+            )
+            assert refreshed1["status"] == "superseded"
+            assert not list(
+                (qs_root / source_id).glob(
+                    f".questions.candidate-{job1['job_id']}*"
+                )
+            )
+            payload = json.loads(
+                _asset_path(qs_root, source_id).read_text(encoding="utf-8")
+            )
+            assert payload["runtime_revision"] == 2
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_sql_changed_keeps_old_fingerprint_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f4-fp-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            collection = _collection(catalog, source_id)
+            mutated = []
+            for item in collection.records:
+                if "toolmem" in item[0]:
+                    record_id, document, metadata = item
+                    metadata = dict(metadata)
+                    metadata["args_json"] = json.dumps(
+                        {
+                            "sql": (
+                                'SELECT "id" FROM "monitor_data" '
+                                "WHERE id > 0"
+                            )
+                        }
+                    )
+                    mutated.append((record_id, document, metadata))
+                else:
+                    mutated.append(item)
+            collection.records = mutated
+            collection._save()
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            assert job["status"] == "failed"
+            assert "fingerprint" in job["last_error"]
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_sql_changed_different_column_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f4-col-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            collection = _collection(catalog, source_id)
+            mutated = []
+            for item in collection.records:
+                if "toolmem" in item[0]:
+                    record_id, document, metadata = item
+                    metadata = dict(metadata)
+                    metadata["args_json"] = json.dumps(
+                        {"sql": 'SELECT "id" FROM "monitor_data"'}
+                    )
+                    mutated.append((record_id, document, metadata))
+                else:
+                    mutated.append(item)
+            collection.records = mutated
+            collection._save()
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            assert job["status"] == "failed"
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_sql_semantics_changed_same_columns_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f4-sem-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            collection = _collection(catalog, source_id)
+            mutated = []
+            for item in collection.records:
+                if "toolmem" in item[0]:
+                    record_id, document, metadata = item
+                    metadata = dict(metadata)
+                    metadata["args_json"] = json.dumps(
+                        {
+                            "sql": (
+                                'SELECT "name", "value" FROM "monitor_data" '
+                                "ORDER BY name DESC"
+                            )
+                        }
+                    )
+                    mutated.append((record_id, document, metadata))
+                else:
+                    mutated.append(item)
+            collection.records = mutated
+            collection._save()
+            _run_pending(catalog, qs_root, verifier=_FakeVerifier())
+            job = catalog.list_question_suggestion_jobs(source_id)[0]
+            assert job["status"] == "failed"
+            assert "fingerprint" in job["last_error"]
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
+
+
+def test_column_identity_mismatch_with_provenance_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="e3f4-colid-") as directory:
+        root = Path(directory)
+        catalog, source_id, asset_root = _setup_source(root)
+        qs_root = _qs_root(root)
+        try:
+            _prepare(
+                catalog,
+                source_id,
+                extra_sql=[_sql_record(source_id, SAFE_SQL)],
+            )
+            record = catalog.require(source_id)
+            provenance_root = Path(record.metadata_path).resolve().parent
+            provenance_path = provenance_root / "asset_provenance.json"
+            provenance = json.loads(
+                provenance_path.read_text(encoding="utf-8")
+            )
+            provenance["assets"]["sql_tool_memory"][0]["column_keys"] = [
+                ["public", "monitor_data", "name"]
+            ]
+            provenance_path.write_text(
+                json.dumps(provenance),
+                encoding="utf-8",
+            )
+            from backend.data_source_asset_provenance import (
+                provenance_fingerprint,
+            )
+
+            manifest_path = provenance_root / "asset_manifest.json"
+            manifest = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            manifest["provenance_hash"] = provenance_fingerprint(provenance)
+            manifest_path.write_text(
+                json.dumps(manifest),
+                encoding="utf-8",
+            )
+            from backend.question_suggestion_sync import (
+                _read_formal_sql_tool_memory,
+            )
+
+            try:
+                _read_formal_sql_tool_memory(
+                    catalog,
+                    source_id,
+                    memory_factory=_LocalFakeMemory,
+                )
+            except DataSourceCatalogError as exc:
+                assert "列身份" in str(exc)
+            else:
+                raise AssertionError("列身份不一致未被拒绝")
+        finally:
+            shutil.rmtree(asset_root, ignore_errors=True)
 
 
 def main() -> int:

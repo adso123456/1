@@ -205,7 +205,10 @@ def reconcile_question_suggestion_jobs(
             continue
         if _needs_sync(catalog, source_id, identity, resolved_root):
             try:
-                enqueue_for_published_source(catalog, source_id)
+                catalog.enqueue_question_suggestion_job(
+                    **identity,
+                    force_reset=True,
+                )
                 created += 1
             except Exception as exc:
                 LOGGER.error(
@@ -228,7 +231,10 @@ def retry_question_suggestions(
         raise DataSourceCatalogError(
             "正式资产身份不完整，无法重试推荐问题同步"
         )
-    return catalog.enqueue_question_suggestion_job(**identity)
+    return catalog.enqueue_question_suggestion_job(
+        **identity,
+        force_reset=True,
+    )
 
 
 def _build_identity_guard(record: Any, metadata_path: Path) -> Any:
@@ -247,6 +253,77 @@ def _build_identity_guard(record: Any, metadata_path: Path) -> Any:
         database_type="postgresql",
         default_schema=record.schema_name or "public",
     )
+
+
+def _canonical_args_json(sql: str) -> str:
+    return json.dumps(
+        {"sql": sql},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _sql_tool_fingerprint_alternatives(
+    *,
+    question: str,
+    sql: str,
+    source_id: str,
+) -> set[str]:
+    """按项目既有公式重算 SQL Tool Memory 指纹。
+
+    项目内存在三种历史公式（训练规范内容身份 / 自学习 verified memory /
+    运行时学习），正式 Memory 中的记录可能来自任一生产者。此处全部按实际
+    回读内容重算，只要存储指纹与其中任一一致即证明指纹绑定实际 SQL；
+    不新建不兼容公式。
+    """
+    import hashlib
+
+    alternatives: set[str] = set()
+    try:
+        from training.sop.memory_write_plan import (
+            _canonical_content,
+            build_memory_identity_from_canonical_content,
+        )
+
+        canonical = _canonical_content(
+            {
+                "question": question,
+                "tool_name": "run_sql",
+                "args": {"sql": sql},
+            }
+        )
+        alternatives.add(
+            build_memory_identity_from_canonical_content(
+                canonical
+            ).memory_content_sha256
+        )
+    except Exception:
+        pass
+    try:
+        alternatives.add(
+            hashlib.sha256(
+                f"{question}|{_canonical_args_json(sql)}".encode("utf-8")
+            ).hexdigest()
+        )
+    except Exception:
+        pass
+    try:
+        from backend.runtime_learning_capture import (
+            normalize_question,
+            normalize_sql,
+        )
+
+        alternatives.add(
+            hashlib.sha256(
+                (
+                    f"{source_id}|{normalize_question(question)}|"
+                    f"{normalize_sql(sql)}"
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+    except Exception:
+        pass
+    return alternatives
 
 
 def _read_formal_sql_tool_memory(
@@ -330,6 +407,16 @@ def _read_formal_sql_tool_memory(
             raise DataSourceCatalogError(
                 f"正式 SQL Tool Memory 缺少非空 sql：{record_id}"
             )
+        question = str(metadata.get("question") or document or "").strip()
+        alternatives = _sql_tool_fingerprint_alternatives(
+            question=question,
+            sql=sql,
+            source_id=source_id,
+        )
+        if str(metadata.get("content_fingerprint") or "") not in alternatives:
+            raise DataSourceCatalogError(
+                f"正式 SQL Tool Memory fingerprint 与回读内容不一致：{record_id}"
+            )
         result = guard.validate(sql, query="")
         if not result.passed:
             raise DataSourceCatalogError(
@@ -355,9 +442,18 @@ def _read_formal_sql_tool_memory(
             raise DataSourceCatalogError(
                 f"正式 SQL Tool Memory 表身份与 provenance 不一致：{record_id}"
             )
-        question = str(document or "").strip()
+        actual_columns = sorted(
+            [list(key) for key in result.used_physical_columns]
+        )
+        provenance_columns = sorted(
+            [list(key) for key in (item.get("column_keys") or [])]
+        )
+        if actual_columns != provenance_columns:
+            raise DataSourceCatalogError(
+                f"正式 SQL Tool Memory 列身份与 provenance 不一致：{record_id}"
+            )
         if not question:
-            question = str(metadata.get("question") or "").strip()
+            question = str(document or "").strip()
         samples.append(
             {
                 "sample_id": record_id,
@@ -381,6 +477,7 @@ def run_question_suggestion_job(
     no_db_verify: bool = False,
     verifier: Any | None = None,
     max_questions: int = 100,
+    commit_hook: Callable[[str], None] | None = None,
 ) -> tuple[str, str]:
     """执行单个任务（调用方已 claim 为 running）。返回 (status, safe_error)。"""
     from tools.generate_question_suggestions import (
@@ -478,29 +575,52 @@ def run_question_suggestion_job(
                 ],
                 provenance_hash=identity["provenance_hash"],
             )
-            # 写入前二次身份重检（防止生成期间发布新 revision）
-            identity_now = formal_identity(catalog, source_id)
-            if identity_now is None or not _identity_matches(
-                job,
-                identity_now,
-            ):
-                catalog.supersede_question_suggestion_job(
-                    job_id,
-                    reason="identity changed before commit",
-                )
+            if commit_hook is not None:
+                commit_hook("pre_lock")
+            # F3：最终身份重检与原子替换必须与核心 prepare 互斥，
+            # 防止 Revision N+1 发布穿插在 N 的 os.replace 之间。
+            from backend.data_source_connectors import _prepare_lock
+
+            lock = _prepare_lock(source_id)
+            lock.acquire()
+            superseded = False
+            try:
+                identity_now = formal_identity(catalog, source_id)
+                if identity_now is None or not _identity_matches(
+                    job,
+                    identity_now,
+                ):
+                    catalog.supersede_question_suggestion_job(
+                        job_id,
+                        reason="identity changed before commit",
+                    )
+                    superseded = True
+                else:
+                    if commit_hook is not None:
+                        commit_hook("committing")
+                    commit_question_candidate(
+                        candidate,
+                        source_id=source_id,
+                        root=resolved_root,
+                    )
+                    formal = load_question_directory(
+                        source_id,
+                        root=resolved_root,
+                    )
+                    if formal is None or formal.get(
+                        "runtime_revision"
+                    ) != int(identity["runtime_revision"]):
+                        raise DataSourceCatalogError(
+                            "正式推荐问题资产回读校验失败"
+                        )
+            finally:
+                lock.release()
+            if superseded:
+                try:
+                    candidate.unlink(missing_ok=True)
+                except Exception:
+                    pass
                 return "superseded", ""
-            commit_question_candidate(
-                candidate,
-                source_id=source_id,
-                root=resolved_root,
-            )
-            formal = load_question_directory(source_id, root=resolved_root)
-            if formal is None or formal.get("runtime_revision") != int(
-                identity["runtime_revision"]
-            ):
-                raise DataSourceCatalogError(
-                    "正式推荐问题资产回读校验失败"
-                )
         except Exception:
             try:
                 candidate.unlink(missing_ok=True)
