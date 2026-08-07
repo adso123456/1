@@ -1110,7 +1110,87 @@ def test_sql_args_json_missing_sql() -> None:
             document, metadata = collection.records[record_id]
             metadata["args_json"] = json.dumps({"question": "x"})
             collection.records[record_id] = (document, metadata)
-        _assert_raises(fixture, mutate, "sql")
+        _assert_raises(fixture, mutate, "args_json")
+    finally:
+        fixture.cleanup()
+
+
+def _replace_readback_sql(fixture: _Fixture, new_sql: str) -> None:
+    collection = fixture.collection()
+    record_id = fixture.expected_records[-1][0]
+    document, metadata = collection.records[record_id]
+    metadata["args_json"] = json.dumps(
+        {"sql": new_sql},
+        ensure_ascii=False,
+    )
+    collection.records[record_id] = (document, metadata)
+
+
+def test_sql_readback_replaced_with_select_star() -> None:
+    fixture = _sql_fixture(
+        'SELECT "id" FROM "public"."monitor_data"'
+    )
+    try:
+        _assert_raises(
+            fixture,
+            lambda fx: _replace_readback_sql(
+                fx,
+                'SELECT * FROM "public"."monitor_data"',
+            ),
+            "args_json",
+        )
+    finally:
+        fixture.cleanup()
+
+
+def test_sql_readback_replaced_with_non_allowed_table() -> None:
+    fixture = _sql_fixture(
+        'SELECT "id" FROM "public"."monitor_data"'
+    )
+    try:
+        _assert_raises(
+            fixture,
+            lambda fx: _replace_readback_sql(
+                fx,
+                'SELECT "id" FROM "public"."outside_table"',
+            ),
+            "args_json",
+        )
+    finally:
+        fixture.cleanup()
+
+
+def test_sql_readback_replaced_with_scope_out_column() -> None:
+    fixture = _sql_fixture(
+        'SELECT "id" FROM "public"."monitor_data"'
+    )
+    try:
+        _assert_raises(
+            fixture,
+            lambda fx: _replace_readback_sql(
+                fx,
+                'SELECT "secret" FROM "public"."monitor_data"',
+            ),
+            "args_json",
+        )
+    finally:
+        fixture.cleanup()
+
+
+def test_sql_readback_replaced_legal_sql_provenance_stale() -> None:
+    """实际回读被替换为另一条合法 SQL，但 provenance 仍是旧 SQL 的身份。"""
+    fixture = _sql_fixture(
+        'SELECT "id" FROM "public"."monitor_data"'
+    )
+    try:
+        _assert_raises(
+            fixture,
+            lambda fx: _replace_readback_sql(
+                fx,
+                'SELECT "name" FROM "public"."station_dict"',
+            ),
+            "args_json",
+        )
     finally:
         fixture.cleanup()
 
@@ -1255,6 +1335,76 @@ def test_sql_record_id_duplicate() -> None:
     fixture = _Fixture(sql_records=[record, record])
     try:
         _assert_raises(fixture, mutate=None, keyword="ID 重复")
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_ddl_provenance_fingerprint_tampered() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            fx.provenance_payload["assets"]["chroma_ddl"][0][
+                "content_fingerprint"
+            ] = "deadbeef"
+            write_provenance(fx.provenance_path, fx.provenance_payload)
+        _assert_raises(fixture, mutate, "content_fingerprint")
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_ddl_metadata_fingerprint_tampered() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            collection = fx.collection()
+            first_id = next(iter(collection.records))
+            document, metadata = collection.records[first_id]
+            metadata["content_fingerprint"] = "deadbeef"
+            collection.records[first_id] = (document, metadata)
+        _assert_raises(fixture, mutate, "content_fingerprint")
+    finally:
+        fixture.cleanup()
+
+
+def test_chroma_ddl_provenance_asset_type_tampered() -> None:
+    fixture = _Fixture()
+    try:
+        def mutate(fx: _Fixture) -> None:
+            fx.provenance_payload["assets"]["chroma_ddl"][0][
+                "asset_type"
+            ] = "not_chroma_ddl"
+            write_provenance(fx.provenance_path, fx.provenance_payload)
+        _assert_raises(fixture, mutate, "asset_type")
+    finally:
+        fixture.cleanup()
+
+
+def test_sql_provenance_fingerprint_tampered() -> None:
+    fixture = _sql_fixture(
+        'SELECT "id" FROM "public"."monitor_data"'
+    )
+    try:
+        def mutate(fx: _Fixture) -> None:
+            fx.provenance_payload["assets"]["sql_tool_memory"][0][
+                "content_fingerprint"
+            ] = "deadbeef"
+            write_provenance(fx.provenance_path, fx.provenance_payload)
+        _assert_raises(fixture, mutate, "content_fingerprint")
+    finally:
+        fixture.cleanup()
+
+
+def test_sql_provenance_asset_type_tampered() -> None:
+    fixture = _sql_fixture(
+        'SELECT "id" FROM "public"."monitor_data"'
+    )
+    try:
+        def mutate(fx: _Fixture) -> None:
+            fx.provenance_payload["assets"]["sql_tool_memory"][0][
+                "asset_type"
+            ] = "chroma_ddl"
+            write_provenance(fx.provenance_path, fx.provenance_payload)
+        _assert_raises(fixture, mutate, "asset_type")
     finally:
         fixture.cleanup()
 

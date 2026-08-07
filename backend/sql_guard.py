@@ -1034,7 +1034,7 @@ class SQLGuard:
             self._merge_identity(result, inner)
 
         virtual_names = {relation["name"] for relation in result["relations"]}
-        physical_by_name: dict[str, dict] = {}
+        physical_by_name: dict[tuple[str, str], dict] = {}
         for raw_table, alias in self._extract_table_tokens(outer_sql):
             cleaned = _clean_identifier(raw_table)
             if cleaned in virtual_names:
@@ -1045,17 +1045,18 @@ class SQLGuard:
             if status == "ok":
                 key = (schema, table)
                 result["physical_tables"].add(key)
-                if table not in physical_by_name:
-                    physical_by_name[table] = self._physical_relation(key)
+                relation = physical_by_name.setdefault(
+                    key,
+                    self._physical_relation(key),
+                )
                 if alias:
                     alias_name = _clean_identifier(alias)
-                    source = physical_by_name[table]
                     result["relations"].append(
                         {
                             "name": alias_name,
-                            "tables": source["tables"],
-                            "columns": source["columns"],
-                            "lineage": source["lineage"],
+                            "tables": relation["tables"],
+                            "columns": relation["columns"],
+                            "lineage": relation["lineage"],
                         }
                     )
             elif status == "unknown":
@@ -1107,6 +1108,8 @@ class SQLGuard:
             if wildcard == "count_star":
                 lineage[name] = frozenset()
                 continue
+            if wildcard == "wildcard":
+                continue
             columns, _, _ = self._resolve_expression_columns(
                 body,
                 result["relations"],
@@ -1145,17 +1148,6 @@ class SQLGuard:
         }
 
     @staticmethod
-    def _find_relation(
-        relations: list[dict],
-        name: str,
-    ) -> dict | None:
-        cleaned = _clean_identifier(name)
-        for relation in relations:
-            if relation["name"] == cleaned:
-                return relation
-        return None
-
-    @staticmethod
     def _relation_column(
         relation: dict,
         column: str,
@@ -1178,16 +1170,74 @@ class SQLGuard:
         return expr
 
     def _detect_wildcard(self, expression: str) -> str | None:
-        expr = expression.strip()
-        if re.fullmatch(r"\*", expr):
-            return "wildcard"
-        if re.fullmatch(r"[a-zA-Z_][\w]*\.\*", expr):
-            return "wildcard"
-        if re.fullmatch(r"(?i)count\s*\(\s*\*\s*\)", expr):
-            return "count_star"
-        if re.fullmatch(r"(?i)[a-zA-Z_][\w]*\s*\(\s*\*\s*\)", expr):
-            return "wildcard"
-        return None
+        """引号/括号/空白感知的投影通配符检测。
+
+        仅允许严格 COUNT(*)（函数名 COUNT、圆括号内只有 *）；其余任何
+        投影表达式中的 *（含 "table".*、`table`.*、(alias).*、alias . *、
+        COUNT(table.*) 等变体）一律判定为通配符。
+        """
+        body = self._strip_alias_text(expression)
+        body = re.sub(r"'[^']*'", " ", body)
+        stars = self._scan_projection_stars(body)
+        if not stars:
+            return None
+        for star_index in stars:
+            if not self._is_strict_count_star(body, star_index):
+                return "wildcard"
+        return "count_star"
+
+    @staticmethod
+    def _scan_projection_stars(body: str) -> list[int]:
+        """返回表达式主体中引号外的所有 * 下标。"""
+        stars: list[int] = []
+        quote: str | None = None
+        index = 0
+        while index < len(body):
+            char = body[index]
+            if quote:
+                if char == quote:
+                    if index + 1 < len(body) and body[index + 1] == quote:
+                        index += 2
+                        continue
+                    quote = None
+                index += 1
+                continue
+            if char in {'"', "`"}:
+                quote = char
+                index += 1
+                continue
+            if char == "*":
+                stars.append(index)
+            index += 1
+        return stars
+
+    @staticmethod
+    def _is_strict_count_star(body: str, star_index: int) -> bool:
+        """判断 * 是否属于严格的 COUNT( * ) 调用内部。"""
+        left = body[:star_index]
+        right = body[star_index + 1 :]
+        j = len(left) - 1
+        while j >= 0 and left[j].isspace():
+            j -= 1
+        if j < 0 or left[j] != "(":
+            return False
+        k = j - 1
+        while k >= 0 and left[k].isspace():
+            k -= 1
+        name_end = k + 1
+        while k >= 0 and (left[k].isalnum() or left[k] == "_"):
+            k -= 1
+        function_name = left[k + 1 : name_end]
+        if function_name.lower() != "count":
+            return False
+        if k >= 0 and (left[k].isalnum() or left[k] == "_"):
+            return False
+        m = 0
+        while m < len(right) and right[m].isspace():
+            m += 1
+        if m >= len(right) or right[m] != ")":
+            return False
+        return True
 
     def _expression_alias(
         self,
@@ -1273,16 +1323,58 @@ class SQLGuard:
                 else:
                     unknown.append(identifier)
                 continue
-            relation = self._find_relation(relations, parts[-2])
+            if len(parts) >= 3:
+                schema, table, column = parts[-3], parts[-2], parts[-1]
+                matched = [
+                    relation
+                    for relation in relations
+                    if (schema, table) in relation["tables"]
+                ]
+                resolved: set[tuple[str, str, str]] = set()
+                for relation in matched:
+                    lineage = self._relation_column(relation, column)
+                    if lineage:
+                        resolved.update(lineage)
+                if not resolved:
+                    unknown.append(".".join(parts))
+                else:
+                    columns.update(resolved)
+                continue
+            qualifier = parts[-2]
             column = parts[-1]
-            if relation is None:
+            matched = [
+                relation
+                for relation in relations
+                if relation["name"] == qualifier
+            ]
+            if not matched:
                 unknown.append(".".join(parts))
                 continue
-            physical = self._relation_column(relation, column)
-            if physical is None:
+            resolved = set()
+            for relation in matched:
+                lineage = self._relation_column(relation, column)
+                if lineage:
+                    resolved.update(lineage)
+            distinct_sources = {
+                frozenset(relation["tables"]) for relation in matched
+            }
+            if not resolved:
                 unknown.append(".".join(parts))
+            elif len(distinct_sources) > 1:
+                ambiguous.append(
+                    {
+                        "column": qualifier,
+                        "candidates": sorted(
+                            {
+                                column_key
+                                for relation in matched
+                                for column_key in relation["tables"]
+                            }
+                        ),
+                    }
+                )
             else:
-                columns.update(physical)
+                columns.update(resolved)
         return columns, unknown, ambiguous
 
     @staticmethod

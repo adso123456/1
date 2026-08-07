@@ -142,6 +142,10 @@ def _validate_documentation(
         record_id = str(record.get("record_id") or "")
         if not record_id:
             raise DataSourceCatalogError("documentation provenance 缺少 record_id")
+        if str(record.get("asset_type") or "") != "documentation":
+            raise DataSourceCatalogError(
+                f"documentation provenance asset_type 不一致：{record_id}"
+            )
         if record_id in seen_ids:
             raise DataSourceCatalogError(f"documentation record_id 重复：{record_id}")
         seen_ids.add(record_id)
@@ -201,6 +205,7 @@ def _validate_chroma(
     scope_tables: set[tuple[str, str]],
     scope_columns: set[tuple[str, str, str]],
     expected_records: list[tuple[str, str, Mapping[str, Any]]],
+    sql_guard: Any,
 ) -> None:
     from backend.memory import create_memory
 
@@ -242,14 +247,30 @@ def _validate_chroma(
                 raise DataSourceCatalogError(f"候选 Chroma 多余记录：{record_id}")
             if document != expected_document:
                 raise DataSourceCatalogError(f"候选 Chroma 文档不一致：{record_id}")
-            for key in ("memory_type", "category", "source_id", "content_fingerprint"):
+            for key in (
+                "memory_type",
+                "category",
+                "tool_name",
+                "source_id",
+                "content_fingerprint",
+            ):
                 if str(metadata.get(key) or "") != str(expected_metadata.get(key) or ""):
                     raise DataSourceCatalogError(
                         f"候选 Chroma metadata.{key} 不一致：{record_id}"
                     )
+            # F1：SQL 关键字段必须精确一致（args_json 存在时逐字符比较），
+            # 防止写前安全 SQL 与实际 Chroma 危险 SQL 不一致仍通过硬门。
+            for key in ("args_json", "success"):
+                if key in metadata or key in expected_metadata:
+                    if str(metadata.get(key) or "") != str(
+                        expected_metadata.get(key) or ""
+                    ):
+                        raise DataSourceCatalogError(
+                            f"候选 Chroma metadata.{key} 不一致：{record_id}"
+                        )
         # 逐记录按类型校验身份。
         ddl_records = [
-            (record_id, document)
+            (record_id, document, metadata)
             for record_id, (document, metadata) in readback.items()
             if str(metadata.get("memory_type")) == "ddl"
         ]
@@ -285,6 +306,9 @@ def _validate_chroma(
         _validate_sql_tool_records(
             sql_tool_records,
             provenance,
+            allowed_tables=allowed_tables,
+            scope_columns=scope_columns,
+            sql_guard=sql_guard,
         )
     finally:
         from backend.data_source_connectors import DataSourceAssetPreparer
@@ -293,7 +317,7 @@ def _validate_chroma(
 
 
 def _validate_chroma_ddl(
-    records: list[tuple[str, str]],
+    records: list[tuple[str, str, Mapping[str, Any]]],
     provenance: Mapping[str, Any],
     *,
     database_type: str,
@@ -312,10 +336,11 @@ def _validate_chroma_ddl(
         )
     seen_tables: set[tuple[str, str]] = set()
     seen_columns: set[tuple[str, str, str]] = set()
-    for record_id, document in records:
+    for record_id, document, metadata in records:
         if not document.startswith("DDL\n"):
             raise DataSourceCatalogError(f"Chroma DDL 前缀错误：{record_id}")
         ddl_text = document[len("DDL\n") :]
+        actual_fingerprint = content_fingerprint(ddl_text)
         table_keys, column_keys = parse_ddl_identity(
             ddl_text,
             database_type=database_type,
@@ -324,6 +349,26 @@ def _validate_chroma_ddl(
         provenance_record = provenance_records.get(record_id)
         if provenance_record is None:
             raise DataSourceCatalogError(f"Chroma DDL 无对应 provenance：{record_id}")
+        if str(provenance_record.get("asset_type") or "") != "chroma_ddl":
+            raise DataSourceCatalogError(
+                f"Chroma DDL provenance asset_type 不一致：{record_id}"
+            )
+        if str(provenance_record.get("record_id") or "") != record_id:
+            raise DataSourceCatalogError(
+                f"Chroma DDL provenance record_id 不一致：{record_id}"
+            )
+        if str(provenance_record.get("content_fingerprint") or "") != (
+            actual_fingerprint
+        ):
+            raise DataSourceCatalogError(
+                f"Chroma DDL provenance content_fingerprint 不一致：{record_id}"
+            )
+        if str(metadata.get("content_fingerprint") or "") != (
+            actual_fingerprint
+        ):
+            raise DataSourceCatalogError(
+                f"Chroma DDL metadata content_fingerprint 不一致：{record_id}"
+            )
         expected_tables = _normalize_keys(provenance_record.get("table_keys") or [])
         expected_columns = _normalize_keys(provenance_record.get("column_keys") or [])
         _require_equal_keys(
@@ -385,6 +430,21 @@ def _validate_chroma_documentation(
             raise DataSourceCatalogError(
                 f"Chroma documentation 无对应 provenance：{record_id}"
             )
+        if str(doc_provenance.get("asset_type") or "") != "documentation":
+            raise DataSourceCatalogError(
+                f"Chroma documentation 对应 documentation asset_type 不一致：{record_id}"
+            )
+        if (
+            str(chroma_provenance.get("asset_type") or "")
+            != "chroma_documentation"
+        ):
+            raise DataSourceCatalogError(
+                f"Chroma documentation asset_type 不一致：{record_id}"
+            )
+        if str(chroma_provenance.get("record_id") or "") != record_id:
+            raise DataSourceCatalogError(
+                f"Chroma documentation provenance record_id 不一致：{record_id}"
+            )
         if str(doc_provenance.get("document") or "") != document:
             raise DataSourceCatalogError(
                 f"Chroma documentation 文本不一致：{record_id}"
@@ -445,7 +505,18 @@ def _validate_chroma_documentation(
 def _validate_sql_tool_records(
     records: list[tuple[str, str, Mapping[str, Any]]],
     provenance: Mapping[str, Any],
+    *,
+    allowed_tables: set[tuple[str, str]],
+    scope_columns: set[tuple[str, str, str]],
+    sql_guard: Any,
 ) -> None:
+    """单一 SQL Tool Memory 校验链。
+
+    以实际 Chroma 回读 metadata 为唯一事实源：
+    契约校验 → provenance 身份/fingerprint 一致性 → 对回读 SQL 执行
+    SQLGuard → allowed_tables / selected_scope 准入 → 与 provenance
+    table_keys / column_keys 精确一致。
+    """
     sql_provenance = {
         str(item.get("record_id") or ""): item
         for item in provenance.get("assets", {}).get("sql_tool_memory") or []
@@ -472,10 +543,64 @@ def _validate_sql_tool_records(
         sql = str((args or {}).get("sql") or "")
         if not sql.strip():
             raise DataSourceCatalogError(f"SQL Tool Memory 缺少非空 sql：{record_id}")
-        if record_id not in sql_provenance:
+        provenance_record = sql_provenance.get(record_id)
+        if provenance_record is None:
             raise DataSourceCatalogError(
                 f"SQL Tool Memory 无对应 provenance：{record_id}"
             )
+        if str(provenance_record.get("asset_type") or "") != "sql_tool_memory":
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory provenance asset_type 不一致：{record_id}"
+            )
+        if str(provenance_record.get("record_id") or "") != record_id:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory provenance record_id 不一致：{record_id}"
+            )
+        if str(provenance_record.get("content_fingerprint") or "") != str(
+            metadata.get("content_fingerprint") or ""
+        ):
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory provenance content_fingerprint 不一致：{record_id}"
+            )
+        result = sql_guard.validate(sql, query="")
+        if not result.passed:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 未通过 SQLGuard：{record_id} -> {result.reason}"
+            )
+        if result.unknown_tables or result.unknown_columns:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 含未知表/列：{record_id}"
+            )
+        if result.wildcard_references:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 含通配符引用：{record_id}"
+            )
+        if result.ambiguous_columns:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 含歧义字段：{record_id}"
+            )
+        if result.unresolved_lineage:
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 含无法解析的身份：{record_id}"
+            )
+        if not result.used_physical_tables.issubset(allowed_tables):
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 引用非 allowed 表：{record_id}"
+            )
+        if not result.used_physical_columns.issubset(scope_columns):
+            raise DataSourceCatalogError(
+                f"SQL Tool Memory 引用 scope 外列：{record_id}"
+            )
+        _require_equal_keys(
+            set(result.used_physical_tables),
+            _normalize_keys(provenance_record.get("table_keys") or []),
+            f"SQL Tool Memory {record_id} table_keys",
+        )
+        _require_equal_keys(
+            set(result.used_physical_columns),
+            _normalize_keys(provenance_record.get("column_keys") or []),
+            f"SQL Tool Memory {record_id} column_keys",
+        )
 
 
 def validate_runtime_candidate_assets(
@@ -538,12 +663,6 @@ def validate_runtime_candidate_assets(
         scope_tables=scope_tables,
         scope_columns=scope_columns,
         expected_records=expected_records,
-    )
-    _validate_sql_tool_gate(
-        provenance,
-        expected_records,
-        allowed_tables=allowed,
-        scope_columns=scope_columns,
         sql_guard=sql_guard,
     )
     return {
@@ -554,103 +673,3 @@ def validate_runtime_candidate_assets(
         ),
         "sql_tool_memory_records": len(provenance["assets"]["sql_tool_memory"]),
     }
-
-
-def _validate_sql_tool_gate(
-    provenance: Mapping[str, Any],
-    expected_records: list[tuple[str, str, Mapping[str, Any]]],
-    *,
-    allowed_tables: set[tuple[str, str]],
-    scope_columns: set[tuple[str, str, str]],
-    sql_guard: Any,
-) -> None:
-    sql_provenance = {
-        str(item.get("record_id") or ""): item
-        for item in provenance.get("assets", {}).get("sql_tool_memory") or []
-    }
-    sql_tool_expected = [
-        (record_id, _, metadata)
-        for record_id, _, metadata in expected_records
-        if (
-            str(metadata.get("category") or "") == "sql_example"
-            or str(metadata.get("tool_name") or "") == "run_sql"
-            or "args_json" in metadata
-        )
-    ]
-    if len(sql_tool_expected) != len(sql_provenance):
-        raise DataSourceCatalogError(
-            "SQL Tool Memory 预期记录数与 provenance 不一致"
-        )
-    for record_id, _, metadata in sql_tool_expected:
-        is_sql_tool = (
-            str(metadata.get("category") or "") == "sql_example"
-            or str(metadata.get("tool_name") or "") == "run_sql"
-            or "args_json" in metadata
-        )
-        if not is_sql_tool:
-            continue
-        if record_id not in sql_provenance:
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 无对应 provenance：{record_id}"
-            )
-        try:
-            args = json.loads(str(metadata.get("args_json") or "{}"))
-        except (TypeError, ValueError):
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory args_json 不可解析：{record_id}"
-            ) from None
-        sql = str((args or {}).get("sql") or "")
-        if not sql.strip():
-            raise DataSourceCatalogError(f"SQL Tool Memory 缺少非空 sql：{record_id}")
-        result = sql_guard.validate(sql, query="")
-        if not result.passed:
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 未通过 SQLGuard：{record_id} -> {result.reason}"
-            )
-        if result.unknown_tables or result.unknown_columns:
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 含未知表/列：{record_id}"
-            )
-        if result.wildcard_references:
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 含通配符引用：{record_id}"
-            )
-        if result.ambiguous_columns:
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 含歧义字段：{record_id}"
-            )
-        if result.unresolved_lineage:
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 含无法解析的身份：{record_id}"
-            )
-        if not result.used_physical_tables.issubset(allowed_tables):
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 引用非 allowed 表：{record_id}"
-            )
-        if not result.used_physical_columns.issubset(scope_columns):
-            raise DataSourceCatalogError(
-                f"SQL Tool Memory 引用 scope 外列：{record_id}"
-            )
-        actual_tables = set(
-            (schema, table) for schema, table in result.used_physical_tables
-        )
-        actual_columns = set(
-            (schema, table, column)
-            for schema, table, column in result.used_physical_columns
-        )
-        expected_tables = _normalize_keys(
-            sql_provenance[record_id].get("table_keys") or []
-        )
-        expected_columns = _normalize_keys(
-            sql_provenance[record_id].get("column_keys") or []
-        )
-        _require_equal_keys(
-            actual_tables,
-            expected_tables,
-            f"SQL Tool Memory {record_id} table_keys",
-        )
-        _require_equal_keys(
-            actual_columns,
-            expected_columns,
-            f"SQL Tool Memory {record_id} column_keys",
-        )

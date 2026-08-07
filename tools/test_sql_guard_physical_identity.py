@@ -133,6 +133,88 @@ def test_pg_unqualified_cross_schema_ambiguous_rejected() -> None:
         assert result.unresolved_lineage
 
 
+def _cross_schema_rows():
+    return [
+        {"schema": "public", "table": "t", "column": "id"},
+        {"schema": "public", "table": "t", "column": "safe"},
+        {"schema": "other", "table": "t", "column": "id"},
+        {"schema": "other", "table": "t", "column": "secret"},
+    ]
+
+
+def test_cross_schema_alias_columns_bound_to_own_table() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-xs-alias-") as directory:
+        guard = SQLGuard(
+            _write_index(Path(directory), _cross_schema_rows()),
+            database_type="postgresql",
+            default_schema="public",
+        )
+        sql = (
+            'SELECT a.safe, b.secret FROM "public"."t" AS a '
+            'JOIN "other"."t" AS b ON a.id = b.id'
+        )
+        result = _assert_ok(guard, sql)
+        assert ("public", "t", "safe") in result.used_physical_columns
+        assert ("other", "t", "secret") in result.used_physical_columns
+        assert ("other", "t", "safe") not in result.used_physical_columns
+        assert ("public", "t", "secret") not in result.used_physical_columns
+        assert result.used_physical_tables == {
+            ("public", "t"),
+            ("other", "t"),
+        }
+
+
+def test_cross_schema_second_table_scope_out_column_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-xs-out-") as directory:
+        rows = [
+            {"schema": "public", "table": "t", "column": "id"},
+            {"schema": "public", "table": "t", "column": "safe"},
+            {"schema": "other", "table": "t", "column": "id"},
+        ]
+        guard = SQLGuard(
+            _write_index(Path(directory), rows),
+            database_type="postgresql",
+            default_schema="public",
+        )
+        sql = (
+            'SELECT b.safe FROM "public"."t" AS a '
+            'JOIN "other"."t" AS b ON a.id = b.id'
+        )
+        result = _assert_rejected(guard, sql, "未知字段")
+        assert result.unknown_columns
+
+
+def test_three_part_qualified_column_resolves_schema() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-xs-3part-") as directory:
+        guard = SQLGuard(
+            _write_index(Path(directory), _cross_schema_rows()),
+            database_type="postgresql",
+            default_schema="public",
+        )
+        sql = (
+            'SELECT "other"."t"."secret" FROM "public"."t" AS a '
+            'JOIN "other"."t" AS b ON a.id = b.id'
+        )
+        result = _assert_ok(guard, sql)
+        assert ("other", "t", "secret") in result.used_physical_columns
+        assert ("public", "t", "secret") not in result.used_physical_columns
+
+
+def test_unqualified_same_name_table_ambiguous_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-xs-ambig-") as directory:
+        guard = SQLGuard(
+            _write_index(Path(directory), _cross_schema_rows()),
+            database_type="postgresql",
+            default_schema="public",
+        )
+        sql = (
+            'SELECT t.safe FROM "public"."t" '
+            'JOIN "other"."t" ON "public"."t"."id" = "other"."t"."id"'
+        )
+        result = _assert_rejected(guard, sql, "歧义")
+        assert result.ambiguous_columns
+
+
 def test_mysql_backfills_database_name() -> None:
     with tempfile.TemporaryDirectory(prefix="sg-my-") as directory:
         result = _assert_ok(
@@ -182,11 +264,70 @@ def test_alias_star_rejected() -> None:
         assert result.wildcard_references
 
 
+def test_quoted_table_star_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-qstar-") as directory:
+        result = _assert_rejected(
+            _pg_guard(Path(directory)),
+            'SELECT "monitor_data".* FROM "public"."monitor_data"',
+            "通配符",
+        )
+        assert result.wildcard_references
+
+
+def test_mysql_quoted_table_star_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-mystar-") as directory:
+        result = _assert_rejected(
+            _mysql_guard(Path(directory)),
+            "SELECT `monitor_data`.* FROM `monitor_data`",
+            "通配符",
+        )
+        assert result.wildcard_references
+
+
+def test_parenthesized_alias_star_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-pstar-") as directory:
+        result = _assert_rejected(
+            _pg_guard(Path(directory)),
+            'SELECT (m).* FROM "public"."t" AS m',
+            "通配符",
+        )
+        assert result.wildcard_references
+
+
+def test_spaced_alias_star_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-sstar-") as directory:
+        result = _assert_rejected(
+            _pg_guard(Path(directory)),
+            'SELECT m . * FROM "public"."t" AS m',
+            "通配符",
+        )
+        assert result.wildcard_references
+
+
+def test_count_table_star_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-cstar-") as directory:
+        result = _assert_rejected(
+            _pg_guard(Path(directory)),
+            'SELECT COUNT(t.*) FROM "public"."t"',
+            "通配符",
+        )
+        assert result.wildcard_references
+
+
 def test_count_star_allowed() -> None:
     with tempfile.TemporaryDirectory(prefix="sg-count-") as directory:
         result = _assert_ok(
             _pg_guard(Path(directory)),
             'SELECT COUNT(*) FROM "public"."t"',
+        )
+        assert not result.wildcard_references
+
+
+def test_count_star_spaced_allowed() -> None:
+    with tempfile.TemporaryDirectory(prefix="sg-csp-") as directory:
+        result = _assert_ok(
+            _pg_guard(Path(directory)),
+            'SELECT COUNT( * ) FROM "public"."t"',
         )
         assert not result.wildcard_references
 
