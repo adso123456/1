@@ -79,7 +79,8 @@ test('Widget iframe 只接受匹配父 Origin、source、类型和实例 ID 的�
   const context = readWidgetEmbedContext(
     'http://127.0.0.1:5173/?mode=widget'
       + '&parentOrigin=http%3A%2F%2F127.0.0.1%3A5174'
-      + '&instanceId=widget-1',
+      + '&instanceId=widget-1'
+      + '&appId=water-platform-demo',
   );
   assert(context, '合法嵌入上下文解析失败');
   const source = {} as Window;

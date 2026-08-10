@@ -1,0 +1,442 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "postgresql-suggestions-20260804-01",
+  "training_level": "level2_sql_examples",
+  "status": "approved",
+  "samples": [
+    {
+      "sample_id": "PG_SUG_OUTLET_COUNTY_001",
+      "question": "统计各区县排污口数量，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(county_name, '未知区县') AS county_name, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' GROUP BY COALESCE(county_name, '未知区县') ORDER BY COUNT(*) DESC LIMIT 30"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县和排污口数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_SUG_OUTLET_CATEGORY_002",
+      "question": "统计排污口一级分类分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(catalog_level_1, '未分类') AS outlet_category, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' GROUP BY COALESCE(catalog_level_1, '未分类') ORDER BY COUNT(*) DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回排污口分类和数量，适合环图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_SUG_OUTLET_REMEDIATION_003",
+      "question": "统计排污口整治完成状态分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(is_remediated, '未知') AS remediation_status, COUNT(*) AS outlet_count FROM rs_outlet_remediation_v2 WHERE del_flag = '0' GROUP BY COALESCE(is_remediated, '未知') ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回整治状态和数量，适合环图", "expected_tables": ["rs_outlet_remediation_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_OUTLET_ABNORMAL_004",
+      "question": "统计排污口异常状态分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(has_abnormal, '未知') AS abnormal_status, COUNT(*) AS outlet_count FROM rs_outlet_live_v2 WHERE del_flag = '0' GROUP BY COALESCE(has_abnormal, '未知') ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回异常状态和数量，适合环图", "expected_tables": ["rs_outlet_live_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_OUTLET_ONLINE_005",
+      "question": "统计排污口在线监测覆盖情况，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(has_online_monitor, '未知') AS online_monitor_status, COUNT(*) AS outlet_count FROM rs_outlet_live_v2 WHERE del_flag = '0' GROUP BY COALESCE(has_online_monitor, '未知') ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回在线监测状态和数量，适合柱状图", "expected_tables": ["rs_outlet_live_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_OUTLET_COD_RANK_006",
+      "question": "比较2026年1月7日各排污口的平均COD，展示前20名",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, AVG(cod) AS avg_cod FROM rs_outlet_monitor_v2 WHERE sampling_time >= '2026-01-07 00:00:00' AND sampling_time < '2026-01-08 00:00:00' AND del_flag = '0' AND cod IS NOT NULL GROUP BY outlet_name ORDER BY AVG(cod) DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回排污口和平均COD，适合柱状图", "expected_tables": ["rs_outlet_monitor_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_OUTLET_MONITOR_DETAIL_007",
+      "question": "列出2026年1月7日排污口的流量、pH、COD、氨氮和总磷监测明细",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, sampling_time, flow, ph, cod, ammonia_nitrogen, total_phosphorus FROM rs_outlet_monitor_v2 WHERE sampling_time >= '2026-01-07 00:00:00' AND sampling_time < '2026-01-08 00:00:00' AND del_flag = '0' ORDER BY sampling_time DESC, outlet_name LIMIT 50"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回排污口监测明细表格", "expected_tables": ["rs_outlet_monitor_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_OUTLET_COD_TREND_008",
+      "question": "查询2025年12月9日起30天排污口日均COD趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE_TRUNC('day', sampling_time) AS monitor_date, AVG(cod) AS avg_cod FROM rs_outlet_monitor_v2 WHERE sampling_time >= '2025-12-09 00:00:00' AND sampling_time < '2026-01-08 00:00:00' AND del_flag = '0' AND cod IS NOT NULL GROUP BY DATE_TRUNC('day', sampling_time) ORDER BY DATE_TRUNC('day', sampling_time) LIMIT 40"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期和日均COD，适合折线图", "expected_tables": ["rs_outlet_monitor_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_TRACE_TOXIC_009",
+      "question": "统计排污口是否含有毒有害污染物的分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(has_toxic_pollutant, '未知') AS toxic_status, COUNT(*) AS outlet_count FROM rs_outlet_trace_v2 WHERE del_flag = '0' GROUP BY COALESCE(has_toxic_pollutant, '未知') ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回有毒有害污染物状态和数量，适合环图", "expected_tables": ["rs_outlet_trace_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_TRACE_WASTEWATER_010",
+      "question": "统计排污口废水类型数量，展示前15类",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(wastewater_type, '未填写') AS wastewater_type, COUNT(*) AS outlet_count FROM rs_outlet_trace_v2 WHERE del_flag = '0' GROUP BY COALESCE(wastewater_type, '未填写') ORDER BY COUNT(*) DESC LIMIT 15"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回废水类型和数量，适合柱状图", "expected_tables": ["rs_outlet_trace_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_PARK_REGION_011",
+      "question": "统计各区域工业园区数量，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(region_name, '未知区域') AS region_name, COUNT(*) AS park_count FROM rs_industrial_info_yc WHERE del_flag = '0' GROUP BY COALESCE(region_name, '未知区域') ORDER BY COUNT(*) DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区域和园区数量，适合柱状图", "expected_tables": ["rs_industrial_info_yc"]
+    },
+    {
+      "sample_id": "PG_SUG_PARK_CAPACITY_012",
+      "question": "比较工业园区污水处理设计能力，展示前20名",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT name, designed_treatment_capacity_10k_tons_per_day AS designed_capacity FROM rs_industrial_info_yc WHERE del_flag = '0' AND designed_treatment_capacity_10k_tons_per_day IS NOT NULL ORDER BY designed_treatment_capacity_10k_tons_per_day DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回园区和设计处理能力，适合柱状图", "expected_tables": ["rs_industrial_info_yc"]
+    },
+    {
+      "sample_id": "PG_SUG_ENTERPRISE_LEVEL_013",
+      "question": "统计涉水企业监管级别分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT supervision_level, COUNT(*) AS enterprise_count FROM rs_enterprise_info_wade WHERE del_flag = '0' GROUP BY supervision_level ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回监管级别和企业数量，适合环图", "expected_tables": ["rs_enterprise_info_wade"]
+    },
+    {
+      "sample_id": "PG_SUG_POLLUTANT_REGION_014",
+      "question": "统计各区县污染源企业数量，展示前20个区县",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(ssqxmc, '未知区县') AS county_name, COUNT(*) AS enterprise_count FROM rs_pollutant_enterprise WHERE del_flag = '0' GROUP BY COALESCE(ssqxmc, '未知区县') ORDER BY COUNT(*) DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县和污染源企业数量，适合柱状图", "expected_tables": ["rs_pollutant_enterprise"]
+    },
+    {
+      "sample_id": "PG_SUG_RIVER_LEVEL_015",
+      "question": "统计流域河流等级分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT river_level, COUNT(*) AS river_count FROM se_watershed_river WHERE del_flag = '0' GROUP BY river_level ORDER BY COUNT(*) DESC LIMIT 15"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回河流等级和数量，适合环图", "expected_tables": ["se_watershed_river"]
+    },
+    {
+      "sample_id": "PG_SUG_RIVER_LENGTH_016",
+      "question": "比较流域河流长度，展示最长的20条河流",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT river_name, river_length FROM se_watershed_river WHERE del_flag = '0' AND river_length IS NOT NULL ORDER BY river_length DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回河流和长度，适合柱状图", "expected_tables": ["se_watershed_river"]
+    },
+    {
+      "sample_id": "PG_SUG_WATERSHED_YEAR_017",
+      "question": "查询流域总面积随统计年份的变化趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT statistic_year, SUM(total_watershed_area) AS total_watershed_area FROM se_watershed WHERE del_flag = '0' AND statistic_year IS NOT NULL GROUP BY statistic_year ORDER BY statistic_year LIMIT 30"},
+      "training_level": "level2_sql_examples", "train_decision": "rejected",
+      "review_reason": "各年份流域总面积恒定，不作为趋势推荐问题",
+      "expected_behavior": "返回年份和流域总面积，适合折线图", "expected_tables": ["se_watershed"]
+    },
+    {
+      "sample_id": "PG_SUG_SOURCE_REGION_018",
+      "question": "统计各区域水源地数量，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(region_name, '未知区域') AS region_name, COUNT(*) AS source_count FROM wm_water_source GROUP BY COALESCE(region_name, '未知区域') ORDER BY COUNT(*) DESC LIMIT 30"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区域和水源地数量，适合柱状图", "expected_tables": ["wm_water_source"]
+    },
+    {
+      "sample_id": "PG_SUG_SOURCE_TYPE_019",
+      "question": "统计水源地类型分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(source_type, '未知类型') AS source_type, COUNT(*) AS source_count FROM wm_water_source GROUP BY COALESCE(source_type, '未知类型') ORDER BY COUNT(*) DESC LIMIT 15"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回水源地类型和数量，适合环图", "expected_tables": ["wm_water_source"]
+    },
+    {
+      "sample_id": "PG_SUG_INTAKE_QUALITY_020",
+      "question": "统计饮用水取水口水质类别分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(water_quality_class, '未知类别') AS water_quality_class, COUNT(*) AS intake_count FROM wm_water_source_intake_v2 WHERE del_flag = '0' GROUP BY COALESCE(water_quality_class, '未知类别') ORDER BY COUNT(*) DESC LIMIT 15"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回水质类别和取水口数量，适合环图", "expected_tables": ["wm_water_source_intake_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_STATION_REGION_021",
+      "question": "统计各区域有效水质站点数量，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(region_name, '未知区域') AS region_name, COUNT(*) AS station_count FROM wm_station_info_v2 WHERE del_flag = '0' GROUP BY COALESCE(region_name, '未知区域') ORDER BY COUNT(*) DESC LIMIT 30"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区域和站点数量，适合柱状图", "expected_tables": ["wm_station_info_v2"]
+    },
+    {
+      "sample_id": "PG_SUG_WQ_LEVEL_022",
+      "question": "统计2026年6月24日水质等级分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(water_quality_level, '未知等级') AS water_quality_level, COUNT(*) AS record_count FROM wm_waterquality_day_records WHERE monitor_time >= '2026-06-24 00:00:00' AND monitor_time < '2026-06-25 00:00:00' AND del_flag = '0' GROUP BY COALESCE(water_quality_level, '未知等级') ORDER BY COUNT(*) DESC LIMIT 15"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回水质等级和数量，适合环图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "PG_SUG_WQ_PH_COMPARE_023",
+      "question": "比较2026年6月24日各水质站点的平均pH，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, AVG(r.m2_value) AS avg_ph FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-06-24 00:00:00' AND r.monitor_time < '2026-06-25 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m2_value) DESC LIMIT 30"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均pH，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "PG_SUG_WQ_SEVEN_DAY_024",
+      "question": "查询2026年6月18日起七天的整体日均pH和溶解氧趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE_TRUNC('day', monitor_time) AS monitor_date, AVG(m2_value) AS avg_ph, AVG(m3_value) AS avg_dissolved_oxygen FROM wm_waterquality_day_records WHERE monitor_time >= '2026-06-18 00:00:00' AND monitor_time < '2026-06-25 00:00:00' AND del_flag = '0' GROUP BY DATE_TRUNC('day', monitor_time) ORDER BY DATE_TRUNC('day', monitor_time) LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期、平均pH和溶解氧，适合折线图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YILING_OUTLETS_025",
+      "question": "夷陵区有哪些排污口，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, catalog_level_1, river_system, outlet_address FROM rs_outlet WHERE del_flag = '0' AND county_name = '夷陵区' ORDER BY outlet_name LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回夷陵区排污口有限明细表格", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YILING_CATEGORY_026",
+      "question": "统计夷陵区各一级分类的排污口数量",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT catalog_level_1, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '夷陵区' GROUP BY catalog_level_1 ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回夷陵区排污口分类和数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YILING_DRAIN_027",
+      "question": "统计夷陵区排污口的排水特征分布",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT drain_feature, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '夷陵区' GROUP BY drain_feature ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回排水特征和数量，适合环图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YILING_REMEDIATION_028",
+      "question": "统计夷陵区排污口的整治类型分布",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT handle_type, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '夷陵区' GROUP BY handle_type ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回整治类型和数量，适合环图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YILING_SAMPLE_029",
+      "question": "统计夷陵区排污口是否开展监测采样的数量",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT is_monitor_sample, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '夷陵区' GROUP BY is_monitor_sample ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回采样状态和数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YILING_ABNORMAL_030",
+      "question": "列出夷陵区存在排水异常的排污口，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, drain_feature, drain_abnormal_desc, outlet_address FROM rs_outlet WHERE del_flag = '0' AND county_name = '夷陵区' AND is_drain_abnormal LIKE '有%' ORDER BY outlet_name LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回夷陵区异常排污口有限明细表格", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YIDU_OUTLETS_031",
+      "question": "宜都市有哪些排污口，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, catalog_level_1, river_system, outlet_address FROM rs_outlet WHERE del_flag = '0' AND county_name = '宜都市' ORDER BY outlet_name LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回宜都市排污口有限明细表格", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YIDU_CATEGORY_032",
+      "question": "统计宜都市各一级分类的排污口数量",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT catalog_level_1, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '宜都市' GROUP BY catalog_level_1 ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回宜都市排污口分类和数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_XILING_OUTLETS_033",
+      "question": "西陵区有哪些排污口，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, catalog_level_1, river_system, outlet_address FROM rs_outlet WHERE del_flag = '0' AND county_name = '西陵区' ORDER BY outlet_name LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回西陵区排污口有限明细表格", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_XILING_CATEGORY_034",
+      "question": "统计西陵区各一级分类的排污口数量",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT catalog_level_1, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '西陵区' GROUP BY catalog_level_1 ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回西陵区排污口分类和数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_RISK_ABNORMAL_COUNTY_035",
+      "question": "统计各区县存在排水异常的排污口数量，列出前10个区县",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT county_name, COUNT(*) AS abnormal_count FROM rs_outlet WHERE del_flag = '0' AND is_drain_abnormal LIKE '有%' GROUP BY county_name ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县和异常排污口数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_RISK_UNSAMPLED_COUNTY_036",
+      "question": "统计各区县未开展监测采样的排污口数量，列出前10个区县",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT county_name, COUNT(*) AS unsampled_count FROM rs_outlet WHERE del_flag = '0' AND is_monitor_sample = '否' GROUP BY county_name ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县和未采样排污口数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_RISK_TOXIC_COUNTY_037",
+      "question": "统计各区县排污口的有毒有害污染物登记状态，列出前20项",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT county_name, COALESCE(is_drain_toxic, '未登记') AS toxic_status, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' GROUP BY county_name, COALESCE(is_drain_toxic, '未登记') ORDER BY COUNT(*) DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县、登记状态和排污口数量，适合分组柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_RISK_LARGE_COUNTY_038",
+      "question": "统计各区县规模以上排污口数量，列出前10个区县",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT county_name, COUNT(*) AS large_outlet_count FROM rs_outlet WHERE del_flag = '0' AND is_large = '是' GROUP BY county_name ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县和规模以上排污口数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_RISK_STAGE_COUNTY_039",
+      "question": "统计各区县不同整治阶段的排污口数量，列出前20项",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT county_name, handle_stage, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND handle_stage IS NOT NULL GROUP BY county_name, handle_stage ORDER BY COUNT(*) DESC LIMIT 20"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县、整治阶段和数量，适合分组柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_RISK_STANDARD_COUNTY_040",
+      "question": "统计各区县尚未完成规范化建设的排污口数量，列出前10个区县",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT county_name, COUNT(*) AS unfinished_standard_count FROM rs_outlet WHERE del_flag = '0' AND is_finish_standard = '否' GROUP BY county_name ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区县和未完成规范化建设数量，适合柱状图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YILING_SAMPLE_LIST_041",
+      "question": "列出夷陵区已开展监测采样的排污口，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, monitor_sample_date, monitor_sample_type, outlet_address FROM rs_outlet WHERE del_flag = '0' AND county_name = '夷陵区' AND is_monitor_sample = '是' ORDER BY outlet_name LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回夷陵区已采样排污口有限明细表格", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_YIDU_DRAIN_042",
+      "question": "统计宜都市排污口的排水特征分布",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT drain_feature, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '宜都市' GROUP BY drain_feature ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回宜都市排水特征和数量，适合环图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_DETAIL_XILING_DRAIN_043",
+      "question": "统计西陵区排污口的排水特征分布",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT drain_feature, COUNT(*) AS outlet_count FROM rs_outlet WHERE del_flag = '0' AND county_name = '西陵区' GROUP BY drain_feature ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回西陵区排水特征和数量，适合环图", "expected_tables": ["rs_outlet"]
+    },
+    {
+      "sample_id": "PG_RANK_WQ_DO_LOW5_044",
+      "question": "查询2026年6月24日平均溶解氧最低的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, AVG(r.m3_value) AS avg_dissolved_oxygen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-06-24 00:00:00' AND r.monitor_time < '2026-06-25 00:00:00' AND r.del_flag = '0' AND r.m3_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m3_value) LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "rejected",
+      "review_reason": "最低五个站点的平均溶解氧均为零，零值业务规则未确认，不作为推荐问题",
+      "expected_behavior": "返回站点和平均溶解氧，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "PG_RANK_WQ_AN_TOP5_045",
+      "question": "查询2026年6月24日平均氨氮最高的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, AVG(r.m6_value) AS avg_ammonia_nitrogen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-06-24 00:00:00' AND r.monitor_time < '2026-06-25 00:00:00' AND r.del_flag = '0' AND r.m6_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m6_value) DESC LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均氨氮，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "PG_RANK_WQ_TP_TOP5_046",
+      "question": "查询2026年6月24日平均总磷最高的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, AVG(r.m8_value) AS avg_total_phosphorus FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-06-24 00:00:00' AND r.monitor_time < '2026-06-25 00:00:00' AND r.del_flag = '0' AND r.m8_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m8_value) DESC LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均总磷，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "PG_RANK_WQ_PH_LOW5_047",
+      "question": "查询2026年6月24日平均pH最低的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, AVG(r.m2_value) AS avg_ph FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-06-24 00:00:00' AND r.monitor_time < '2026-06-25 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m2_value) LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均pH，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "PG_TREND_WQ_AN_TP_048",
+      "question": "查询2026年6月18日起七天的整体日均氨氮和总磷变化",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE_TRUNC('day', monitor_time) AS monitor_date, AVG(m6_value) AS avg_ammonia_nitrogen, AVG(m8_value) AS avg_total_phosphorus FROM wm_waterquality_day_records WHERE monitor_time >= '2026-06-18 00:00:00' AND monitor_time < '2026-06-25 00:00:00' AND del_flag = '0' GROUP BY DATE_TRUNC('day', monitor_time) ORDER BY DATE_TRUNC('day', monitor_time) LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期、平均氨氮和平均总磷，适合折线图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "PG_TREND_WQ_RECORDS_049",
+      "question": "查询2026年6月18日起七天的每日水质记录数量变化",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE_TRUNC('day', monitor_time) AS monitor_date, COUNT(*) AS record_count FROM wm_waterquality_day_records WHERE monitor_time >= '2026-06-18 00:00:00' AND monitor_time < '2026-06-25 00:00:00' AND del_flag = '0' GROUP BY DATE_TRUNC('day', monitor_time) ORDER BY DATE_TRUNC('day', monitor_time) LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期和记录数量，适合折线图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "PG_DETAIL_STATION_YILING_050",
+      "question": "夷陵区有哪些有效水质站点，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_name, station_code, station_type, region_name FROM wm_station_info_v2 WHERE del_flag = '0' AND region_name = '夷陵区' ORDER BY station_name LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回夷陵区有效水质站点有限明细表格", "expected_tables": ["wm_station_info_v2"]
+    },
+    {
+      "sample_id": "PG_RANK_STATION_REGION_051",
+      "question": "统计有效水质站点数量最多的10个区域",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(region_name, '未知区域') AS region_name, COUNT(*) AS station_count FROM wm_station_info_v2 WHERE del_flag = '0' GROUP BY COALESCE(region_name, '未知区域') ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回区域和有效站点数量，适合柱状图", "expected_tables": ["wm_station_info_v2"]
+    },
+    {
+      "sample_id": "PG_RANK_SOURCE_PEOPLE_052",
+      "question": "查询服务人口最多的10个水源地",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT name, service_people_count FROM wm_water_source WHERE service_people_count IS NOT NULL ORDER BY service_people_count DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回水源地和服务人口，适合柱状图", "expected_tables": ["wm_water_source"]
+    },
+    {
+      "sample_id": "PG_RANK_RIVER_LENGTH_053",
+      "question": "查询长度最长的10条流域河流",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT river_name, river_length FROM se_watershed_river WHERE del_flag = '0' AND river_length IS NOT NULL ORDER BY river_length DESC LIMIT 10"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回河流和长度，适合柱状图", "expected_tables": ["se_watershed_river"]
+    },
+    {
+      "sample_id": "PG_DETAIL_OUTLET_PROBLEM_054",
+      "question": "列出已登记整治阶段的排污口，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT outlet_name, county_name, handle_type, handle_stage, handle_result FROM rs_outlet WHERE del_flag = '0' AND handle_stage IS NOT NULL ORDER BY outlet_name LIMIT 5"},
+      "training_level": "level2_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回已登记整治阶段的排污口有限明细表格", "expected_tables": ["rs_outlet"]
+    }
+  ]
+}

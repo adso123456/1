@@ -29,10 +29,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
-from tools.generate_question_suggestions import (
+from backend.question_suggestion_generator import (
     _analyze_date_range,
     _date_matches,
     _rewrite_question,
+    _strip_output_instruction,
     _substitute_dates,
     generate_questions,
 )
@@ -215,9 +216,17 @@ def _write_metadata(metadata_path: Path) -> None:
 class FakeVerifier:
     """注入的只读验证器：控制最新日期与执行结果。"""
 
-    def __init__(self, latest_day: date, verify_ok: bool = True) -> None:
+    def __init__(
+        self,
+        latest_day: date,
+        verify_ok: bool = True,
+        row_count: int = 10,
+        numeric_profiles: dict | None = None,
+    ) -> None:
         self.latest_day = latest_day
         self.verify_ok = verify_ok
+        self.row_count = row_count
+        self.numeric_profiles = numeric_profiles
         self.probes: list[str] = []
         self.verified_sqls: list[str] = []
 
@@ -232,12 +241,15 @@ class FakeVerifier:
         self.verified_sqls.append(sql)
         if not self.verify_ok:
             return {"verified": False, "read_only": True, "error": "syntax error"}
-        return {
+        result = {
             "verified": True,
             "read_only": True,
             "columns": ["monitor_time", "ph_value"],
-            "row_count_sampled": 10,
+            "row_count_sampled": self.row_count,
         }
+        if self.numeric_profiles is not None:
+            result["numeric_profiles"] = self.numeric_profiles
+        return result
 
     def close(self) -> None:
         pass
@@ -384,6 +396,24 @@ def main() -> int:
             ),
             f"texts={[q['text'] for q in enabled]}",
         )
+        check(
+            "启用问题都有明确展示类型",
+            all(
+                q.get("output_kind")
+                in {"chart", "table", "daily_report", "monthly_report"}
+                for q in enabled
+            ),
+            f"kinds={[q.get('output_kind') for q in enabled]}",
+        )
+        check(
+            "气泡问题不包含展示类型指令",
+            _strip_output_instruction("统计各区县数量，用柱状图展示")
+            == "统计各区县数量"
+            and _strip_output_instruction(
+                "列出监测明细，以表格返回，不生成图表"
+            )
+            == "列出监测明细",
+        )
         texts = [q["text"] for q in enabled]
         check(
             "日期改写为确定语义",
@@ -463,6 +493,101 @@ def main() -> int:
             "未知数据源报错且不生成资产",
             unknown_raises
             and not (asset_root / "source-unknown" / "questions_v1.json").exists(),
+        )
+
+        try:
+            _run(
+                "source-a",
+                root / "assets-over-limit",
+                catalog_path,
+                materials_dir,
+                metadata_path,
+                verifier=FakeVerifier(date(2026, 1, 15)),
+                max_questions=201,
+            )
+            over_limit_raises = False
+        except ValueError:
+            over_limit_raises = True
+        check("单库问题数量硬上限为 200", over_limit_raises)
+
+        single_point = _run(
+            "source-a",
+            root / "assets-single-point",
+            catalog_path,
+            materials_dir,
+            metadata_path,
+            verifier=FakeVerifier(date(2026, 1, 15), row_count=1),
+        )
+        check(
+            "图表问题不足两个数据点时不发布",
+            single_point["disabled_reasons"].get(
+                "insufficient_chart_points", 0
+            )
+            >= 1,
+            f"reasons={single_point['disabled_reasons']}",
+        )
+
+        all_zero = _run(
+            "source-a",
+            root / "assets-all-zero",
+            catalog_path,
+            materials_dir,
+            metadata_path,
+            verifier=FakeVerifier(
+                date(2026, 1, 15),
+                numeric_profiles={
+                    "monitor_time": {
+                        "count": 10,
+                        "distinct_count": 10,
+                        "all_zero": False,
+                    },
+                    "ph_value": {
+                        "count": 10,
+                        "distinct_count": 1,
+                        "all_zero": True,
+                    },
+                },
+            ),
+        )
+        check(
+            "全零图表不发布",
+            all_zero["disabled_reasons"].get("all_zero_chart", 0) >= 1,
+            f"reasons={all_zero['disabled_reasons']}",
+        )
+
+        constant = _run(
+            "source-a",
+            root / "assets-constant",
+            catalog_path,
+            materials_dir,
+            metadata_path,
+            verifier=FakeVerifier(
+                date(2026, 1, 15),
+                numeric_profiles={
+                    "monitor_time": {
+                        "count": 10,
+                        "distinct_count": 10,
+                        "all_zero": False,
+                    },
+                    "ph_value": {
+                        "count": 10,
+                        "distinct_count": 1,
+                        "all_zero": False,
+                    },
+                },
+            ),
+        )
+        constant_asset = json.loads(
+            Path(constant["asset_path"]).read_text(encoding="utf-8")
+        )
+        check(
+            "恒定图表不发布且不泄漏数值画像",
+            constant["disabled_reasons"].get("constant_chart", 0) >= 1
+            and all(
+                "numeric_profiles" not in item.get("verification", {})
+                for item in constant_asset["questions"]
+            ),
+            f"reasons={constant['disabled_reasons']}",
         )
 
         # 执行失败 → 不启用

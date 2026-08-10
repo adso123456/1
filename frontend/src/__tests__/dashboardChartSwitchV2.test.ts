@@ -445,12 +445,12 @@ test('T7: updateChartSpec 只更新 spec + explicitType，不更新 columns/rows
 });
 
 // ============================================================
-// T8: V2 pipeline — 所有 13 种类型（dashboard 场景全覆盖）
+// T8: V2 pipeline — 所有 12 种类型（dashboard 场景全覆盖）
 // ============================================================
 
-test('T8: Dashboard V2 — 全部 13 种类型均可 prepareChartV2All（bar 数据作为 source）', () => {
+test('T8: Dashboard V2 — 全部 12 种类型均可 prepareChartV2All（bar 数据作为 source）', () => {
   const allTypes = [
-    'bar', 'line', 'pie', 'heatmap', 'boxplot', 'gauge',
+    'bar', 'line', 'pie', 'heatmap', 'boxplot',
     'horizontal_bar', 'area', 'donut', 'bubble', 'scatter', 'radar', 'combo',
   ] as const;
 
@@ -489,7 +489,7 @@ test('T8: Dashboard V2 — 全部 13 种类型均可 prepareChartV2All（bar 数
       };
       const merged = mergeChartForDashboard(mockOld, result.chart);
       const option = buildChartOption(merged);
-      // 有些类型可能因为数据不匹配而失败（如 gauge 对分类数据），记录即可
+      // 有些类型可能因为数据不匹配而失败，记录即可
       if (!option) {
         console.log(`  [info] ${t}: buildChartOption returned null (data type mismatch expected)`);
       }
@@ -498,7 +498,7 @@ test('T8: Dashboard V2 — 全部 13 种类型均可 prepareChartV2All（bar 数
     }
   }
 
-  assertOk(true, '13 种类型遍历无崩溃');
+  assertOk(true, '12 种类型遍历无崩溃');
 });
 
 // ============================================================

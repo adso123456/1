@@ -399,18 +399,18 @@ void _compileCheck7; void _compileCheck8;
 
 const ALL_RENDERABLE_TYPES: RenderableChartType[] = [
   'bar', 'horizontal_bar', 'line', 'area', 'pie', 'donut',
-  'scatter', 'bubble', 'radar', 'heatmap', 'boxplot', 'gauge', 'combo',
+  'scatter', 'bubble', 'radar', 'heatmap', 'boxplot', 'combo',
 ];
 
 function allVariantsAll(): ChartCapabilityVariant[] {
   return ALL_CAPABILITIES_V2.flatMap(c => [...c.variants]);
 }
 
-test('ALL_CAPABILITIES_V2 has 13 capabilities', () => {
-  assertEqual(ALL_CAPABILITIES_V2.length, 13);
+test('ALL_CAPABILITIES_V2 has 12 capabilities', () => {
+  assertEqual(ALL_CAPABILITIES_V2.length, 12);
 });
 
-test('ALL_CAPABILITIES_V2 covers all 13 renderable types', () => {
+test('ALL_CAPABILITIES_V2 covers all 12 renderable types', () => {
   const types = ALL_CAPABILITIES_V2.map(c => c.type).sort();
   const expected = [...ALL_RENDERABLE_TYPES].sort();
   assertEqual(types.join(','), expected.join(','), `missing types: ${expected.filter(t => !types.includes(t)).join(',')}`);
@@ -443,7 +443,7 @@ test('ALL_CAPABILITIES_V2 archetypeSuitability values are valid', () => {
 });
 
 test('ALL_CAPABILITIES_V2 every variant has xField or valueField mapping', () => {
-  // gauge 只有 valueField；其余都有 xField
+  // boxplot 只有 valueField；其余都有 xField
   for (const v of allVariantsAll()) {
     const hasX = v.fieldMapping.xField !== undefined;
     const hasV = v.fieldMapping.valueField !== undefined;
@@ -451,9 +451,9 @@ test('ALL_CAPABILITIES_V2 every variant has xField or valueField mapping', () =>
   }
 });
 
-test('ALL_CAPABILITIES_V2 non-gauge variants have yFields mapping', () => {
+test('ALL_CAPABILITIES_V2 variants without valueField have yFields mapping', () => {
   for (const v of allVariantsAll()) {
-    // gauge/boxplot 用 valueField，无 yFields
+    // boxplot 用 valueField，无 yFields
     if (v.fieldMapping.valueField) continue;
     assertOk(v.fieldMapping.yFields !== undefined, `${v.id}: yFields is required`);
   }

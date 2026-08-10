@@ -824,7 +824,7 @@ test('B-8B: failed pipeline → no chart, no v2Meta needed', () => {
 // B-5B: prepareChartV2All 使用 ALL_CAPABILITIES_V2
 // ============================================================
 
-// 单 KPI 数据（PILOT 无 gauge → ALL 有 gauge）
+// 单 KPI 数据（gauge 已移除，无适配图表）
 const SINGLE_KPI_DATA = {
   columns: ['total_count'] as string[],
   rows: [{ total_count: 342 }] as Row[],
@@ -856,7 +856,7 @@ const THREE_NUMERIC_DATA = {
   ] as Row[],
 };
 
-test('B-5B: prepareChartV2All single_kpi → gauge (ALL 新能力)', () => {
+test('B-5B: prepareChartV2All single_kpi → 无图表（gauge 已移除）', () => {
   const input: PrepareChartInputV2 = {
     columns: SINGLE_KPI_DATA.columns,
     rows: SINGLE_KPI_DATA.rows,
@@ -869,10 +869,10 @@ test('B-5B: prepareChartV2All single_kpi → gauge (ALL 新能力)', () => {
 
   const result = prepareChartV2All(input);
 
-  assertOk(result.ok, `should succeed, got errorCode: ${result.errorCode}`);
-  assertEqual(result.chart!.spec.type, 'gauge');
-  assertEqual(result.selectedPlan!.variantId, 'gauge_single_value');
-  assertEqual(result.errorCode, null);
+  // gauge 已移除，单值 KPI 无适配图表 → no_default_plan
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'no_default_plan');
+  assertEqual(result.chart, null);
 });
 
 test('B-5B: prepareChartV2All two_numeric → scatter (ALL 新能力)', () => {
@@ -1130,7 +1130,7 @@ test('B-5C: prepareChartV2All output has expected ChartData structure', () => {
   assertOk(c.spec === result.transformResult!.spec);
   // spec.type 必须为合法的 RenderableChartType
   assertOk(
-    ['bar', 'line', 'scatter', 'bubble', 'gauge', 'pie', 'donut',
+    ['bar', 'line', 'scatter', 'bubble', 'pie', 'donut',
      'area', 'horizontal_bar', 'radar', 'heatmap', 'boxplot', 'combo'].includes(c.spec.type),
     `unexpected chart type: ${c.spec.type}`,
   );

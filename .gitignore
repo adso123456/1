@@ -41,6 +41,25 @@ capture/*.jsonl
 
 # Local development artifacts
 .local/
+.cache/
+.claude/
+.runlogs/
+runtime/
+backend.log
+backend.err.log
+
+# Runtime-generated data source assets
+agent_data/*.sqlite3
+agent_data/*.sqlite3-*
+agent_data/system/
+agent_data/question_suggestions/
+agent_data/mysql-lzh-monitor/asset_manifest.json
+agent_data/mysql-lzh-monitor/business_documents.json
+agent_data/mysql-lzh-monitor/ddl_memories.json
+agent_data/mysql-lzh-monitor/*.revision-*/
+
+# One-off local repair helpers
+tools/.repair_*.py
 
 # Project instructions
 AGENTS.md

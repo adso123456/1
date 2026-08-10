@@ -28,7 +28,6 @@ export const RENDERABLE_TYPES: RenderableChartType[] = [
   'radar',
   'heatmap',
   'boxplot',
-  'gauge',
   'combo',
 ];
 
@@ -44,7 +43,6 @@ export const CHART_TYPE_LABELS: Record<RenderableChartType, string> = {
   radar: '雷达图',
   heatmap: '热力图',
   boxplot: '箱线图',
-  gauge: '仪表盘',
   combo: '组合图',
 };
 
@@ -303,29 +301,6 @@ export function getChartTypeAvailability(chart: ChartData): ChartTypeAvailabilit
         } else {
           const s = check(type, { xField: bestCategoryX, valueField: bestVal });
           items.push(avail(type, s, '该数据类型暂不支持该图表'));
-        }
-        break;
-      }
-
-      // ── 仪表盘：仅允许单值 KPI（清洗后仅 1 行数据） ──
-      case 'gauge': {
-        if (!bestVal) {
-          items.push(avail(type, null, '需要数值列作为指标值'));
-        } else if (!isNumericField(rows, bestVal)) {
-          items.push(avail(type, null, '数值列必须为数字类型'));
-        } else {
-          const cleanVals = rows.filter(r => !isNullValue(r[bestVal!]));
-          if (cleanVals.length > 1) {
-            items.push(avail(type, null, '仪表盘仅适用于单值 KPI'));
-          } else {
-            // 仅保留原始合法的 min/max/unit（number/string），避免被其他图表继承
-            const gaugeExtra: Partial<ChartSpec> = {};
-            if (typeof spec.min === 'number') gaugeExtra.min = spec.min;
-            if (typeof spec.max === 'number') gaugeExtra.max = spec.max;
-            if (typeof spec.unit === 'string') gaugeExtra.unit = spec.unit;
-            const s = check(type, { valueField: bestVal, ...gaugeExtra });
-            items.push(avail(type, s, '该数据类型暂不支持该图表'));
-          }
         }
         break;
       }
@@ -1029,37 +1004,6 @@ function buildBoxplotChartV2(chart: ChartData): EChartsOption | null {
   };
 }
 
-/** gauge：valueField=数值字段，取首行；可选 min/max/unit */
-function buildGaugeChart(chart: ChartData): EChartsOption | null {
-  const valueField = getField(chart.spec, 'valueField');
-  if (!hasColumn(chart.columns, valueField)) return null;
-  if (!isNumericField(chart.rows, valueField)) return null;
-
-  const rows = cleanRows(chart.rows, [valueField]);
-  if (!rows.length) return null;
-
-  const value = toNumber(rows[0][valueField]) ?? 0;
-  const min = typeof chart.spec.min === 'number' ? chart.spec.min : 0;
-  const max = typeof chart.spec.max === 'number' ? chart.spec.max : Math.max(value * 1.5, 100);
-  const unit = typeof chart.spec.unit === 'string' ? chart.spec.unit : '';
-
-  return {
-    color: BLUE_PALETTE,
-    title: { text: baseTitle(chart), left: 'center', textStyle: { fontSize: 14, color: '#374151' } },
-    series: [{
-      type: 'gauge',
-      min,
-      max,
-      radius: '80%',
-      center: ['50%', '58%'],
-      axisLine: { lineStyle: { color: [[0.3, '#2563eb'], [0.7, '#93c5fd'], [1, '#e5e7eb']], width: 20 } },
-      pointer: { length: '70%', width: 6 },
-      detail: { formatter: `{value}${unit}`, fontSize: 20, offsetCenter: [0, '60%'] },
-      data: [{ value, name: formatColumnLabel(valueField) }],
-    }],
-  };
-}
-
 /** combo：分类 X 轴 + 双数值 Y 轴（柱状 left + 折线 right） */
 function buildComboChart(chart: ChartData): EChartsOption | null {
   const xField = getField(chart.spec, 'xField');
@@ -1272,6 +1216,5 @@ const CHART_BUILDERS: Record<RenderableChartType, (chart: ChartData) => EChartsO
     // 旧 valueField 格式（前端自行分组计算）
     return buildBoxplotChart(chart);
   },
-  gauge: chart => buildGaugeChart(chart),
   combo: chart => buildComboChart(chart),
 };

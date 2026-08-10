@@ -15,18 +15,19 @@ import hashlib
 import json
 import os
 import random
+import unicodedata
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from config.settings import AGENT_DATA_DIR
+from config.settings import AGENT_DATA_DIR, resolve_project_path
 
 
 ASSET_SCHEMA_VERSION = 1
 ASSET_FILENAME = "questions_v1.json"
 
 # 新会话抽取上限：不足时只返回实际可用数量
-DEFAULT_LIMIT = 4
+DEFAULT_LIMIT = 3
 HARD_MAX_LIMIT = 8
 
 _ENV_ROOT = "QUESTION_SUGGESTIONS_DIR"
@@ -37,7 +38,7 @@ def question_suggestions_root(*, environ: Mapping[str, str] | None = None) -> Pa
     source = os.environ if environ is None else environ
     override = source.get(_ENV_ROOT, "").strip()
     if override:
-        return Path(override).expanduser().resolve()
+        return resolve_project_path(override)
     return (Path(AGENT_DATA_DIR).resolve() / "question_suggestions").resolve()
 
 
@@ -57,6 +58,23 @@ def _require_source_id(source_id: Any) -> str:
     if not isinstance(source_id, str) or not source_id.strip():
         raise ValueError("source_id 必须是非空字符串")
     return source_id.strip()
+
+
+def infer_suggestion_output(question: str) -> tuple[str, str | None]:
+    """为旧版问题资产补齐展示契约；新版资产应直接保存这些字段。"""
+    if "日报" in question:
+        return "daily_report", None
+    if "月报" in question:
+        return "monthly_report", None
+    if any(term in question for term in ("列出", "明细", "监测指标", "气象数据", "状态")):
+        return "table", None
+    if any(term in question for term in ("趋势", "变化")):
+        return "chart", "line"
+    if "分布" in question or "占比" in question:
+        return "chart", "donut"
+    if any(term in question for term in ("比较", "统计", "数量", "平均")):
+        return "chart", "bar"
+    return "table", None
 
 
 def build_question_directory(
@@ -96,6 +114,9 @@ def build_question_directory(
             "related_sql",
             "verification",
             "disabled_reason",
+            "output_kind",
+            "chart_type",
+            "report_request",
         ):
             if optional in item:
                 entry[optional] = item[optional]
@@ -169,13 +190,28 @@ def load_question_directory(
             continue
         if not isinstance(text, str) or not text.strip():
             continue
-        questions.append(
-            {
-                "id": qid.strip(),
-                "text": text.strip(),
-                "enabled": bool(item.get("enabled", True)),
-            }
-        )
+        entry: dict[str, Any] = {
+            "id": qid.strip(),
+            "text": text.strip(),
+            "enabled": bool(item.get("enabled", True)),
+        }
+        for optional in (
+            "related_sample_id",
+            "related_tables",
+            "related_sql",
+            "verification",
+            "output_kind",
+            "chart_type",
+            "report_request",
+        ):
+            if optional in item:
+                entry[optional] = item[optional]
+        if "output_kind" not in entry:
+            output_kind, chart_type = infer_suggestion_output(entry["text"])
+            entry["output_kind"] = output_kind
+            if chart_type is not None:
+                entry["chart_type"] = chart_type
+        questions.append(entry)
     asset_version = payload.get("asset_version")
     if not isinstance(asset_version, str) or not asset_version.strip():
         asset_version = "v1"
@@ -199,6 +235,7 @@ def select_suggested_questions(
     conversation_id: str,
     *,
     limit: int = DEFAULT_LIMIT,
+    require_executable: bool = False,
 ) -> list[dict[str, str]]:
     """按本源目录确定性抽取推荐问题。
 
@@ -218,6 +255,8 @@ def select_suggested_questions(
         if not isinstance(item, dict):
             continue
         if not item.get("enabled", True):
+            continue
+        if require_executable and not _is_executable_question(item):
             continue
         text = item.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -242,3 +281,79 @@ def select_suggested_questions(
         {"id": str(item["id"]), "text": item["text"]}
         for item in selected
     ]
+
+
+def _is_executable_question(item: Mapping[str, Any]) -> bool:
+    output_kind = item.get("output_kind")
+    verification = item.get("verification")
+    if output_kind in ("daily_report", "monthly_report"):
+        return (
+            isinstance(item.get("report_request"), Mapping)
+            and isinstance(verification, Mapping)
+            and verification.get("verified") is True
+        )
+    sql = item.get("related_sql")
+    return (
+        isinstance(sql, str)
+        and bool(sql.strip())
+        and isinstance(verification, Mapping)
+        and verification.get("verified") is True
+        and int(verification.get("row_count_sampled") or 0) > 0
+    )
+
+
+def normalize_suggested_question_text(text: str) -> str:
+    """忽略宽窄字符、空白和句读；保留数字小数点与日期连接符。"""
+    if not isinstance(text, str):
+        return ""
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    characters: list[str] = []
+    for index, character in enumerate(normalized):
+        if character.isspace():
+            continue
+        if not unicodedata.category(character).startswith("P"):
+            characters.append(character)
+            continue
+        previous = normalized[index - 1] if index > 0 else ""
+        following = normalized[index + 1] if index + 1 < len(normalized) else ""
+        if character in (".", "-") and previous.isdigit() and following.isdigit():
+            characters.append(character)
+    return "".join(characters)
+
+
+def find_suggested_question(
+    directory: Mapping[str, Any],
+    question_id: str,
+) -> dict[str, Any] | None:
+    """按 ID 返回服务端可执行问题包；无效、未验证或空结果问题一律拒绝。"""
+    if not isinstance(question_id, str) or not question_id.strip():
+        return None
+    for item in directory.get("questions", []):
+        if not isinstance(item, dict) or item.get("id") != question_id.strip():
+            continue
+        if not item.get("enabled", True) or not _is_executable_question(item):
+            return None
+        return dict(item)
+    return None
+
+
+def find_suggested_question_by_text(
+    directory: Mapping[str, Any],
+    question: str,
+) -> dict[str, Any] | None:
+    """按规范化文本严格匹配唯一的服务端可执行问题包。"""
+    normalized_question = normalize_suggested_question_text(question)
+    if not normalized_question:
+        return None
+    matches = [
+        item
+        for item in directory.get("questions", [])
+        if isinstance(item, dict)
+        and item.get("enabled", True)
+        and _is_executable_question(item)
+        and normalize_suggested_question_text(str(item.get("text") or ""))
+        == normalized_question
+    ]
+    if len(matches) != 1:
+        return None
+    return dict(matches[0])

@@ -45,7 +45,7 @@ from vanna.core.user import User
 
 class FakeAsyncTracingService(TracingOpenAILlmService):
     def __init__(self, *, delay: float = 0.04, limit: int = 2) -> None:
-        self.model = "deepseek-v4-pro"
+        self.model = "deepseek-v4-flash"
         self.settings = QueryPerformanceSettings(
             llm_max_concurrency=limit,
             llm_max_retries=0,
@@ -342,7 +342,7 @@ async def test_default_closed_run_sql_gate() -> tuple[bool, str]:
             tools=[{"name": "run_sql"}],
             original_payload={"tool_choice": "auto"},
             provider_hostname="api.deepseek.com",
-            model="deepseek-v4-pro",
+            model="deepseek-v4-flash",
         )
         if (
             state
@@ -363,7 +363,7 @@ async def test_default_closed_run_sql_gate() -> tuple[bool, str]:
             tools=[{"name": "run_sql"}],
             original_payload={"tool_choice": "auto"},
             provider_hostname="api.deepseek.com",
-            model="deepseek-v4-pro",
+            model="deepseek-v4-flash",
         )
         if (
             state
@@ -389,7 +389,7 @@ async def main() -> int:
     results: list[tuple[str, bool, str]] = []
 
     native_service = TracingOpenAILlmService(
-        model="deepseek-v4-pro",
+        model="deepseek-v4-flash",
         api_key="test-only-placeholder",
         base_url="https://api.deepseek.com",
         settings=QueryPerformanceSettings(llm_max_retries=0),

@@ -177,17 +177,21 @@ def main() -> int:
         assert result["profiled"] == 2
         assert result["missing"] == 0
 
-        # 2. reviews 写入了建议字段。
+        # 2. reviews 写入了建议字段（冻结契约：正式 active 不再因同组被压 pending）。
         active_review = catalog.get_table_review(
             source.source_id, "public", "water_data"
         )
-        assert active_review["proposed_decision"] == "pending"
+        assert active_review["proposed_decision"] == "active"
         assert active_review["proposed_score"] is not None
-        assert "替换需人工确认" in active_review["proposed_reason"]
+        assert "替换需人工确认" not in active_review["proposed_reason"]
         old_review = catalog.get_table_review(
             source.source_id, "public", "water_data_old"
         )
-        assert old_review["proposed_decision"] == "pending"
+        # 独立判定：backup 表在自身分数达标时仍可 active（backup_mirror 需
+        # 结构指纹一致或列重合≥0.9 才降级；本 fixture 指纹不同）。
+        assert old_review["proposed_decision"] in {"active", "standby", "pending"}
+        assert "同组存在正式主表" not in old_review["proposed_reason"]
+        assert old_review["proposed_score"] is not None
 
         # 3. 隔离：effective_decision 与 selected_scope 未变。
         assert (

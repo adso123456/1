@@ -21,10 +21,7 @@ interface ExportPiece {
  *
  * 参考 SQLBot ChartBlock.vue：html2canvas → canvas.toBlob → 下载链接 → revokeObjectURL
  */
-export async function exportDashboardAsPng(
-  root: HTMLElement,
-  filename: string,
-): Promise<void> {
+export async function renderDashboardAsPng(root: HTMLElement): Promise<Blob> {
   // 等待字体加载完成
   if (document.fonts?.ready) {
     await document.fonts.ready;
@@ -35,33 +32,11 @@ export async function exportDashboardAsPng(
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
 
-  const rootWidth = root.scrollWidth || root.clientWidth;
-  const rootHeight = root.scrollHeight || root.clientHeight;
-
-  // 限制 scale，避免超长仪表板生成超大 Canvas 导致浏览器崩溃
-  // 目标：Canvas 像素面积不超过 20M（约 5000×4000）
-  const MAX_CANVAS_AREA = 20_000_000;
-  const naturalScale = window.devicePixelRatio || 1;
-  const scale = Math.min(naturalScale, Math.sqrt(MAX_CANVAS_AREA / (rootWidth * rootHeight)));
-
   // 根节点坐标原点（用于计算各部件相对偏移）
   const rootRect = root.getBoundingClientRect();
 
   // 收集所有待导出部件
   const pieces: ExportPiece[] = [];
-
-  const header = root.querySelector('[data-export-header]') as HTMLElement | null;
-  if (header) {
-    const r = header.getBoundingClientRect();
-    pieces.push({
-      el: header,
-      selector: '[data-export-header]',
-      x: r.left - rootRect.left,
-      y: r.top - rootRect.top,
-      width: r.width,
-      height: r.height,
-    });
-  }
 
   const cards = root.querySelectorAll('[data-export-card]') as NodeListOf<HTMLElement>;
   for (let i = 0; i < cards.length; i++) {
@@ -79,10 +54,31 @@ export async function exportDashboardAsPng(
     });
   }
 
+  if (pieces.length === 0) {
+    throw new Error('导出失败：仪表板没有可导出的图表或表格');
+  }
+
+  // 只按卡片实际边界生成图片，裁掉仪表板总标题栏和页面多余留白。
+  const padding = 20;
+  const minX = Math.min(...pieces.map(piece => piece.x));
+  const minY = Math.min(...pieces.map(piece => piece.y));
+  const maxX = Math.max(...pieces.map(piece => piece.x + piece.width));
+  const maxY = Math.max(...pieces.map(piece => piece.y + piece.height));
+  const exportWidth = Math.ceil(maxX - minX + padding * 2);
+  const exportHeight = Math.ceil(maxY - minY + padding * 2);
+
+  // 限制 scale，避免超长仪表板生成超大 Canvas 导致浏览器崩溃。
+  const MAX_CANVAS_AREA = 20_000_000;
+  const naturalScale = window.devicePixelRatio || 1;
+  const scale = Math.min(
+    naturalScale,
+    Math.sqrt(MAX_CANVAS_AREA / (exportWidth * exportHeight)),
+  );
+
   // 创建最终合成画布，填充仪表板背景色
   const finalCanvas = document.createElement('canvas');
-  finalCanvas.width = rootWidth * scale;
-  finalCanvas.height = rootHeight * scale;
+  finalCanvas.width = exportWidth * scale;
+  finalCanvas.height = exportHeight * scale;
   const ctx = finalCanvas.getContext('2d');
   if (!ctx) {
     throw new Error('导出失败：无法创建画布');
@@ -133,8 +129,8 @@ export async function exportDashboardAsPng(
 
     ctx.drawImage(
       pieceCanvas,
-      piece.x * scale,
-      piece.y * scale,
+      (piece.x - minX + padding) * scale,
+      (piece.y - minY + padding) * scale,
       piece.width * scale,
       piece.height * scale,
     );
@@ -149,6 +145,10 @@ export async function exportDashboardAsPng(
     throw new Error('导出失败：无法生成图片数据');
   }
 
+  return blob;
+}
+
+export function downloadDashboardPng(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -157,6 +157,14 @@ export async function exportDashboardAsPng(
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+export async function exportDashboardAsPng(
+  root: HTMLElement,
+  filename: string,
+): Promise<void> {
+  const blob = await renderDashboardAsPng(root);
+  downloadDashboardPng(blob, filename);
 }
 
 /** 生成导出文件名：水利智能问答-仪表板-YYYYMMDD-HHmmss.png */

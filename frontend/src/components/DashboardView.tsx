@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { DashboardItem, ChartSpec, ChartData } from '../types';
 import { default as GridLayout } from 'react-grid-layout/legacy';
-import type { Layout } from 'react-grid-layout/legacy';
+import type { Layout, LayoutItem } from 'react-grid-layout/legacy';
 import { ChartView } from './ChartView';
 import { TableView } from './TableView';
 import 'react-grid-layout/css/styles.css';
-import { exportDashboardAsPng, generateExportFilename } from '../utils/dashboardExport';
+import {
+  downloadDashboardPng,
+  generateExportFilename,
+  renderDashboardAsPng,
+} from '../utils/dashboardExport';
 
 interface Props {
   items: DashboardItem[];
@@ -15,6 +19,8 @@ interface Props {
   onLayoutChange: (layout: Layout) => void;
   /** 仪表板单项高度校正：写入指定项目 layout.h（保留 x/y/w） */
   onUpdateItemHeight?: (id: string, h: number) => void;
+  /** 用户手动缩放表格卡片后回传项目 ID，供上层持久化（自动贴合不再覆盖该卡片高度） */
+  onUpdateItemSized?: (id: string) => void;
   /** 仪表板内图表切换类型后，回传项目 ID 与完整 ChartSpec 供上层持久化 */
   onUpdateChartSpec?: (id: string, spec: ChartSpec) => void;
   /** 仪表板内 V2 图表切换：回传项目 ID 与完整新 ChartData（含 transform 后 columns/rows/v2Meta） */
@@ -31,36 +37,64 @@ const COLS = 6;
 // 细粒度纵向网格：减少表格底部量化留白（量化误差 ≤ ROW_HEIGHT+GRID_MARGIN-1 = 15px）
 const ROW_HEIGHT = 10;
 const GRID_MARGIN = 6;
-/** 表格卡片标题栏 + 卡片边框等固定占用高度（标题栏 padding 10*2 + ×按钮 28 + borderBottom 1 + 卡片 border 2 ≈ 51）。
- *  表格内容区 padding 为 0，故不另加。 */
-const TABLE_CARD_CHROME = 51;
+/** 表格卡片固定占用高度的兜底估算：标题栏(padding 10*2 + ×按钮 28 + borderBottom 1 ≈ 49) + 卡片 border 2 + 表格容器 border 2 ≈ 53。
+ *  仅在标题栏实测高度尚未就绪时作为 fallback，实测（headerHeights）就绪后优先用实测值。 */
+const TABLE_CARD_CHROME = 53;
 
-export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLayoutChange, onUpdateItemHeight, onUpdateChartSpec, onV2ChartSwitch }: Props) {
+export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLayoutChange, onUpdateItemHeight, onUpdateItemSized, onUpdateChartSpec, onV2ChartSwitch }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(600);
   const [exporting, setExporting] = useState(false);
+  const [exportPreview, setExportPreview] = useState<{ blob: Blob; url: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => () => {
+    if (exportPreview?.url) URL.revokeObjectURL(exportPreview.url);
+  }, [exportPreview?.url]);
 
   // 表格实测内容高度（仅 table 自然高度）：TableView 上报，用于换算网格高度
   const [tableHeights, setTableHeights] = useState<Record<string, number>>({});
 
-  /** TableView 上报表格内容高度：更新本地状态并校正持久化的 layout.h。
-   *  幂等：相同高度不会触发持久化写入（useDashboard.updateItemHeight 内部去重）。
-   *  身份稳定（仅依赖 onUpdateItemHeight），供多个表格共享一个回调。 */
+  // 各卡片标题栏实测高度（含 borderBottom）：替代硬编码 TABLE_CARD_CHROME 估算。
+  // ref 回调在 render 时读取，高度稳定（标题栏 flexShrink:0 + nowrap），
+  // 同值 setState 返回原引用不触发重渲染，一次收敛无循环。
+  const [headerHeights, setHeaderHeights] = useState<Record<string, number>>({});
+  const headerRefCb = useCallback((id: string) => (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const h = Math.round(el.getBoundingClientRect().height);
+    setHeaderHeights(prev => (prev[id] === h ? prev : { ...prev, [id]: h }));
+  }, []);
+
+  // 用户手动缩放过的表格卡片 id：从 items.userSized 派生（随 item 持久化，删除卡片/仪表板自动清理）。
+  // 标记后自动贴合不再覆盖其高度（表格在卡片内滚动）；未缩放过的表格始终自动贴合内容高度。
+  const manuallySized = useMemo(
+    () => new Set(items.filter(i => i.type === 'table' && i.userSized).map(i => i.id)),
+    [items],
+  );
+
+  /** 表格内容高度 → 网格高度换算。chrome = 标题栏实测高度 + 卡片 border 2；实测未就绪时用兜底常量。
+   *  换算依据：grid 单元像素高度 = h*ROW_HEIGHT + (h-1)*MARGIN = h*(ROW_HEIGHT+MARGIN) - MARGIN，
+   *  解 requiredPx <= h*(ROW_HEIGHT+MARGIN) - MARGIN 得 h >= (requiredPx + MARGIN) / (ROW_HEIGHT + MARGIN)。 */
+  const contentHeightToGrid = useCallback((contentHeight: number, headerH?: number): number => {
+    // chrome = 标题栏实测 + 卡片 border 上下 2 + 表格容器 border 上下 2；实测未就绪时用兜底常量
+    const chrome = headerH && headerH > 0 ? headerH + 4 : TABLE_CARD_CHROME;
+    const requiredPx = contentHeight + chrome;
+    return Math.ceil((requiredPx + GRID_MARGIN) / (ROW_HEIGHT + GRID_MARGIN));
+  }, []);
+
+  /** TableView 上报表格内容高度：更新本地状态并校正持久化 layout.h。
+   *  自动贴合（未手动缩放过的卡片）：内容高度变化时始终贴合，吸收宽度/数据变化；
+   *  用户手动缩放过的卡片尊重其高度（表格在卡片内滚动），自动贴合不再覆盖。 */
   const handleTableHeight = useCallback((id: string, contentHeight: number) => {
     setTableHeights(prev => {
       if (prev[id] === contentHeight) return prev; // 未变化不重渲染
       return { ...prev, [id]: contentHeight };
     });
-    if (onUpdateItemHeight) {
-      // 卡片所需像素高度 = 表格内容高度 + 标题栏/边框等固定占用
-      const requiredPx = contentHeight + TABLE_CARD_CHROME;
-      // 换算为网格高度：grid 单元像素高度 = h*ROW_HEIGHT + (h-1)*MARGIN = h*(ROW_HEIGHT+MARGIN) - MARGIN
-      // 解 requiredPx <= h*(ROW_HEIGHT+MARGIN) - MARGIN 得 h >= (requiredPx + MARGIN) / (ROW_HEIGHT + MARGIN)
-      const gridH = Math.ceil((requiredPx + GRID_MARGIN) / (ROW_HEIGHT + GRID_MARGIN));
+    if (onUpdateItemHeight && !manuallySized.has(id)) {
+      const gridH = contentHeightToGrid(contentHeight, headerHeights[id]);
       onUpdateItemHeight(id, gridH);
     }
-  }, [onUpdateItemHeight]);
+  }, [onUpdateItemHeight, manuallySized, headerHeights, contentHeightToGrid]);
 
   // 通过 ResizeObserver 获取实际可用宽度，替代 window.innerWidth 硬编码减法
   useEffect(() => {
@@ -85,28 +119,33 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
   const summary = parts.length > 0 ? parts.join('，') : '暂无内容';
 
   /** 把表格实测内容高度换算为网格高度（与 handleTableHeight 内公式一致） */
-  const tableGridHeight = useCallback((contentHeight: number): number => {
-    const requiredPx = contentHeight + TABLE_CARD_CHROME;
-    return Math.ceil((requiredPx + GRID_MARGIN) / (ROW_HEIGHT + GRID_MARGIN));
-  }, []);
+  const tableGridHeight = useCallback(
+    (contentHeight: number, headerH?: number): number =>
+      contentHeightToGrid(contentHeight, headerH),
+    [contentHeightToGrid],
+  );
 
   const layout: Layout = useMemo(
     () => items.map(di => {
       const savedH = di.layout?.h;
       // 默认高度（细粒度网格）：图表 ≈ 原 448px → h=29；表格 ≈ 原 216px → h=14，挂载后由实测高度校正
       const defaultH = di.type === 'chart' ? 29 : 14;
-      // 表格：若已有实测内容高度，按内容换算网格高度，并设 minH 防止缩到内容以下
+      // 表格：若已有实测内容高度，按内容换算网格高度；
+      // 用户手动缩放过的 → 尊重其高度（表格在卡片内滚动）；
+      // 未手动缩放的 → 贴合内容高度；
+      // minH 允许缩到内容高度以下，超出部分由表格容器滚动承接
       if (di.type === 'table') {
         const measured = tableHeights[di.id];
         if (measured && measured > 0) {
-          const contentH = tableGridHeight(measured);
+          const contentH = tableGridHeight(measured, headerHeights[di.id]);
+          const effectiveH = manuallySized.has(di.id) && savedH && savedH > 0 ? savedH : contentH;
           return {
             i: di.id,
             x: di.layout?.x ?? 0,
             y: di.layout?.y ?? 0,
             w: di.layout?.w ?? 3,
-            h: contentH,
-            minH: contentH,
+            h: effectiveH,
+            minH: Math.max(1, Math.min(contentH, 4)),
           };
         }
       }
@@ -118,18 +157,28 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
         h: savedH ?? defaultH,
       };
     }),
-    [items, tableHeights, tableGridHeight],
+    [items, tableHeights, headerHeights, manuallySized, tableGridHeight],
   );
 
   const handleLayoutChange = useCallback((newLayout: Layout) => {
     onLayoutChange(newLayout);
   }, [onLayoutChange]);
 
+  /** GridLayout 用户拖拽缩放结束：标记用户手动缩放的表格，之后自动贴合不再覆盖其高度（表格在卡片内滚动） */
+  const handleResizeStop = useCallback((_layout: Layout, _oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
+    if (!newItem) return;
+    const it = items.find(i => i.id === newItem.i);
+    if (it?.type === 'table') {
+      onUpdateItemSized?.(newItem.i);
+    }
+  }, [items, onUpdateItemSized]);
+
   const handleExport = useCallback(async () => {
     if (!contentRef.current || exporting) return;
     setExporting(true);
     try {
-      await exportDashboardAsPng(contentRef.current, generateExportFilename());
+      const blob = await renderDashboardAsPng(contentRef.current);
+      setExportPreview({ blob, url: URL.createObjectURL(blob) });
     } catch (err) {
       console.error('仪表板导出失败:', err);
       alert('导出图片失败，请稍后重试');
@@ -185,7 +234,7 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
               opacity: items.length === 0 ? 0.5 : 1,
             }}
           >
-            {exporting ? '导出中…' : '导出图片'}
+            {exporting ? '生成中…' : '导出预览'}
           </button>
           <button
             data-export-exclude
@@ -256,6 +305,7 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
             draggableHandle=".dashboard-card-drag-handle"
             draggableCancel="button"
             onLayoutChange={handleLayoutChange}
+            onResizeStop={handleResizeStop}
           >
             {items.map(di => {
               const isChart = di.type === 'chart';
@@ -281,8 +331,9 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                     minWidth: 0,
                   }}
                 >
-                  {/* 卡片标题栏（可拖拽） */}
+                  {/* 卡片标题栏（可拖拽）；ref 回调实测高度用于换算网格高度 */}
                   <div
+                    ref={headerRefCb(di.id)}
                     className="dashboard-card-drag-handle"
                     style={{
                       display: 'flex',
@@ -356,9 +407,8 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                     flexDirection: 'column',
                     minHeight: 0,
                     minWidth: 0,
-                    // 表格完整展开（dashboardMode 自身 overflow:visible 不滚动），
-                    // 仅图表需要 hidden 裁切 ECharts 容器
-                    overflow: isChart ? 'hidden' : 'visible',
+                    // 裁切溢出：图表裁切 ECharts 容器，表格由 TableView 根容器内部滚动承接
+                    overflow: 'hidden',
                     padding: isChart ? '8px 12px 12px' : 0,
                   }}>
                     {isChart ? (
@@ -368,7 +418,6 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
                         hideTableToggle
                         hideDescription
                         fillHeight
-                        showExport
                         messageId={di.id}
                         chartIndex={0}
                         onChangeSpec={(spec) => onUpdateChartSpec?.(di.id, spec)}
@@ -393,6 +442,84 @@ export function DashboardView({ items, dashboardName, onRemove, onAddChart, onLa
         </div>
       )}
       </div>
+      {exportPreview && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="仪表板导出预览"
+          style={{
+            position: 'fixed',
+            zIndex: 1000,
+            inset: 0,
+            padding: 24,
+            background: 'rgb(15 23 42 / 60%)',
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            width: 'min(1280px, 100%)',
+            height: '100%',
+            margin: '0 auto',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            borderRadius: 10,
+            background: '#fff',
+          }}>
+            <header style={{
+              display: 'flex',
+              minHeight: 58,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              padding: '0 18px',
+              borderBottom: '1px solid #e2e8f0',
+              background: '#fff',
+            }}>
+              <div>
+                <strong style={{ color: TEXT_PRIMARY }}>仪表板导出预览</strong>
+                <span style={{ marginLeft: 12, color: TEXT_MUTED, fontSize: 12 }}>
+                  {dashboardName}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => downloadDashboardPng(exportPreview.blob, generateExportFilename())}
+                  style={{
+                    border: 0,
+                    borderRadius: 6,
+                    padding: '8px 14px',
+                    background: ACTIVE_TEXT,
+                    color: '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  下载 PNG
+                </button>
+                <button
+                  onClick={() => setExportPreview(null)}
+                  style={{
+                    border: `1px solid ${BORDER}`,
+                    borderRadius: 6,
+                    padding: '8px 14px',
+                    background: '#fff',
+                    color: TEXT_PRIMARY,
+                    cursor: 'pointer',
+                  }}
+                >
+                  关闭
+                </button>
+              </div>
+            </header>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 20, background: '#e2e8f0' }}>
+              <img
+                src={exportPreview.url}
+                alt={`${dashboardName}导出预览`}
+                style={{ display: 'block', maxWidth: '100%', margin: '0 auto', background: '#fff', boxShadow: '0 4px 18px rgb(15 23 42 / 18%)' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

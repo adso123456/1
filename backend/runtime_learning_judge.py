@@ -7,6 +7,7 @@ Judge 是独立调用，不继承用户会话历史，temperature=0；
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -50,7 +51,7 @@ class LearningJudgeError(RuntimeError):
 class RuntimeLearningJudge:
     def __init__(
         self,
-        llm_service: Any,
+        llm_service: Any | None,
         settings: OnlineLearningSettings,
     ) -> None:
         self._llm_service = llm_service
@@ -63,6 +64,26 @@ class RuntimeLearningJudge:
         metadata_context: list[dict[str, Any]] | None = None,
     ) -> JudgeVerdict:
         """调用独立 Judge；任何失败都返回 NEEDS_REVIEW 默认结论，绝不抛出。"""
+        if self._llm_service is None:
+            api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+            if not api_key:
+                return JudgeVerdict(
+                    verdict="NEEDS_REVIEW",
+                    confidence=0.0,
+                    reason="未配置 LLM API Key，默认待人工复核",
+                )
+            # 管理页配置 Key 后无需重启：调用时现场构造 LLM 服务。
+            from backend.tracing_llm_service import TracingOpenAILlmService
+            from config.performance_settings import QueryPerformanceSettings
+
+            self._llm_service = TracingOpenAILlmService(
+                model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+                api_key=api_key,
+                base_url=os.environ.get(
+                    "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+                ),
+                settings=QueryPerformanceSettings.from_environment(),
+            )
         last_exception: Exception | None = None
         attempts = 0
         while attempts < max(1, self._settings.max_judge_attempts):

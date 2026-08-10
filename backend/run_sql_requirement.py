@@ -102,17 +102,24 @@ def record_default_database_query_requirement(
     return state
 
 
-def record_successful_run_sql(*, row_count: int, columns: list[str]) -> bool:
-    """记录强制查询请求的成功 SELECT，并在首次成功后关闭工具阶段。"""
+def record_successful_run_sql(
+    *,
+    row_count: int,
+    columns: list[str],
+    close_tool_phase: bool = True,
+) -> bool:
+    """记录成功 SELECT；调用方可延后关闭工具阶段以完成必要的后续查询。"""
     state = get_run_sql_requirement()
     if state is None or not state.requires_run_sql:
         return False
     state.successful_run_sql_count += 1
-    if state.successful_run_sql_completed:
+    if not state.successful_run_sql_completed:
+        state.successful_run_sql_completed = True
+        state.successful_run_sql_row_count = row_count
+        state.successful_run_sql_columns = list(columns)
+    if not close_tool_phase or state.tool_phase_closed:
+        _write_trace_state(state)
         return False
-    state.successful_run_sql_completed = True
-    state.successful_run_sql_row_count = row_count
-    state.successful_run_sql_columns = list(columns)
     state.tool_phase_closed = True
     state.tool_phase_close_reason = (
         "first_successful_run_sql_for_database_query"
@@ -123,7 +130,11 @@ def record_successful_run_sql(*, row_count: int, columns: list[str]) -> bool:
     return True
 
 
-def record_successful_run_sql_result(result: Any) -> bool:
+def record_successful_run_sql_result(
+    result: Any,
+    *,
+    close_tool_phase: bool = True,
+) -> bool:
     """仅接受执行成功且生产元数据标记为 SELECT 的 run_sql 结果。"""
     metadata = dict(getattr(result, "metadata", None) or {})
     if not getattr(result, "success", False) or metadata.get("query_type") != "SELECT":
@@ -131,6 +142,7 @@ def record_successful_run_sql_result(result: Any) -> bool:
     return record_successful_run_sql(
         row_count=int(metadata.get("row_count") or 0),
         columns=list(metadata.get("columns") or []),
+        close_tool_phase=close_tool_phase,
     )
 
 

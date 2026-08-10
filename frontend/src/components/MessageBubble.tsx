@@ -1,4 +1,3 @@
-import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, ChartData, DataSourceSummary, RenderableChartType } from '../types';
@@ -15,6 +14,11 @@ import {
 } from './ReportComponents';
 import { DataSourceSuggestionCard } from './DataSourceSuggestionCard';
 import { sanitizeUserVisibleDataSourceText } from '../dataSourcePresentation';
+import { formatCellValue, formatColumnLabel } from '../utils/tableFormatting';
+import {
+  formatStructuredResultMessage,
+  sanitizeInternalProtocolText,
+} from '../messageSanitization';
 
 interface Props {
   message: ChatMessage;
@@ -22,7 +26,12 @@ interface Props {
   /** V2 图表切换：基于 sourceColumns/sourceRows 重新执行 V2 plan+transform，返回完整 ChartData */
   onV2ChartSwitch?: (messageId: string, chartIndex: number, newChart: ChartData) => void;
   /** 点击"添加到仪表板"时回调，携带当前 activeSpec 图表快照、消息 ID、消息 SQL（会话 ID 由 App 补充） */
-  onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
+  onAddToDashboard?: (payload: {
+    chart: ChartData;
+    viewMode: 'chart' | 'table';
+    messageId: string;
+    sql: string | null;
+  }) => void;
   compact?: boolean;
   workspaceUrl?: string;
   onReportGenerated?: (messageId: string, result: ReportResultData) => void;
@@ -38,11 +47,11 @@ interface Props {
 
 /** 去除图表注释标记及流式未闭合残片，避免显示在正文中 */
 function cleanMarkdown(text: string): string {
-  return sanitizeUserVisibleDataSourceText(text
+  return sanitizeUserVisibleDataSourceText(sanitizeInternalProtocolText(text
     .replace(/<!--\s*chart_spec:\s*[\s\S]*?\s*-->/gi, '')
     .replace(/<!--\s*chart_type:\s*\w*\s*-->/gi, '')
     .replace(/<!--[\s\S]*$/, '')
-    .trimEnd());
+    .trimEnd()));
 }
 
 export function MessageBubble({
@@ -60,20 +69,23 @@ export function MessageBubble({
   dataSources = [],
 }: Props) {
   const isUser = message.role === 'user';
-  const hasSql = !!(message.sql && message.sql.trim());
-  const [showSql, setShowSql] = useState(false);
-  const [copyLabel, setCopyLabel] = useState('复制 SQL');
-
-  const handleCopy = useCallback(async () => {
-    if (!message.sql) return;
-    try {
-      await navigator.clipboard.writeText(message.sql);
-      setCopyLabel('已复制');
-    } catch {
-      setCopyLabel('复制失败');
-    }
-    setTimeout(() => setCopyLabel('复制 SQL'), 2000);
-  }, [message.sql]);
+  const hasStructuredResult = message.charts.length > 0
+    || message.dataframes.some(dataframe => (
+      Array.isArray(dataframe.columns)
+      && dataframe.columns.length > 0
+      && Array.isArray(dataframe.data)
+      && dataframe.data.length > 0
+    ));
+  const finalDataframe = [...message.dataframes].reverse().find(dataframe => (
+    Array.isArray(dataframe.data) && dataframe.data.length > 0
+  ));
+  const structuredRowCount = finalDataframe?.data.length
+    ?? message.charts[0]?.sourceRows?.length
+    ?? message.charts[0]?.rows?.length
+    ?? 0;
+  const visibleMarkdown = hasStructuredResult
+    ? formatStructuredResultMessage(structuredRowCount, message.charts.length > 0)
+    : cleanMarkdown(message.text);
 
   // 纯 loading 态：轻量行内指示器，不用大气泡卡片
   if (!isUser && message.streaming && !message.text) {
@@ -146,7 +158,7 @@ export function MessageBubble({
             )}
 
             {/* Markdown 正文 */}
-            {message.text && (
+            {visibleMarkdown && (
               <div className="markdown-body" style={{ fontSize: 14 }}>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
@@ -179,96 +191,12 @@ export function MessageBubble({
                     ),
                   }}
                 >
-                  {cleanMarkdown(message.text)}
+                  {visibleMarkdown}
                 </ReactMarkdown>
               </div>
             )}
 
-            {/* 视图切换：图表 / 表格 / SQL */}
-            {hasSql && (
-              <div style={{ display: 'flex', gap: 4, border: '1px solid #e5e7eb', borderRadius: 6, padding: 3, width: 'fit-content', marginBottom: 12 }}>
-                <button
-                  onClick={() => setShowSql(false)}
-                  style={{
-                    padding: '4px 14px',
-                    border: 'none',
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    fontWeight: !showSql ? 600 : 400,
-                    backgroundColor: !showSql ? '#2563eb' : 'transparent',
-                    color: !showSql ? '#fff' : '#6b7280',
-                    transition: 'all .15s',
-                  }}
-                >
-                  图表 / 表格
-                </button>
-                <button
-                  onClick={() => setShowSql(true)}
-                  style={{
-                    padding: '4px 14px',
-                    border: 'none',
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    fontWeight: showSql ? 600 : 400,
-                    backgroundColor: showSql ? '#2563eb' : 'transparent',
-                    color: showSql ? '#fff' : '#6b7280',
-                    transition: 'all .15s',
-                  }}
-                >
-                  SQL
-                </button>
-              </div>
-            )}
-
-            {/* SQL 视图 */}
-            {showSql && hasSql && (
-              <div
-                style={{
-                  backgroundColor: '#1e293b',
-                  borderRadius: 8,
-                  padding: 16,
-                  marginBottom: 8,
-                  position: 'relative',
-                }}
-              >
-                <pre
-                  style={{
-                    color: '#e2e8f0',
-                    fontSize: 13,
-                    fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace',
-                    lineHeight: 1.6,
-                    whiteSpace: 'pre',
-                    overflowX: 'auto',
-                    margin: 0,
-                    paddingBottom: 36,
-                  }}
-                >
-                  {message.sql}
-                </pre>
-                <button
-                  onClick={handleCopy}
-                  style={{
-                    position: 'absolute',
-                    bottom: 8,
-                    right: 12,
-                    padding: '4px 12px',
-                    border: '1px solid #475569',
-                    borderRadius: 4,
-                    backgroundColor: '#334155',
-                    color: '#cbd5e1',
-                    fontSize: 12,
-                    cursor: 'pointer',
-                    transition: 'all .15s',
-                  }}
-                >
-                  {copyLabel}
-                </button>
-              </div>
-            )}
-
-            {/* 图表区域（SQL 模式下用 display:none 保留内部状态） */}
+            {/* 图表区域 */}
             {/* 多条 charts 时，只展示第一张无 error 且可构建的图表；无有效图表则展示第一张错误图表 */}
             {(() => {
               // 选择展示图表：第一张无 error 且可构建 > 第一张有 error > 第一张
@@ -287,10 +215,46 @@ export function MessageBubble({
                   }
                 }
               }
+              // 无图表时用最终 dataframe 做表格兜底，避免"查询完成但看不到数据"
+              if (message.charts.length === 0) {
+                const df = message.dataframes[message.dataframes.length - 1];
+                const rows = df && Array.isArray(df.data) ? df.data : [];
+                const cols = df && Array.isArray(df.columns) ? df.columns : [];
+                if (cols.length === 0 || rows.length === 0) return null;
+                return (
+                  <div style={{ overflowX: 'auto', marginTop: 4 }}>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#f3f4f6' }}>
+                          <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '2px solid #e5e7eb', fontWeight: 500, color: '#9ca3af', width: 40 }}>#</th>
+                          {cols.map(col => (
+                            <th key={col} style={{ padding: '6px 12px', textAlign: 'left', borderBottom: '2px solid #e5e7eb', fontWeight: 500 }}>
+                              {formatColumnLabel(col)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row, ri) => (
+                          <tr key={ri} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '5px 8px', textAlign: 'center', color: '#9ca3af', fontSize: 11 }}>{ri + 1}</td>
+                            {cols.map(col => (
+                              <td key={col} style={{ padding: '5px 12px', color: '#374151' }}>
+                                {formatCellValue(row[col])}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              }
+
               if (!best) return null;
 
               return (
-                <div style={{ display: showSql ? 'none' : undefined }}>
+                <div>
                   <ChartErrorBoundary
                     resetKey={`${best.id}|${best.error ?? ''}|${JSON.stringify(best.spec)}|${best.columns.join(',')}|${best.dataVersion}`}
                     fallback={
@@ -318,8 +282,9 @@ export function MessageBubble({
                       compact={compact}
                       workspaceUrl={workspaceUrl}
                       onAddToDashboard={onAddToDashboard
-                        ? (chart) => onAddToDashboard({
+                        ? (chart, viewMode) => onAddToDashboard({
                             chart,
+                            viewMode,
                             messageId: message.id,
                             sql: message.sql ?? null,
                           })

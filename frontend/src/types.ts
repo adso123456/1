@@ -51,7 +51,7 @@ export type ChartType =
   | 'combo'
   | 'none';
 
-export type RenderableChartType = Exclude<ChartType, 'none'>;
+export type RenderableChartType = Exclude<ChartType, 'none' | 'gauge'>;
 
 /** 图表对当前数据的适用性分级 */
 export type ChartSuitability =
@@ -79,13 +79,13 @@ export interface ChartSpec {
   yFields?: string[];
   seriesField?: string | null;
   sizeField?: string | null;
-  /** 热力值 / 箱线值 / 仪表盘值 */
+  /** 热力值 / 箱线值 / 单值 */
   valueField?: string | null;
-  /** 仪表盘最小值 */
+  /** 单值范围最小值 */
   min?: number | null;
-  /** 仪表盘最大值 */
+  /** 单值范围最大值 */
   max?: number | null;
-  /** 仪表盘单位 */
+  /** 单值单位 */
   unit?: string | null;
 }
 
@@ -220,6 +220,9 @@ export interface DashboardTableItem {
   table: DataFrameData;
   /** 网格布局坐标（x=列, y=行, w=宽度, h=高度），缺失时自动生成 */
   layout?: DashboardLayoutInfo;
+  /** 用户手动缩放过该表格卡片：之后自动贴合不再覆盖其高度（表格在卡片内滚动）。
+   *  随 item 一起持久化，删除卡片/仪表板时自动清理。 */
+  userSized?: boolean;
 }
 
 export type DashboardItem = DashboardChartItem | DashboardTableItem;

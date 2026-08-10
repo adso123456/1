@@ -34,10 +34,12 @@ const chart: ChartData = {
 
 test('仪表板项目包含会话、消息、activeSpec 快照、SQL 和刷新时间', () => {
   const item = createWidgetDashboardChartItem(
-    { chart, messageId: 'message-1', sql: 'SELECT 1' },
+    { chart, viewMode: 'chart', messageId: 'message-1', sql: 'SELECT 1' },
     'session-1',
     1700000000000,
   );
+  assert(item.type === 'chart', '应生成图表项目');
+  if (item.type !== 'chart') return;
   assert(item.sourceSessionId === 'session-1', 'sessionId 错误');
   assert(item.sourceMessageId === 'message-1', 'messageId 错误');
   assert(item.sourceSql === 'SELECT 1', 'SQL 错误');
@@ -45,6 +47,19 @@ test('仪表板项目包含会话、消息、activeSpec 快照、SQL 和刷新�
   assert(item.addedAt === 1700000000000, '添加时间错误');
   assert(item.chart.spec.type === 'bar', '图表快照错误');
   assert(item.chart !== chart, '图表没有深拷贝');
+});
+
+test('表格模式添加到仪表板时生成表格快照', () => {
+  const item = createWidgetDashboardChartItem(
+    { chart, viewMode: 'table', messageId: 'message-1', sql: 'SELECT 1' },
+    'session-1',
+    1700000000000,
+  );
+  assert(item.type === 'table', '应生成表格项目');
+  if (item.type !== 'table') return;
+  assert(item.table.columns.length === 2, '表格列快照错误');
+  assert(item.table.data.length === 1, '表格行快照错误');
+  assert(item.id.endsWith('::table'), '表格项目 ID 未隔离');
 });
 
 console.log(`total=${passed + failed} passed=${passed} failed=${failed}`);

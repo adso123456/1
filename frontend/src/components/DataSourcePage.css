@@ -577,6 +577,58 @@
   font-weight: 600;
 }
 
+.data-source-job {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
+}
+
+.data-source-job small {
+  color: #b91c1c;
+}
+
+.data-source-job--succeeded {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.data-source-job--failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.data-source-claim {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.data-source-claim--claim_review {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.data-source-claim small {
+  color: #b91c1c;
+}
+
 @media (min-width: 1520px) {
   .data-source-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));

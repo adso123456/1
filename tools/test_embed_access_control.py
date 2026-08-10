@@ -225,6 +225,31 @@ def main() -> int:
                     MYSQL_SOURCE,
                 }
 
+                bound = client.post(
+                    f"{base}/conversations/embed-suggestion/source",
+                    headers=headers,
+                    json={"source_id": MYSQL_SOURCE},
+                )
+                assert_status(bound, 200)
+                assert bound.json() == {
+                    "conversation_id": "embed-suggestion",
+                    "source_id": MYSQL_SOURCE,
+                }
+                assert (
+                    app_resources.coordinator.require(
+                        "embed-suggestion"
+                    ).source_id
+                    == MYSQL_SOURCE
+                )
+                assert_status(
+                    client.post(
+                        f"{base}/conversations/embed-forbidden/source",
+                        headers=headers,
+                        json={"source_id": FORBIDDEN_SOURCE},
+                    ),
+                    403,
+                )
+
                 body = {
                     "message": "hello",
                     "conversation_id": "embed-conversation",

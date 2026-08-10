@@ -58,13 +58,18 @@ export function TableView({ table, preview, hideFooter, dashboardMode, onContent
     return () => observer.disconnect();
   }, [dashboardMode, reportHeight]);
 
-  // 仪表板模式：根容器不产生滚动条，表格完整展开
+  // 仪表板模式：根容器填满卡片内容区（height:100%），表格超高时在容器内滚动。
+  // flexShrink:0 防止被内容区压缩；border/borderRadius 让容器有边界，视觉与卡片一体，
+  // 表格下方的剩余空间归容器（滚动区）而非卡片外露白。
   const rootStyle = dashboardMode
     ? {
-        height: 'auto',
+        // height:100% 必须配 border-box：表格容器有 2px 边框，否则外高会超出父容器被裁
+        boxSizing: 'border-box' as const,
+        height: '100%',
         maxHeight: 'none' as const,
         minHeight: 0,
-        overflow: 'visible' as const,
+        flexShrink: 0,
+        overflow: 'auto' as const,
         border: preview ? 'none' : '1px solid #e5e7eb',
         borderRadius: preview ? 0 : 6,
       }

@@ -184,7 +184,7 @@ test('T6: explicitType=false → 使用 availability spec', () => {
 });
 
 // ============================================================
-// 4. B-5B 关键路径：V2 auto 产出的 scatter / bubble / gauge 保留
+// 4. B-5B 关键路径：V2 auto 产出的 scatter / bubble 保留
 // ============================================================
 
 test('T7: prepareChartV2All → scatter spec 保留', () => {
@@ -240,7 +240,7 @@ test('T8: prepareChartV2All → bubble spec 保留', () => {
   assertEqual(spec!.sizeField, 'area');
 });
 
-test('T9: prepareChartV2All → gauge spec 保留', () => {
+test('T9: prepareChartV2All 单值数据不再产出图表（gauge 已移除）', () => {
   const result = prepareChartV2All({
     columns: ['total_count'],
     rows: [{ total_count: 342 }] as Row[],
@@ -251,14 +251,10 @@ test('T9: prepareChartV2All → gauge spec 保留', () => {
     dataVersion: 1,
   });
 
-  assertOk(result.ok, `prepareChartV2All 应成功: ${result.errorCode}`);
-  assertEqual(result.chart!.explicitType, true);
-  assertEqual(result.chart!.spec.type, 'gauge');
-
-  const spec = selectActiveSpec(result.chart!, 'gauge');
-  assertOk(spec !== null);
-  assertEqual(spec!.type, 'gauge');
-  assertEqual(spec!.valueField, 'total_count');
+  // gauge 已从能力表移除，单值数据无适配图表 → 应返回 no_default_plan
+  assertEqual(result.ok, false);
+  assertEqual(result.errorCode, 'no_default_plan');
+  assertOk(result.chart === null, '单值数据不应产出图表');
 });
 
 // ============================================================
@@ -404,9 +400,9 @@ test('B10D-T1: V2 explicit spec 仍优先保留', () => {
     ] as Row[],
   );
 
-  // 验证 V2 availability 覆盖 13 种类型
+  // 验证 V2 availability 覆盖 12 种类型
   const allTypes = getChartTypeAvailabilityV2(chart);
-  assertEqual(allTypes.length, 13);
+  assertEqual(allTypes.length, 12);
 
   // 模拟 activeSpec 选择：explicitType=true 且类型匹配 → 使用原始 spec
   const spec = selectActiveSpec(chart, 'bar');
@@ -479,7 +475,7 @@ test('B10D-T4: 无 source 数据时走旧逻辑', () => {
 
   // V2 availability 对旧图表 fallback 到旧逻辑，返回旧 availability
   const allTypes = getChartTypeAvailabilityV2(chart);
-  assertEqual(allTypes.length, 13);
+  assertEqual(allTypes.length, 12);
 
   const result = simulateTypeChange(chart, 'line', allTypes);
   assertEqual(result.localType, 'line');

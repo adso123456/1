@@ -391,10 +391,10 @@ assertOk(watch.length === 0, `watch count=${watch.length} should be 0`);
 
 // ── 关键夹具断言 ──
 
-// single_kpi → V2 默认 gauge
+// single_kpi → V2 默认 null（gauge 已移除，单值无推荐图表）
 {
   const r = rows.find(x => x.fixture === 'single_kpi')!;
-  assertEqual(r.v2Default, 'gauge', 'single_kpi: V2 默认 gauge');
+  assertEqual(r.v2Default, null, 'single_kpi: V2 默认 null（gauge 已移除）');
 }
 
 // region_count → V2 默认 bar

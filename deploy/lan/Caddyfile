@@ -1,0 +1,48 @@
+http://192.168.99.25:8080, http://127.0.0.1:8080 {
+	route {
+		# 即使 Windows 自动创建了较宽的程序规则，也只服务本机和当前内网。
+		@outside not remote_ip 127.0.0.0/8 ::1 192.168.99.0/24
+		respond @outside 403
+
+		# SSE 由 Caddy 直接流式转发，flush_interval -1 禁止响应聚合。
+		handle /api/embed/* {
+			reverse_proxy 127.0.0.1:5173 {
+				flush_interval -1
+			}
+		}
+
+		# 8080 只服务嵌入 API；完整工作台统一由 5173 提供。
+		@blocked path /api /api/*
+		respond @blocked 404
+
+		handle /health {
+			reverse_proxy 127.0.0.1:5173
+		}
+
+		# 直接打开 8080 工作台入口时跳转到完整 Vite 工作台；
+		# 带 mode=widget 的 iframe 入口仍继续使用构建产物。
+		@workspace_root {
+			path / /index.html
+			not query mode=widget
+		}
+		redir @workspace_root http://192.168.99.25:5173{uri} 307
+
+		# React 构建产物和 water-agent-widget.js。
+		handle {
+			root * E:/3/posgresql/1/frontend/dist
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}
+
+http://192.168.99.25:8081, http://127.0.0.1:8081 {
+	route {
+		@outside not remote_ip 127.0.0.0/8 ::1 192.168.99.0/24
+		respond @outside 403
+
+		root * E:/3/posgresql/1/deploy/lan/embed-host
+		try_files {path} /index.html
+		file_server
+	}
+}

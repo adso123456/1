@@ -1,6 +1,7 @@
 import {
   buildWidgetUrl,
   buildWorkspaceUrl,
+  readWorkspaceStorageNamespace,
   resolveWidgetAccessMode,
   resolveApplicationMode,
 } from '../appMode.js';
@@ -56,6 +57,19 @@ test('浮窗与完整工作台 URL 保持同源', () => {
   );
 });
 
+test('嵌入浮窗把隔离存储范围交接给完整工作台', () => {
+  const scope = 'water-lan-demo:http://192.168.99.25:8081';
+  const workspaceUrl = buildWorkspaceUrl(
+    'http://192.168.99.25:5173',
+    's_embed_session',
+    scope,
+  );
+  assert(
+    readWorkspaceStorageNamespace(workspaceUrl) === scope,
+    '完整工作台未恢复嵌入存储范围',
+  );
+});
+
 test('缺少或伪造嵌入上下文时 Widget 失败关闭', () => {
   const origin = 'http://127.0.0.1:5173';
   assert(
@@ -107,16 +121,16 @@ test('跨域上下文始终受保护，同源开发入口必须显式且仅 DEV 
     '显式 DEV 同源入口未启用',
   );
   assert(
-    resolveWidgetAccessMode(localUrl, origin, false) === 'invalid',
-    '生产构建不应接受开发入口',
+    resolveWidgetAccessMode(localUrl, origin, false) === 'protected',
+    '生产构建同源嵌入应走父页面桥接（开发标记仅控制 DEV 直达模式）',
   );
   assert(
     resolveWidgetAccessMode(
       buildWidgetUrl(origin, origin, 'water-agent-forged'),
       origin,
       true,
-    ) === 'invalid',
-    '同源查询参数缺少项目标记时不应免鉴权',
+    ) === 'protected',
+    '同源查询参数合法时走父页面桥接（与跨域 protected 一致）',
   );
 });
 

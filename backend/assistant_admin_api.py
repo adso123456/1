@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import os
 import sqlite3
 from collections.abc import Callable
 from dataclasses import asdict
@@ -35,6 +36,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 logger = logging.getLogger(__name__)
 SAFE_INTERNAL_ERROR = "管理服务暂时不可用"
 T = TypeVar("T")
+_PRIVATE_ADMIN_NETWORKS = tuple(
+    ipaddress.ip_network(value)
+    for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
+)
 
 
 class AssistantApplicationLinkRequest(BaseModel):
@@ -116,6 +121,22 @@ def _is_loopback(host: str | None) -> bool:
     return bool(mapped and mapped.is_loopback)
 
 
+def _is_allowed_lan_client(host: str | None) -> bool:
+    if os.getenv("WATER_AGENT_ADMIN_ALLOW_LAN", "").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return False
+    if not host:
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    mapped = getattr(address, "ipv4_mapped", None)
+    candidate = mapped or address
+    return any(candidate in network for network in _PRIVATE_ADMIN_NETWORKS)
+
+
 def _exact_origin(value: str) -> str:
     try:
         parsed = urlsplit(value)
@@ -156,7 +177,8 @@ def _authorize(
     request: Request,
     origin: str | None,
 ) -> None:
-    if not _is_loopback(request.client.host if request.client else None):
+    client_host = request.client.host if request.client else None
+    if not (_is_loopback(client_host) or _is_allowed_lan_client(client_host)):
         raise HTTPException(status_code=403, detail="仅允许本机访问")
     if origin is not None:
         try:

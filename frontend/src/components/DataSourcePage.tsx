@@ -34,6 +34,7 @@ interface Source {
   connect_timeout?: number;
   username?: string;
   has_password?: boolean;
+  claim_status?: string;
   discovered_metadata?: MetadataColumn[];
   selected_scope?: MetadataColumn[];
 }
@@ -49,6 +50,41 @@ interface MetadataColumn {
   nullable: boolean;
   primary_key: boolean;
   ordinal_position: number;
+}
+
+interface OnboardingJob {
+  job_id: string;
+  job_type: 'analyze' | 'review' | 'activate' | 'claim_preview' | 'claim_publish';
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  phase: string;
+  current_count: number;
+  total_count: number;
+  message: string;
+  error: string;
+  result: Record<string, unknown>;
+}
+
+interface ClaimSummary {
+  status: 'not_required' | 'claim_required' | 'claim_analyzing' | 'claim_review' | 'claimed' | 'failed';
+  diff: {
+    summary?: {
+      baseline_table_count?: number;
+      remote_table_count?: number;
+      added_table_count?: number;
+      removed_table_count?: number;
+      added_column_count?: number;
+      removed_column_count?: number;
+      changed_column_count?: number;
+    };
+    sql_memory_validation?: {
+      existing_count?: number;
+      revalidated_count?: number;
+      rejected_count?: number;
+      generated_count?: number;
+      published_candidate_count?: number;
+    };
+  };
+  last_error: string;
 }
 
 const FILTER_STATUS = [
@@ -296,14 +332,32 @@ function ScopeSelector({
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [tableSearch, setTableSearch] = useState('');
+  const [job, setJob] = useState<OnboardingJob | null>(null);
+  const [claim, setClaim] = useState<ClaimSummary | null>(null);
 
   const load = useCallback(async () => {
-    const current = await api<Source>(`/api/data-source-management/${encodeURIComponent(source.source_id)}`);
+    const [current, jobResponse, claimResponse] = await Promise.all([
+      api<Source>(`/api/data-source-management/${encodeURIComponent(source.source_id)}`),
+      api<{ job: OnboardingJob | null }>(`/api/data-source-management/${encodeURIComponent(source.source_id)}/jobs/current`),
+      source.is_builtin
+        ? api<{ claim: ClaimSummary | null }>(`/api/data-source-management/${encodeURIComponent(source.source_id)}/claim`)
+        : Promise.resolve({ claim: null }),
+    ]);
     setDetail(current);
+    setJob(jobResponse.job);
+    setClaim(claimResponse.claim);
     setSelected(new Set((current.selected_scope || []).map(item => `${item.schema}.${item.table}.${item.column}`)));
-  }, [source.source_id]);
+  }, [source.is_builtin, source.source_id]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!job || !['queued', 'running'].includes(job.status)) return undefined;
+    const timer = window.setInterval(() => { void load(); }, 1500);
+    return () => window.clearInterval(timer);
+  }, [job, load]);
+  useEffect(() => {
+    if (job && ['succeeded', 'failed'].includes(job.status)) void onRefresh();
+  }, [job?.job_id, job?.status, onRefresh]);
   const grouped = useMemo(() => {
     const result = new Map<string, MetadataColumn[]>();
     for (const item of detail.discovered_metadata || []) {
@@ -320,20 +374,106 @@ function ScopeSelector({
     finally { setBusy(''); }
   };
 
+  const startJob = async (
+    jobType: 'analyze' | 'review' | 'activate' | 'claim_preview' | 'claim_publish',
+  ) => {
+    setBusy(jobType); setError('');
+    try {
+      const started = await api<OnboardingJob>(
+        `/api/data-source-management/${source.source_id}/${
+          jobType === 'claim_preview'
+            ? 'claim/preview'
+            : jobType === 'claim_publish'
+              ? 'claim/publish'
+              : jobType
+        }`,
+        { method: 'POST' },
+      );
+      setJob(started);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '任务启动失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const jobRunning = Boolean(job && ['queued', 'running'].includes(job.status));
+  const claimRequired = Boolean(
+    source.is_builtin
+    && claim
+    && !['not_required', 'claimed'].includes(claim.status),
+  );
+  const claimDiff = claim?.diff?.summary;
+  const claimSql = claim?.diff?.sql_memory_validation;
+
   return (
     <div className="data-source-scope">
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button disabled={Boolean(busy)} onClick={() => action('test', () => api(`/api/data-source-management/${source.source_id}/test-connection`, { method: 'POST' }))}>{busy === 'test' ? '测试中…' : '测试连接'}</button>
-        <button disabled={Boolean(busy)} onClick={() => action('discover', () => api(`/api/data-source-management/${source.source_id}/discover`, { method: 'POST' }))}>{busy === 'discover' ? '发现中…' : '读取表和字段'}</button>
-        <button disabled={Boolean(busy) || selected.size === 0} onClick={() => action('scope', async () => {
+        {claimRequired ? <>
+          <button
+            disabled={Boolean(busy) || jobRunning}
+            onClick={() => void startJob('claim_preview')}
+            style={{ background: '#2563eb', color: '#fff', borderColor: '#2563eb' }}
+          >{jobRunning && job?.job_type === 'claim_preview' ? '认领分析中…' : claim?.status === 'claim_review' ? '重新生成认领预览' : '认领远程本尊'}</button>
+          {claim?.status === 'claim_review' && (
+            <button
+              disabled={Boolean(busy) || jobRunning}
+              onClick={() => void startJob('claim_publish')}
+              style={{ background: '#059669', color: '#fff', borderColor: '#059669' }}
+            >{jobRunning && job?.job_type === 'claim_publish' ? '发布中…' : '确认并发布远程资产'}</button>
+          )}
+        </> : <>
+          <button
+          disabled={Boolean(busy) || jobRunning}
+          onClick={() => void startJob(detail.selected_tables_count ? 'review' : 'analyze')}
+          style={{ background: '#2563eb', color: '#fff', borderColor: '#2563eb' }}
+        >{jobRunning && ['analyze', 'review'].includes(job?.job_type || '')
+          ? job?.job_type === 'review' ? '审查中…' : '分析中…'
+          : detail.selected_tables_count ? '重新分析' : '连接并分析'}</button>
+        {['metadata_ready', 'training_required', 'connected'].includes(detail.status) && (
+          <button
+            disabled={Boolean(busy) || jobRunning || detail.selected_tables_count === 0}
+            onClick={() => void startJob('activate')}
+            style={{ background: '#059669', color: '#fff', borderColor: '#059669' }}
+          >{jobRunning && job?.job_type === 'activate' ? '构建中…' : '启用问数'}</button>
+        )}
+        </>}
+      </div>
+      {claimRequired && claim && (
+        <div className={`data-source-claim data-source-claim--${claim.status}`}>
+          <strong>{claim.status === 'claim_review' ? '远程差异预览已完成' : '当前远程端点尚未认领'}</strong>
+          {claimDiff && <span>
+            远程 {claimDiff.remote_table_count ?? 0} 表；新增 {claimDiff.added_table_count ?? 0} 表/{claimDiff.added_column_count ?? 0} 字段；
+            删除 {claimDiff.removed_table_count ?? 0} 表/{claimDiff.removed_column_count ?? 0} 字段；结构变化 {claimDiff.changed_column_count ?? 0} 字段。
+          </span>}
+          {claimSql && <span>
+            旧 SQL {claimSql.existing_count ?? 0} 条，远程复验通过 {claimSql.revalidated_count ?? 0} 条，淘汰 {claimSql.rejected_count ?? 0} 条，新生成 {claimSql.generated_count ?? 0} 条。
+          </span>}
+          {claim.last_error && <small>{claim.last_error}</small>}
+        </div>
+      )}
+      {job && (
+        <div className={`data-source-job data-source-job--${job.status}`} role="status">
+          <strong>{job.message || job.phase}</strong>
+          {job.total_count > 0 && <span>{job.current_count}/{job.total_count}</span>}
+          {job.error && <small>{job.error}</small>}
+        </div>
+      )}
+      {!claimRequired && <details style={{ marginTop: 12 }}>
+        <summary style={{ cursor: 'pointer', color: '#4b5563', fontSize: 13 }}>高级范围与兼容操作</summary>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+        <button disabled={Boolean(busy) || jobRunning} onClick={() => action('test', () => api(`/api/data-source-management/${source.source_id}/test-connection`, { method: 'POST' }))}>{busy === 'test' ? '测试中…' : '测试连接'}</button>
+        <button disabled={Boolean(busy) || jobRunning} onClick={() => action('discover', () => api(`/api/data-source-management/${source.source_id}/discover`, { method: 'POST' }))}>{busy === 'discover' ? '发现中…' : '读取表和字段'}</button>
+        <button disabled={Boolean(busy) || jobRunning || selected.size === 0} onClick={() => action('scope', async () => {
           const byKey = new Map((detail.discovered_metadata || []).map(item => [`${item.schema}.${item.table}.${item.column}`, item]));
           await api(`/api/data-source-management/${source.source_id}/scope`, {
             method: 'PUT',
             body: JSON.stringify({ items: [...selected].map(key => byKey.get(key)) }),
           });
         })}>{busy === 'scope' ? '保存中…' : `保存范围（${selected.size} 字段）`}</button>
-        <button disabled={Boolean(busy) || detail.selected_tables_count === 0} onClick={() => action('prepare', () => api(`/api/data-source-management/${source.source_id}/prepare`, { method: 'POST' }))}>{busy === 'prepare' ? '准备中…' : '生成问数资产'}</button>
-      </div>
+        <button disabled={Boolean(busy) || jobRunning || detail.selected_tables_count === 0} onClick={() => action('prepare', () => api(`/api/data-source-management/${source.source_id}/prepare`, { method: 'POST' }))}>{busy === 'prepare' ? '准备中…' : '生成问数资产'}</button>
+        </div>
+      </details>}
       <div className="data-source-scope-stats" aria-label="问数范围统计">
         <span>已发现<strong>{detail.discovered_tables_count ?? grouped.size}</strong>表</span>
         <span>已纳入问数<strong>{detail.included_tables_count ?? detail.selected_tables_count}</strong>表</span>
@@ -424,7 +564,15 @@ export function DataSourcePage({
       if (search) params.set('search', search);
       if (databaseType) params.set('database_type', databaseType);
       if (status) params.set('status', status);
-      setSources(await api<Source[]>(`/api/data-source-management?${params}`));
+      const listed = await api<Source[]>(`/api/data-source-management?${params}`);
+      const enriched = await Promise.all(listed.map(async source => {
+        if (!source.is_builtin) return source;
+        const response = await api<{ claim: ClaimSummary | null }>(
+          `/api/data-source-management/${encodeURIComponent(source.source_id)}/claim`,
+        );
+        return { ...source, claim_status: response.claim?.status };
+      }));
+      setSources(enriched);
       setError('');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '加载失败');
@@ -582,6 +730,8 @@ export function DataSourcePage({
                   </button>
                 )}
                 {source.status === 'disabled' && (
+                  !source.claim_status || ['not_required', 'claimed'].includes(source.claim_status)
+                ) && (
                   <button
                     className="data-source-chat-button"
                     onClick={() => void setChatEnabled(source, true)}
@@ -590,32 +740,20 @@ export function DataSourcePage({
                     启用问数
                   </button>
                 )}
-                {source.status === 'draft' && (
-                  <button className="data-source-action-button" onClick={() => void openEditor(source)}>
-                    继续配置
-                  </button>
-                )}
-                {source.status === 'error' && (
-                  <button className="data-source-action-button is-danger" onClick={() => void openEditor(source)}>
-                    检查配置
-                  </button>
-                )}
-                {!['draft', 'error'].includes(source.status) && (
-                  <button
-                    className="data-source-action-button"
-                    onClick={() => setExpanded(expanded === source.source_id ? '' : source.source_id)}
-                  >
-                    {expanded === source.source_id
-                      ? '收起范围'
-                      : source.status === 'connected'
-                        ? '选择表和字段'
-                        : source.status === 'metadata_ready'
-                          ? '生成问数资产'
-                          : source.status === 'training_required'
-                            ? '刷新问数资产'
-                            : '连接与范围'}
-                  </button>
-                )}
+                <button
+                  className={`data-source-action-button ${source.status === 'error' ? 'is-danger' : ''}`}
+                  onClick={() => setExpanded(expanded === source.source_id ? '' : source.source_id)}
+                >
+                  {expanded === source.source_id
+                    ? '收起'
+                    : source.claim_status && !['not_required', 'claimed'].includes(source.claim_status)
+                      ? '认领远程本尊'
+                    : ['draft', 'error', 'connected'].includes(source.status)
+                      ? '连接并分析'
+                      : ['metadata_ready', 'training_required'].includes(source.status)
+                        ? '启用问数'
+                        : '重新分析'}
+                </button>
                 <details className="data-source-menu">
                   <summary aria-label={`管理${source.display_name}`}>•••</summary>
                   <div>

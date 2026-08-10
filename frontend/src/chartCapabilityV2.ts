@@ -357,7 +357,7 @@ export const PILOT_CAPABILITIES_V2 = [
 //   - transform='boxplot_summary'：renderer gate=false → unsupported
 //   - transform='matrix_aggregate'：未实现 → renderer gate=false → unsupported
 //   - pie/donut 用 transform='none'（ECharts 自动算占比，不依赖 percent_of_total）
-//   - gauge/combo 用 transform='none'（buildGaugeChart/buildComboChart 自行处理单值/双轴）
+//   - combo 用 transform='none'（buildComboChart 自行处理双轴）
 
 export const ALL_CAPABILITIES_V2 = [
   // ── bar（复用 pilot 两个 variant） ──
@@ -792,32 +792,6 @@ export const ALL_CAPABILITIES_V2 = [
           },
         ],
         unsupportedReasonCode: 'boxplot_unsupported',
-      },
-    ],
-  },
-
-  // ── gauge（单值 KPI，用 none，buildGaugeChart 自行取首行） ──
-  {
-    type: 'gauge',
-    label: '仪表盘',
-    variants: [
-      {
-        id: 'gauge_single_value',
-        archetypeSuitability: {
-          single_value: 'recommended',
-        },
-        traitRequirements: [
-          { trait: 'measureCount', equals: 1 },
-          { trait: 'rowCount', equals: 1 },
-        ],
-        semanticMode: 'kpi',
-        maxSuitability: 'recommended',
-        fieldMapping: {
-          valueField: { source: 'measureField', index: 0 },
-        },
-        transform: 'none',
-        rendererRequirements: [],
-        unsupportedReasonCode: 'gauge_unsupported',
       },
     ],
   },

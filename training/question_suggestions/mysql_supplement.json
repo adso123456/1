@@ -1,0 +1,394 @@
+{
+  "schema_version": "1.0",
+  "training_batch_id": "mysql-suggestions-20260804-01",
+  "training_level": "level2_mysql_sql_examples",
+  "status": "approved",
+  "samples": [
+    {
+      "sample_id": "MYSQL_SUG_WQ_DO_COMPARE_019",
+      "question": "比较2026年7月27日各水质站点的平均溶解氧，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m3_value), 3) AS avg_dissolved_oxygen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m3_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_dissolved_oxygen DESC LIMIT 30"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均溶解氧，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WQ_AN_COMPARE_020",
+      "question": "比较2026年7月27日各水质站点的平均氨氮，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m6_value), 3) AS avg_ammonia_nitrogen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m6_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_ammonia_nitrogen DESC LIMIT 30"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均氨氮，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WQ_TP_COMPARE_021",
+      "question": "比较2026年7月27日各水质站点的平均总磷，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m8_value), 3) AS avg_total_phosphorus FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m8_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_total_phosphorus DESC LIMIT 30"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均总磷，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WQ_STATUS_022",
+      "question": "统计2026年7月27日水质监测结果状态分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(status, '未知') AS monitor_status, COUNT(*) AS record_count FROM wm_waterquality_day_records WHERE monitor_time >= '2026-07-27 00:00:00' AND monitor_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY COALESCE(status, '未知') ORDER BY record_count DESC LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回监测状态和数量，适合环图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WQ_RECORD_TYPE_023",
+      "question": "统计2026年7月27日水质自动和手工记录占比并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(record_type, '未知') AS record_type, COUNT(*) AS record_count FROM wm_waterquality_day_records WHERE monitor_time >= '2026-07-27 00:00:00' AND monitor_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY COALESCE(record_type, '未知') ORDER BY record_count DESC LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回记录类型和数量，适合环图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WQ_ALL_TREND_024",
+      "question": "查询2026年7月21日起七天的整体日均pH和溶解氧趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE(monitor_time) AS monitor_date, ROUND(AVG(m2_value), 3) AS avg_ph, ROUND(AVG(m3_value), 3) AS avg_dissolved_oxygen FROM wm_waterquality_day_records WHERE monitor_time >= '2026-07-21 00:00:00' AND monitor_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY DATE(monitor_time) ORDER BY monitor_date LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期、平均pH和平均溶解氧，适合折线图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WQ_AN_TREND_025",
+      "question": "查询2026年7月21日起七天的整体日均氨氮和总磷趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE(monitor_time) AS monitor_date, ROUND(AVG(m6_value), 3) AS avg_ammonia_nitrogen, ROUND(AVG(m8_value), 3) AS avg_total_phosphorus FROM wm_waterquality_day_records WHERE monitor_time >= '2026-07-21 00:00:00' AND monitor_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY DATE(monitor_time) ORDER BY monitor_date LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期、平均氨氮和平均总磷，适合折线图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WARN_INDICATOR_026",
+      "question": "统计2026年7月27日各预警指标的预警数量，展示前20项",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(warn_indicator, '未知指标') AS warn_indicator, COUNT(*) AS warn_count FROM rs_warn_records WHERE warn_time >= '2026-07-27 00:00:00' AND warn_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY COALESCE(warn_indicator, '未知指标') ORDER BY warn_count DESC LIMIT 20"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回预警指标和数量，适合柱状图", "expected_tables": ["rs_warn_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WARN_TYPE_027",
+      "question": "统计2026年7月27日预警类型分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(warn_type, '未知类型') AS warn_type, COUNT(*) AS warn_count FROM rs_warn_records WHERE warn_time >= '2026-07-27 00:00:00' AND warn_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY COALESCE(warn_type, '未知类型') ORDER BY warn_count DESC LIMIT 15"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回预警类型和数量，适合环图", "expected_tables": ["rs_warn_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_WARN_TREND_028",
+      "question": "查询2026年7月21日起七天的每日预警数量趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE(warn_time) AS warn_date, COUNT(*) AS warn_count FROM rs_warn_records WHERE warn_time >= '2026-07-21 00:00:00' AND warn_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY DATE(warn_time) ORDER BY warn_date LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期和预警数量，适合折线图", "expected_tables": ["rs_warn_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_STATION_TYPE_029",
+      "question": "统计有效水质站点类型分布并生成环图",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(station_type, '未知类型') AS station_type, COUNT(*) AS station_count FROM wm_station_info WHERE del_flag = '0' GROUP BY COALESCE(station_type, '未知类型') ORDER BY station_count DESC LIMIT 15"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点类型和数量，适合环图", "expected_tables": ["wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_STATION_CITY_030",
+      "question": "统计各城市有效水质站点数量，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT COALESCE(belong_to_city, '未知城市') AS city_name, COUNT(*) AS station_count FROM wm_station_info WHERE del_flag = '0' GROUP BY COALESCE(belong_to_city, '未知城市') ORDER BY station_count DESC LIMIT 20"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回城市和站点数量，适合柱状图", "expected_tables": ["wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_HYDRO_FLOW_031",
+      "question": "比较2026年7月27日各水文站的平均流量，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m3_value), 3) AS avg_flow_rate FROM wh_hydrological_hour_records r JOIN wm_hydrological_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m3_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_flow_rate DESC LIMIT 30"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回水文站和平均流量，适合柱状图", "expected_tables": ["wh_hydrological_hour_records", "wm_hydrological_info"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_HYDRO_TREND_032",
+      "question": "查询2026年7月27日各小时整体平均流速和流量趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT monitor_time, ROUND(AVG(m2_value), 3) AS avg_flow_velocity, ROUND(AVG(m3_value), 3) AS avg_flow_rate FROM wh_hydrological_hour_records WHERE monitor_time >= '2026-07-27 00:00:00' AND monitor_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY monitor_time ORDER BY monitor_time LIMIT 30"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回时间、平均流速和流量，适合折线图", "expected_tables": ["wh_hydrological_hour_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_MET_COMPARE_033",
+      "question": "比较2026年7月27日各气象站的平均气温，用柱状图展示",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m4_value), 3) AS avg_air_temperature FROM wh_meteorological_hour_records r JOIN wm_meteorological_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m4_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_air_temperature DESC LIMIT 30"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回气象站和平均气温，适合柱状图", "expected_tables": ["wh_meteorological_hour_records", "wm_meteorological_info"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_MET_TREND_034",
+      "question": "查询2026年7月27日各小时整体平均气温、湿度和风速趋势",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT monitor_time, ROUND(AVG(m4_value), 3) AS avg_air_temperature, ROUND(AVG(m5_value), 3) AS avg_humidity, ROUND(AVG(m1_value), 3) AS avg_wind_speed FROM wh_meteorological_hour_records WHERE monitor_time >= '2026-07-27 00:00:00' AND monitor_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY monitor_time ORDER BY monitor_time LIMIT 30"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回时间、平均气温、湿度和风速，适合折线图", "expected_tables": ["wh_meteorological_hour_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_POLL_COD_035",
+      "question": "比较污染源监测站96、97、98在2025年4月1日的平均COD",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_id, ROUND(AVG(cod), 3) AS avg_cod FROM rs_pollutant_day_records WHERE station_id IN (96, 97, 98) AND monitor_time >= '2025-04-01 00:00:00' AND monitor_time < '2025-04-02 00:00:00' AND del_flag = '0' AND cod IS NOT NULL GROUP BY station_id ORDER BY station_id LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点ID和平均COD，适合柱状图", "expected_tables": ["rs_pollutant_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_SUG_POLL_TP_036",
+      "question": "比较污染源监测站96、97、98在2025年4月1日的平均总磷",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_id, ROUND(AVG(tp), 3) AS avg_total_phosphorus FROM rs_pollutant_day_records WHERE station_id IN (96, 97, 98) AND monitor_time >= '2025-04-01 00:00:00' AND monitor_time < '2025-04-02 00:00:00' AND del_flag = '0' AND tp IS NOT NULL GROUP BY station_id ORDER BY station_id LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点ID和平均总磷，适合柱状图", "expected_tables": ["rs_pollutant_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_WQ_PH_TOP5_037",
+      "question": "查询2026年7月27日平均pH最高的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m2_value), 3) AS avg_ph FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_ph DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均pH，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_WQ_DO_LOW5_038",
+      "question": "查询2026年7月27日平均溶解氧最低的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m3_value), 3) AS avg_dissolved_oxygen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m3_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_dissolved_oxygen LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均溶解氧，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_WQ_AN_TOP5_039",
+      "question": "查询2026年7月27日平均氨氮最高的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m6_value), 3) AS avg_ammonia_nitrogen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m6_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_ammonia_nitrogen DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均氨氮，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_WQ_TP_TOP5_040",
+      "question": "查询2026年7月27日平均总磷最高的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m8_value), 3) AS avg_total_phosphorus FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m8_value IS NOT NULL GROUP BY s.station_name ORDER BY avg_total_phosphorus DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均总磷，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_WARN_TOP5_041",
+      "question": "列出2026年7月27日最新的5条水质预警明细",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, r.warn_time, r.warn_indicator, r.warn_level, r.warn_content FROM rs_warn_records r LEFT JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.warn_time >= '2026-07-27 00:00:00' AND r.warn_time < '2026-07-28 00:00:00' AND r.del_flag = '0' ORDER BY r.warn_time DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回最新5条预警明细表格", "expected_tables": ["rs_warn_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_WARN_STATION_042",
+      "question": "统计2026年7月27日预警数量最多的10个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, COUNT(*) AS warn_count FROM rs_warn_records r LEFT JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.warn_time >= '2026-07-27 00:00:00' AND r.warn_time < '2026-07-28 00:00:00' AND r.del_flag = '0' GROUP BY s.station_name ORDER BY warn_count DESC LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和预警数量，适合柱状图", "expected_tables": ["rs_warn_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_WUHAN_STATIONS_043",
+      "question": "武汉市有哪些水质站点，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_name, station_code, station_type, build_state, build_time FROM wm_station_info WHERE del_flag = '0' AND belong_to_city = '武汉市' ORDER BY station_name LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回武汉市水质站点有限明细表格", "expected_tables": ["wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_EZHOU_STATIONS_044",
+      "question": "鄂州市有哪些水质站点，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_name, station_code, station_type, build_state, build_time FROM wm_station_info WHERE del_flag = '0' AND belong_to_city = '鄂州市' ORDER BY station_name LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回鄂州市水质站点有限明细表格", "expected_tables": ["wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_XINGFU_HOUR_045",
+      "question": "列出幸福河站2026年7月27日最新的5条小时水质记录",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT r.monitor_time, r.m2_value AS ph_value, r.m3_value AS dissolved_oxygen, r.m6_value AS ammonia_nitrogen, r.m8_value AS total_phosphorus FROM wm_waterquality_hour_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '幸福河' AND r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' ORDER BY r.monitor_time DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回幸福河站最新5条小时水质明细表格", "expected_tables": ["wm_waterquality_hour_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_MET_TEMP_TOP5_046",
+      "question": "查询武汉气象站2026年7月27日气温最高的5个时刻",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT r.monitor_time, r.m4_value AS air_temperature FROM wh_meteorological_hour_records r JOIN wm_meteorological_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '武汉气象站' AND r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m4_value IS NOT NULL ORDER BY r.m4_value DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回时刻和气温，适合柱状图", "expected_tables": ["wh_meteorological_hour_records", "wm_meteorological_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_WQ_PH_LOW5_047",
+      "question": "查询2026年7月27日平均pH最低的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m2_value), 3) AS avg_ph FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m2_value) LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均pH，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_WQ_DO_TOP5_048",
+      "question": "查询2026年7月27日平均溶解氧最高的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m3_value), 3) AS avg_dissolved_oxygen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m3_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m3_value) DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均溶解氧，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_WQ_AN_LOW5_049",
+      "question": "查询2026年7月27日平均氨氮最低的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m6_value), 3) AS avg_ammonia_nitrogen FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m6_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m6_value) LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均氨氮，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_WQ_TP_LOW5_050",
+      "question": "查询2026年7月27日平均总磷最低的5个水质站点",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, ROUND(AVG(r.m8_value), 3) AS avg_total_phosphorus FROM wm_waterquality_day_records r JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m8_value IS NOT NULL GROUP BY s.station_name ORDER BY AVG(r.m8_value) LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回站点和平均总磷，适合柱状图", "expected_tables": ["wm_waterquality_day_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_TREND_WQ_PH_30D_051",
+      "question": "查询2026年6月28日起30天的整体日均pH变化",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE(monitor_time) AS monitor_date, ROUND(AVG(m2_value), 3) AS avg_ph FROM wm_waterquality_day_records WHERE monitor_time >= '2026-06-28 00:00:00' AND monitor_time < '2026-07-28 00:00:00' AND del_flag = '0' AND m2_value IS NOT NULL GROUP BY DATE(monitor_time) ORDER BY DATE(monitor_time) LIMIT 31"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期和整体日均pH，适合折线图", "expected_tables": ["wm_waterquality_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_TREND_WARN_30D_052",
+      "question": "查询2026年6月28日起30天的每日预警数量变化",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT DATE(warn_time) AS warn_date, COUNT(*) AS warn_count FROM rs_warn_records WHERE warn_time >= '2026-06-28 00:00:00' AND warn_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY DATE(warn_time) ORDER BY DATE(warn_time) LIMIT 31"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回日期和预警数量，适合折线图", "expected_tables": ["rs_warn_records"]
+    },
+    {
+      "sample_id": "MYSQL_RISK_WARN_VALUE_TOP5_053",
+      "question": "列出2026年7月27日预警值最高的5条水质预警",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, r.warn_time, r.warn_indicator, r.warn_value, r.standard_value, r.unit FROM rs_warn_records r LEFT JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.warn_time >= '2026-07-27 00:00:00' AND r.warn_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.warn_value IS NOT NULL ORDER BY r.warn_value DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回预警值最高的有限明细表格", "expected_tables": ["rs_warn_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_RISK_WARN_UNRELEASED_054",
+      "question": "列出最新5条尚未解除的预警",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, r.warn_time, r.warn_indicator, r.warn_level, r.warn_content FROM rs_warn_records r LEFT JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.del_flag = '0' AND r.release_status = '0' ORDER BY r.warn_time DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回尚未解除的预警有限明细表格", "expected_tables": ["rs_warn_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_RISK_WARN_UNCHECKED_055",
+      "question": "列出最新5条尚未审核的预警",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT s.station_name, r.warn_time, r.warn_indicator, r.warn_level, r.warn_content FROM rs_warn_records r LEFT JOIN wm_station_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE r.del_flag = '0' AND r.check_status = '0' ORDER BY r.warn_time DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回尚未审核的预警有限明细表格", "expected_tables": ["rs_warn_records", "wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_RISK_WARN_LEVEL_056",
+      "question": "统计2026年7月27日各预警等级的数量",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT warn_level, COUNT(*) AS warn_count FROM rs_warn_records WHERE warn_time >= '2026-07-27 00:00:00' AND warn_time < '2026-07-28 00:00:00' AND del_flag = '0' GROUP BY warn_level ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回预警等级和数量，适合环图", "expected_tables": ["rs_warn_records"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_STATION_OLD_MAINT_057",
+      "question": "列出未登记最近维护时间的有效水质站点，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_name, belong_to_city, station_type, responsible_person, contact_number FROM wm_station_info WHERE del_flag = '0' AND last_maintenance_time IS NULL ORDER BY station_name LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回未登记最近维护时间的站点有限明细表格", "expected_tables": ["wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_STATION_NO_EQUIPMENT_058",
+      "question": "列出未登记设备清单的有效水质站点，只列前5条",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_name, belong_to_city, station_type, responsible_person FROM wm_station_info WHERE del_flag = '0' AND (equipments IS NULL OR equipments = '') ORDER BY station_name LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回未登记设备清单的站点有限明细表格", "expected_tables": ["wm_station_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_POLL_COD_TOP5_059",
+      "question": "查询2025年4月1日平均COD最高的5个污染源监测站",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_id, ROUND(AVG(cod), 3) AS avg_cod FROM rs_pollutant_day_records WHERE monitor_time >= '2025-04-01 00:00:00' AND monitor_time < '2025-04-02 00:00:00' AND del_flag = '0' AND cod IS NOT NULL GROUP BY station_id ORDER BY AVG(cod) DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回污染源监测站和平均COD，适合柱状图", "expected_tables": ["rs_pollutant_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_POLL_AN_TOP5_060",
+      "question": "查询2025年4月1日平均氨氮最高的5个污染源监测站",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_id, ROUND(AVG(an), 3) AS avg_ammonia_nitrogen FROM rs_pollutant_day_records WHERE monitor_time >= '2025-04-01 00:00:00' AND monitor_time < '2025-04-02 00:00:00' AND del_flag = '0' AND an IS NOT NULL GROUP BY station_id ORDER BY AVG(an) DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回污染源监测站和平均氨氮，适合柱状图", "expected_tables": ["rs_pollutant_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_DETAIL_POLL_LATEST_061",
+      "question": "列出2025年4月1日最新的5条污染源监测记录",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT station_id, monitor_time, ph, cod, an, tp, tn FROM rs_pollutant_day_records WHERE monitor_time >= '2025-04-01 00:00:00' AND monitor_time < '2025-04-02 00:00:00' AND del_flag = '0' ORDER BY monitor_time DESC, station_id LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回污染源最新监测有限明细表格", "expected_tables": ["rs_pollutant_day_records"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_MET_HUMIDITY_062",
+      "question": "查询武汉气象站2026年7月27日湿度最高的5个时刻",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT r.monitor_time, r.m5_value AS relative_humidity FROM wh_meteorological_hour_records r JOIN wm_meteorological_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '武汉气象站' AND r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m5_value IS NOT NULL ORDER BY r.m5_value DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回时刻和湿度，适合柱状图", "expected_tables": ["wh_meteorological_hour_records", "wm_meteorological_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_MET_WIND_063",
+      "question": "查询武汉气象站2026年7月27日风速最高的5个时刻",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT r.monitor_time, r.m1_value AS wind_speed FROM wh_meteorological_hour_records r JOIN wm_meteorological_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '武汉气象站' AND r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m1_value IS NOT NULL ORDER BY r.m1_value DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回时刻和风速，适合柱状图", "expected_tables": ["wh_meteorological_hour_records", "wm_meteorological_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_HYDRO_VELOCITY_064",
+      "question": "查询幸福河水文站2026年7月27日流速最高的5个时刻",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT r.monitor_time, r.m2_value AS flow_velocity FROM wh_hydrological_hour_records r JOIN wm_hydrological_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '幸福河' AND r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m2_value IS NOT NULL ORDER BY r.m2_value DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "rejected",
+      "review_reason": "最新有效日的流速全为零，不作为推荐问题",
+      "expected_behavior": "返回时刻和流速，适合柱状图", "expected_tables": ["wh_hydrological_hour_records", "wm_hydrological_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_HYDRO_FLOW_065",
+      "question": "查询幸福河水文站2026年7月27日流量最高的5个时刻",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT r.monitor_time, r.m3_value AS flow_rate FROM wh_hydrological_hour_records r JOIN wm_hydrological_info s ON s.id = r.station_id AND s.del_flag = '0' WHERE s.station_name = '幸福河' AND r.monitor_time >= '2026-07-27 00:00:00' AND r.monitor_time < '2026-07-28 00:00:00' AND r.del_flag = '0' AND r.m3_value IS NOT NULL ORDER BY r.m3_value DESC LIMIT 5"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "rejected",
+      "review_reason": "最新有效日的流量全为零，不作为推荐问题",
+      "expected_behavior": "返回时刻和流量，适合柱状图", "expected_tables": ["wh_hydrological_hour_records", "wm_hydrological_info"]
+    },
+    {
+      "sample_id": "MYSQL_RANK_CITY_STATION_066",
+      "question": "统计有效水质站点数量最多的10个城市",
+      "tool_name": "run_sql",
+      "args": {"sql": "SELECT belong_to_city, COUNT(*) AS station_count FROM wm_station_info WHERE del_flag = '0' GROUP BY belong_to_city ORDER BY COUNT(*) DESC LIMIT 10"},
+      "training_level": "level2_mysql_sql_examples", "train_decision": "approved",
+      "expected_behavior": "返回城市和有效站点数量，适合柱状图", "expected_tables": ["wm_station_info"]
+    }
+  ]
+}

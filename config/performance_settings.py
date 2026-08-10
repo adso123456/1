@@ -48,7 +48,7 @@ class QueryPerformanceSettings:
     llm_request_timeout_seconds: float = 100.0
     llm_max_retries: int = 1
     chat_request_deadline_seconds: float = 120.0
-    agent_max_tool_rounds: int = 3
+    agent_max_tool_rounds: int = 100
     llm_max_concurrency: int = 4
 
     @classmethod
@@ -73,7 +73,7 @@ class QueryPerformanceSettings:
                 source, "CHAT_REQUEST_DEADLINE_SECONDS", 120.0
             ),
             agent_max_tool_rounds=_integer(
-                source, "AGENT_MAX_TOOL_ROUNDS", 3, minimum=1
+                source, "AGENT_MAX_TOOL_ROUNDS", 100, minimum=1
             ),
             llm_max_concurrency=_integer(
                 source, "LLM_MAX_CONCURRENCY", 4, minimum=1

@@ -34,7 +34,17 @@ interface RpcErrorMessage {
 }
 
 function requestId(): string {
-  return `rpc-${crypto.randomUUID()}`;
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return `rpc-${uuid}`;
+
+  const values = new Uint32Array(4);
+  const random = globalThis.crypto?.getRandomValues
+    ? Array.from(
+        globalThis.crypto.getRandomValues(values),
+        value => value.toString(36),
+      ).join('-')
+    : Math.random().toString(36).slice(2);
+  return `rpc-${Date.now().toString(36)}-${random}`;
 }
 
 function responseBody(value: unknown, contentType: string): BodyInit | null {

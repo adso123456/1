@@ -18,7 +18,7 @@ REPORT_PATH = resolve_test_report_path("deepseek_config_check_result.md")
 
 EXPECTED_BASE_URL = "https://api.deepseek.com"
 OLD_BASE_URL = "https://opencode.ai/zen/go/v1"
-EXPECTED_MODEL = "deepseek-v4-pro"
+EXPECTED_MODEL = "deepseek-v4-flash"
 API_KEY_ENV = "DEEPSEEK_API_KEY"
 
 

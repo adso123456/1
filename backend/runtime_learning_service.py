@@ -12,7 +12,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from backend.data_source_catalog import DataSourceCatalog
@@ -23,6 +23,7 @@ from backend.learning_candidate_store import (
     LearningCandidateStore,
     normalize_question,
 )
+from backend.learning_settings_store import effective_learning_settings
 from backend.query_performance import QueryPerformanceState
 from backend.runtime_learning_capture import (
     build_result_evidence,
@@ -113,16 +114,28 @@ class RuntimeLearningService:
         store: LearningCandidateStore,
         judge: RuntimeLearningJudge,
         settings: OnlineLearningSettings,
+        dynamic_settings: bool = False,
+        post_publish_hook: (
+            Callable[[str, dict[str, Any]], None] | None
+        ) = None,
     ) -> None:
         self._catalog = catalog
         self._runtime_manager = runtime_manager
         self._store = store
         self._judge = judge
         self._settings = settings
+        self._post_publish_hook = post_publish_hook
+        # 生产环境由管理页热改开关；测试等显式传入 settings 的调用方保持静态。
+        self._dynamic_settings = dynamic_settings
         self._judging: set[str] = set()
         self._publishing: set[str] = set()
         self._judge_lock = asyncio.Lock()
         self._publish_lock = asyncio.Lock()
+
+    def refresh_settings(self) -> None:
+        """重新解析生效配置（环境变量 + 管理页卷内覆盖值），改动即时生效。"""
+        if self._dynamic_settings:
+            self._settings = effective_learning_settings()
 
     # ------------------------------------------------------------------
     # 捕获（不抛异常）
@@ -137,6 +150,7 @@ class RuntimeLearningService:
         final_answer: str,
         request_failed: bool,
     ) -> LearningCandidate | None:
+        self.refresh_settings()
         if not self._settings.enabled or not self._settings.capture_enabled:
             return None
         return capture_candidate(
@@ -172,6 +186,7 @@ class RuntimeLearningService:
         return self._store.get_candidate(candidate_id)
 
     def counts(self, source_id: str | None = None) -> dict[str, Any]:
+        self.refresh_settings()
         return {
             "by_status": self._store.count_by_status(source_id),
             "judging_in_progress": len(self._judging),
@@ -193,6 +208,7 @@ class RuntimeLearningService:
 
     def publish_ready_source_ids(self, now: float | None = None) -> list[str]:
         """满足批次条件（数量足够或等待超时）且可发布的源列表。"""
+        self.refresh_settings()
         if not self._settings.enabled or not self._settings.auto_publish:
             return []
         now = now if now is not None else time.time()
@@ -217,6 +233,7 @@ class RuntimeLearningService:
     # ------------------------------------------------------------------
     async def judge_candidate(self, candidate_id: str) -> LearningCandidate:
         """对 staged 候选运行独立 Judge。同候选并发 Judge 会被拒绝。"""
+        self.refresh_settings()
         if not self._settings.judge_enabled:
             raise RuntimeLearningServiceError("Judge 已关闭")
         async with self._judge_lock:
@@ -323,6 +340,7 @@ class RuntimeLearningService:
 
         force=True 允许在 auto_publish 关闭时由管理员 API 手动触发。
         """
+        self.refresh_settings()
         if not self._settings.enabled:
             raise RuntimeLearningServiceError("运行时学习已关闭")
         if not self._settings.auto_publish and not force:
@@ -406,7 +424,11 @@ class RuntimeLearningService:
             [c.candidate_id for c in include], batch_id
         )
 
-        preparer = DataSourceAssetPreparer(self._catalog, self._runtime_manager)
+        preparer = DataSourceAssetPreparer(
+            self._catalog,
+            self._runtime_manager,
+            post_publish_hook=self._post_publish_hook,
+        )
         try:
             result = await asyncio.to_thread(
                 preparer.prepare,

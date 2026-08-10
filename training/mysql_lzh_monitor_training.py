@@ -41,8 +41,15 @@ SQL_EXAMPLE_PATH = MATERIAL_DIR / "sql_examples.json"
 DDL_OUTPUT_PATH = MATERIAL_DIR / "ddl_memories.json"
 MANIFEST_PATH = MATERIAL_DIR / "materials_manifest.json"
 FORMAL_STORE_PATH = PROJECT_ROOT / "vanna_data" / SOURCE_ID
-DEFAULT_WORK_ROOT = Path(r"E:\3\_runtime\mysql-lzh-monitor-training")
-DEFAULT_BACKUP_ROOT = Path(r"E:\3\_training_backups\mysql-lzh-monitor")
+DEFAULT_WORK_ROOT = Path(
+    os.getenv("TRAINING_WORK_ROOT", PROJECT_ROOT / "runtime" / "training-work")
+).expanduser().resolve() / SOURCE_ID
+DEFAULT_BACKUP_ROOT = Path(
+    os.getenv(
+        "TRAINING_BACKUP_ROOT",
+        PROJECT_ROOT / "runtime" / "training-backups",
+    )
+).expanduser().resolve() / SOURCE_ID
 
 
 class TrainingError(RuntimeError):

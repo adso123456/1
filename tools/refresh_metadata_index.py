@@ -17,7 +17,7 @@ PROJECT_ROOT = CURRENT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import build_db_kwargs, validate_db_config
+from config.settings import CHROMA_DIR, build_db_kwargs, validate_db_config
 
 
 SCHEMA_VERSION = "1.0"
@@ -36,7 +36,7 @@ SCOPE_CLASSIFICATIONS = frozenset(
     )
 )
 DEFAULT_SCOPE_POLICY = PROJECT_ROOT / "config" / "postgresql_metadata_scope.json"
-DEFAULT_FORMAL_CHROMA = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
+DEFAULT_FORMAL_CHROMA = Path(CHROMA_DIR)
 
 
 class MetadataValidationError(ValueError):

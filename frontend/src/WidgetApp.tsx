@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from 'react';
@@ -44,6 +45,11 @@ import {
   formatDatabaseType,
   formatDataSourceStatus,
 } from './dataSourcePresentation';
+import type {
+  SessionMeta,
+  SuggestedQuestion,
+  SuggestedQuestionsResponse,
+} from './types';
 
 type DashboardTarget =
   | { mode: 'existing'; dashboardId: string }
@@ -146,7 +152,7 @@ function WidgetHeader({
         {onNewSession && (
           <button
             type="button"
-            onClick={onNewSession}
+            onClick={() => onNewSession()}
             disabled={newSessionDisabled}
             title="新建会话"
           >
@@ -176,6 +182,96 @@ function WidgetHeader({
         )}
       </div>
     </header>
+  );
+}
+
+/**
+ * 自定义会话下拉框：点击展开会话列表，每个会话项尾部带删除图标。
+ * 原生 <select> 不支持项内按钮，故自绘下拉以支持删除任意会话。
+ */
+function WidgetSessionSelect({
+  sessions,
+  currentSessionId,
+  currentSessionExists,
+  disabled,
+  onSwitch,
+  onDelete,
+}: {
+  sessions: SessionMeta[];
+  currentSessionId: string;
+  currentSessionExists: boolean;
+  disabled?: boolean;
+  onSwitch: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // 点击下拉外部时收起
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  const currentTitle = currentSessionExists
+    ? (sessions.find(session => session.id === currentSessionId)?.title || '当前新会话')
+    : '当前新会话';
+
+  return (
+    <div className="widget-session-select" ref={rootRef}>
+      <button
+        type="button"
+        className="widget-session-select__button"
+        aria-label="选择会话"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen(prev => !prev)}
+      >
+        <span className="widget-session-select__title">{currentTitle}</span>
+        <span className="widget-session-select__caret">▾</span>
+      </button>
+      {open && (
+        <div className="widget-session-select__menu">
+          {!currentSessionExists && (
+            <div className="widget-session-select__item widget-session-select__item--current">
+              <span className="widget-session-select__title">当前新会话</span>
+            </div>
+          )}
+          {sessions.map(session => (
+            <div
+              key={session.id}
+              className={`widget-session-select__item${session.id === currentSessionId ? ' widget-session-select__item--active' : ''}`}
+              onClick={() => {
+                setOpen(false);
+                onSwitch(session.id);
+              }}
+            >
+              <span className="widget-session-select__title">{session.title}</span>
+              <button
+                type="button"
+                className="widget-session-select__delete"
+                title={`删除会话「${session.title}」`}
+                aria-label={`删除会话「${session.title}」`}
+                onClick={event => {
+                  event.stopPropagation();
+                  if (window.confirm(`确定删除会话「${session.title}」吗？`)) {
+                    onDelete(session.id);
+                  }
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -235,6 +331,7 @@ export function WidgetChat({
     currentSessionId,
     createNewSession,
     switchToSession,
+    deleteSession,
     storageError,
     dataSources,
     currentSourceId,
@@ -248,6 +345,36 @@ export function WidgetChat({
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [reportPreview, setReportPreview] =
     useState<ReportResultData | null>(null);
+  const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
+
+  // 新会话（已绑定数据源且无消息）时，拉取数据源专属推荐问题；
+  // 直连模式用默认 fetch，真实嵌入（Bridged）模式走 RPC fetcher
+  useEffect(() => {
+    if (!currentSessionId || !sourceBound || messages.length > 0) {
+      setSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const fetcher = requestOptions?.fetcher;
+    const request = fetcher
+      ? fetcher(`widget-rpc:suggested-questions?conversation_id=${encodeURIComponent(currentSessionId)}`)
+      : fetch(`/api/conversations/${encodeURIComponent(currentSessionId)}/suggested-questions`);
+    request
+      .then(async response => {
+        if (response.status === 404 || !response.ok) return null;
+        const payload = (await response.json()) as SuggestedQuestionsResponse;
+        return Array.isArray(payload.questions) ? payload.questions : [];
+      })
+      .then(questions => {
+        if (!cancelled && questions !== null) setSuggestions(questions);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId, messages.length, requestOptions?.fetcher, sourceBound]);
 
   useEffect(() => {
     if (!notice?.ok) return;
@@ -259,7 +386,11 @@ export function WidgetChat({
     session => session.id === currentSessionId,
   );
   const workspaceUrl = workspaceEnabled
-    ? buildWorkspaceUrl(window.location.origin, currentSessionId)
+    ? buildWorkspaceUrl(
+        window.location.origin,
+        currentSessionId,
+        requestOptions?.persistenceNamespace,
+      )
     : undefined;
   const currentSource = dataSources.find(
     source => source.source_id === currentSourceId,
@@ -344,21 +475,14 @@ export function WidgetChat({
         {applicationConfig.show_history && (
         <label>
           <span>会话</span>
-          <select
-            aria-label="选择会话"
-            value={currentSessionId}
+          <WidgetSessionSelect
+            sessions={sessionList}
+            currentSessionId={currentSessionId}
+            currentSessionExists={currentSessionExists}
             disabled={loading}
-            onChange={event => switchToSession(event.target.value)}
-          >
-            {!currentSessionExists && (
-              <option value={currentSessionId}>当前新会话</option>
-            )}
-            {sessionList.map(session => (
-              <option key={session.id} value={session.id}>
-                {session.title}
-              </option>
-            ))}
-          </select>
+            onSwitch={switchToSession}
+            onDelete={deleteSession}
+          />
         </label>
         )}
 
@@ -391,6 +515,18 @@ export function WidgetChat({
             </span>
           )}
         </label>
+
+        <button
+          type="button"
+          className="widget-session-bar__clear"
+          onClick={() => {
+            if (window.confirm('确定清空当前会话的所有消息吗？')) {
+              clearMessages();
+            }
+          }}
+        >
+          清空对话
+        </button>
       </div>
 
       {(dataSourceError || storageError) && (
@@ -435,6 +571,7 @@ export function WidgetChat({
           welcome={applicationConfig.welcome}
           welcomeDescription={applicationConfig.welcome_description}
           theme={applicationConfig.theme}
+          suggestions={suggestions}
           sourceLabel={currentSource
             ? `${currentSource.display_name || formatDatabaseType(currentSource.database_type)} · ${formatDatabaseType(currentSource.database_type)} · ${formatDataSourceStatus(currentSource.status, currentSource.enabled_for_chat)}`
             : ''}
@@ -529,12 +666,15 @@ function BridgedWidgetChat({
     () => new WidgetRpcClient(embedContext),
     [embedContext],
   );
+  const persistenceNamespace = `${embedContext.appId}:${embedContext.parentOrigin}`;
+  const dashboard = useDashboard(persistenceNamespace);
   const requestOptions = useMemo<UseSSERequestOptions>(() => ({
     enabled: true,
     dataSourcesEndpoint: 'widget-rpc:data-sources',
     chatEndpoint: 'widget-rpc:chat',
-    persistenceMode: 'memory',
-    bindConversationOnCreate: false,
+    persistenceMode: 'local',
+    persistenceNamespace,
+    bindConversationOnCreate: true,
     fetcher: (url, init) => {
       if (url === 'widget-rpc:data-sources') {
         return rpcClient.request(
@@ -549,9 +689,32 @@ function BridgedWidgetChat({
           : init?.body;
         return rpcClient.request('chat', payload, init?.signal ?? undefined);
       }
+      const bindMatch = url.match(/^\/api\/conversations\/([^/]+)\/source$/);
+      if (bindMatch) {
+        const payload = typeof init?.body === 'string'
+          ? JSON.parse(init.body)
+          : init?.body as { source_id?: string } | undefined;
+        return rpcClient.request(
+          'bind-conversation-source',
+          {
+            conversationId: decodeURIComponent(bindMatch[1]),
+            sourceId: payload?.source_id || '',
+          },
+          init?.signal ?? undefined,
+        );
+      }
+      if (url.startsWith('widget-rpc:suggested-questions')) {
+        const query = url.split('?')[1] || '';
+        const conversationId = new URLSearchParams(query).get('conversation_id') || '';
+        return rpcClient.request(
+          'suggested-questions',
+          { conversationId },
+          init?.signal ?? undefined,
+        );
+      }
       throw new Error(`Widget RPC 不支持请求：${url}`);
     },
-  }), [rpcClient]);
+  }), [persistenceNamespace, rpcClient]);
   const reportRequest = useCallback<ReportRequest>(
     (operation, payload, signal) =>
       rpcClient.request(operation, payload, signal),
@@ -619,7 +782,8 @@ function BridgedWidgetChat({
     <WidgetChat
       embedContext={embedContext}
       requestOptions={requestOptions}
-      workspaceEnabled={false}
+      dashboard={dashboard}
+      workspaceEnabled
       applicationConfig={applicationConfig}
       reportRequest={reportRequest}
     />

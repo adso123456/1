@@ -11,14 +11,19 @@ import { ReportComposerPanel } from './ReportComposerPanel';
 interface Props {
   messages: ChatMessage[];
   loading: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, suggestionId?: string) => void;
   onCancel: () => void;
   onClear: () => void;
   onChangeChartType: (type: RenderableChartType) => void;
   /** 透传给 MessageBubble：V2 图表切换 */
   onV2ChartSwitch?: (messageId: string, chartIndex: number, newChart: ChartData) => void;
   /** 透传给 MessageBubble：点击"添加到仪表板" */
-  onAddToDashboard?: (payload: { chart: ChartData; messageId: string; sql: string | null }) => void;
+  onAddToDashboard?: (payload: {
+    chart: ChartData;
+    viewMode: 'chart' | 'table';
+    messageId: string;
+    sql: string | null;
+  }) => void;
   /** 浮窗中的紧凑布局。 */
   compact?: boolean;
   /** 浮窗图表工具栏的完整工作台地址。 */
@@ -161,7 +166,7 @@ export function ChatArea({
                 {suggestions.map(item => (
                   <button
                     key={item.id}
-                    onClick={() => { onSend(item.text); setInput(''); }}
+                    onClick={() => { onSend(item.text, item.id); setInput(''); }}
                     disabled={disabled || Boolean(sourceUnavailableReason)}
                     style={{
                       padding: '8px 16px',

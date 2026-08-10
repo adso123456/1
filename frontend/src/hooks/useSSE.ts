@@ -10,6 +10,7 @@ import type {
   ReportResultData,
 } from '../components/ReportComponents';
 import { settleCancelledAssistantMessage } from '../chatRequestState';
+import { sanitizeInternalProtocolText } from '../messageSanitization';
 
 /* ======== 本地会话持久化（localStorage） ======== */
 
@@ -230,6 +231,119 @@ const localSessionStorageAdapter: SessionStorageAdapter = {
   consumeReadError: consumeStorageReadError,
 };
 
+/**
+ * 为跨域嵌入创建独立的 localStorage 适配器。
+ * namespace 由 appId + parentOrigin 组成，避免不同小助手或目标网站共享会话。
+ */
+export function createNamespacedLocalSessionStorage(
+  namespace: string,
+): SessionStorageAdapter {
+  const suffix = encodeURIComponent(namespace.trim());
+  const keys = {
+    sessions: `${SESSIONS_KEY}:embed:${suffix}`,
+    meta: `${META_KEY}:embed:${suffix}`,
+    currentId: `${CURRENT_ID_KEY}:embed:${suffix}`,
+    pendingReports: `${PENDING_REPORTS_KEY}:embed:${suffix}`,
+  };
+  let readError: string | null = null;
+
+  return {
+    loadSessions: () => {
+      try {
+        const raw = localStorage.getItem(keys.sessions);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          return {};
+        }
+        const hydrated: Record<string, ChatMessage[]> = {};
+        for (const [id, messages] of Object.entries(parsed)) {
+          hydrated[id] = Array.isArray(messages)
+            ? hydrateChartSourceDataFromDataframes(messages as ChatMessage[])
+            : [];
+        }
+        return hydrated;
+      } catch {
+        readError = '会话数据读取失败，历史记录可能已损坏。';
+        return {};
+      }
+    },
+    saveSessions: data => {
+      const stripped: Record<string, ChatMessage[]> = {};
+      for (const [id, messages] of Object.entries(data)) {
+        stripped[id] = stripChartSourceDataForStorage(messages);
+      }
+      try {
+        localStorage.setItem(keys.sessions, JSON.stringify(stripped));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    loadMeta: () => {
+      try {
+        const raw = localStorage.getItem(keys.meta);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+          ? parsed as Record<string, SessionMeta>
+          : {};
+      } catch {
+        readError = '会话列表读取失败，历史记录可能已损坏。';
+        return {};
+      }
+    },
+    saveMeta: data => {
+      try {
+        localStorage.setItem(keys.meta, JSON.stringify(data));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    loadCurrentId: () => {
+      try {
+        return localStorage.getItem(keys.currentId) || '';
+      } catch {
+        return '';
+      }
+    },
+    saveCurrentId: id => {
+      try {
+        localStorage.setItem(keys.currentId, id);
+      } catch {
+        // localStorage 不可写时由后续会话保存错误统一提示。
+      }
+    },
+    loadPendingReports: () => {
+      try {
+        const raw = localStorage.getItem(keys.pendingReports);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+          ? parsed as Record<string, ReportConfigData>
+          : {};
+      } catch {
+        readError = '未确认的报表配置读取失败，已安全关闭。';
+        return {};
+      }
+    },
+    savePendingReports: data => {
+      try {
+        localStorage.setItem(keys.pendingReports, JSON.stringify(data));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    consumeReadError: () => {
+      const error = readError;
+      readError = null;
+      return error;
+    },
+  };
+}
+
 export function createMemorySessionStorage(): SessionStorageAdapter {
   let sessions: Record<string, ChatMessage[]> = {};
   let metadata: Record<string, SessionMeta> = {};
@@ -353,12 +467,15 @@ export function buildChatRequestBody(
   conversationId: string,
   sourceId: string,
   requestId?: string,
+  suggestionId?: string,
 ) {
+  const metadata: Record<string, string> = { source_id: sourceId };
+  if (suggestionId?.trim()) metadata.suggestion_id = suggestionId.trim();
   return {
     message,
     conversation_id: conversationId,
     request_id: requestId,
-    metadata: { source_id: sourceId },
+    metadata,
   };
 }
 
@@ -381,11 +498,11 @@ const MAX_CHARTS = 4;
 
 /** 剥离图表注释：先匹配完整标记，再清除流式未闭合残片，最后去尾部空白 */
 function stripChartAnnotations(text: string): string {
-  return text
+  return sanitizeInternalProtocolText(text
     .replace(CHART_SPEC_GLOBAL_RE, '')
     .replace(CHART_TYPE_RE, '')
     .replace(/<!--[\s\S]*$/, '')
-    .trimEnd();
+    .trimEnd());
 }
 
 /** 校验 chart_spec 字段是否引用了不存在的列 */
@@ -533,7 +650,6 @@ export function detectChartTypeName(text: string): RenderableChartType | null {
   if (/雷达图/.test(text)) return 'radar';
   if (/热力图/.test(text)) return 'heatmap';
   if (/箱线图|箱形图|盒须图/.test(text)) return 'boxplot';
-  if (/仪表盘|仪表图/.test(text)) return 'gauge';
   if (/横向柱状图|横向条形图/.test(text)) return 'horizontal_bar';
   if (/柱状图|柱形图|直方图/.test(text)) return 'bar';
   if (/面积图/.test(text)) return 'area';
@@ -708,6 +824,7 @@ export interface UseSSERequestOptions {
   headersProvider?: () => Record<string, string>;
   onAuthorizationError?: () => void;
   persistenceMode?: 'local' | 'memory';
+  persistenceNamespace?: string;
   fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
   bindConversationOnCreate?: boolean;
 }
@@ -727,13 +844,16 @@ export function useSSE(
   const onAuthorizationError = requestOptions?.onAuthorizationError;
   const requestFetch = requestOptions?.fetcher ?? fetch;
   const persistenceMode = requestOptions?.persistenceMode ?? 'local';
+  const persistenceNamespace = requestOptions?.persistenceNamespace?.trim() || '';
   const bindConversationOnCreate =
     requestOptions?.bindConversationOnCreate ?? true;
   const storageRef = useRef<SessionStorageAdapter | null>(null);
   if (!storageRef.current) {
     storageRef.current = persistenceMode === 'memory'
       ? createMemorySessionStorage()
-      : localSessionStorageAdapter;
+      : persistenceNamespace
+        ? createNamespacedLocalSessionStorage(persistenceNamespace)
+        : localSessionStorageAdapter;
   }
   const storage = storageRef.current;
   const initialSessionRef = useRef<InitialSessionState | null>(null);
@@ -982,6 +1102,12 @@ export function useSSE(
     const nextSourceId = selectedSourceId || (
       latestSources.length === 1 ? latestSources[0].source_id : ''
     );
+    const nextSource = latestSources.find(
+      source => source.source_id === nextSourceId,
+    );
+    const nextSourceBound = Boolean(
+      nextSourceId && (selectedSourceId || !bindConversationOnCreate),
+    );
     if (selectedSourceId && bindConversationOnCreate) {
       try {
         const response = await requestFetch(`/api/conversations/${encodeURIComponent(newId)}/source`, {
@@ -1011,17 +1137,17 @@ export function useSSE(
     });
     setCurrentSessionId(newId);
     setCurrentSourceId(nextSourceId);
-    setSourceBound(Boolean(selectedSourceId));
+    setSourceBound(nextSourceBound);
     storage.saveCurrentId(newId);
-    if (selectedSourceId) {
+    if (nextSourceBound) {
       const latestMeta = storage.loadMeta();
       latestMeta[newId] = {
         id: newId,
         title: '新对话',
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        sourceId: selectedSourceId,
-        sourceDisplayName: selectedSource?.display_name,
+        sourceId: nextSourceId,
+        sourceDisplayName: nextSource?.display_name,
         sourceBound: true,
       };
       storage.saveMeta(latestMeta);
@@ -1045,6 +1171,89 @@ export function useSSE(
     requestFetch,
     messages,
     loading,
+    sourceBound,
+    storage,
+  ]);
+
+  /** 为当前未绑定的空会话选择数据源，不创建新的会话 ID。 */
+  const bindCurrentSessionSource = useCallback(async (selectedSourceId: string): Promise<boolean> => {
+    if (loading || sourceBound || !currentSessionId) return false;
+
+    const selectedSource = dataSources.find(
+      source => source.source_id === selectedSourceId,
+    );
+    if (
+      !selectedSource
+      || selectedSource.status !== 'ready'
+      || !selectedSource.enabled_for_chat
+    ) {
+      setDataSourceError('选择的数据源当前不可用，请重新选择可用数据源。');
+      return false;
+    }
+
+    if (bindConversationOnCreate) {
+      try {
+        const response = await requestFetch(
+          `/api/conversations/${encodeURIComponent(currentSessionId)}/source`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...headersProvider?.(),
+            },
+            body: JSON.stringify({ source_id: selectedSourceId }),
+          },
+        );
+        if (response.status === 401 || response.status === 403) {
+          onAuthorizationError?.();
+        }
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { detail?: string } | null;
+          throw new Error(payload?.detail || `HTTP ${response.status}`);
+        }
+      } catch (error) {
+        setDataSourceError(sanitizeUserVisibleDataSourceText(
+          error instanceof Error ? error.message : '会话绑定失败',
+        ));
+        return false;
+      }
+    }
+
+    const all = storage.loadSessions();
+    all[currentSessionId] = messages;
+    const sessionsOk = storage.saveSessions(all);
+    const allMeta = storage.loadMeta();
+    const existing = allMeta[currentSessionId];
+    allMeta[currentSessionId] = {
+      id: currentSessionId,
+      title: existing?.title || getSessionTitle(messages),
+      createdAt: existing?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+      sourceId: selectedSourceId,
+      sourceDisplayName: selectedSource.display_name,
+      sourceBound: true,
+    };
+    const metaOk = storage.saveMeta(allMeta);
+    if (!sessionsOk || !metaOk) {
+      setStorageError(STORAGE_WRITE_ERROR);
+    }
+
+    setCurrentSourceId(selectedSourceId);
+    setSourceBound(true);
+    setSessionList(
+      Object.values(allMeta).sort((a, b) => b.updatedAt - a.updatedAt),
+    );
+    setDataSourceError(null);
+    return true;
+  }, [
+    bindConversationOnCreate,
+    currentSessionId,
+    dataSources,
+    headersProvider,
+    loading,
+    messages,
+    onAuthorizationError,
+    requestFetch,
     sourceBound,
     storage,
   ]);
@@ -1171,7 +1380,7 @@ export function useSSE(
     return true;
   }, [currentSourceId, dataSources, loading, sourceBound]);
 
-  const sendMessage = useCallback(async (userText: string) => {
+  const sendMessage = useCallback(async (userText: string, suggestionId?: string) => {
     if (!requestsEnabled) return;
     const currentSource = dataSources.find(
       source => source.source_id === currentSourceId,
@@ -1295,6 +1504,7 @@ export function useSSE(
             currentSessionId,
             currentSourceId,
             requestId,
+            suggestionId,
           )
         ),
         signal: controller.signal,
@@ -1423,12 +1633,13 @@ export function useSSE(
                   );
 
                   if (newCharts.length > 0) {
-                    // 填充 rows 引用（所有图表共享同一份 rows，不深拷贝）
-                    const filledCharts = newCharts
-                      .filter(c => !c.error)
-                      .map(c => ({ ...c, rows }));
-                    const errorCharts = newCharts.filter(c => !!c.error);
-                    const merged = [...filledCharts, ...errorCharts];
+                    // 填充 rows 引用（所有图表共享同一份 rows，不深拷贝）。
+                    // 校验失败的 error chart 也填充：保证表格兜底能看到真实查询数据，
+                    // 不再误报"该条件下没有查到数据"（图表 spec 错误 ≠ 查询无数据）。
+                    // JSON 解析失败且无列结构的 chart 保持原样。
+                    const merged = newCharts.map(c => (
+                      c.columns.length > 0 ? { ...c, rows } : c
+                    ));
                     // 只有签名变化时才更新状态
                     setMessages(prev =>
                       prev.map(m => {
@@ -1758,6 +1969,7 @@ export function useSSE(
     sessionList,
     currentSessionId,
     createNewSession,
+    bindCurrentSessionSource,
     switchToSession,
     deleteSession,
     storageError,

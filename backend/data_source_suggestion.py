@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import time
 import uuid
@@ -60,9 +61,39 @@ SEMANTIC_ALIASES: Mapping[str, tuple[str, ...]] = {
 class DataSourceSuggestionService:
     def __init__(self, catalog: DataSourceCatalog) -> None:
         self.catalog = catalog
+        # 源 metadata 文本缓存：key=source_id，value=(文件 mtime, 文本)
+        self._metadata_text_cache: dict[str, tuple[float, str]] = {}
 
-    @staticmethod
-    def _safe_text(record: DataSourceRecord) -> str:
+    def _metadata_index_text(self, record: DataSourceRecord) -> str:
+        """完整 metadata 索引文本兜底：即使 selected_scope 为空/不全，
+        建议评分也能读到表、字段和中文注释，避免仅凭描述关键词误判。"""
+        path = record.metadata_path
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return ""
+        cached = self._metadata_text_cache.get(record.source_id)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ""
+        if not isinstance(payload, list):
+            return ""
+        chunks: list[str] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            for name in ("table", "table_comment", "column", "comment"):
+                value = str(item.get(name) or "")
+                if value:
+                    chunks.append(value)
+        text = " ".join(chunks)
+        self._metadata_text_cache[record.source_id] = (mtime, text)
+        return text
+
+    def _safe_text(self, record: DataSourceRecord) -> str:
         parts = [
             record.display_name,
             record.description,
@@ -80,6 +111,9 @@ class DataSourceSuggestionService:
                     "comment",
                 )
             )
+        metadata_text = self._metadata_index_text(record)
+        if metadata_text:
+            parts.append(metadata_text)
         return " ".join(parts).lower().replace("_", " ")
 
     @staticmethod
@@ -89,12 +123,11 @@ class DataSourceSuggestionService:
             for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", question)
         }
 
-    @classmethod
-    def _score(cls, question: str, record: DataSourceRecord) -> int:
+    def _score(self, question: str, record: DataSourceRecord) -> int:
         lowered = question.lower()
-        safe_text = cls._safe_text(record)
+        safe_text = self._safe_text(record)
         score = 0
-        for identifier in cls._question_identifiers(question):
+        for identifier in self._question_identifiers(question):
             if identifier in safe_text:
                 score += IDENTIFIER_SCORE
         for aliases in SEMANTIC_ALIASES.values():

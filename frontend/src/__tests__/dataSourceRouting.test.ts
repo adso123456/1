@@ -45,6 +45,19 @@ test('聊天请求包含 conversation_id 和 metadata.source_id', () => {
   assert(body.metadata.source_id === 'source-a', '缺少 source_id');
 });
 
+test('推荐问题请求携带 suggestion_id，普通问题不携带', () => {
+  const suggested = buildChatRequestBody(
+    '推荐问题',
+    'session-a',
+    'source-a',
+    'request-a',
+    'question-a',
+  );
+  const ordinary = buildChatRequestBody('普通问题', 'session-a', 'source-a');
+  assert(suggested.metadata.suggestion_id === 'question-a', '缺少 suggestion_id');
+  assert(!('suggestion_id' in ordinary.metadata), '普通问题不应携带 suggestion_id');
+});
+
 test('空会话允许选择数据源', () => {
   assert(
     canChangeSessionSource(false, '', 'source-b'),

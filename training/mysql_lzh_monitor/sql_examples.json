@@ -96,8 +96,8 @@
       "tool_name": "run_sql",
       "args": {"sql": "SELECT r.monitor_time, r.m2_value AS flow_velocity, r.m3_value AS flow_rate\nFROM wh_hydrological_hour_records AS r\nJOIN wm_hydrological_info AS s ON s.id = r.station_id AND s.del_flag = '0'\nWHERE s.station_name = '幸福河'\n  AND r.monitor_time >= '2025-06-11 00:00:00'\n  AND r.monitor_time < '2025-06-12 00:00:00'\n  AND r.del_flag = '0'\nORDER BY r.monitor_time\nLIMIT 50"},
       "training_level": "level2_mysql_sql_examples",
-      "train_decision": "approved",
-      "review_reason": "已确认的水文m2和m3小时趋势",
+      "train_decision": "rejected",
+      "review_reason": "最新有效日的流速和流量均为零，不作为推荐问题",
       "source": "B3 verified MySQL sample",
       "expected_behavior": "返回流速和流量时间序列，适合折线图",
       "expected_tables": ["wh_hydrological_hour_records", "wm_hydrological_info"]

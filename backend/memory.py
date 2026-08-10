@@ -15,7 +15,10 @@ from backend.query_performance import get_query_performance, record_timing
 
 
 EMBEDDING_FUNCTION = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="BAAI/bge-small-zh-v1.5"
+    model_name="BAAI/bge-small-zh-v1.5",
+    # chroma 的 cosine 空间要求向量归一化，否则未归一化向量的余弦距离被压扁，
+    # 中文相似文本的相似度只有 ~0.45，全部低于 0.55 检索阈值。
+    normalize_embeddings=True,
 )
 
 

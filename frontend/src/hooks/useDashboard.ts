@@ -144,9 +144,17 @@ function loadV2Store(): StoreData | null {
   }
 }
 
-function loadStore(): StoreData {
+function dashboardStoreKey(namespace: string): string {
+  const normalized = namespace.trim();
+  return normalized
+    ? `${STORE_KEY}:embed:${encodeURIComponent(normalized)}`
+    : STORE_KEY;
+}
+
+function loadStore(namespace = ''): StoreData {
+  const storeKey = dashboardStoreKey(namespace);
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(storeKey);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.version === 3 && Array.isArray(parsed.dashboards)) {
@@ -157,38 +165,41 @@ function loadStore(): StoreData {
     // 解析失败，走迁移/初始化逻辑
   }
 
-  // 迁移 v2 数据（只迁移一次：写入 v3 key 后下次直接读 v3）
-  const migrated = loadV2Store();
-  if (migrated) {
-    saveStore(migrated);
-    return migrated;
-  }
-
-  // 迁移旧数据：只要旧 key 存在（含空数组[]），就包装成"默认仪表板"
-  const oldItems = loadOldDashboard();
-  if (oldItems !== null) {
-    // 旧单仪表板项目若带 layout（旧粗粒度网格），同样迁移到 v3 网格
-    for (const item of oldItems) {
-      if (item.layout) {
-        item.layout = migrateLayoutV2toV3(item.layout);
-      }
+  // 嵌入模式使用独立命名空间，不能迁移完整工作台的旧数据。
+  if (!namespace.trim()) {
+    // 迁移 v2 数据（只迁移一次：写入 v3 key 后下次直接读 v3）
+    const migrated = loadV2Store();
+    if (migrated) {
+      saveStore(migrated);
+      return migrated;
     }
-    generateLayout(oldItems);
-    const dashboard: DashboardMeta = {
-      id: generateId(),
-      name: '默认仪表板',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      items: oldItems,
-    };
-    const store: StoreData = {
-      version: 3,
-      currentDashboardId: dashboard.id,
-      dashboards: [dashboard],
-    };
-    // 立即持久化到新 key，防止刷新后重复迁移、重新生成 ID
-    saveStore(store);
-    return store;
+
+    // 迁移旧数据：只要旧 key 存在（含空数组[]），就包装成"默认仪表板"
+    const oldItems = loadOldDashboard();
+    if (oldItems !== null) {
+      // 旧单仪表板项目若带 layout（旧粗粒度网格），同样迁移到 v3 网格
+      for (const item of oldItems) {
+        if (item.layout) {
+          item.layout = migrateLayoutV2toV3(item.layout);
+        }
+      }
+      generateLayout(oldItems);
+      const dashboard: DashboardMeta = {
+        id: generateId(),
+        name: '默认仪表板',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        items: oldItems,
+      };
+      const store: StoreData = {
+        version: 3,
+        currentDashboardId: dashboard.id,
+        dashboards: [dashboard],
+      };
+      // 立即持久化到新 key，防止刷新后重复迁移、重新生成 ID
+      saveStore(store);
+      return store;
+    }
   }
 
   // 无任何旧数据：创建空"新建仪表板"，立即持久化
@@ -204,13 +215,13 @@ function loadStore(): StoreData {
     currentDashboardId: newDashboard.id,
     dashboards: [newDashboard],
   };
-  saveStore(initialStore);
+  saveStore(initialStore, namespace);
   return initialStore;
 }
 
-function saveStore(data: StoreData): boolean {
+function saveStore(data: StoreData, namespace = ''): boolean {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(data));
+    localStorage.setItem(dashboardStoreKey(namespace), JSON.stringify(data));
     return true;
   } catch {
     return false;
@@ -232,8 +243,11 @@ function generateDashboardName(dashboards: DashboardMeta[]): string {
    Hook
    ================================================================ */
 
-export function useDashboard() {
-  const [store, setStore] = useState<StoreData>(() => loadStore());
+export function useDashboard(namespace = '') {
+  const storageNamespace = namespace.trim();
+  const [store, setStore] = useState<StoreData>(
+    () => loadStore(storageNamespace),
+  );
 
   const dashboards = store.dashboards;
   const currentDashboardId = store.currentDashboardId;
@@ -248,13 +262,16 @@ export function useDashboard() {
 
   /** 持久化并更新 React 状态 */
   const persist = useCallback((newStore: StoreData): boolean => {
-    if (!saveStore(newStore)) return false;
+    if (!saveStore(newStore, storageNamespace)) return false;
     setStore(newStore);
     return true;
-  }, []);
+  }, [storageNamespace]);
 
   /** 重新读取最新存储（用于回调中获取最新数据） */
-  const reload = useCallback((): StoreData => loadStore(), []);
+  const reload = useCallback(
+    (): StoreData => loadStore(storageNamespace),
+    [storageNamespace],
+  );
 
   /** 添加图表/表格到当前仪表板 */
   const addItems = useCallback((newItems: DashboardItem[]): boolean => {
@@ -332,6 +349,22 @@ export function useDashboard() {
     return persist(current);
   }, [persist, reload]);
 
+  /** 标记用户手动缩放过的表格卡片：之后自动贴合不再覆盖其高度（表格在卡片内滚动）。
+   *  随 item 持久化，删除卡片/仪表板时自动清理。幂等：已标记不写存储。 */
+  const markItemUserSized = useCallback((id: string): boolean => {
+    const current = reload();
+    const db = current.dashboards.find(d => d.id === current.currentDashboardId);
+    if (!db) return false;
+
+    const item = db.items.find(c => c.id === id);
+    if (!item || item.type !== 'table') return false;
+    if (item.userSized) return true; // 已标记，不写存储
+
+    item.userSized = true;
+    db.updatedAt = Date.now();
+    return persist(current);
+  }, [persist, reload]);
+
   /** 更新当前仪表板中指定图表项目的 spec（仪表板内切换图表类型后持久化）。
    *  仅写 chart.spec 与 explicitType，保留 columns/rows/title/dataVersion 及 item 的 layout/sourceSql/addedAt/lastRefreshedAt。
    *  原 spec 与新 spec 完全一致且 explicitType 已为 true 时跳过写入。 */
@@ -396,6 +429,20 @@ export function useDashboard() {
     return persist(current);
   }, [persist, reload]);
 
+  /** 删除指定仪表板；删除当前项后切换到相邻项，允许删除最后一个仪表板 */
+  const deleteDashboard = useCallback((id: string): boolean => {
+    const current = reload();
+    const index = current.dashboards.findIndex(d => d.id === id);
+    if (index < 0) return true;
+
+    const remaining = current.dashboards.filter(d => d.id !== id);
+    current.dashboards = remaining;
+    if (current.currentDashboardId === id) {
+      current.currentDashboardId = remaining[Math.min(index, remaining.length - 1)]?.id ?? '';
+    }
+    return persist(current);
+  }, [persist, reload]);
+
   /** 切换到指定仪表板 */
   const switchDashboard = useCallback((id: string): boolean => {
     const current = reload();
@@ -455,9 +502,11 @@ export function useDashboard() {
     removeItem,
     updateLayout,
     updateItemHeight,
+    markItemUserSized,
     updateChartSpec,
     updateChartFull,
     createDashboard,
+    deleteDashboard,
     switchDashboard,
     addItemsToDashboard,
     createDashboardWithItems,

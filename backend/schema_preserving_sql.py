@@ -1,6 +1,7 @@
 """保留空查询列结构的 Vanna 2.0.2 兼容实现。"""
 
 from typing import Any, Dict, List, cast
+import re
 import uuid
 
 import pandas as pd
@@ -16,6 +17,18 @@ from vanna.components import (
 from vanna.core.tool import ToolContext, ToolResult
 from vanna.integrations.postgres import PostgresRunner
 from vanna.tools import RunSqlTool
+
+
+_SELECT_START_KEYWORDS = ("SELECT", "WITH", "TABLE", "VALUES", "EXPLAIN")
+
+
+def detect_query_type(sql: str) -> str:
+    """识别查询类型：剥离注释与前导空白后，把 CTE(WITH)/TABLE/VALUES/EXPLAIN 等只读查询归为 SELECT。"""
+    cleaned = re.sub(
+        r"/\*.*?\*/|--[^\r\n]*", "", sql, flags=re.S
+    ).strip()
+    first = cleaned.upper().split()[0] if cleaned else ""
+    return "SELECT" if first in _SELECT_START_KEYWORDS else first
 
 
 class SchemaPreservingPostgresRunner(PostgresRunner):
@@ -34,7 +47,7 @@ class SchemaPreservingPostgresRunner(PostgresRunner):
         )
         try:
             cursor.execute(args.sql)
-            query_type = args.sql.strip().upper().split()[0]
+            query_type = detect_query_type(args.sql)
             if query_type == "SELECT":
                 description = cursor.description or []
                 columns = [
@@ -61,7 +74,7 @@ class SchemaPreservingRunSqlTool(RunSqlTool):
     ) -> ToolResult:
         try:
             dataframe = await self.sql_runner.run_sql(args, context)
-            query_type = args.sql.strip().upper().split()[0]
+            query_type = detect_query_type(args.sql)
 
             if query_type == "SELECT":
                 columns = dataframe.columns.tolist()

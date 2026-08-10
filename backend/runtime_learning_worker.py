@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from backend.runtime_learning_service import RuntimeLearningService
+from backend.learning_settings_store import effective_learning_settings
 from config.learning_settings import OnlineLearningSettings
 
 logger = logging.getLogger(__name__)
@@ -21,9 +22,11 @@ class RuntimeLearningWorker:
         self,
         service: RuntimeLearningService,
         settings: OnlineLearningSettings,
+        dynamic_settings: bool = False,
     ) -> None:
         self._service = service
         self._settings = settings
+        self._dynamic_settings = dynamic_settings
         self._task: asyncio.Task[None] | None = None
         self._running = False
 
@@ -68,9 +71,16 @@ class RuntimeLearningWorker:
                 raise
 
     async def _tick(self) -> dict[str, Any]:
-        if not self._settings.enabled:
+        settings = (
+            effective_learning_settings()
+            if self._dynamic_settings
+            else self._settings
+        )
+        if not settings.enabled:
             return {"enabled": False}
         result: dict[str, Any] = {"enabled": True}
+        if self._dynamic_settings:
+            self._service.refresh_settings()
         try:
             result["recovered"] = self._service.recover_interrupted()
         except Exception:
@@ -78,7 +88,7 @@ class RuntimeLearningWorker:
             result["recovered"] = "error"
 
         judged = 0
-        if self._settings.judge_enabled:
+        if settings.judge_enabled:
             staged = self._service.list_candidates(statuses=["staged"], limit=20)
             for candidate in staged:
                 try:
@@ -90,7 +100,7 @@ class RuntimeLearningWorker:
         result["judged"] = judged
 
         published: list[str] = []
-        if self._settings.auto_publish:
+        if settings.auto_publish:
             for source_id in self._service.publish_ready_source_ids():
                 try:
                     outcome = await self._service.publish_source(source_id)

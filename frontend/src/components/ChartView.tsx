@@ -45,7 +45,7 @@ interface Props {
   /** 显示"导出"按钮（聊天与仪表板图表用，弹窗预览不显示） */
   showExport?: boolean;
   /** 点击"添加到仪表板"时回调，传出当前 activeSpec 图表快照（含 explicitType=true） */
-  onAddToDashboard?: (chart: ChartData) => void;
+  onAddToDashboard?: (chart: ChartData, viewMode: ViewMode) => void;
   /** 浮窗紧凑布局，仅覆盖 ECharts 展示参数。 */
   compact?: boolean;
   /** 浮窗内打开完整工作台的同源地址。 */
@@ -305,6 +305,27 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
 
   /** 导出当前 activeSpec 对应图表为 PNG */
   const handleExport = () => {
+    if (effectiveViewMode === 'table' && !isChartOnly) {
+      const escapeCsv = (value: unknown): string => {
+        const text = formatCellValue(value);
+        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      };
+      const rows = chart.rows.filter(row => !isNullValue(row[chart.columns[0]]));
+      const csv = [
+        chart.columns.map(column => escapeCsv(formatColumnLabel(column))).join(','),
+        ...rows.map(row => chart.columns.map(column => escapeCsv(row[column])).join(',')),
+      ].join('\r\n');
+      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${sanitizeFileName(chart.title || '')}_表格.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return;
+    }
     const instance = echartsRef.current?.getEchartsInstance();
     if (!instance) {
       showToast('图表尚未就绪，请稍后再试');
@@ -338,7 +359,10 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
       return;
     }
     // 使用当前实际渲染的 activeSpec，而非原始 chart.spec；保留 columns/rows/title/dataVersion
-    onAddToDashboard({ ...chart, spec: activeSpec, explicitType: true });
+    onAddToDashboard(
+      { ...chart, spec: activeSpec, explicitType: true },
+      effectiveViewMode,
+    );
   };
 
   // 图表类型或显示模式变化后，在下一帧 resize 确保图例布局正确
@@ -604,7 +628,7 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
         )}
 
         {/* 三级：导出 / 添加到仪表板（仅图表模式显示；data-export-exclude 确保整板 PNG 不含按钮） */}
-        {(showExport || onAddToDashboard || (compact && workspaceUrl)) && (effectiveViewMode === 'chart' || isChartOnly) && (
+        {(showExport || onAddToDashboard || (compact && workspaceUrl)) && (
           <div data-export-exclude style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
             {showExport && (
               <button
@@ -718,7 +742,9 @@ export function ChartView({ chart, hideTitle, onChangeType, onChangeSpec, onV2Ch
             textAlign: 'center',
           }}
         >
-          该图表类型不适用于当前数据
+          {chart.error
+            ? `图表配置有误：${chart.error}，已改用下方表格展示查询结果`
+            : '该图表类型不适用于当前数据，可切换图表类型或查看下方表格'}
         </div>
       ) : null}
 

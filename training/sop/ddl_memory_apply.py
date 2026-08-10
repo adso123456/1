@@ -578,8 +578,8 @@ def _validate_integration_paths(
         or INTEGRATION_ROOT_PATTERN.fullmatch(run_root.name) is None
     ):
         raise ValueError(
-            "隔离路径必须为 E:\\3\\_training_backups\\"
-            "f6-1e-<YYYYMMDD-HHMMSS>\\isolated_chroma"
+            f"隔离路径必须位于 {BACKUP_ROOT} 下的 "
+            "f6-1e-<YYYYMMDD-HHMMSS>/isolated_chroma"
         )
     if evidence.name != "evidence" or evidence.parent != run_root:
         raise ValueError("Evidence 必须与 isolated_chroma 位于同一 F6-1E 运行目录")

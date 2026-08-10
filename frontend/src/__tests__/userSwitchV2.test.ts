@@ -5,7 +5,7 @@
 
 import { prepareChartV2All } from '../chartPipelineV2.js';
 import type { Row } from '../datasetProfilerV2.js';
-import type { ChartData } from '../types.js';
+import type { ChartData, RenderableChartType } from '../types.js';
 
 let passed = 0;
 let failed = 0;
@@ -169,13 +169,13 @@ test('T3: 用户请求 gauge 但数据不适合 → V2 有 fallbackNotice 或失
     rows: sourceData.data,
     source: 'user',
     intent: 'auto',
-    requestedChartType: 'gauge',
+    requestedChartType: 'gauge' as unknown as RenderableChartType,
     id: 't3',
     title: 'Gauge Request',
     dataVersion: 1,
   });
 
-  // gauge 需要 single_value → 此数据是 categorical_series，不匹配
+  // gauge 已从能力表移除 → 此数据请求 gauge 一定不匹配
   // 但 Planner 的 selectForUser 有 fallbackNotice 机制：
   // requestedType 不可用 → 回退到第一个 supported plan
   if (result.ok) {

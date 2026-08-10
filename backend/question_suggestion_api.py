@@ -81,7 +81,11 @@ def create_question_suggestion_router(
                 "asset_version": directory["asset_version"],
                 "questions": [],
             }
-        questions = select_suggested_questions(directory, conversation_id)
+        questions = select_suggested_questions(
+            directory,
+            conversation_id,
+            require_executable=True,
+        )
         return {
             "source_id": context.source_id,
             "asset_version": directory["asset_version"],

@@ -61,26 +61,40 @@ export function resolveWidgetAccessMode(
     return 'invalid';
   }
   if (normalizedParentOrigin !== agentOrigin) return 'protected';
-  return (
+  if (
     developmentBuild
     && url.searchParams.get('devWidget') === LOCAL_DEVELOPMENT_WIDGET_MARKER
-  )
-    ? 'local-development'
-    : 'invalid';
+  ) {
+    return 'local-development';
+  }
+  // 同源生产嵌入（如演示页由应用自身提供）同样走父页面桥接，
+  // 否则 WidgetApp 会进入 invalid 分支，iframe 不发 ready 导致加载超时。
+  return 'protected';
 }
 
 export function buildWorkspaceUrl(
   agentUrl: string,
   sessionId?: string,
+  storageNamespace?: string,
 ): string {
   const url = new URL('/', agentUrl);
   if (sessionId) url.searchParams.set('session', sessionId);
+  if (storageNamespace) {
+    url.searchParams.set('embed_scope', storageNamespace);
+  }
   return url.toString();
 }
 
 export function readWorkspaceSessionId(urlValue: string): string {
   const value = new URL(urlValue).searchParams.get('session')?.trim() || '';
   return /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : '';
+}
+
+export function readWorkspaceStorageNamespace(urlValue: string): string {
+  const value = new URL(urlValue).searchParams.get('embed_scope')?.trim() || '';
+  return value.length <= 512 && !/[\u0000-\u001f\u007f]/.test(value)
+    ? value
+    : '';
 }
 
 export function clearWorkspaceSessionParam(urlValue: string): string {

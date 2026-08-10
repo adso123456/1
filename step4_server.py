@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,10 +21,17 @@ from backend.assistant_admin_api import (
 )
 from backend.data_source_chat_handler import DataSourceChatHandler
 from backend.learning_candidate_store import LearningCandidateStore
+from backend.log_buffer import install_log_buffer
+from backend.llm_settings import apply_settings_to_environ
+from backend.llm_settings_api import create_llm_settings_router
 from backend.runtime_learning_api import create_runtime_learning_router
 from backend.runtime_learning_judge import RuntimeLearningJudge
 from backend.runtime_learning_service import RuntimeLearningService
 from backend.runtime_learning_worker import RuntimeLearningWorker
+from backend.question_suggestion_generator import generation_identity
+from backend.question_suggestion_tasks import QuestionSuggestionTaskStore
+from backend.question_suggestion_worker import QuestionSuggestionWorker
+from backend.system_logs_api import create_system_logs_router
 from backend.data_source_catalog import (
     CredentialCipher,
     DataSourceCatalog,
@@ -45,6 +52,7 @@ from backend.embed_access import (
     EmbedAccessError,
     authorize_embed_origin,
     extract_app_id_from_request,
+    origin_from_referer,
 )
 from backend.data_source_registry import (
     DataSourceRegistry,
@@ -56,6 +64,10 @@ from backend.postgresql_runtime_factory import create_postgresql_runtime
 from backend.mysql_runtime_factory import create_mysql_runtime
 from backend.runtime_prewarm import RuntimePrewarmer
 from backend.question_suggestion_api import create_question_suggestion_router
+from backend.question_suggestion_assets import (
+    load_question_directory,
+    select_suggested_questions,
+)
 from backend.water_quality_reports.api import create_report_router
 from backend.water_quality_reports.application_service import (
     ReportApplicationService,
@@ -120,32 +132,73 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
         self.learning_store = LearningCandidateStore(
             self.learning_settings.candidate_db_path
         )
-        learning_llm: TracingOpenAILlmService | None = None
-        if self.learning_settings.enabled:
-            learning_llm = TracingOpenAILlmService(
-                model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"),
-                api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
+        # Key 存在时构造真实 Judge；缺失时 Judge 自动降级 NEEDS_REVIEW，
+        # 保证空配置服务器可启动，管理页配置 Key 后（重启或热更新）即可用。
+        learning_api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        learning_llm = (
+            TracingOpenAILlmService(
+                model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+                api_key=learning_api_key,
                 base_url=os.environ.get(
                     "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
                 ),
                 settings=QueryPerformanceSettings.from_environment(),
             )
-        self.learning_judge: RuntimeLearningJudge | None = None
-        if learning_llm is not None and self.learning_settings.judge_enabled:
-            self.learning_judge = RuntimeLearningJudge(
-                learning_llm, self.learning_settings
+            if learning_api_key
+            else None
+        )
+        self.learning_judge = RuntimeLearningJudge(
+            learning_llm, self.learning_settings
+        )
+        # 推荐问题派生资产：正式发布成功后异步生成（第一阶段）。
+        self.question_suggestion_store: QuestionSuggestionTaskStore | None = None
+        self.question_suggestion_worker: QuestionSuggestionWorker | None = None
+        self._post_publish_hook: (
+            Callable[[str, dict[str, Any]], None] | None
+        ) = None
+        if resources.catalog is not None:
+            self.question_suggestion_store = QuestionSuggestionTaskStore()
+            self.question_suggestion_worker = QuestionSuggestionWorker(
+                self.question_suggestion_store,
+                resources.catalog,
             )
+
+            def _enqueue_question_suggestions(
+                source_id: str,
+                result: dict[str, Any],
+            ) -> None:
+                try:
+                    identity = generation_identity(
+                        resources.catalog,
+                        source_id,
+                    )
+                    if self.question_suggestion_store is not None:
+                        self.question_suggestion_store.enqueue(identity)
+                    logger.info(
+                        "推荐问题生成任务已入队（source=%s revision=%s）",
+                        source_id,
+                        identity["runtime_revision"],
+                    )
+                except Exception:
+                    logger.exception(
+                        "推荐问题生成任务入队失败（source=%s），不影响发布",
+                        source_id,
+                    )
+
+            self._post_publish_hook = _enqueue_question_suggestions
         self.learning_service = RuntimeLearningService(
             catalog=resources.catalog,
             runtime_manager=resources.runtime_manager,
             store=self.learning_store,
-            judge=self.learning_judge or RuntimeLearningJudge(
-                object(), self.learning_settings
-            ),
+            judge=self.learning_judge,
             settings=self.learning_settings,
+            dynamic_settings=True,
+            post_publish_hook=self._post_publish_hook,
         )
         self.learning_worker = RuntimeLearningWorker(
-            self.learning_service, self.learning_settings
+            self.learning_service,
+            self.learning_settings,
+            dynamic_settings=True,
         )
         self.chat_handler = DataSourceChatHandler(
             resources.coordinator,
@@ -160,17 +213,24 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI):
         await self.runtime_prewarmer.warm_ready_sources()
-        if self.learning_settings.enabled:
-            try:
-                self.learning_service.recover_interrupted()
-            except Exception:
-                pass
-            self.learning_worker.start()
+        logging.getLogger("water-agent").info(
+            "服务启动完成：数据源 %d 个",
+            len(self.resources.catalog.list()),
+        )
+        try:
+            self.learning_service.recover_interrupted()
+        except Exception:
+            pass
+        # Worker 常驻：未启用时每轮直接返回，管理页打开开关后无需重启即生效。
+        if self.question_suggestion_worker is not None:
+            self.question_suggestion_worker.start()
+        self.learning_worker.start()
         try:
             yield
         finally:
-            if self.learning_settings.enabled:
-                await self.learning_worker.stop()
+            if self.question_suggestion_worker is not None:
+                await self.question_suggestion_worker.stop()
+            await self.learning_worker.stop()
 
     def create_app(self) -> FastAPI:
         report_service_factory = None
@@ -227,12 +287,15 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             origin: str | None,
             *,
             source_id: str | None = None,
+            referer: str | None = None,
         ):
             """用浏览器真实 Origin 请求头校验嵌入访问。"""
             try:
                 safe_app_id = app_id.strip()
                 if not safe_app_id:
                     raise EmbedAccessError(400, "缺少 app_id")
+                if not origin or not origin.strip():
+                    origin = origin_from_referer(referer)
                 if not origin:
                     raise EmbedAccessError(401, "浏览器 Origin 请求头缺失")
                 return authorize_embed_origin(
@@ -263,7 +326,9 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             match = EMBED_PATH_PATTERN.match(request.url.path)
             if match is None:
                 return await call_next(request)
-            origin = request.headers.get("Origin")
+            origin = request.headers.get("Origin") or origin_from_referer(
+                request.headers.get("Referer")
+            )
             try:
                 principal = authorize_embed_origin(
                     app_id=match.group(1),
@@ -301,6 +366,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             principal = authorize_embed(
                 app_id,
                 origin,
+                referer=request.headers.get("Referer"),
             )
             application = principal.application
             return {
@@ -329,6 +395,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             principal = authorize_embed(
                 app_id,
                 origin,
+                referer=request.headers.get("Referer"),
             )
             if self.resources.catalog is not None:
                 return [
@@ -381,6 +448,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 app_id,
                 origin,
                 source_id=source_id,
+                referer=http_request.headers.get("Referer"),
             )
             safe_metadata = {
                 "source_id": source_id,
@@ -447,6 +515,69 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 },
             )
 
+        @app.get("/api/embed/apps/{app_id}/conversations/{conversation_id}/suggested-questions")
+        async def embed_suggested_questions(
+            request: Request,
+            app_id: str,
+            conversation_id: str,
+        ) -> dict[str, object]:
+            origin = request.headers.get("Origin")
+            principal = authorize_embed(
+                app_id,
+                origin,
+                referer=request.headers.get("Referer"),
+            )
+            try:
+                context = self.resources.coordinator.require(conversation_id)
+            except ValueError:
+                raise HTTPException(
+                    status_code=404,
+                    detail="会话尚未绑定数据源",
+                ) from None
+            if context.source_id not in principal.application.allowed_source_ids:
+                raise HTTPException(
+                    status_code=403,
+                    detail="数据源未获授权",
+                ) from None
+            if self.resources.catalog is None:
+                return {
+                    "source_id": context.source_id,
+                    "asset_version": None,
+                    "questions": [],
+                }
+            try:
+                record = self.resources.catalog.require(context.source_id)
+            except Exception:
+                raise HTTPException(
+                    status_code=404,
+                    detail="数据源不存在",
+                ) from None
+            if record.status != "ready" or not record.enabled_for_chat:
+                return {
+                    "source_id": context.source_id,
+                    "asset_version": None,
+                    "questions": [],
+                }
+            directory = load_question_directory(context.source_id)
+            if directory is None:
+                return {
+                    "source_id": context.source_id,
+                    "asset_version": None,
+                    "questions": [],
+                }
+            if directory.get("runtime_revision") != record.runtime_revision:
+                return {
+                    "source_id": context.source_id,
+                    "asset_version": directory["asset_version"],
+                    "questions": [],
+                }
+            questions = select_suggested_questions(directory, conversation_id)
+            return {
+                "source_id": context.source_id,
+                "asset_version": directory["asset_version"],
+                "questions": questions,
+            }
+
         @app.post("/api/embed/apps/{app_id}/conversations/{conversation_id}/source")
         async def embed_bind_conversation_source(
             request: Request,
@@ -459,6 +590,7 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                 app_id,
                 origin,
                 source_id=body.source_id,
+                referer=request.headers.get("Referer"),
             )
             try:
                 context = self.resources.coordinator.bind(
@@ -524,15 +656,19 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     catalog=self.resources.catalog,
                     coordinator=self.resources.coordinator,
                     runtime_manager=self.resources.runtime_manager,
+                    question_suggestion_hook=self._post_publish_hook,
                 )
             )
-            if self.learning_settings.enabled:
-                app.include_router(
-                    create_runtime_learning_router(
-                        self.learning_service,
-                        self.learning_worker,
-                    )
+            app.include_router(
+                create_runtime_learning_router(
+                    self.learning_service,
+                    self.learning_worker,
                 )
+            )
+            app.include_router(
+                create_llm_settings_router(self.resources.runtime_manager)
+            )
+            app.include_router(create_system_logs_router())
             app.include_router(
                 create_question_suggestion_router(
                     catalog=self.resources.catalog,
@@ -555,6 +691,9 @@ def create_application_resources(
     *,
     environ: Mapping[str, str] | None = None,
 ) -> ApplicationResources:
+    # 管理页保存的 LLM 配置（卷内）优先于 .env / 宿主机环境。
+    apply_settings_to_environ()
+    install_log_buffer()
     source = dict(os.environ if environ is None else environ)
     if not source.get("DATA_SOURCE_CREDENTIAL_KEY", "").strip():
         if environ is None:

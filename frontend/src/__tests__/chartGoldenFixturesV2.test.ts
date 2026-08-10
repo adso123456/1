@@ -1,6 +1,6 @@
 // chartGoldenFixturesV2.test.ts — V2 Golden 回归夹具（15 种数据形态）
 //
-// 阶段 B-1：离线验证 Planner 对各种数据形态产出正确的 13 种 ChartPlan。
+// 阶段 B-1：离线验证 Planner 对各种数据形态产出正确的 12 种 ChartPlan。
 // 使用 ALL_CAPABILITIES_V2 + planChartsWithCapabilitiesV2，不接入运行时。
 // 运行时仍默认使用 PILOT_CAPABILITIES_V2（本测试不影响生产行为）。
 //
@@ -40,7 +40,7 @@ function test(name: string, fn: () => void): void {
 
 const ALL_TYPES: RenderableChartType[] = [
   'bar', 'horizontal_bar', 'line', 'area', 'pie', 'donut',
-  'scatter', 'bubble', 'radar', 'heatmap', 'boxplot', 'gauge', 'combo',
+  'scatter', 'bubble', 'radar', 'heatmap', 'boxplot', 'combo',
 ];
 
 /** 某 type 在 plans 中的最高 suitability（recommended > allowed_explicit > unsupported） */
@@ -102,7 +102,7 @@ test('fixture 1: empty → all unsupported, defaultPlan=null', () => {
   assertEqual(p.archetype, 'empty');
   assertEqual(p.traits.measureCount, 0);
   assertEqual(p.traits.rowCount, 0);
-  assertEqual(r.plans.length, 17); // 13 种共 17 个 variant
+  assertEqual(r.plans.length, 16); // 12 种共 16 个 variant
   assertSuitMap(r.plans, {}, 'fixture 1'); // 全 unsupported
   assertEqual(r.defaultPlan, null);
   assertOk(r.noChartReason !== null);
@@ -112,14 +112,15 @@ test('fixture 1: empty → all unsupported, defaultPlan=null', () => {
 // 夹具 2：单 KPI
 // ============================================================
 
-test('fixture 2: single_value → gauge=recommended', () => {
+test('fixture 2: single_value → 无推荐图表（gauge 已移除）', () => {
   const r = run({ columns: ['total_count'], rows: [{ total_count: 342 }] });
   assertEqual(r.profile.archetype, 'single_value');
   assertEqual(r.profile.traits.measureCount, 1);
   assertEqual(r.profile.traits.rowCount, 1);
-  assertSuitMap(r.plans, { gauge: 'recommended' }, 'fixture 2');
-  assertEqual(r.defaultPlan?.type, 'gauge');
-  assertEqual(r.noChartReason, null);
+  // gauge 已从能力表移除，单值数据无适配图表 → 无 recommended，defaultPlan=null
+  assertSuitMap(r.plans, {}, 'fixture 2');
+  assertEqual(r.defaultPlan, null);
+  assertOk(r.noChartReason !== null);
 });
 
 // ============================================================
@@ -586,10 +587,10 @@ test('P9: two-measure auto → scatter (not bubble, bubble trait fails)', () => 
 });
 
 // ============================================================
-// 跨夹具不变量：13 种 type 都有至少一个 plan
+// 跨夹具不变量：12 种 type 都有至少一个 plan
 // ============================================================
 
-test('invariant: every fixture has 13 types in plans', () => {
+test('invariant: every fixture has 12 types in plans', () => {
   const allFixtures: FixInput[] = [
     { columns: [], rows: [] },
     { columns: ['total_count'], rows: [{ total_count: 342 }] },
@@ -605,10 +606,10 @@ test('invariant: every fixture has 13 types in plans', () => {
 });
 
 test('invariant: planChartsV2 default still uses PILOT (not ALL)', () => {
-  // 间接验证：PILOT 只 3 种，ALL 13 种；planChartsV2 返回的 plans 数量应 = PILOT variant 总数(6)
+  // 间接验证：PILOT 只 3 种，ALL 12 种；planChartsV2 返回的 plans 数量应 = PILOT variant 总数(6)
   // 直接 import planChartsV2 会耦合，这里只验证 ALL 路径的 variant 总数
   const r = run({ columns: ['region', 'count'], rows: [{ region: 'A', count: 1 }] });
-  assertEqual(r.plans.length, 17); // ALL_CAPABILITIES_V2 共 17 个 variant
+  assertEqual(r.plans.length, 16); // ALL_CAPABILITIES_V2 共 16 个 variant
 });
 
 // ============================================================

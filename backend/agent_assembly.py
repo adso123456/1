@@ -39,7 +39,7 @@ def build_shared_agent(
     - Context Enhancer 顺序（Default → Deterministic → SqlExample）
     - Lifecycle Hook 和 Enricher（OriginalQuestionLifecycleHook /
       OriginalQuestionContextEnricher）
-    - LLM 配置（deepseek-v4-pro via api.deepseek.com）和环境变量错误语义
+    - LLM 配置（deepseek-v4-flash via api.deepseek.com）和环境变量错误语义
     """
     from vanna import Agent, AgentConfig
     from vanna.core.enhancer.default import DefaultLlmContextEnhancer
@@ -79,12 +79,12 @@ def build_shared_agent(
     )
 
     if verbose:
-        print("初始化 LLM 服务 (deepseek-v4-pro via DeepSeek official API)...")
+        print("初始化 LLM 服务 (deepseek-v4-flash via DeepSeek official API)...")
     performance_settings = QueryPerformanceSettings.from_environment(source)
     llm = TracingOpenAILlmService(
-        model="deepseek-v4-pro",
+        model=source.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
         api_key=api_key,
-        base_url="https://api.deepseek.com",
+        base_url=source.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         settings=performance_settings,
     )
 

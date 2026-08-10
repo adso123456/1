@@ -6,6 +6,8 @@ import os
 import threading
 import uuid
 from pathlib import Path
+
+from config.settings import resolve_project_path
 from typing import Any
 
 from reportlab.lib import colors
@@ -39,7 +41,7 @@ class PdfRenderError(RuntimeError):
 def _runtime_root() -> Path:
     configured = os.getenv("WATER_REPORT_OUTPUT_DIR", "").strip()
     if configured:
-        return Path(configured).expanduser().resolve()
+        return resolve_project_path(configured)
     project_root = Path(__file__).resolve().parents[2]
     return (project_root.parent.parent / "_runtime" / "water-quality-reports").resolve()
 

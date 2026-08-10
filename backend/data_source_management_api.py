@@ -6,7 +6,7 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from backend.assistant_admin_api import _authorize
 from backend.data_source_catalog import (
@@ -190,9 +190,16 @@ def create_data_source_management_router(
     catalog: DataSourceCatalog,
     coordinator: DataSourceRequestCoordinator,
     runtime_manager: DataSourceRuntimeManager,
+    question_suggestion_hook: (
+        Callable[[str, dict[str, Any]], None] | None
+    ) = None,
 ) -> APIRouter:
     connector = DirectDatabaseConnector(catalog)
-    preparer = DataSourceAssetPreparer(catalog, runtime_manager)
+    preparer = DataSourceAssetPreparer(
+        catalog,
+        runtime_manager,
+        post_publish_hook=question_suggestion_hook,
+    )
     profiler = DataSourceProfiler(catalog, connector)
     semantic_analyzer = DataSourceSemanticAnalyzer()
     sql_memory_generator = VerifiedSQLMemoryGenerator(catalog, connector)

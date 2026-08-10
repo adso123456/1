@@ -7,6 +7,7 @@ import { AddChartDialog } from './components/AddChartDialog';
 import { AddToDashboardDialog } from './components/AddToDashboardDialog';
 import { AssistantManagement } from './AdminApp';
 import { DataSourcePage } from './components/DataSourcePage';
+import { SettingsPage } from './components/SettingsPage';
 import { NewConversationSourceDialog } from './components/NewConversationSourceDialog';
 import {
   ReportPreviewModal,
@@ -16,10 +17,11 @@ import {
 import { configFromReportResult } from './reportConfigState';
 import { useSSE } from './hooks/useSSE';
 import { useDashboard } from './hooks/useDashboard';
-import type { DashboardItem, DashboardChartItem, ChartData, ChartSpec, SuggestedQuestion, SuggestedQuestionsResponse } from './types';
+import type { DashboardItem, ChartData, ChartSpec, SuggestedQuestion, SuggestedQuestionsResponse } from './types';
 import {
   clearWorkspaceSessionParam,
   readWorkspaceSessionId,
+  readWorkspaceStorageNamespace,
 } from './appMode';
 import { dataSourceUnavailableReason } from './dataSourceState';
 import {
@@ -27,11 +29,12 @@ import {
   formatDataSourceStatus,
 } from './dataSourcePresentation';
 
-type View = 'chat' | 'datasource' | 'dashboard' | 'assistant';
+type View = 'chat' | 'datasource' | 'dashboard' | 'assistant' | 'settings';
 
 /** 待添加到仪表板的图表上下文（点击"添加到仪表板"时暂存） */
 interface PendingAdd {
   chart: ChartData;
+  viewMode: 'chart' | 'table';
   messageId: string;
   sql: string | null;
   sessionId: string;
@@ -49,6 +52,10 @@ function App() {
     () => readWorkspaceSessionId(window.location.href),
     [],
   );
+  const workspaceStorageNamespace = useMemo(
+    () => readWorkspaceStorageNamespace(window.location.href),
+    [],
+  );
   const {
     messages,
     loading,
@@ -64,6 +71,7 @@ function App() {
     sessionList,
     currentSessionId,
     createNewSession,
+    bindCurrentSessionSource,
     switchToSession,
     deleteSession,
     storageError,
@@ -73,7 +81,12 @@ function App() {
     currentSourceId,
     dataSourceError,
     sourceBound,
-  } = useSSE(requestedSessionId);
+  } = useSSE(requestedSessionId, workspaceStorageNamespace
+    ? {
+        persistenceMode: 'local',
+        persistenceNamespace: workspaceStorageNamespace,
+      }
+    : undefined);
   const {
     currentItems: dashboardItems,
     currentDashboardName,
@@ -83,13 +96,15 @@ function App() {
     removeItem,
     updateLayout,
     updateItemHeight,
+    markItemUserSized,
     updateChartSpec,
     updateChartFull,
     createDashboard,
+    deleteDashboard,
     switchDashboard,
     addItemsToDashboard,
     createDashboardWithItems,
-  } = useDashboard();
+  } = useDashboard(workspaceStorageNamespace);
 
   const [currentView, setCurrentView] = useState<View>('chat');
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -97,6 +112,7 @@ function App() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [reportPreview, setReportPreview] = useState<ReportResultData | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
+  const [sourceDialogMode, setSourceDialogMode] = useState<'create' | 'bind'>('bind');
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -159,6 +175,7 @@ function App() {
   // 新建会话时自动切回对话视图
   const handleNewSession = useCallback(() => {
     setCurrentView('chat');
+    setSourceDialogMode('create');
     setShowSourceDialog(true);
   }, []);
 
@@ -182,9 +199,10 @@ function App() {
       && messages.length === 0
       && !sourceBound
     ) {
+      setSourceDialogMode('bind');
       setShowSourceDialog(true);
     }
-  }, [currentView, dataSources.length, messages.length, sourceBound]);
+  }, [currentSessionId, currentView, dataSources.length, messages.length, sourceBound]);
 
   // 添加项目到仪表板
   const handleAddItems = useCallback((items: DashboardItem[]) => {
@@ -221,9 +239,15 @@ function App() {
   }, [updateChartFull]);
 
   // 聊天页"添加到仪表板"：暂存快照 + 上下文（会话 ID 在此补充），打开弹窗
-  const handleRequestAddToDashboard = useCallback((payload: { chart: ChartData; messageId: string; sql: string | null }) => {
+  const handleRequestAddToDashboard = useCallback((payload: {
+    chart: ChartData;
+    viewMode: 'chart' | 'table';
+    messageId: string;
+    sql: string | null;
+  }) => {
     setPendingAdd({
       chart: payload.chart,
+      viewMode: payload.viewMode,
       messageId: payload.messageId,
       sql: payload.sql,
       sessionId: currentSessionId,
@@ -233,20 +257,35 @@ function App() {
   // 弹窗确认：构造 DashboardChartItem 并写入目标仪表板（已有 upsert / 新建）
   const handleConfirmAddToDashboard = useCallback((target: { mode: 'existing'; dashboardId: string } | { mode: 'new'; name: string }) => {
     if (!pendingAdd) return;
-    const { chart, messageId, sql, sessionId } = pendingAdd;
+    const { chart, viewMode, messageId, sql, sessionId } = pendingAdd;
     const now = Date.now();
 
     // 项目 ID 规则与 AddChartDialog 一致：${sessionId}::${messageId}::${chart.id}
-    const item: DashboardChartItem = {
-      type: 'chart',
-      id: `${sessionId}::${messageId}::${chart.id}`,
-      sourceSessionId: sessionId,
-      sourceMessageId: messageId,
-      addedAt: now,
-      chart: JSON.parse(JSON.stringify(chart)), // 深拷贝当前 activeSpec 快照
-      sourceSql: sql ?? null,
-      lastRefreshedAt: now,
-    };
+    const item: DashboardItem = viewMode === 'table'
+      ? {
+          type: 'table',
+          id: `${sessionId}::${messageId}::${chart.id}::table`,
+          sourceSessionId: sessionId,
+          sourceMessageId: messageId,
+          addedAt: now,
+          table: {
+            data: JSON.parse(JSON.stringify(chart.rows)),
+            columns: [...chart.columns],
+            row_count: chart.rows.length,
+            column_count: chart.columns.length,
+            title: chart.title,
+          },
+        }
+      : {
+          type: 'chart',
+          id: `${sessionId}::${messageId}::${chart.id}`,
+          sourceSessionId: sessionId,
+          sourceMessageId: messageId,
+          addedAt: now,
+          chart: JSON.parse(JSON.stringify(chart)), // 深拷贝当前 activeSpec 快照
+          sourceSql: sql ?? null,
+          lastRefreshedAt: now,
+        };
 
     let targetId: string | null = null;
     if (target.mode === 'existing') {
@@ -309,6 +348,7 @@ function App() {
           currentDashboardId={currentDashboardId}
           onSwitch={switchDashboard}
           onCreate={createDashboard}
+          onDelete={deleteDashboard}
         />
       )}
       <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
@@ -382,6 +422,7 @@ function App() {
         {currentView === 'datasource' && (
           <DataSourcePage onDataSourcesChanged={refreshDataSources} />
         )}
+        {currentView === 'settings' && <SettingsPage />}
         {currentView === 'dashboard' && (
           <DashboardView
             items={dashboardItems}
@@ -390,6 +431,7 @@ function App() {
             onAddChart={() => setShowAddDialog(true)}
             onLayoutChange={updateLayout}
             onUpdateItemHeight={updateItemHeight}
+            onUpdateItemSized={markItemUserSized}
             onUpdateChartSpec={handleUpdateChartSpec}
             onV2ChartSwitch={handleDashboardV2ChartSwitch}
           />
@@ -412,7 +454,11 @@ function App() {
       {showSourceDialog && (
         <NewConversationSourceDialog
           sources={dataSources.filter(source => source.status === 'ready' && source.enabled_for_chat)}
-          onConfirm={sourceId => createNewSession(sourceId)}
+          onConfirm={sourceId => (
+            sourceDialogMode === 'create'
+              ? createNewSession(sourceId)
+              : bindCurrentSessionSource(sourceId)
+          )}
           onClose={() => setShowSourceDialog(false)}
         />
       )}

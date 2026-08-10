@@ -10,6 +10,7 @@
 import { prepareChartV2, prepareChartV2All } from '../chartPipelineV2.js';
 import type { PrepareChartInputV2 } from '../chartPipelineV2.js';
 import type { Row } from '../datasetProfilerV2.js';
+import type { RenderableChartType } from '../types.js';
 
 // ============================================================
 // 断言
@@ -143,11 +144,10 @@ function makeInput(columns: string[], rows: Row[]): PrepareChartInputV2 {
   };
 }
 
-test('runtime: single_kpi → gauge (ALL_CAPABILITIES_V2)', () => {
+test('runtime: single_kpi → 无图表（gauge 已移除）', () => {
   const r = prepareChartV2All(makeInput(['total_count'], [{ total_count: 342 }]));
-  assertOk(r.ok, `should succeed, got: ${r.errorCode}`);
-  assertEqual(r.chart!.spec.type, 'gauge');
-  assertEqual(r.chart!.explicitType, true);
+  assertEqual(r.ok, false);
+  assertEqual(r.errorCode, 'no_default_plan');
 });
 
 test('runtime: region_count → bar', () => {
@@ -266,16 +266,16 @@ test('user: source=user + requestedChartType=bar → 正确选择 bar', () => {
   assertEqual(r.chart!.sourceRows!.length, BASIC_DATA.rows.length);
 });
 
-test('user: source=user + requestedChartType=gauge for single_kpi → 正确选择 gauge', () => {
+test('user: source=user + requestedChartType=gauge for single_kpi → 不可用（gauge 已移除）', () => {
   const r = prepareChartV2All({
     ...makeInput(['total_count'], [{ total_count: 342 }]),
     source: 'user',
-    requestedChartType: 'gauge',
+    requestedChartType: 'gauge' as unknown as RenderableChartType,
   });
-  assertOk(r.ok, `should succeed: ${r.errorCode}`);
-  assertEqual(r.chart!.spec.type, 'gauge');
-  assertOk(Array.isArray(r.chart!.sourceColumns));
-  assertEqual(r.chart!.sourceColumns![0], 'total_count');
+  // gauge 已移除，单值数据无任何适配图表 → 失败
+  assertEqual(r.ok, false);
+  assertEqual(r.errorCode, 'no_default_plan');
+  assertEqual(r.chart, null);
 });
 
 test('user: source=user + requestedChartType=boxplot → 正确选择 boxplot', () => {
@@ -306,7 +306,7 @@ test('user: source=user + requestedChartType → 不可用时回退', () => {
   const r = prepareChartV2All({
     ...makeInput(BASIC_DATA.columns, BASIC_DATA.rows),
     source: 'user',
-    requestedChartType: 'gauge',
+    requestedChartType: 'gauge' as unknown as RenderableChartType,
   });
   assertOk(r.ok, '应成功（回退到支持的图表）');
   assertOk(r.planning.fallbackNotice !== null,
@@ -318,7 +318,7 @@ test('user: source=user + requestedChartType → 不可用时回退', () => {
 // 5. 跨验证：Shadow Comparison 关键断言一致
 // ============================================================
 
-test('cross: ALL 的 gauge/scatter/bubble 与 PILOT 不冲突', () => {
+test('cross: ALL 扩展类型与 PILOT 不冲突', () => {
   // ALL 扩展了 PILOT，但不影响 PILOT 已有的 bar/line 行为
   const catAll = prepareChartV2All(makeInput(BASIC_DATA.columns, BASIC_DATA.rows));
   const catPilot = prepareChartV2(makeInput(BASIC_DATA.columns, BASIC_DATA.rows));

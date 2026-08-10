@@ -4,7 +4,7 @@
 // 旧路径（无 v2Meta）的回归测试也在本文件中。
 
 import { generateChartDescription } from '../chartDescription.js';
-import type { ChartData, ChartMetaV2 } from '../types.js';
+import type { ChartData, ChartMetaV2, RenderableChartType } from '../types.js';
 
 let passed = 0;
 let failed = 0;
@@ -117,20 +117,19 @@ test('V2 line → 有趋势描述', () => {
 });
 
 // ============================================================
-// 4. V2 gauge → 不为 null，包含单值含义
+// 4. V2 gauge → 已移除，返回 null
 // ============================================================
 
-test('V2 gauge → 不为 null，包含单值/KPI 含义', () => {
+test('V2 gauge → 已移除，描述返回 null', () => {
   const c = chart({
     columns: ['total_count'],
     rows: [{ total_count: 342 }],
     spec: { type: 'gauge', valueField: 'total_count' },
     v2Meta: baseMeta({ semanticMode: 'kpi' }),
   });
-  const desc = generateChartDescription(c, 'gauge');
-  assertNotNull(desc, 'gauge description should not be null');
-  assertIncludes(desc, '仪表盘', 'should mention 仪表盘');
-  assertIncludes(desc, '342', 'should include the value');
+  // gauge 已从图表类型移除，generateChartDescription 不再有 case 'gauge'，应返回 null
+  const desc = generateChartDescription(c, 'gauge' as unknown as RenderableChartType);
+  assertOk(desc === null, 'gauge description should be null after removal');
 });
 
 // ============================================================
@@ -364,7 +363,7 @@ test('V2 gauge with missing valueField → 安全返回 null', () => {
     v2Meta: baseMeta({ semanticMode: 'kpi' }),
   });
   // 不应抛异常（无 valueField 可能返回 null）
-  generateChartDescription(c, 'gauge');
+  generateChartDescription(c, 'gauge' as unknown as RenderableChartType);
   assertOk(true, 'should not throw');
 });
 

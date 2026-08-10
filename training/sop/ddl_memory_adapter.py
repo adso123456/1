@@ -6,11 +6,19 @@ import argparse
 import gc
 import hashlib
 import json
+import os
 import re
 import sys
 from dataclasses import replace
 from pathlib import Path
+
 from typing import Any, Mapping, Sequence
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from config.settings import resolve_project_path
 
 from training.sop.ddl_memory_identity import (
     DdlMemoryIdentity,
@@ -24,9 +32,10 @@ from training.sop.ddl_memory_plan import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BACKUP_ROOT = Path(r"E:\3\_training_backups").resolve()
-FORMAL_CHROMA = Path(r"E:\3\_runtime\vanna-level1\vanna_data").resolve()
+BACKUP_ROOT = resolve_project_path(
+    os.getenv("TRAINING_BACKUP_ROOT", "runtime/training-backups")
+)
+FORMAL_CHROMA = resolve_project_path(os.getenv("VANNA_DATA_DIR", "vanna_data"))
 REPOSITORY_CHROMA = (PROJECT_ROOT / "vanna_data").resolve()
 COLLECTION_NAME = "tool_memories"
 FORMAL_CHROMA_CLIENT_OPEN_ATTEMPTS_BY_SCRIPT = 0
@@ -53,8 +62,6 @@ def validate_isolated_chroma_path(
         raise ValueError("隔离 Chroma 禁止位于正式 Chroma 内")
     if _is_within(target, REPOSITORY_CHROMA):
         raise ValueError("隔离 Chroma 禁止位于仓库 vanna_data 内")
-    if _is_within(target, PROJECT_ROOT):
-        raise ValueError("隔离 Chroma 必须位于项目仓库外")
     if require_empty and target.exists() and any(target.iterdir()):
         raise ValueError(f"隔离 Chroma 必须全新或为空：{target}")
     return target

@@ -243,17 +243,6 @@ function generateV2Description(
 
     // ── V2 新增类型：旧代码 return null，现补全描述 ──
 
-    case 'gauge': {
-      const vf = valueField ?? yFields[0] ?? null;
-      if (!vf) return null;
-      const firstRow = rows[0];
-      if (!firstRow) return null;
-      const v = toNum(firstRow[vf]);
-      if (v === null) return null;
-      const label = displayField(vf);
-      return `仪表盘展示${label}：当前值${num(v)}。`;
-    }
-
     case 'scatter': {
       if (!xField) return null;
       const y1 = yFields[0] ?? null;
@@ -376,7 +365,7 @@ export function generateChartDescription(
 
   if (!rows.length) return null;
 
-  // V2 路径：在 xField 校验之前处理（gauge 等图表无 xField）
+  // V2 路径：在 xField 校验之前处理（boxplot 等图表无 xField）
   if (chart.v2Meta) {
     return generateV2Description(chart, renderedType, xField, yFields, valueField);
   }

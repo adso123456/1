@@ -4,8 +4,10 @@ interface Props {
   sessions: SessionMeta[];
   currentSessionId: string;
   loading: boolean;
-  currentView: 'chat' | 'datasource' | 'dashboard' | 'assistant';
-  onViewChange: (view: 'chat' | 'datasource' | 'dashboard' | 'assistant') => void;
+  currentView: 'chat' | 'datasource' | 'dashboard' | 'assistant' | 'settings';
+  onViewChange: (
+    view: 'chat' | 'datasource' | 'dashboard' | 'assistant' | 'settings',
+  ) => void;
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
@@ -299,6 +301,7 @@ export function Sidebar({ sessions, currentSessionId, loading, currentView, onVi
             || key === 'datasource'
             || key === 'dashboard'
             || key === 'assistant'
+            || key === 'settings'
           );
           const active = key === currentView;
           const iconColor = active ? ACTIVE_TEXT : TEXT_MUTED;

@@ -48,7 +48,18 @@ def _make_asset(
     metadata_sha256: str = "test-metadata-sha",
 ) -> Path:
     questions = [
-        {"id": f"q_{index:02d}", "text": text, "enabled": enabled}
+        {
+            "id": f"q_{index:02d}",
+            "text": text,
+            "enabled": enabled,
+            "related_sql": f"SELECT {index} AS value LIMIT 1",
+            "verification": {
+                "verified": True,
+                "row_count_sampled": 1,
+                "columns": ["value"],
+            },
+            "output_kind": "table",
+        }
         for index, text in enumerate(texts)
     ]
     directory = build_question_directory(

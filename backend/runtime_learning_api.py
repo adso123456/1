@@ -12,8 +12,18 @@ from backend.runtime_learning_service import (
 )
 from backend.runtime_learning_worker import RuntimeLearningWorker
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict
 
 _PREFIX = "/api/admin/runtime-learning"
+
+
+class UpdateLearningSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    capture_enabled: bool
+    judge_enabled: bool
+    auto_publish: bool
 
 
 def _candidate_view(candidate: Any) -> dict[str, Any]:
@@ -24,7 +34,7 @@ def create_runtime_learning_router(
     service: RuntimeLearningService,
     worker: RuntimeLearningWorker | None = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api")
+    router = APIRouter()
 
     def authorize(
         request: Request,
@@ -43,6 +53,22 @@ def create_runtime_learning_router(
 
     @router.get(f"{_PREFIX}/status", dependencies=protected)
     def status() -> dict[str, Any]:
+        return {
+            "counts": service.counts(),
+            "worker_running": bool(worker is not None and worker.running),
+        }
+
+    @router.put(f"{_PREFIX}/settings", dependencies=protected)
+    def update_settings(body: UpdateLearningSettingsRequest) -> dict[str, Any]:
+        from backend.learning_settings_store import save_learning_settings
+
+        save_learning_settings(
+            enabled=body.enabled,
+            capture_enabled=body.capture_enabled,
+            judge_enabled=body.judge_enabled,
+            auto_publish=body.auto_publish,
+        )
+        service.refresh_settings()
         return {
             "counts": service.counts(),
             "worker_running": bool(worker is not None and worker.running),

@@ -1,0 +1,72 @@
+.git
+.github
+.claude
+.runlogs
+.local
+.vscode
+.idea
+vanna_venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+frontend/node_modules
+frontend/dist
+backend.log
+backend.err.log
+*.log
+capture
+agent_data/**/query_results_*.csv
+agent_data/**/*.tmp
+*.md.pdf
+
+# 按用户要求，.env、Catalog、Chroma、SQLite 和训练资产必须进入快照镜像。
+
+# 镜像瘦身：运行时不需要的开发文件与训练过程资料
+tools
+docs
+# 本地测试用的 Caddy 内网网关，不进入发布镜像（服务器不需要）
+deploy/lan
+.pytest_cache
+.claude
+.agents
+CLAUDE.md
+.env.example
+train_step3.py
+integrations
+
+# 训练过程资料：运行时认领逻辑只用到 training 下 7 个文件
+training/regression
+training/question_suggestions
+training/train_sql_examples_level*.py
+training/*_draft.json
+training/*_review_result.json
+training/*_review.md
+training/*_result.md
+training/*.md
+training/f5_*.json
+training/mysql_lzh_monitor/regression_result.json
+training/mysql_lzh_monitor/regression_suite.json
+training/mysql_lzh_monitor/training_apply_result.json
+training/mysql_lzh_monitor/training_plan.initial.json
+training/mysql_lzh_monitor/business_documents.json
+training/mysql_lzh_monitor/ddl_memories.json
+training/mysql_lzh_monitor/materials_manifest.json
+training/sop/README.md
+training/sop/ddl_memory_apply.py
+training/sop/ddl_memory_adapter.py
+training/sop/ddl_memory_plan.py
+training/sop/storage_snapshot.py
+training/sop/chroma_tool_memory_adapter.py
+
+# 旧版本 MySQL Chroma（当前使用 revision-3）
+agent_data/mysql-lzh-monitor/mysql-lzh-monitor.revision-2-*
+
+# 镜像发布模式：不烘焙数据源目录（含连接凭据），服务器首启数据源为空，
+# 由管理员通过前端管理页添加数据源。
+agent_data/data_sources/catalog.sqlite3
+# 运行期自动持久化的凭据加密密钥只进卷，绝不进入镜像。
+agent_data/system/credential_key
+# 运行期管理页保存的 LLM 配置（含 API Key）只进卷，绝不进入镜像。
+agent_data/system/llm_settings.json
+# 运行期管理页保存的运行时学习开关只进卷，绝不进入镜像。
+agent_data/system/runtime_learning_settings.json

@@ -469,7 +469,6 @@ function selectForAuto(
  * auto 默认选择的稳定优先级：返回数字越小越优先。
  *
  * 显式表达"数据形态 → 首选图表类型"，不依赖 ALL_CAPABILITIES_V2 数组顺序：
- *   - single_value → gauge
  *   - categorical_series + 单指标 → bar
  *   - temporal_series → line
  *   - numeric_relationship + measureCount===2 → scatter
@@ -483,7 +482,6 @@ function autoPriority(plan: ChartPlanV2, profile: DatasetProfileV2): number {
   const measureCount = profile.traits.measureCount;
 
   // (archetype, chartType) → 优先级（0 最优先）。未列出的组合走兜底。
-  if (arch === 'single_value' && plan.type === 'gauge') return 0;
   if (arch === 'categorical_series' && measureCount === 1 && plan.type === 'bar') return 0;
   if (arch === 'temporal_series' && plan.type === 'line') return 0;
   if (arch === 'numeric_relationship' && measureCount === 2 && plan.type === 'scatter') return 0;

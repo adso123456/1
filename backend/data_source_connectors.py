@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import time
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 
 _PREPARE_LOCKS_GUARD = RLock()
 _PREPARE_LOCKS: dict[str, Lock] = {}
+
+logger = logging.getLogger(__name__)
 
 
 class SimulatedProcessCrash(BaseException):
@@ -460,17 +463,40 @@ class DataSourceAssetCleaner:
 
     @staticmethod
     def _managed_root(source_id: str, record: Any) -> Path | None:
+        """解析受管资产根；路径不满足约束时失败关闭。"""
         if record.is_builtin:
-            return None
-        expected = (
-            PROJECT_ROOT / "agent_data" / "data_sources" / source_id
-        ).resolve()
+            expected = (PROJECT_ROOT / "agent_data" / source_id).resolve()
+        else:
+            expected = (
+                PROJECT_ROOT / "agent_data" / "data_sources" / source_id
+            ).resolve()
         if (
             record.metadata_path.resolve().parent != expected
             or record.memory_path.resolve().parent != expected
         ):
             return None
+        if not DataSourceAssetCleaner._managed_chain_safe(expected):
+            return None
         return expected
+
+    @staticmethod
+    def _managed_chain_safe(root: Path) -> bool:
+        """确保受管目录及其符号链接目标始终位于 agent_data 内。"""
+        base = (PROJECT_ROOT / "agent_data").resolve()
+        try:
+            root.resolve().relative_to(base)
+            relative = Path(str(root)).relative_to(PROJECT_ROOT)
+        except ValueError:
+            return False
+        current = PROJECT_ROOT
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                try:
+                    current.resolve().relative_to(base)
+                except ValueError:
+                    return False
+        return True
 
     def cleanup_superseded_assets(self, source_id: str) -> dict[str, int]:
         record = self.catalog.require(source_id)
@@ -656,7 +682,7 @@ class DataSourceAssetCleaner:
         root: Path,
     ) -> list[dict[str, Any]]:
         plan = [dict(asset) for asset in item["asset_plan"]]
-        expected_names = {
+        current_names = {
             "metadata",
             "memory",
             "ddl",
@@ -664,7 +690,11 @@ class DataSourceAssetCleaner:
             "manifest",
         }
         names = [str(asset.get("name", "")) for asset in plan]
-        if len(names) != len(expected_names) or set(names) != expected_names:
+        name_set = frozenset(names)
+        legacy_e2b_names = current_names | {"provenance"}
+        if name_set not in {frozenset(current_names), frozenset(legacy_e2b_names)}:
+            raise DataSourceCatalogError("活动发布批次缺少可恢复资产计划")
+        if len(names) != len(set(names)):
             raise DataSourceCatalogError("活动发布批次缺少可恢复资产计划")
 
         candidate_root = Path(str(item["candidate_root"])).expanduser().resolve()
@@ -698,6 +728,10 @@ class DataSourceAssetCleaner:
             "documentation": (root / "business_documents.json").resolve(),
             "manifest": (root / "asset_manifest.json").resolve(),
         }
+        if "provenance" in names:
+            expected_formals["provenance"] = (
+                root / "asset_provenance.json"
+            ).resolve()
         batch_id = str(item["batch_id"])
         for asset in plan:
             name = str(asset["name"])
@@ -995,10 +1029,14 @@ class DataSourceAssetPreparer:
         catalog: DataSourceCatalog,
         runtime_manager: "DataSourceRuntimeManager | None" = None,
         fault_injector: Callable[[str], None] | None = None,
+        post_publish_hook: (
+            Callable[[str, dict[str, Any]], None] | None
+        ) = None,
     ) -> None:
         self.catalog = catalog
         self.runtime_manager = runtime_manager
         self.fault_injector = fault_injector
+        self.post_publish_hook = post_publish_hook
         self.asset_cleaner = DataSourceAssetCleaner(
             catalog,
             runtime_manager,
@@ -1052,6 +1090,17 @@ class DataSourceAssetPreparer:
         return documents
 
     @staticmethod
+    def _sanitize_chroma_metadata(
+        metadata: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        """剥离 Chroma 保留命名空间，保留 SQL Tool Memory 业务字段。"""
+        return {
+            str(key): value
+            for key, value in dict(metadata or {}).items()
+            if not str(key).startswith("chroma:")
+        }
+
+    @staticmethod
     def _preserved_sql_tool_payload(
         *,
         source_id: str,
@@ -1103,7 +1152,9 @@ class DataSourceAssetPreparer:
                 continue
             ids.append(record_id)
             documents.append(str(record.get("question") or ""))
-            metadatas.append(dict(metadata))
+            metadatas.append(
+                DataSourceAssetPreparer._sanitize_chroma_metadata(metadata)
+            )
             known_ids.add(record_id)
         if not (len(ids) == len(documents) == len(metadatas)):
             raise DataSourceCatalogError("旧 SQL Tool Memory 结构不完整")
@@ -1119,7 +1170,7 @@ class DataSourceAssetPreparer:
         for record_id, document, metadata in zip(
             ids, documents, metadatas, strict=True
         ):
-            item = dict(metadata or {})
+            item = DataSourceAssetPreparer._sanitize_chroma_metadata(metadata)
             if item.get("source_id") not in {None, "", source_id}:
                 raise DataSourceCatalogError("SQL Tool Memory 数据源不匹配")
             if item.get("tool_name") != "run_sql":
@@ -1158,7 +1209,7 @@ class DataSourceAssetPreparer:
         existing_ids = {record_id for record_id, _, _ in preserved}
         merged: list[tuple[str, str, dict[str, Any]]] = list(preserved)
         for record_id, document, metadata in extra:
-            item = dict(metadata or {})
+            item = DataSourceAssetPreparer._sanitize_chroma_metadata(metadata)
             if str(item.get("tool_name") or "") != "run_sql":
                 raise DataSourceCatalogError(
                     "额外 Tool Memory 仅允许 run_sql"
@@ -1185,13 +1236,23 @@ class DataSourceAssetPreparer:
                 "该数据源正在生成问数资产，请稍后重试"
             )
         try:
-            return self._prepare_locked(
+            result = self._prepare_locked(
                 source_id,
                 extra_sql_tool_records=extra_sql_tool_records,
                 preserve_existing_sql=preserve_existing_sql,
             )
         finally:
             lock.release()
+        # 全链路发布成功后才触发；钩子异常只记录日志，不影响发布结果。
+        if self.post_publish_hook is not None:
+            try:
+                self.post_publish_hook(source_id, result)
+            except Exception:
+                logger.exception(
+                    "post_publish_hook 执行失败（source=%s），不影响发布结果",
+                    source_id,
+                )
+        return result
 
     def _prepare_locked(
         self,

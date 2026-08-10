@@ -85,7 +85,7 @@ def _start_server() -> tuple[subprocess.Popen[str], list[str]]:
             "PYTHONUNBUFFERED": "1",
             "VANNA_REQUEST_TRACE_ENABLED": "1",
             "VANNA_REQUEST_TRACE_DIR": str(
-                Path(r"E:\3\_runtime\mysql-lzh-monitor-sse-traces")
+                PROJECT_ROOT / "runtime" / "traces" / "mysql-b3"
             ),
             "VANNA_SERVER_PORT": str(SERVER_PORT),
         }

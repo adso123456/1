@@ -12,6 +12,10 @@ const rpcSource = fs.readFileSync(
   path.join(frontendRoot, 'src', 'widgetRpcClient.ts'),
   'utf8',
 );
+const widgetStyleSource = fs.readFileSync(
+  path.join(frontendRoot, 'src', 'index.css'),
+  'utf8',
+).replace(/\r\n/g, '\n');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -31,8 +35,25 @@ const checks = [
     'Widget 聊天请求未切换到父页面 RPC',
   ],
   [
-    widgetSource.includes("persistenceMode: 'memory'"),
-    '跨域 Widget 会话未使用内存隔离',
+    widgetSource.includes("persistenceMode: 'local'")
+      && widgetSource.includes('const persistenceNamespace = `${embedContext.appId}:${embedContext.parentOrigin}`')
+      && widgetSource.includes('persistenceNamespace,'),
+    '跨域 Widget 会话未按 appId 和父页面 Origin 隔离持久化',
+  ],
+  [
+    widgetSource.includes('const dashboard = useDashboard(persistenceNamespace)')
+      && widgetSource.includes('dashboard={dashboard}'),
+    '跨域 Widget 未恢复隔离的仪表板能力',
+  ],
+  [
+    widgetSource.includes('onClick={() => onNewSession()}'),
+    '新建会话按钮不得把点击事件误传为 source_id',
+  ],
+  [
+    widgetStyleSource.includes('.chat-area {\n  caret-color: transparent;')
+      && widgetStyleSource.includes('.chat-area textarea,')
+      && widgetStyleSource.includes('caret-color: auto;'),
+    '聊天展示区应隐藏文本光标并保留真实输入控件光标',
   ],
   [
     widgetSource.includes('reportRequest={reportRequest}'),

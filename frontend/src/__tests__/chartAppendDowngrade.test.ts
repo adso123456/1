@@ -105,8 +105,8 @@ test('T2f: isPureChartAppend("加个雷达图") → "radar"', () => {
   assertEqual(isPureChartAppend('加个雷达图'), 'radar');
 });
 
-test('T2g: isPureChartAppend("加个仪表盘") → "gauge"', () => {
-  assertEqual(isPureChartAppend('加个仪表盘'), 'gauge');
+test('T2g: isPureChartAppend("加个仪表盘") → null（gauge 已移除）', () => {
+  assertEqual(isPureChartAppend('加个仪表盘'), null);
 });
 
 test('T2h: isPureChartAppend 问句 → null（不视为追加指令）', () => {
@@ -168,8 +168,8 @@ test('T3k: isPureChartSwitch("用环形图显示") → "donut"', () => {
   assertEqual(isPureChartSwitch('用环形图显示'), 'donut');
 });
 
-test('T3l: isPureChartSwitch("改为仪表盘") → "gauge"', () => {
-  assertEqual(isPureChartSwitch('改为仪表盘'), 'gauge');
+test('T3l: isPureChartSwitch("改为仪表盘") → null（gauge 已移除）', () => {
+  assertEqual(isPureChartSwitch('改为仪表盘'), null);
 });
 
 test('T3m: isPureChartSwitch("变为组合图") → "combo"', () => {
@@ -224,9 +224,9 @@ test('T5e: detectChartTypeName 识别 boxplot', () => {
   assertEqual(detectChartTypeName('盒须图'), 'boxplot');
 });
 
-test('T5f: detectChartTypeName 识别 gauge', () => {
-  assertEqual(detectChartTypeName('仪表盘'), 'gauge');
-  assertEqual(detectChartTypeName('仪表图'), 'gauge');
+test('T5f: detectChartTypeName 不再识别 gauge（已移除）', () => {
+  assertEqual(detectChartTypeName('仪表盘'), null);
+  assertEqual(detectChartTypeName('仪表图'), null);
 });
 
 test('T5g: detectChartTypeName 识别 horizontal_bar', () => {
@@ -382,9 +382,9 @@ test('T7a: V2 user switch bar → line 仍正常工作', () => {
   assertOk(Array.isArray(result.chart!.sourceRows), 'sourceRows 应存在');
 });
 
-test('T7b: V2 user switch 所有 13 种类型均可请求', () => {
+test('T7b: V2 user switch 所有 12 种类型均可请求', () => {
   const allTypes = [
-    'bar', 'line', 'pie', 'heatmap', 'boxplot', 'gauge',
+    'bar', 'line', 'pie', 'heatmap', 'boxplot',
     'horizontal_bar', 'area', 'donut', 'bubble', 'scatter', 'radar', 'combo',
   ] as const;
 
@@ -418,7 +418,7 @@ test('T7b: V2 user switch 所有 13 种类型均可请求', () => {
   }
 
   // 至少常见类型应成功
-  assertOk(true, '13 种类型全部无崩溃');
+  assertOk(true, '12 种类型全部无崩溃');
 });
 
 // ============================================================

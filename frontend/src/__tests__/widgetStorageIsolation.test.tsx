@@ -61,6 +61,11 @@ test('invalid、waiting、error 状态只渲染最小鉴权壳', () => {
 test('protected 聊天使用 memory adapter，不读取或写入 localStorage', () => {
   let storageAccesses = 0;
   const originalStorage = globalThis.localStorage;
+  const originalWindow = globalThis.window;
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { origin: 'http://127.0.0.1:5174' } },
+  });
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
@@ -86,14 +91,22 @@ test('protected 聊天使用 memory adapter，不读取或写入 localStorage', 
           enabled: false,
           persistenceMode: 'memory',
         }}
-        workspaceEnabled={false}
+        workspaceEnabled
       />,
     );
     assert(storageAccesses === 0, `发生了 ${storageAccesses} 次存储访问`);
-    assert(!html.includes('完整工作台'), 'protected 暴露了完整工作台');
+    assert(html.includes('完整工作台'), 'protected 未提供完整工作台跳转入口');
     assert(!html.includes('完整查看'), 'protected 暴露了完整查看');
     assert(!html.includes('添加到仪表板'), 'protected 暴露了仪表板入口');
   } finally {
+    if (originalWindow === undefined) {
+      Reflect.deleteProperty(globalThis, 'window');
+    } else {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      });
+    }
     if (originalStorage === undefined) {
       Reflect.deleteProperty(globalThis, 'localStorage');
     } else {

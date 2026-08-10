@@ -25,6 +25,17 @@ from backend.query_performance import (
 )
 
 
+_AVERAGE_QUESTION_TERMS = ("平均", "均值", "average", "mean")
+
+
+def requires_follow_up_aggregation(query: str, sql: str) -> bool:
+    """问题要求平均值但当前 SQL 未聚合时，保留一次后续查询机会。"""
+    normalized_query = query.lower()
+    if not any(term in normalized_query for term in _AVERAGE_QUESTION_TERMS):
+        return False
+    return re.search(r"\bavg\s*\(", sql, flags=re.IGNORECASE) is None
+
+
 def append_authoritative_sql_execution_result(
     result: ToolResult,
     *,
@@ -174,7 +185,17 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
         execute_started = time.monotonic()
         result = await self.inner_tool.execute(context, args)
         record_timing("sql_execute_ms", (time.monotonic() - execute_started) * 1000)
-        tool_phase_closed_now = record_successful_run_sql_result(result)
+        tool_phase_closed_now = record_successful_run_sql_result(
+            result,
+            close_tool_phase=False,
+        )
+        if result.success and not any(
+            term in query
+            for term in ("分别查询", "两个查询", "多结果", "多组结果")
+        ) and not requires_follow_up_aggregation(query, sql):
+            tool_phase_closed_now = close_tool_phase_after_success(
+                "first_sufficient_single_query_run_sql"
+            )
         append_authoritative_sql_execution_result(
             result,
             sql=args.sql,
@@ -197,13 +218,6 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
             success=bool(result.success),
         )
         if result.success:
-            if not any(
-                term in query
-                for term in ("分别查询", "两个查询", "多结果", "多组结果")
-            ):
-                close_tool_phase_after_success(
-                    "first_successful_single_query_run_sql"
-                )
             emit_progress("generating_answer", "正在整理答案")
 
         return result
@@ -222,9 +236,9 @@ class GuardedRunSqlTool(Tool[RunSqlToolArgs]):
         if not raw_path:
             return
 
-        trace_path = Path(raw_path)
-        if not trace_path.is_absolute():
-            raise RuntimeError("SQL_GUARD_TRACE_PATH_NOT_ABSOLUTE")
+        from config.settings import resolve_project_path
+
+        trace_path = resolve_project_path(raw_path)
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "query": query,

@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from config.settings import resolve_project_path
+
 
 @dataclass
 class RequestDiagnosticContext:
@@ -49,9 +51,7 @@ def initialize_request_diagnostics(question: str) -> RequestDiagnosticContext:
     if os.getenv("VANNA_REQUEST_TRACE_ENABLED", "") == "1":
         configured = os.getenv("VANNA_REQUEST_TRACE_DIR", "").strip()
         if configured:
-            candidate = Path(configured)
-            if candidate.is_absolute():
-                trace_directory = candidate / trace_id
+            trace_directory = resolve_project_path(configured) / trace_id
     context = RequestDiagnosticContext(
         trace_id=trace_id,
         original_question=question,

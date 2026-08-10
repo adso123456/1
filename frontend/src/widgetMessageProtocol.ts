@@ -3,7 +3,9 @@ import type { AssistantAppearance } from './assistantAppearance';
 export type WidgetRpcOperation =
   | 'application'
   | 'data-sources'
+  | 'bind-conversation-source'
   | 'chat'
+  | 'suggested-questions'
   | 'report-options'
   | 'report-generate'
   | 'report-preview'

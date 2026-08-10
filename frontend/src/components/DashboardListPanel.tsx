@@ -6,6 +6,7 @@ interface Props {
   currentDashboardId: string;
   onSwitch: (id: string) => void;
   onCreate: () => void;
+  onDelete: (id: string) => boolean;
 }
 
 const PANEL_BG = '#f8f9fb';
@@ -16,7 +17,7 @@ const TEXT_MUTED = '#9ca3af';
 const ACTIVE_BG = '#eef2ff';
 const ACTIVE_TEXT = '#2563eb';
 
-export function DashboardListPanel({ dashboards, currentDashboardId, onSwitch, onCreate }: Props) {
+export function DashboardListPanel({ dashboards, currentDashboardId, onSwitch, onCreate, onDelete }: Props) {
   const [search, setSearch] = useState('');
 
   /** 搜索过滤：只过滤列表展示，不修改数据 */
@@ -216,6 +217,34 @@ export function DashboardListPanel({ dashboards, currentDashboardId, onSwitch, o
                 >
                   {d.name}
                 </span>
+                <button
+                  type="button"
+                  aria-label={`删除仪表板 ${d.name}`}
+                  title="删除仪表板"
+                  onClick={event => {
+                    event.stopPropagation();
+                    if (!window.confirm(`确定删除仪表板「${d.name}」吗？其中的卡片也会一并删除。`)) return;
+                    if (!onDelete(d.id)) {
+                      window.alert('删除失败，浏览器存储可能不可用，请稍后重试。');
+                    }
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    width: 24,
+                    height: 24,
+                    marginLeft: 6,
+                    padding: 0,
+                    border: 'none',
+                    borderRadius: 4,
+                    backgroundColor: 'transparent',
+                    color: TEXT_MUTED,
+                    cursor: 'pointer',
+                    fontSize: 16,
+                    lineHeight: '24px',
+                  }}
+                >
+                  ×
+                </button>
               </div>
             );
           })

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -40,6 +41,26 @@ class EmbedAccessError(Exception):
         super().__init__(message)
         self.status_code = status_code
         self.safe_message = message
+
+
+def origin_from_referer(referer: str | None) -> str | None:
+    """同源请求浏览器不带 Origin 但会带 Referer，用 Referer 推导嵌入来源。
+
+    仅用于 Origin 缺失时的回退；跨源请求仍以浏览器真实 Origin 为准。
+    """
+    if not referer or not str(referer).strip():
+        return None
+    try:
+        parsed = urllib.parse.urlparse(str(referer).strip())
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    candidate = f"{parsed.scheme}://{parsed.netloc}"
+    try:
+        return normalize_origin(candidate)
+    except InvalidApplicationConfiguration:
+        return None
 
 
 def authorize_embed_origin(

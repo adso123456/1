@@ -78,7 +78,7 @@ __DIALECT_RULE__
 
 5. **Chart specification annotation:**
    End EVERY response with one or more structured chart_spec HTML comments:
-   <!-- chart_spec: {"type":"bar|horizontal_bar|line|area|pie|donut|scatter|bubble|radar|heatmap|boxplot|gauge|none","title":"图表标题","xField":"列名","yFields":["列名"],"seriesField":null,"sizeField":null,"valueField":null,"min":null,"max":null,"unit":null} -->
+   <!-- chart_spec: {"type":"bar|horizontal_bar|line|area|pie|donut|scatter|bubble|radar|heatmap|boxplot|none","title":"图表标题","xField":"列名","yFields":["列名"],"seriesField":null,"sizeField":null,"valueField":null,"min":null,"max":null,"unit":null} -->
 
    Core rules:
    - Only generate charts when the data actually supports meaningful visualization.
@@ -94,6 +94,16 @@ __DIALECT_RULE__
    - NEVER reference columns that do not exist in the result set.
    - NEVER fabricate data or use made-up field names.
 
+   Aggregation requirement for statistical charts:
+   - Charts that show a COUNT, AVERAGE, or distribution (e.g. "数量", "平均", "占比", "分布")
+     REQUIRE a pre-aggregated numeric column. If you want such a chart, your SQL must already
+     aggregate it (GROUP BY ... COUNT(*)/AVG(...)) so that numeric column actually exists in
+     the query result set.
+   - If the query result contains only detail/text columns with no numeric aggregation, output
+     type "none" with null fields — do NOT invent a numeric column name in yFields.
+   - When the question asks for the "latest" day/record, resolve it dynamically with a subquery
+     (e.g. WHERE monitor_time = (SELECT MAX(monitor_time) FROM ...)), never hard-code a date.
+
    Type selection rules — choose ONE most suitable type per chart:
    - Category field (many categories or long names) + ONE numeric field → horizontal_bar.
    - Category field (fewer categories, short names) + ONE numeric field → bar.
@@ -102,7 +112,7 @@ __DIALECT_RULE__
    - Category field + MULTIPLE numeric fields (≥2 values per row, few objects) → radar. xField=指标名(类别列), yFields=各数值列名数组.
    - Two category fields + one numeric field → heatmap. xField=横轴类别, yFields=[纵轴类别], valueField=热力值.
    - Category field + numeric field (need distribution) → boxplot. xField=分组列, valueField=数值列.
-   - Single numeric value (KPI/gauge) → gauge. valueField=数值列, optional min/max/unit.
+   - Single numeric value (KPI) → none. 单值数据不做图表展示。
    - Two numeric fields → scatter.
    - Three numeric fields → bubble, using the third numeric field as sizeField.
    - Single category + single numeric (classification/ranking ONLY, more than 6 categories) → bar or horizontal_bar; do NOT use pie/donut/radar.

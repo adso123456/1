@@ -167,6 +167,128 @@ body {
   white-space: nowrap;
 }
 
+/* 自定义会话下拉（支持项内删除） */
+.widget-session-select {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.widget-session-select__button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #dbe2ea;
+  border-radius: 5px;
+  background: #fff;
+  color: #334155;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.widget-session-select__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.widget-session-select__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-session-select__caret {
+  flex: 0 0 auto;
+  color: #94a3b8;
+}
+
+.widget-session-select__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.widget-session-select__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 11px;
+  color: #334155;
+}
+
+.widget-session-select__item:hover {
+  background: #f1f5f9;
+}
+
+.widget-session-select__item--current,
+.widget-session-select__item--active {
+  background: #eff6ff;
+  color: #1677ff;
+  font-weight: 600;
+}
+
+.widget-session-select__item--current {
+  cursor: default;
+}
+
+.widget-session-select__item > .widget-session-select__title {
+  flex: 1;
+}
+
+.widget-session-select__delete {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.widget-session-select__delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* 清空对话按钮 */
+.widget-session-bar__clear {
+  flex: 0 0 auto;
+  align-self: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #dbe2ea;
+  border-radius: 5px;
+  background: #fff;
+  color: #6b7280;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.widget-session-bar__clear:hover {
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
 .widget-error {
   padding: 7px 12px;
   border-bottom: 1px solid #fecaca;
@@ -212,6 +334,29 @@ body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.chat-area {
+  caret-color: transparent;
+}
+
+.chat-area input,
+.chat-area textarea,
+.chat-area [contenteditable="true"] {
+  caret-color: auto;
+}
+
+/* 全局：非输入控件不显示文本插入光标，避免点击页面任意位置出现闪烁光标；
+   真实输入控件（输入框/多行/下拉/可编辑区）保留光标。 */
+#root {
+  caret-color: transparent;
+}
+
+#root input,
+#root textarea,
+#root select,
+#root [contenteditable="true"] {
+  caret-color: auto;
 }
 
 .chat-area--compact .markdown-body,

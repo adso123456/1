@@ -23,6 +23,12 @@ from backend.request_diagnostics import (
     ensure_request_diagnostics,
     get_request_diagnostics,
 )
+from backend.question_suggestion_assets import (
+    find_suggested_question,
+    find_suggested_question_by_text,
+    load_question_directory,
+)
+from backend.suggested_question_executor import execute_suggested_question
 from config.performance_settings import QueryPerformanceSettings
 from vanna.servers.base import (
     ChatHandler,
@@ -93,6 +99,64 @@ class DataSourceChatHandler:
             "visible": True,
             "interactive": False,
             "data": {"message": message},
+        }
+
+    def _suggestion_package(
+        self,
+        source_id: str,
+        *,
+        suggestion_id: str | None = None,
+        question: str | None = None,
+    ) -> dict[str, Any] | None:
+        catalog = self._runtime_manager.registry.catalog
+        if catalog is None:
+            return None
+        record = catalog.require(source_id)
+        directory = load_question_directory(source_id)
+        if directory is None:
+            return None
+        if directory.get("runtime_revision") != record.runtime_revision:
+            return None
+        if isinstance(suggestion_id, str) and suggestion_id.strip():
+            return find_suggested_question(directory, suggestion_id)
+        if isinstance(question, str) and question.strip():
+            return find_suggested_question_by_text(directory, question)
+        return None
+
+    @staticmethod
+    def _dataframe_rich(result: Any) -> dict[str, Any]:
+        return {
+            "type": "dataframe",
+            "id": str(uuid.uuid4()),
+            "lifecycle": "create",
+            "timestamp": str(time.time()),
+            "visible": True,
+            "interactive": False,
+            "data": {
+                "sql": result.sql,
+                "execution_success": True,
+                "data": result.records,
+                "columns": result.columns,
+                "title": "推荐问题查询结果",
+                "description": (
+                    f"已验证推荐问题返回 {len(result.records)} 行、"
+                    f"{len(result.columns)} 列"
+                ),
+                "row_count": len(result.records),
+                "column_count": len(result.columns),
+            },
+        }
+
+    @staticmethod
+    def _text_rich(content: str) -> dict[str, Any]:
+        return {
+            "type": "text",
+            "id": str(uuid.uuid4()),
+            "lifecycle": "create",
+            "timestamp": str(time.time()),
+            "visible": True,
+            "interactive": False,
+            "data": {"content": content, "markdown": True},
         }
 
     @staticmethod
@@ -177,6 +241,48 @@ class DataSourceChatHandler:
                     with self._runtime_manager.acquire(
                         context.source_id
                     ) as runtime:
+                        suggestion_id = request.metadata.get("suggestion_id")
+                        package = None
+                        if isinstance(suggestion_id, str) and suggestion_id.strip():
+                            package = self._suggestion_package(
+                                context.source_id,
+                                suggestion_id=suggestion_id,
+                            )
+                            if package is None:
+                                raise ValueError("推荐问题不存在、已失效或尚未通过验证")
+                        else:
+                            package = self._suggestion_package(
+                                context.source_id,
+                                question=request.message,
+                            )
+                        if package is not None:
+                            emit_progress("validating_sql", "正在校验推荐问题")
+                            result = await execute_suggested_question(
+                                runtime,
+                                package,
+                                request.message,
+                            )
+                            await state.event_queue.put(
+                                (
+                                    "chunk",
+                                    self._event_chunk(
+                                        self._dataframe_rich(result),
+                                        conversation_id,
+                                        request_id,
+                                    ),
+                                )
+                            )
+                            await state.event_queue.put(
+                                (
+                                    "chunk",
+                                    self._event_chunk(
+                                        self._text_rich(result.text),
+                                        conversation_id,
+                                        request_id,
+                                    ),
+                                )
+                            )
+                            return
                         handler = ChatHandler(runtime.agent)
                         async for chunk in handler.handle_stream(request):
                             await state.event_queue.put(("chunk", chunk))

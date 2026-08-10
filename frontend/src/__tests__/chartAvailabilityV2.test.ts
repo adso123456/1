@@ -124,7 +124,7 @@ test('categorical_series: pie/donut existence', () => {
   if (!donut.supported) assertOk(donut.reason.length > 0, 'donut unsupported 时应有 reason');
 });
 
-test('categorical_series: gauge unsupported', () => {
+test('categorical_series: gauge 已移除，不在 availability 列表', () => {
   const chart = makeV2Chart(
     ['product', 'sales'],
     [
@@ -133,11 +133,9 @@ test('categorical_series: gauge unsupported', () => {
     ] as Row[],
   );
   const avail = getChartTypeAvailabilityV2(chart);
-  const gauge = findAvail(avail, 'gauge');
-  // categorical_series 对 gauge 不支持
-  assertEqual(gauge.suitability, 'unsupported',
-    `gauge 应为 unsupported 对 categorical 数据: ${gauge.suitability}`);
-  assertEqual(gauge.supported, false);
+  // gauge 已从 RENDERABLE_TYPES 移除，availability 结果不应包含它
+  const gauge = avail.find(t => (t.type as string) === 'gauge');
+  assertEqual(gauge, undefined, 'gauge 不应出现在 availability 列表中');
 });
 
 // ============================================================
@@ -182,16 +180,15 @@ test('temporal_series: area availability', () => {
 // 3. single_value
 // ============================================================
 
-test('single_value: gauge recommended', () => {
+test('single_value: gauge 已移除，不在 availability 列表', () => {
   const chart = makeV2Chart(
     ['total'],
     [{ total: 342 }] as Row[],
   );
   const avail = getChartTypeAvailabilityV2(chart);
-  const gauge = findAvail(avail, 'gauge');
-  // gauge 对单值数据应 recommended
-  assertOk(gauge.supported, 'gauge 应 supported 对单值数据');
-  assertEqual(gauge.suitability, 'recommended');
+  // gauge 已从 RENDERABLE_TYPES 移除，单值数据也不再提供仪表盘
+  const gauge = avail.find(t => (t.type as string) === 'gauge');
+  assertEqual(gauge, undefined, 'gauge 不应出现在 availability 列表中');
 });
 
 test('single_value: 大多数其他类型 unsupported', () => {
@@ -297,8 +294,8 @@ test('boxplot: availability 基于 sourceColumns/sourceRows，不基于 transfor
     'scatter 应 unsupported（source 只有 1 个或 0 个 measure，\
     证明未将 min/q1/median/q3/max 当作普通数值列去判断 scatter）');
 
-  // 13 种类型全部覆盖
-  assertEqual(avail.length, 13);
+  // 12 种类型全部覆盖
+  assertEqual(avail.length, 12);
 });
 
 // ============================================================
@@ -330,8 +327,8 @@ test('group_by_sum: availability 基于 source 明细数据，不基于聚合后
 
   // 关键：planning 基于 source 明细（product, category, sales 共 3 列）
   // 而非聚合后（product, sales 共 2 列）
-  // 验证 availability 列表完整且包含 13 种类型
-  assertEqual(avail.length, 13);
+  // 验证 availability 列表完整且包含 12 种类型
+  assertEqual(avail.length, 12);
 
   // bar 在 source 3 列数据下应有对应 suitability
   const bar = findAvail(avail, 'bar');
@@ -364,7 +361,7 @@ test('无 source 数据：fallback 到旧 getChartTypeAvailability', () => {
     // 无 sourceColumns/sourceRows
   };
   const avail = getChartTypeAvailabilityV2(chart);
-  // 应正常返回 13 种类型，bar 应为 supported
+  // 应正常返回 12 种类型，bar 应为 supported
   const bar = findAvail(avail, 'bar');
   assertOk(bar.supported, '旧图表 bar 应 supported');
   assertOk(bar.spec !== null, '旧图表 bar spec 不应为 null');
@@ -382,20 +379,20 @@ test('无 source 数据旧图表：空数组不出错', () => {
   };
   // 不应抛出异常
   const avail = getChartTypeAvailabilityV2(chart);
-  assertEqual(avail.length, 13, '应返回 13 种类型');
+  assertEqual(avail.length, 12, '应返回 12 种类型');
 });
 
 // ============================================================
-// 8. 覆盖检查：全部 13 种图表类型，label 不为空
+// 8. 覆盖检查：全部 12 种图表类型，label 不为空
 // ============================================================
 
-test('返回结果覆盖全部 13 种 RENDERABLE_TYPES', () => {
+test('返回结果覆盖全部 12 种 RENDERABLE_TYPES', () => {
   const chart = makeV2Chart(
     ['product', 'sales'],
     [{ product: 'A', sales: 100 }] as Row[],
   );
   const avail = getChartTypeAvailabilityV2(chart);
-  assertEqual(avail.length, 13, '应返回 13 种图表类型');
+  assertEqual(avail.length, 12, '应返回 12 种图表类型');
 
   for (const type of RENDERABLE_TYPES) {
     const item = avail.find(t => t.type === type);
@@ -468,7 +465,7 @@ test('unsupported 类型 spec 为 null、reason 非空', () => {
 // 10. V2 source 数据包含多列时正确评估
 // ============================================================
 
-test('V2 source 数据多列：正确评估全部 13 种类型', () => {
+test('V2 source 数据多列：正确评估全部 12 种类型', () => {
   const chart = makeV2Chart(
     ['date', 'product', 'sales', 'quantity', 'region'],
     [
@@ -478,7 +475,7 @@ test('V2 source 数据多列：正确评估全部 13 种类型', () => {
     ] as Row[],
   );
   const avail = getChartTypeAvailabilityV2(chart);
-  assertEqual(avail.length, 13);
+  assertEqual(avail.length, 12);
 
   // 至少几种核心图表可用
   const supportedCount = avail.filter(t => t.supported).length;

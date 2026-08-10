@@ -815,7 +815,7 @@ export function AssistantManagement({
                       <span className="admin-link-summary">
                         {application.application_links.length
                           ? `关联站点：${application.application_links[0].name} · ${application.application_links.length} 个入口`
-                          : '配置网站入口'}
+                          : '尚未配置'}
                       </span>
                     </td>
                     <td data-label="更新时间">

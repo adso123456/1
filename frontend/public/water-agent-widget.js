@@ -389,12 +389,35 @@
     if (operation === 'data-sources') {
       return { url: base + '/data-sources', method: 'GET' };
     }
+    if (operation === 'bind-conversation-source') {
+      return {
+        url: (
+          base
+          + '/conversations/'
+          + encodeURIComponent(payload.conversationId)
+          + '/source'
+        ),
+        method: 'POST',
+        body: { source_id: payload.sourceId },
+      };
+    }
     if (operation === 'chat') {
       return {
         url: base + '/chat_sse',
         method: 'POST',
         body: payload,
         stream: true,
+      };
+    }
+    if (operation === 'suggested-questions') {
+      return {
+        url: (
+          base
+          + '/conversations/'
+          + encodeURIComponent(payload.conversationId)
+          + '/suggested-questions'
+        ),
+        method: 'GET',
       };
     }
     if (operation === 'report-options') {
@@ -617,7 +640,7 @@
       '.water-agent-face{position:relative;width:30px;height:25px;border:2px solid #fff;border-radius:9px;background:rgba(255,255,255,.12)}',
       '.water-agent-face:before{content:"";position:absolute;left:6px;top:8px;width:4px;height:4px;border-radius:50%;background:#fff;box-shadow:10px 0 0 #fff}',
       '.water-agent-face:after{content:"";position:absolute;left:9px;top:-8px;width:8px;height:6px;border-left:2px solid #fff;border-top:2px solid #fff;border-radius:5px 0 0 0}',
-      '.water-agent-panel{pointer-events:auto;position:fixed;right:24px;bottom:94px;width:min(440px,calc(100vw - 32px));height:min(700px,calc(100vh - 118px));border:1px solid rgba(15,23,42,.12);border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 22px 65px rgba(15,23,42,.24);transform-origin:bottom right}',
+      '.water-agent-panel{pointer-events:auto;position:fixed;right:24px;bottom:94px;width:min(500px,calc(100vw - 32px));height:min(720px,calc(100vh - 118px));border:1px solid rgba(15,23,42,.12);border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 22px 65px rgba(15,23,42,.24);transform-origin:bottom right}',
       '.water-agent-panel[hidden]{display:none}',
       '.water-agent-frame{display:block;width:100%;height:100%;border:0;background:#f5f7fa}',
       '.water-agent-loading{position:absolute;inset:0;z-index:1;display:grid;place-items:center;background:#f7f9fc;color:#64748b;font-size:13px;letter-spacing:.02em}',

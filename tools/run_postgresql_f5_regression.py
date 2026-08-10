@@ -19,8 +19,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import resolve_project_path
+
 DEFAULT_SUITE = PROJECT_ROOT / "training" / "regression" / "postgresql_f5_regression_v1.json"
-FORMAL_RUNTIME = Path(r"E:\3\_runtime\vanna-level1\vanna_data")
+FORMAL_RUNTIME = resolve_project_path(os.getenv("VANNA_DATA_DIR", "vanna_data"))
 EXPECTED_FORMAL_RECORD_COUNT = 198
 EXPECTED_FORMAL_SHA256 = "a2cd0917c66fb2408551a13bd1b5530f6d8460eb364c8447b17571f355701f46"
 EXPECTED_SUITE_SHA256 = "6e8e3e7fcfc57f7fd1b815dd0fec7263245c2439c4f97fb895b5248d2cc84e6a"
@@ -1263,7 +1265,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
                 )
 
         deep_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
-        deep_service.model = "deepseek-v4-pro"
+        deep_service.model = "deepseek-v4-flash"
         deep_service._client = DeepSeekClient()
         deep_service.parent_call_count = 0
         deep_service.parent_payloads = []
@@ -1428,7 +1430,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
                 return payload
 
         invalid_service = InvalidExtraBodyService.__new__(InvalidExtraBodyService)
-        invalid_service.model = "deepseek-v4-pro"
+        invalid_service.model = "deepseek-v4-flash"
         invalid_service._client = DeepSeekClient()
         invalid_service.parent_call_count = 0
         invalid_service.parent_payloads = []
@@ -1457,7 +1459,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         invalid_continuation_service = InvalidContinuationExtraBodyService.__new__(
             InvalidContinuationExtraBodyService
         )
-        invalid_continuation_service.model = "deepseek-v4-pro"
+        invalid_continuation_service.model = "deepseek-v4-flash"
         invalid_continuation_service._client = DeepSeekClient()
         invalid_continuation_service.parent_call_count = 0
         invalid_continuation_service.parent_payloads = []
@@ -1489,7 +1491,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
         stream_policy_service = DeepSeekStreamingPolicyService.__new__(
             DeepSeekStreamingPolicyService
         )
-        stream_policy_service.model = "deepseek-v4-pro"
+        stream_policy_service.model = "deepseek-v4-flash"
         stream_policy_service._client = DeepSeekClient()
         stream_policy_service.parent_call_count = 0
         stream_policy_service.parent_payloads = []
@@ -1541,7 +1543,7 @@ def self_test(suite_path: Path, evidence_dir: Path | None) -> int:
             await hook.before_message(None, question)
             record_injected_sql_examples(injected_count)
             worker_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
-            worker_service.model = "deepseek-v4-pro"
+            worker_service.model = "deepseek-v4-flash"
             worker_service._client = DeepSeekClient()
             worker_service.parent_call_count = 0
             worker_service.parent_payloads = []
@@ -1777,7 +1779,7 @@ LIMIT 20"""
         clear_run_sql_requirement()
 
         answer_only_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
-        answer_only_service.model = "deepseek-v4-pro"
+        answer_only_service.model = "deepseek-v4-flash"
         answer_only_service._client = DeepSeekClient()
         answer_only_service.parent_call_count = 0
         answer_only_service.parent_payloads = []
@@ -1822,7 +1824,7 @@ LIMIT 20"""
         clear_run_sql_requirement()
 
         third_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
-        third_service.model = "deepseek-v4-pro"
+        third_service.model = "deepseek-v4-flash"
         third_service._client = DeepSeekClient()
         third_service.parent_call_count = 0
         third_service.parent_payloads = []
@@ -1841,7 +1843,7 @@ LIMIT 20"""
         initialize_run_sql_requirement()
         next_request_state = get_run_sql_requirement()
         next_request_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
-        next_request_service.model = "deepseek-v4-pro"
+        next_request_service.model = "deepseek-v4-flash"
         next_request_service._client = DeepSeekClient()
         next_request_service.parent_call_count = 0
         next_request_service.parent_payloads = []
@@ -1858,7 +1860,7 @@ LIMIT 20"""
         stream_answer_service = DeepSeekStreamingPolicyService.__new__(
             DeepSeekStreamingPolicyService
         )
-        stream_answer_service.model = "deepseek-v4-pro"
+        stream_answer_service.model = "deepseek-v4-flash"
         stream_answer_service._client = DeepSeekClient()
         stream_answer_service.parent_call_count = 0
         stream_answer_service.parent_payloads = []
@@ -1886,7 +1888,7 @@ LIMIT 20"""
             initialize_run_sql_requirement()
             record_injected_sql_examples(1 if approved else 0)
             service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
-            service.model = "deepseek-v4-pro"
+            service.model = "deepseek-v4-flash"
             service._client = DeepSeekClient()
             service.parent_call_count = 0
             service.parent_payloads = []
@@ -1946,7 +1948,7 @@ LIMIT 20"""
 
         failing_hook = OriginalQuestionLifecycleHook()
         failing_service = FailingDeepSeekService.__new__(FailingDeepSeekService)
-        failing_service.model = "deepseek-v4-pro"
+        failing_service.model = "deepseek-v4-flash"
         failing_service._client = DeepSeekClient()
         failing_service.parent_call_count = 0
         failing_service.parent_payloads = []
@@ -1978,7 +1980,7 @@ LIMIT 20"""
                 and get_original_question() is None
             )
             recovery_service = DeepSeekPolicyService.__new__(DeepSeekPolicyService)
-            recovery_service.model = "deepseek-v4-pro"
+            recovery_service.model = "deepseek-v4-flash"
             recovery_service._client = DeepSeekClient()
             recovery_service.parent_call_count = 0
             recovery_service.parent_payloads = []
