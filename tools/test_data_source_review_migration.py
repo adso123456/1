@@ -1,9 +1,8 @@
-"""F1 回归：首次启用审核器时按 selected_scope 安全迁移。
+"""F1 回归：首次迁移后由自动 Policy 接管 effective/scope。
 
 覆盖：
-  - 正常首次迁移：已选表 effective=active（migration），未选表 pending；
-    selected_scope / runtime_revision 不变；
-  - 第二次运行不重新迁移，也不覆盖人工决定；
+  - 正常首次迁移后，同轮 Policy 按 proposed fail-closed 收敛 effective；
+  - 第二次运行不重新迁移，自动策略不继承历史 manual effective；
   - 迁移中途失败（第 2 张表写入抛异常）整体回滚：reviews 为 0、
     migration run 为 0，重试后仍完整迁移；
   - 已有 review 时方法级原子 no-op。
@@ -127,10 +126,9 @@ def _reviews(catalog: DataSourceCatalog, source_id: str) -> dict[str, dict]:
     }
 
 
-def test_first_run_migration_and_no_override() -> None:
+def test_first_run_migration_then_automatic_policy_takes_ownership() -> None:
     with tempfile.TemporaryDirectory(prefix="review-migration-") as directory:
         catalog, source_id = _setup(Path(directory))
-        scope_before = len(catalog.require(source_id).selected_scope)
         revision_before = catalog.require(source_id).runtime_revision
 
         reviewer = DataSourceTableReviewer(
@@ -146,15 +144,15 @@ def test_first_run_migration_and_no_override() -> None:
             "station_dict",
             "water_data_old",
         }
-        assert reviews["monitor_data"]["effective_decision"] == "active"
-        assert reviews["monitor_data"]["decision_source"] == "migration"
-        assert reviews["station_dict"]["effective_decision"] == "active"
-        assert reviews["water_data_old"]["effective_decision"] == "pending"
-        assert (
-            reviews["water_data_old"]["decision_reason"]
-            == "legacy_unclassified"
+        assert all(
+            review["effective_decision"] == "standby"
+            for review in reviews.values()
         )
-        assert len(catalog.require(source_id).selected_scope) == scope_before
+        assert all(
+            review["decision_source"] == "automatic_policy_v2"
+            for review in reviews.values()
+        )
+        assert len(catalog.require(source_id).selected_scope) == 0
         assert catalog.require(source_id).runtime_revision == revision_before
 
         # 人工决定：把未选表提升为 active。
@@ -166,12 +164,13 @@ def test_first_run_migration_and_no_override() -> None:
             decision_source="manual",
             decision_reason="人工确认",
         )
-        # 第二次 review：不得重新迁移、不得覆盖人工决定。
+        # 第二次 review：不得重新迁移；自动策略按本轮 proposal 收敛，
+        # 不能把历史 manual effective 当成新一轮输入。
         reviewer.run_review(source_id, created_by="migration-test-2")
         reviews = _reviews(catalog, source_id)
-        assert reviews["water_data_old"]["effective_decision"] == "active"
-        assert reviews["water_data_old"]["decision_source"] == "manual"
-        assert reviews["monitor_data"]["effective_decision"] == "active"
+        assert reviews["water_data_old"]["effective_decision"] == "standby"
+        assert reviews["water_data_old"]["decision_source"] == "automatic_policy_v2"
+        assert reviews["monitor_data"]["effective_decision"] == "standby"
         connection = sqlite3.connect(Path(directory) / "catalog.sqlite3")
         try:
             migration_runs = connection.execute(

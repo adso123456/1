@@ -1,17 +1,15 @@
-"""数据源问数资产准入审核器（阶段 A + 阶段 B + 正式审查修复）。
+"""自动治理审核器：Profile → Eligibility → Quality → Proposed → Policy。
 
-职责：只读重发现 + 受限画像 + 质量指标（阶段 A）
-      + 确定性评分 + 同业务表分组 -> 建议字段（阶段 B）。
+职责：只读重发现 + 受限画像 + Eligibility + Quality + Proposed，
+      再调用纯 Policy Promotion 并交给 Catalog 原子收敛正式 scope。
 
 正式审查修复：
   - 首次启用时按 selected_scope 安全迁移（已有 review 记录则禁止重迁）；
   - run_id 使用纳秒时间戳 + uuid，避免 append-only 记录被吞；
   - reviews/missing/history/run 成功标记作为一个事务原子提交。
 
-阶段 B 只写 proposed_decision / proposed_score / proposed_reason /
-business_group / group_confidence / compared_tables_json / group_reason；
-不修改 effective_decision，不覆盖 selected_scope，
-不生成正式资产，不 bump runtime_revision。
+最终通过 Catalog 单事务提交 proposed、effective、availability、history 与
+selected_scope；只使旧资产失效，不生成正式资产，不 bump runtime_revision。
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from backend.data_source_catalog import DataSourceCatalog
+from backend.data_source_catalog import DataSourceCatalog, DataSourceCatalogError
 from backend.data_source_connectors import DirectDatabaseConnector
 from backend.data_source_profiler import DataSourceProfiler
 from backend.data_source_table_scorer import compute_proposals
@@ -110,7 +108,8 @@ class DataSourceTableReviewer:
         progress: Callable[[int, int, str], None] | None = None,
         created_by: str = "review",
     ) -> dict[str, Any]:
-        record = self.catalog.require(source_id)
+        self.catalog.require(source_id)
+        self.catalog.assert_review_policy_unlocked(source_id)
         # 无碰撞身份：纳秒时间戳 + uuid，避免同一秒连续审核
         # 被 append-only 的 run/history 表静默吞掉。
         run_id = f"review-{source_id}-{time.time_ns()}-{uuid.uuid4().hex}"
@@ -158,6 +157,14 @@ class DataSourceTableReviewer:
                 for profile in profiles
                 if profile.get("schema") and profile.get("table")
             }
+            if present_keys != discovered_keys:
+                missing_profiles = sorted(discovered_keys - present_keys)
+                unexpected_profiles = sorted(present_keys - discovered_keys)
+                raise DataSourceCatalogError(
+                    "画像结果与本轮 discovery 表集合不一致："
+                    f"missing_profiles={missing_profiles}, "
+                    f"unexpected_profiles={unexpected_profiles}"
+                )
             # 阶段 A：在内存合并可用性与质量指标（不落库、不触碰 effective）。
             merged: dict[tuple[str, str], dict[str, Any]] = {}
             for profile in profiles:
@@ -171,18 +178,8 @@ class DataSourceTableReviewer:
                     int(review.get("review_version") or 0),
                     REVIEW_VERSION,
                 )
-                legacy_classification = (
-                    {
-                        "effective_decision": "pending",
-                        "decision_source": "migration",
-                        "decision_reason": "legacy_unclassified",
-                    }
-                    if not review
-                    else {}
-                )
                 merged[key] = {
                     "fields": {
-                        **legacy_classification,
                         "availability_status": "present",
                         "quality_metrics_json": json.dumps(
                             _quality_metrics(profile),
@@ -204,11 +201,6 @@ class DataSourceTableReviewer:
                         "last_profiled_at": time.time(),
                         "reviewed_by": created_by,
                     },
-                    "effective_decision": str(
-                        review.get("effective_decision")
-                        or legacy_classification.get("effective_decision")
-                        or "pending"
-                    ),
                 }
             # 阶段 B：确定性评分 + 同业务表分组，只写建议字段。
             proposals = compute_proposals(
@@ -232,7 +224,7 @@ class DataSourceTableReviewer:
                         ),
                         "proposed_score": fields.get("proposed_score"),
                         "proposed_reason": fields.get("proposed_reason") or "",
-                        "effective_decision": merged_state["effective_decision"],
+                        "effective_decision": "",
                         "availability_status": "present",
                         "quality_metrics_json": (
                             fields.get("quality_metrics_json") or "{}"
@@ -243,7 +235,7 @@ class DataSourceTableReviewer:
                         "business_group": fields.get("business_group") or "",
                     }
                 )
-            # 上次存在、本次未发现 -> missing（保留 effective_decision）
+            # 上次存在、本次未发现 -> missing；Policy 会在事务内 fail closed 到 standby。
             missing: list[dict[str, Any]] = []
             missing_keys: list[tuple[str, str]] = []
             for key, review in existing.items():
@@ -261,17 +253,15 @@ class DataSourceTableReviewer:
                             review.get("proposed_decision") or ""
                         ),
                         "proposed_score": review.get("proposed_score"),
-                        "effective_decision": (
-                            review.get("effective_decision") or ""
-                        ),
+                        "effective_decision": "",
                         "availability_status": "missing",
                         "quality_metrics_json": "{}",
                         "compared_tables_json": "[]",
                     }
                 )
-            # reviews / missing / history / run 成功标记作为一个事务原子提交；
+            # reviews / missing / effective / scope / history / run 成功标记原子提交；
             # 任一失败整体回滚，只保留 run=failed 与错误信息。
-            self.catalog.apply_review_results(
+            governance = self.catalog.apply_review_results(
                 source_id,
                 run_id,
                 review_updates=[
@@ -281,6 +271,8 @@ class DataSourceTableReviewer:
                 missing_keys=missing_keys,
                 history_snapshots=reviewed + missing,
                 profiled_tables=len(profiles),
+                discovered_metadata=metadata,
+                automatic_policy=True,
             )
             decision_counts: dict[str, int] = {}
             for item in reviewed:
@@ -312,6 +304,7 @@ class DataSourceTableReviewer:
                 "profiled": len(profiles),
                 "missing": len(missing),
                 "proposed": decision_counts,
+                **governance,
                 "business_groups": group_count,
             }
         except Exception as exc:

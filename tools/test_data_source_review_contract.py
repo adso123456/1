@@ -1,9 +1,10 @@
-"""阶段 B：审核运行结果契约测试。
+"""自动治理到 effective/scope 原子提交的 /review 契约测试。
 
 验证 DataSourceTableReviewer.run_review：
   - 返回结果包含 proposed（建议分布）与 business_groups；
   - reviews 写入 proposed_decision / proposed_score / business_group；
-  - effective_decision 与 selected_scope 不被修改。
+  - effective_decision 与 selected_scope 在同一事务自动收敛；
+  - 不生成资产、不增加 runtime_revision。
 
 使用真实 DataSourceCatalog（临时库）+ 假连接器/画像，不触碰真实数据库。
 """
@@ -157,7 +158,7 @@ def main() -> int:
             decision_source="migration",
             decision_reason="legacy_unclassified",
         )
-        scope_before = len(source.selected_scope)
+        revision_before = source.runtime_revision
 
         reviewer = DataSourceTableReviewer(
             catalog,
@@ -176,6 +177,7 @@ def main() -> int:
         assert result["discovered"] == 2
         assert result["profiled"] == 2
         assert result["missing"] == 0
+        assert result["effective"] == {"active": 1, "standby": 1}
 
         # 2. reviews 写入了建议字段（冻结契约：正式 active 不再因同组被压 pending）。
         active_review = catalog.get_table_review(
@@ -193,7 +195,7 @@ def main() -> int:
         assert "同组存在正式主表" not in old_review["proposed_reason"]
         assert old_review["proposed_score"] is not None
 
-        # 3. 隔离：effective_decision 与 selected_scope 未变。
+        # 3. 自动策略与 scope 原子收敛。
         assert (
             catalog.get_table_review(
                 source.source_id, "public", "water_data"
@@ -204,9 +206,20 @@ def main() -> int:
             catalog.get_table_review(
                 source.source_id, "public", "water_data_old"
             )["effective_decision"]
-            == "pending"
+            == "standby"
         )
-        assert len(catalog.require(source.source_id).selected_scope) == scope_before
+        assert active_review["decision_source"] == "automatic_policy_v2"
+        assert old_review["decision_source"] == "automatic_policy_v2"
+        record = catalog.require(source.source_id)
+        assert {
+            (item["schema"], item["table"])
+            for item in record.selected_scope
+        } == {("public", "water_data")}
+        assert record.selected_tables_count == 1
+        assert record.selected_columns_count == len(WATER_COLUMNS)
+        assert record.status == "training_required"
+        assert record.enabled_for_chat is False
+        assert record.runtime_revision == revision_before
 
         # 4. history 与 run 落库。
         connection = sqlite3.connect(Path(directory) / "catalog.sqlite3")

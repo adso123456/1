@@ -402,8 +402,7 @@ class DataSourceOnboardingService:
         return {**result, "reused_existing_assets": False}
 
     def _review(self, job_id: str, source_id: str) -> dict[str, Any]:
-        """阶段 A+B：只读重发现 + 画像 + 评分分组 -> reviews 建议字段，
-        不修改 selected_scope、不生成正式资产。"""
+        """完整自动治理到 effective/scope 原子提交，停止在资产重建之前。"""
         reviewer = DataSourceTableReviewer(
             self.catalog,
             self.connector,

@@ -18,6 +18,7 @@ from typing import Any
 from cryptography.fernet import Fernet, InvalidToken
 
 from backend.mysql_tls import build_mysql_tls_settings
+from backend.data_source_policy_promotion import promote_policy
 from config.data_source_config import DataSourceConfig
 from config.settings import PROJECT_ROOT, resolve_project_path
 
@@ -1761,6 +1762,18 @@ class DataSourceCatalog:
             )
         return self.get_table_review(source_id, schema_name, table_name)
 
+    def assert_review_policy_unlocked(self, source_id: str) -> None:
+        """只读预检发布租约；最终原子事务仍会再次检查以关闭竞态窗口。"""
+        with self._connection() as connection:
+            self._raise_if_review_lease_blocks(
+                connection,
+                source_id,
+                {
+                    "effective_decision": "standby",
+                    "availability_status": "present",
+                },
+            )
+
     def get_table_review(
         self,
         source_id: str,
@@ -2175,6 +2188,59 @@ class DataSourceCatalog:
             )
             return int(cursor.rowcount)
 
+    @staticmethod
+    def _build_policy_selected_scope(
+        discovered_metadata: Iterable[Mapping[str, Any]],
+        allowed_tables: set[tuple[str, str]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """从本轮完整 discovery 重建 scope，不接受旧 scope 增量补丁。"""
+        metadata = [dict(item) for item in discovered_metadata]
+        discovered_tables = {
+            (str(item.get("schema") or ""), str(item.get("table") or ""))
+            for item in metadata
+            if item.get("table")
+        }
+        missing = sorted(allowed_tables - discovered_tables)
+        if missing:
+            names = "、".join(f"{schema}.{table}" for schema, table in missing)
+            raise DataSourceCatalogError(
+                f"effective active 表不存在于本轮 discovered metadata：{names}"
+            )
+
+        scope = [
+            item
+            for item in metadata
+            if (
+                str(item.get("schema") or ""),
+                str(item.get("table") or ""),
+            )
+            in allowed_tables
+            and str(item.get("column") or "")
+        ]
+        scope_tables = {
+            (str(item.get("schema") or ""), str(item.get("table") or ""))
+            for item in scope
+        }
+        if scope_tables != allowed_tables:
+            missing_columns = sorted(allowed_tables - scope_tables)
+            names = "、".join(
+                f"{schema}.{table}" for schema, table in missing_columns
+            )
+            raise DataSourceCatalogError(
+                f"effective active 表没有可构建 scope 的字段：{names}"
+            )
+        identities = [
+            (
+                str(item.get("schema") or ""),
+                str(item.get("table") or ""),
+                str(item.get("column") or ""),
+            )
+            for item in scope
+        ]
+        if len(identities) != len(set(identities)):
+            raise DataSourceCatalogError("本轮 discovered metadata 包含重复字段")
+        return metadata, scope
+
     def apply_review_results(
         self,
         source_id: str,
@@ -2184,20 +2250,44 @@ class DataSourceCatalog:
         missing_keys: Iterable[tuple[str, str]],
         history_snapshots: Iterable[Mapping[str, Any]],
         profiled_tables: int,
-    ) -> None:
+        discovered_metadata: Iterable[Mapping[str, Any]] | None = None,
+        automatic_policy: bool = False,
+    ) -> dict[str, Any]:
         """原子写入一轮审核结果：reviews + missing + history + run 成功标记。
 
         任一写入失败则整体回滚（_connection 异常时 rollback），
         调用方负责把 run 标记为 failed，保证不会留下无历史对应的部分状态。
+        automatic_policy=True 时，同一事务继续完成 proposed→effective、
+        基于最终 active+present 重建 selected_scope，并使旧资产失效。
         """
+        updates = list(review_updates)
+        missing = list(missing_keys)
+        snapshots = list(history_snapshots)
+        metadata_input = (
+            [dict(item) for item in discovered_metadata]
+            if discovered_metadata is not None
+            else None
+        )
+        if automatic_policy and metadata_input is None:
+            raise DataSourceCatalogError(
+                "自动策略事务必须提供本轮 discovered metadata"
+            )
         now = time.time()
+        result: dict[str, Any] = {}
         with self._lock, self._connection(write=True) as connection:
             self._raise_if_review_lease_blocks(
                 connection,
                 source_id,
-                {"availability_status": "present"},
+                {
+                    "availability_status": "present",
+                    **(
+                        {"effective_decision": "standby"}
+                        if automatic_policy
+                        else {}
+                    ),
+                },
             )
-            for schema_name, table_name, fields in review_updates:
+            for schema_name, table_name, fields in updates:
                 self._upsert_review_row(
                     connection,
                     source_id,
@@ -2206,14 +2296,90 @@ class DataSourceCatalog:
                     fields,
                     now=now,
                 )
-            for schema_name, table_name in missing_keys:
+            for schema_name, table_name in missing:
                 connection.execute(
                     "UPDATE data_source_table_reviews "
                     "SET availability_status='missing', updated_at=? "
                     "WHERE source_id=? AND schema_name=? AND table_name=?",
                     (now, source_id, schema_name, table_name),
                 )
-            for item in history_snapshots:
+
+            if automatic_policy:
+                policy_rows = connection.execute(
+                    "SELECT * FROM data_source_table_reviews "
+                    "WHERE source_id=? ORDER BY schema_name, table_name",
+                    (source_id,),
+                ).fetchall()
+                for row in policy_rows:
+                    promoted = promote_policy(
+                        str(row["proposed_decision"] or ""),
+                        str(row["availability_status"] or ""),
+                    )
+                    connection.execute(
+                        "UPDATE data_source_table_reviews SET "
+                        "effective_decision=?, decision_source=?, "
+                        "decision_reason=?, updated_at=? "
+                        "WHERE source_id=? AND schema_name=? AND table_name=?",
+                        (
+                            promoted.effective_decision,
+                            promoted.decision_source,
+                            promoted.decision_reason,
+                            now,
+                            source_id,
+                            row["schema_name"],
+                            row["table_name"],
+                        ),
+                    )
+
+                final_rows = connection.execute(
+                    "SELECT * FROM data_source_table_reviews "
+                    "WHERE source_id=? ORDER BY schema_name, table_name",
+                    (source_id,),
+                ).fetchall()
+                allowed_tables = {
+                    (str(row["schema_name"]), str(row["table_name"]))
+                    for row in final_rows
+                    if str(row["effective_decision"]) == "active"
+                    and str(row["availability_status"]) == "present"
+                }
+                metadata_payload, selected_scope = (
+                    self._build_policy_selected_scope(
+                        metadata_input or [],
+                        allowed_tables,
+                    )
+                )
+                next_status = (
+                    "training_required" if selected_scope else "metadata_ready"
+                )
+                cursor = connection.execute(
+                    "UPDATE data_sources SET discovered_metadata_json=?, "
+                    "selected_scope_json=?, selected_tables_count=?, "
+                    "selected_columns_count=?, status=?, enabled_for_chat=0, "
+                    "updated_at=? WHERE source_id=?",
+                    (
+                        json.dumps(metadata_payload, ensure_ascii=False),
+                        json.dumps(selected_scope, ensure_ascii=False),
+                        len(allowed_tables),
+                        len(selected_scope),
+                        next_status,
+                        int(now),
+                        source_id,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise DataSourceNotFound("数据源不存在")
+                snapshots = [dict(row) for row in final_rows]
+                result = {
+                    "effective": {
+                        "active": len(allowed_tables),
+                        "standby": len(final_rows) - len(allowed_tables),
+                    },
+                    "selected_tables_count": len(allowed_tables),
+                    "selected_columns_count": len(selected_scope),
+                    "status": next_status,
+                }
+
+            for item in snapshots:
                 connection.execute(
                     """
                     INSERT OR IGNORE INTO data_source_review_history (
@@ -2237,12 +2403,15 @@ class DataSourceCatalog:
                         now,
                     ),
                 )
-            connection.execute(
+            cursor = connection.execute(
                 "UPDATE data_source_review_runs "
                 "SET status='succeeded', profiled_tables=?, "
-                "finished_at=?, error='' WHERE run_id=?",
-                (profiled_tables, now, run_id),
+                "finished_at=?, error='' WHERE run_id=? AND source_id=?",
+                (profiled_tables, now, run_id, source_id),
             )
+            if cursor.rowcount != 1:
+                raise DataSourceCatalogError("审核 run 不存在或不属于当前数据源")
+        return result
 
     def migrate_table_reviews_from_existing(
         self,
