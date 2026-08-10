@@ -933,6 +933,27 @@ class DataSourceAssetCleaner:
         self._inject("before_batch_finish")
         self.catalog.finish_asset_batch(source_id, batch_id)
 
+    def _abort_uninstalled_batch(self, item: Any) -> None:
+        """正式资产尚未被触碰时只废弃候选，不回滚并发 Catalog 状态。"""
+        if (
+            str(item.get("phase") or "") != "prepared"
+            or item.get("backed_up_assets")
+            or item.get("installed_assets")
+        ):
+            raise DataSourceCatalogError("发布批次已开始安装，不能直接废弃")
+        source_id = str(item["source_id"])
+        record = self.catalog.require(source_id)
+        root = self._managed_root(source_id, record)
+        if root is None:
+            raise DataSourceCatalogError("活动发布批次不在动态数据源受管目录")
+        plan = self._safe_plan(item, root)
+        for asset in plan:
+            candidate = Path(asset["candidate"])
+            formal = Path(asset["formal"])
+            if candidate.resolve() == formal.resolve() and candidate.exists():
+                DataSourceAssetPreparer._remove_path(candidate)
+        self._finish_recovered_batch(item, plan)
+
     def _roll_forward_batch(self, item: Any) -> None:
         source_id = str(item["source_id"])
         batch_id = str(item["batch_id"])
@@ -1088,6 +1109,33 @@ class DataSourceAssetPreparer:
                     "自动 JOIN，不得跨小时/日/月粒度直接拼接。"
                 )
         return documents
+
+    @staticmethod
+    def _documentation_provenance(
+        source_id: str,
+        documents: list[str],
+        grouped: Mapping[tuple[str, str], list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        """为确定性业务文档记录其当前 scope 来源。"""
+        from backend.data_source_asset_provenance import (
+            chroma_record_id,
+            content_fingerprint,
+        )
+
+        table_keys = [list(key) for key in sorted(grouped)]
+        return [
+            {
+                "asset_type": "documentation",
+                "record_id": chroma_record_id(
+                    source_id,
+                    "documentation",
+                    document,
+                ),
+                "content_fingerprint": content_fingerprint(document),
+                "table_keys": table_keys,
+            }
+            for document in documents
+        ]
 
     @staticmethod
     def _sanitize_chroma_metadata(
@@ -1435,6 +1483,11 @@ class DataSourceAssetPreparer:
                 ddl += "\n" + "\n".join(index_statements)
             ddls.append(ddl)
         documents = self._domain_documents(grouped)
+        documentation_provenance = self._documentation_provenance(
+            source_id,
+            documents,
+            grouped,
+        )
         routing_summary = "\n".join(
             [
                 record.display_name,
@@ -1472,6 +1525,7 @@ class DataSourceAssetPreparer:
             metadata=metadata,
             ddls=ddls,
             documents=documents,
+            documentation_provenance=documentation_provenance,
             routing_summary=routing_summary,
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
@@ -1491,6 +1545,7 @@ class DataSourceAssetPreparer:
         metadata: list[dict[str, Any]],
         ddls: list[str],
         documents: list[str],
+        documentation_provenance: list[dict[str, Any]],
         routing_summary: str,
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
@@ -1505,6 +1560,7 @@ class DataSourceAssetPreparer:
             metadata=metadata,
             ddls=ddls,
             documents=documents,
+            documentation_provenance=documentation_provenance,
             routing_summary=routing_summary,
             expected_runtime_revision=expected_runtime_revision,
             expected_scope_fingerprint=expected_scope_fingerprint,
@@ -1524,6 +1580,7 @@ class DataSourceAssetPreparer:
         metadata: list[dict[str, Any]],
         ddls: list[str],
         documents: list[str],
+        documentation_provenance: list[dict[str, Any]],
         routing_summary: str,
         expected_runtime_revision: int,
         expected_scope_fingerprint: str,
@@ -1561,6 +1618,7 @@ class DataSourceAssetPreparer:
             "memory": candidate_memory,
             "ddl": candidate_root / "ddl_memories.json",
             "documentation": candidate_root / "business_documents.json",
+            "provenance": candidate_root / "asset_provenance.json",
             "manifest": candidate_root / "asset_manifest.json",
         }
         formal_paths = {
@@ -1568,10 +1626,18 @@ class DataSourceAssetPreparer:
             "memory": published_memory_path,
             "ddl": root / "ddl_memories.json",
             "documentation": root / "business_documents.json",
+            "provenance": root / "asset_provenance.json",
             "manifest": root / "asset_manifest.json",
         }
         plan = []
-        for name in ("metadata", "memory", "ddl", "documentation", "manifest"):
+        for name in (
+            "metadata",
+            "memory",
+            "ddl",
+            "documentation",
+            "provenance",
+            "manifest",
+        ):
             formal = formal_paths[name]
             plan.append(
                 {
@@ -1712,6 +1778,84 @@ class DataSourceAssetPreparer:
             finally:
                 if not self._close_memory(memory):
                     raise DataSourceCatalogError("候选 Memory 资源释放失败")
+            from backend.data_source_asset_provenance import (
+                build_provenance,
+                content_fingerprint,
+                provenance_fingerprint,
+                write_provenance,
+            )
+
+            ddl_table_keys = sorted(
+                {
+                    (str(item.get("schema") or ""), str(item["table"]))
+                    for item in metadata
+                }
+            )
+            ddl_columns = {
+                key: sorted(
+                    {
+                        str(item["column"])
+                        for item in metadata
+                        if (
+                            str(item.get("schema") or ""),
+                            str(item["table"]),
+                        )
+                        == key
+                    }
+                )
+                for key in ddl_table_keys
+            }
+            provenance_ddl = [
+                {
+                    "asset_type": "chroma_ddl",
+                    "record_id": "b5-"
+                    + hashlib.sha256(
+                        f"{source_id}|ddl|DDL\n{ddl}".encode("utf-8")
+                    ).hexdigest(),
+                    "content_fingerprint": content_fingerprint(ddl),
+                    "table_keys": [list(table_key)],
+                    "column_keys": [
+                        [table_key[0], table_key[1], column]
+                        for column in ddl_columns[table_key]
+                    ],
+                }
+                for table_key, ddl in zip(ddl_table_keys, ddls, strict=True)
+            ]
+            provenance_sql = [
+                {
+                    "asset_type": "sql_tool_memory",
+                    "record_id": record_id,
+                    "content_fingerprint": str(
+                        item_metadata.get("content_fingerprint")
+                        or content_fingerprint(document)
+                    ),
+                }
+                for record_id, document, item_metadata in sql_tool_payload
+            ]
+            provenance_payload = build_provenance(
+                source_id=source_id,
+                runtime_revision=record.runtime_revision + 1,
+                scope_fingerprint=expected_scope_fingerprint,
+                review_policy_fingerprint=expected_review_policy_fingerprint,
+                assets={
+                    "documentation": documentation_provenance,
+                    "chroma_ddl": provenance_ddl,
+                    "chroma_documentation": [
+                        {
+                            **item,
+                            "asset_type": "chroma_documentation",
+                        }
+                        for item in documentation_provenance
+                    ],
+                    "sql_tool_memory": provenance_sql,
+                },
+            )
+            provenance_hash = provenance_fingerprint(provenance_payload)
+            write_provenance(
+                candidate_paths["provenance"],
+                provenance_payload,
+            )
+            self._inject("after_candidate_provenance")
             (candidate_memory / ".asset_identity.json").write_text(
                 json.dumps(
                     {
@@ -1723,6 +1867,7 @@ class DataSourceAssetPreparer:
                         ),
                         "batch_id": batch_id,
                         "memory_count": len(payload),
+                        "provenance_hash": provenance_hash,
                     },
                     ensure_ascii=False,
                     sort_keys=True,
@@ -1733,7 +1878,13 @@ class DataSourceAssetPreparer:
             self._inject("after_candidate_memory")
             content_hashes = {
                 name: self.asset_cleaner._path_hash(candidate_paths[name])
-                for name in ("metadata", "memory", "ddl", "documentation")
+                for name in (
+                    "metadata",
+                    "memory",
+                    "ddl",
+                    "documentation",
+                    "provenance",
+                )
             }
             candidate_paths["manifest"].write_text(
                 json.dumps(
@@ -1750,6 +1901,7 @@ class DataSourceAssetPreparer:
                         "business_documents_hash": content_hashes[
                             "documentation"
                         ],
+                        "provenance_hash": provenance_hash,
                         "created_at": int(time.time()),
                         "batch_id": batch_id,
                     },
@@ -1833,6 +1985,7 @@ class DataSourceAssetPreparer:
                 expected_review_policy_fingerprint=(
                     expected_review_policy_fingerprint
                 ),
+                expected_asset_batch_id=batch_id,
             )
             self.catalog.update_asset_batch(
                 source_id, batch_id, phase="catalog_published"
@@ -1866,7 +2019,15 @@ class DataSourceAssetPreparer:
             batches = self.catalog.active_asset_batches(source_id)
             if batches:
                 try:
-                    self.asset_cleaner._rollback_batch(batches[0])
+                    batch = batches[0]
+                    if (
+                        str(batch.get("phase") or "") == "prepared"
+                        and not batch.get("backed_up_assets")
+                        and not batch.get("installed_assets")
+                    ):
+                        self.asset_cleaner._abort_uninstalled_batch(batch)
+                    else:
+                        self.asset_cleaner._rollback_batch(batch)
                 except SimulatedProcessCrash:
                     raise
                 except Exception as rollback_error:

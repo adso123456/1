@@ -126,9 +126,11 @@ def _assert_consistent(catalog: DataSourceCatalog, source_id: str) -> None:
     record = catalog.require(source_id)
     root = record.metadata_path.parent
     manifest_path = root / "asset_manifest.json"
+    provenance_path = root / "asset_provenance.json"
     assert not catalog.active_asset_batches(source_id)
     assert record.status == "ready" and record.enabled_for_chat
     assert manifest_path.is_file()
+    assert provenance_path.is_file()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["source_id"] == source_id
     assert manifest["runtime_revision"] == record.runtime_revision
@@ -150,6 +152,11 @@ def _assert_consistent(catalog: DataSourceCatalog, source_id: str) -> None:
     assert manifest["business_documents_hash"] == cleaner._path_hash(
         root / "business_documents.json"
     )
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    assert manifest["provenance_hash"] == __import__(
+        "backend.data_source_asset_provenance",
+        fromlist=["provenance_fingerprint"],
+    ).provenance_fingerprint(provenance)
     assert not list(root.glob(".*.backup-*"))
     assert not list(root.glob("candidate-*"))
     assert not list(root.glob(".*.candidate-*"))
@@ -314,14 +321,17 @@ def main() -> int:
         "after_candidate_metadata",
         "after_candidate_ddl",
         "after_candidate_documentation",
+        "after_candidate_provenance",
         "after_candidate_memory",
         "after_backup_metadata",
         "after_backup_ddl",
         "after_backup_documentation",
+        "after_backup_provenance",
         "after_install_metadata",
         "after_install_memory",
         "after_install_ddl",
         "after_install_documentation",
+        "after_install_provenance",
         "after_install_manifest",
         "before_catalog_publish",
         "after_catalog_publish",

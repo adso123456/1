@@ -341,7 +341,7 @@ def create_data_source_management_router(
         dependencies=protected,
     )
     def review(source_id: str) -> dict[str, Any]:
-        """全表审核并原子更新 effective/scope，不生成或发布正式资产。"""
+        """全表自动治理后，crash-safe 重建并原子发布正式资产。"""
         return _safe(lambda: onboarding.start(source_id, "review"))
 
     @router.get(

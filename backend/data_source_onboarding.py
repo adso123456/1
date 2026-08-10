@@ -402,7 +402,7 @@ class DataSourceOnboardingService:
         return {**result, "reused_existing_assets": False}
 
     def _review(self, job_id: str, source_id: str) -> dict[str, Any]:
-        """完整自动治理到 effective/scope 原子提交，停止在资产重建之前。"""
+        """自动治理先提交，再通过既有 crash-safe 链重建并发布资产。"""
         reviewer = DataSourceTableReviewer(
             self.catalog,
             self.connector,
@@ -437,10 +437,18 @@ class DataSourceOnboardingService:
             phase="reviewing_tables",
             message="正在只读重发现全部表",
         )
-        result = reviewer.run_review(source_id, progress=report)
-        result["total_count"] = total
-        result["current_count"] = current
-        return result
+        governance = reviewer.run_review(source_id, progress=report)
+        governance["total_count"] = total
+        governance["current_count"] = current
+        self.catalog.update_onboarding_job(
+            job_id,
+            phase="building_assets",
+            current_count=current,
+            total_count=total,
+            message="治理范围已提交，正在重建并原子发布问数资产",
+        )
+        assets = self.preparer.prepare(source_id)
+        return {**governance, **assets}
 
     def _claim_preview(self, job_id: str, source_id: str) -> dict[str, Any]:
         if self.claim_service is None:

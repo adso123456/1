@@ -2820,6 +2820,7 @@ class DataSourceCatalog:
         expected_scope_fingerprint: str | None = None,
         expected_status: str | None = None,
         expected_review_policy_fingerprint: str | None = None,
+        expected_asset_batch_id: str | None = None,
     ) -> DataSourceRecord:
         now = int(time.time())
         with self._lock, self._connection(write=True) as connection:
@@ -2868,6 +2869,17 @@ class DataSourceCatalog:
                     raise DataSourceConflict(
                         "审核策略已变化，请重新生成问数资产"
                     )
+            if expected_asset_batch_id is not None:
+                batch = connection.execute(
+                    "SELECT batch_id FROM active_asset_batches "
+                    "WHERE source_id=?",
+                    (source_id,),
+                ).fetchone()
+                if (
+                    batch is None
+                    or str(batch["batch_id"]) != expected_asset_batch_id
+                ):
+                    raise DataSourceConflict("问数资产生成批次已失效")
             connection.execute(
                 """
                 UPDATE data_sources SET status = 'ready',
