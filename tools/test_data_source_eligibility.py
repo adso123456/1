@@ -17,7 +17,13 @@ from backend.data_source_eligibility import (
 )
 
 
-def _profile(table: str, comment: str = "", **quality_overrides: object) -> dict:
+def _profile(
+    table: str,
+    comment: str = "",
+    *,
+    columns: list[str] | None = None,
+    **quality_overrides: object,
+) -> dict:
     quality = {
         "queryable_column_count": 8,
         "row_estimate": 100,
@@ -29,7 +35,9 @@ def _profile(table: str, comment: str = "", **quality_overrides: object) -> dict
         "schema": "lzh_monitor",
         "table": table,
         "table_comment": comment,
-        "columns": [{"column": "id"}, {"column": "name"}],
+        "columns": [
+            {"column": column} for column in (columns or ["id", "name"])
+        ],
         "quality": quality,
         "error": "",
     }
@@ -88,6 +96,42 @@ def test_structural_gates_fail_closed() -> None:
     failed_profile = _profile("water_monitor")
     failed_profile["error"] = "timeout"
     assert evaluate_table_eligibility(failed_profile).status == UNKNOWN
+
+
+def test_generic_substrings_and_columns_do_not_prove_business_scope() -> None:
+    cases = [
+        _profile("workstation_config", "桌面平台配置"),
+        _profile("intersection_mapping", "路口映射"),
+        _profile(
+            "technical_device_registry",
+            "平台设备注册表",
+            columns=["id", "station_id", "status"],
+        ),
+    ]
+    for profile in cases:
+        result = evaluate_table_eligibility(profile)
+        assert result.status == UNKNOWN, (profile["table"], result)
+
+
+def test_domain_dimensions_require_domain_context() -> None:
+    eligible = {
+        "water_quality_station": "水质监测站点",
+        "environment_area_dict": "水环境行政区划字典",
+        "pollution_warning_threshold": "污染预警阈值",
+    }
+    for table, comment in eligible.items():
+        result = evaluate_table_eligibility(_profile(table, comment))
+        assert result.status == ELIGIBLE, (table, result)
+        assert result.category == "water_environment_dimension", (table, result)
+
+    platform_cases = {
+        "platform_station": "平台服务站点",
+        "system_area_dict": "系统区域字典",
+        "alert_threshold": "通用告警阈值",
+    }
+    for table, comment in platform_cases.items():
+        result = evaluate_table_eligibility(_profile(table, comment))
+        assert result.status == UNKNOWN, (table, result)
 
 
 def test_gate_never_emits_governance_decisions() -> None:

@@ -32,19 +32,29 @@ class EligibilityResult:
         }
 
 
-_BUSINESS_TERMS = (
-    "water", "hydro", "meteorolog", "pollut", "outlet", "sewage",
-    "emission", "ecolog", "aquatic", "river", "lake", "watershed",
-    "station", "section", "survey", "patrol", "warning", "warn",
-    "environment", "treatment", "remediation", "waterbody", "fish",
-    "plankton", "sediment", "zoobenthos", "zooplankton", "unmaned_ship",
-    "unmanned_ship", "task_info", "task_directory",
-    "水质", "水文", "气象", "污染", "排污", "排放", "生态", "河流",
-    "河湖", "湖泊", "流域", "断面", "站点", "巡查", "调查", "预警",
-    "治理", "防治", "水体", "水源", "水生", "污水", "无人船",
-    "环保项目", "治理项目", "目标考核",
-    # 兼容历史画像中已落盘的错误编码中文注释；新画像仍使用上面的正常中文词。
-    "姘磋川", "姘存枃", "姹℃煋", "鐩戞祴", "璋冩煡", "宸℃煡",
+_STRONG_DOMAIN_TOKENS = frozenset(
+    {
+        "water", "hydro", "hydrology", "meteorology", "meteorological",
+        "pollutant", "pollution", "outlet", "sewage", "emission",
+        "ecology", "ecological", "aquatic", "river", "lake", "watershed",
+        "environment", "environmental", "remediation", "waterbody", "fish",
+        "plankton", "sediment", "zoobenthos", "zooplankton", "unmaned",
+        "unmanned",
+    }
+)
+_STRONG_DOMAIN_CN = (
+    "水质", "水文", "气象", "污染", "排污", "排放", "水环境", "生态环境",
+    "水生态", "河流", "河湖", "湖泊", "流域", "水体", "水源", "水生",
+    "污水", "无人船", "环保项目",
+)
+_DIMENSION_TOKENS = frozenset(
+    {
+        "station", "section", "area", "region", "district", "dictionary",
+        "dict", "threshold", "directory", "catalog", "site", "point",
+    }
+)
+_DIMENSION_CN = (
+    "站点", "断面", "区域", "行政区划", "字典", "阈值", "目录", "点位",
 )
 
 _BACKUP_RE = re.compile(
@@ -65,17 +75,33 @@ _MODEL_PARAM_RE = re.compile(
 )
 
 
-def _text(profile: Mapping[str, Any], quality: Mapping[str, Any]) -> str:
-    table = str(profile.get("table") or "")
-    comment = str(
-        profile.get("table_comment") or quality.get("table_comment") or ""
-    )
-    columns = " ".join(
-        str(column.get("column") or column.get("name") or "")
-        for column in (profile.get("columns") or [])
-        if isinstance(column, Mapping)
-    )
-    return f"{table} {comment} {columns}".lower()
+def _identifier_tokens(value: str) -> set[str]:
+    """按命名片段取 token，避免 station 命中 workstation。"""
+    return set(re.findall(r"[a-z0-9]+", value.lower()))
+
+
+def _positive_business_evidence(table: str, comment: str) -> tuple[str, list[str]]:
+    """只使用表名和表注释产生正向证据；列名不能单独证明业务归属。"""
+    subject = f"{table} {comment}".lower()
+    tokens = _identifier_tokens(subject)
+    strong_hits = sorted(tokens & _STRONG_DOMAIN_TOKENS)
+    strong_hits.extend(term for term in _STRONG_DOMAIN_CN if term in subject)
+    dimension_hits = sorted(tokens & _DIMENSION_TOKENS)
+    dimension_hits.extend(term for term in _DIMENSION_CN if term in subject)
+
+    if strong_hits and dimension_hits:
+        return "water_environment_dimension", strong_hits[:2] + dimension_hits[:2]
+    if strong_hits:
+        return "water_environment_business", strong_hits[:3]
+
+    # 仅保留已由当前项目确认的组合模式；survey/patrol 等泛词单独不准入。
+    if {"dc", "survey"}.issubset(tokens) and tokens & {"info", "task"}:
+        return "project_business_pattern", ["dc+survey", "info/task"]
+    if {"camera", "patrol"}.issubset(tokens):
+        return "project_business_pattern", ["camera+patrol"]
+    if "巡回调查" in subject:
+        return "project_business_pattern", ["巡回调查"]
+    return "", []
 
 
 def _result(
@@ -97,7 +123,7 @@ def evaluate_table_eligibility(
     comment = str(
         profile.get("table_comment") or quality.get("table_comment") or ""
     ).lower()
-    text = _text(profile, quality)
+    subject_text = f"{table} {comment}".lower()
 
     if str(profile.get("error") or ""):
         return _result(UNKNOWN, "profile_error", 1.0, "表画像读取失败")
@@ -143,14 +169,17 @@ def evaluate_table_eligibility(
 
     if (
         re.search(r"(?:^|_)(?:app|apk)(?:_|$)", table)
-        and any(term in text for term in ("version", "package", "install", "版本", "安装包"))
+        and any(term in subject_text for term in ("version", "package", "install", "版本", "安装包"))
     ) or table.endswith("_app"):
         return _result(INELIGIBLE, "application_package", 0.97, "应用安装或版本管理表")
 
-    has_business_evidence = any(term in text for term in _BUSINESS_TERMS)
+    business_category, business_evidence = _positive_business_evidence(
+        table,
+        comment,
+    )
 
     if _MODEL_PARAM_RE.search(table) and any(
-        term in text for term in ("初始化", "参数", "parameter", "initial")
+        term in subject_text for term in ("初始化", "参数", "parameter", "initial")
     ):
         return _result(INELIGIBLE, "model_runtime_parameter", 0.97, "模型初始化或运行参数")
 
@@ -165,10 +194,15 @@ def evaluate_table_eligibility(
             for token in ("service_directory", "interface_config", "route_config", "menu_config")
         )
         or table in {"wm_directory", "wt_service_directory"}
-    ) and not has_business_evidence:
+    ) and not business_category:
         return _result(INELIGIBLE, "platform_configuration", 0.96, "平台目录或接口配置")
 
-    if has_business_evidence:
-        return _result(ELIGIBLE, "water_environment_business", 0.90, "命中水利或环保业务语义")
+    if business_category:
+        return _result(
+            ELIGIBLE,
+            business_category,
+            0.90,
+            "业务证据：" + "、".join(business_evidence),
+        )
 
     return _result(UNKNOWN, "insufficient_business_evidence", 0.0, "缺少项目适配性证据")
