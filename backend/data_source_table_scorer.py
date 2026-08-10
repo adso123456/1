@@ -30,6 +30,8 @@ import re
 from collections import defaultdict
 from typing import Any, Mapping
 
+from backend.data_source_eligibility import evaluate_table_eligibility
+
 
 # ---------------------------------------------------------------------------
 # 阈值（与评审方案一致，可通过环境变量微调）
@@ -1011,7 +1013,7 @@ def _decide_independent(
     profile: Mapping[str, Any],
     quality: Mapping[str, Any],
     scored_item: Mapping[str, Any],
-    non_biz: Mapping[str, Any],
+    eligibility: Mapping[str, Any],
 ) -> tuple[str, list[str]]:
     """每张表独立判定（冻结契约：组不再 winner-takes-all）。"""
     score = float(scored_item.get("score") or 0.0)
@@ -1020,22 +1022,25 @@ def _decide_independent(
     skipped = bool(quality.get("skipped_by_total_timeout"))
     sample_count = int(quality.get("sample_row_count") or 0)
 
+    eligibility_status = str(eligibility.get("status") or "unknown")
+    eligibility_category = str(eligibility.get("category") or "unknown")
+    eligibility_reasons = eligibility.get("reasons") or []
+    eligibility_detail = "、".join(str(item) for item in eligibility_reasons)
+    reason_parts.append(
+        f"eligibility:{eligibility_status}/{eligibility_category}, "
+        f"confidence={float(eligibility.get('confidence') or 0):g}"
+        + (f", evidence={eligibility_detail}" if eligibility_detail else "")
+    )
+    if eligibility_status == "unknown":
+        return "pending", reason_parts
+    if eligibility_status == "ineligible":
+        return "standby", reason_parts
     if error:
         reason_parts.append("受限样本读取失败")
         return "pending", reason_parts
     if skipped:
         reason_parts.append("表画像被总超时跳过")
         return "pending", reason_parts
-    if non_biz["confidence"] >= 0.9:
-        evidence = "、".join(
-            (non_biz["semantic_hits"] or [])[:2]
-            + (non_biz["column_hits"] or [])[:3]
-        )
-        reason_parts.append(
-            f"non_business:{non_biz['role']}, "
-            f"confidence={non_biz['confidence']:g}, evidence={evidence}"
-        )
-        return "standby", reason_parts
     if bool(scored_item.get("confirmed_empty")):
         reason_parts.append("confirmed_empty（确认 0 行空表）")
         return "standby", reason_parts
@@ -1052,13 +1057,6 @@ def _decide_independent(
         decision = "pending"
     else:
         decision = "standby"
-    if 0.6 <= non_biz["confidence"] < 0.9:
-        reason_parts.append(
-            f"non_business 中置信:{non_biz['role']}, "
-            f"confidence={non_biz['confidence']:g}"
-        )
-        if decision == "active":
-            decision = "standby"
     reason_parts.extend(scored_item.get("warnings") or [])
     return decision, reason_parts
 
@@ -1203,6 +1201,7 @@ def compute_proposals(
     quality_by_key: dict[tuple[str, str], Mapping[str, Any]] = {}
     scored: dict[tuple[str, str], dict[str, Any]] = {}
     non_biz_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    eligibility_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     shard_evidence = _physical_shard_evidence(profiles)
     for profile in profiles:
         schema = str(profile.get("schema") or "")
@@ -1215,6 +1214,10 @@ def compute_proposals(
         quality_by_key[key] = quality
         non_biz = classify_non_business_evidence(profile, quality)
         non_biz_by_key[key] = non_biz
+        eligibility_by_key[key] = evaluate_table_eligibility(
+            profile,
+            quality,
+        ).as_dict()
         is_time_series = _is_time_series_like(profile, quality)
         static_volume = (
             not is_time_series
@@ -1251,19 +1254,20 @@ def compute_proposals(
         quality = quality_by_key[key]
         scored_item = scored[key]
         non_biz = non_biz_by_key[key]
+        eligibility = eligibility_by_key[key]
         shard_confidence = shard_evidence.get(key, 0.0)
         if shard_confidence >= 0.9:
             decision = "standby"
             reason_parts = [
                 f"评分 {scored_item['score']:g}",
-                f"physical_shard, confidence={shard_confidence:g}",
+                f"eligibility:ineligible/physical_shard, confidence={shard_confidence:g}",
             ]
         else:
             decision, reason_parts = _decide_independent(
                 profile,
                 quality,
                 scored_item,
-                non_biz,
+                eligibility,
             )
         updates[key] = {
             "business_group": "",

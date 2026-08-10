@@ -391,7 +391,7 @@ def test_medium_confidence_workflow_support() -> None:
     assert non_biz["role"] == "workflow_support"
     assert non_biz["confidence"] == 0.75
     proposals = compute_proposals([profile], {}, {})
-    assert proposals[("public", "dc_survey_task")]["proposed_decision"] == "standby"
+    assert proposals[("public", "dc_survey_task")]["proposed_decision"] == "active"
 
 
 def test_medium_confidence_location_reference() -> None:
@@ -537,7 +537,7 @@ def test_proposal_standalone_thresholds() -> None:
     )
     low_columns = ["id"]
     low = _profile(
-        "low_quality",
+        "water_low_quality",
         low_columns,
         row_estimate=50,
         latest=None,
@@ -552,7 +552,7 @@ def test_proposal_standalone_thresholds() -> None:
     proposals = compute_proposals([good, mid, low], {}, {})
     assert proposals[("public", "high_quality")]["proposed_decision"] == "active"
     assert proposals[("public", "mid_quality")]["proposed_decision"] == "pending"
-    assert proposals[("public", "low_quality")]["proposed_decision"] == "standby"
+    assert proposals[("public", "water_low_quality")]["proposed_decision"] == "standby"
 
 
 def test_proposal_never_touches_effective_decision() -> None:
@@ -628,7 +628,7 @@ def test_non_business_high_confidence_to_standby() -> None:
     proposals = compute_proposals([profile], {}, {})
     fields = proposals[("public", "sm_login_log")]
     assert fields["proposed_decision"] == "standby"
-    assert "non_business:system_log" in fields["proposed_reason"]
+    assert "eligibility:ineligible/system_log" in fields["proposed_reason"]
 
 
 def test_non_business_pure_prefix_not_excluded() -> None:
@@ -665,7 +665,7 @@ def test_business_counter_limits_non_business_confidence() -> None:
     # 冻结契约：业务反证封顶后仍按中置信降级（最多 standby/pending，不排除、不 active）。
     proposals = compute_proposals([profile], {}, {})
     assert proposals[("public", "wm_raster_info")]["proposed_decision"] == "standby"
-    assert "non_business 中置信:media_asset" in proposals[("public", "wm_raster_info")][
+    assert "eligibility:ineligible/media_asset" in proposals[("public", "wm_raster_info")][
         "proposed_reason"
     ]
 
@@ -684,8 +684,8 @@ def test_non_business_single_keyword_not_auto_downgraded() -> None:
     assert non_biz["role"] == "model_artifact"
     assert non_biz["confidence"] <= 0.55
     proposals = compute_proposals([profile], {}, {})
-    assert proposals[("public", "model_business_result")]["proposed_decision"] == "active"
-    assert "non_business" not in proposals[("public", "model_business_result")][
+    assert proposals[("public", "model_business_result")]["proposed_decision"] == "pending"
+    assert "eligibility:unknown" in proposals[("public", "model_business_result")][
         "proposed_reason"
     ]
 
@@ -704,7 +704,7 @@ def test_non_business_semantic_only_no_downgrade() -> None:
     assert non_biz["role"] == "model_artifact"
     assert non_biz["confidence"] <= 0.55
     proposals = compute_proposals([profile], {}, {})
-    assert proposals[("public", "model_lasso_records")]["proposed_decision"] == "active"
+    assert proposals[("public", "model_lasso_records")]["proposed_decision"] == "pending"
 
 
 def test_non_business_semantic_with_structure_095() -> None:
@@ -885,7 +885,7 @@ def test_backup_mirror_degrades_to_standby() -> None:
     )
     assert proposals[("public", "water_data")]["proposed_decision"] == "active"
     assert proposals[("public", "water_data_old")]["proposed_decision"] == "standby"
-    assert "backup_mirror" in proposals[("public", "water_data_old")][
+    assert "eligibility:ineligible/backup_or_temporary" in proposals[("public", "water_data_old")][
         "proposed_reason"
     ]
 
