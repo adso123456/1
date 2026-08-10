@@ -308,4 +308,3 @@ def score_table(
         ),
         "is_time_series": is_time_series,
     }
-
