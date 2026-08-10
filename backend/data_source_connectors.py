@@ -1153,11 +1153,12 @@ class DataSourceAssetPreparer:
         *,
         source_id: str,
         memory_path: Path | None,
+        previous_metadata_path: Path | None,
         metadata_path: Path,
         database_type: str,
         generated_records: list[dict[str, Any]] | None = None,
     ) -> list[tuple[str, str, dict[str, Any]]]:
-        """从旧正式 Memory 复制并重新校验已验证 SQL Tool Memory。"""
+        """旧 SQL 先验真完整性，再按新 scope 逐条保留或淘汰。"""
         ids: list[str] = []
         documents: list[str] = []
         metadatas: list[dict[str, Any]] = []
@@ -1188,7 +1189,8 @@ class DataSourceAssetPreparer:
             ids = [item.record_id for item in records]
             documents = [item.document for item in records]
             metadatas = [dict(item.metadata) for item in records]
-        known_ids = set(map(str, ids))
+        formal_ids = set(map(str, ids))
+        known_ids = set(formal_ids)
         for record in generated_records or []:
             record_id = str(record.get("record_id") or "")
             metadata = record.get("metadata")
@@ -1210,10 +1212,24 @@ class DataSourceAssetPreparer:
             from backend.mysql_sql_guard import MySQLSQLGuard
 
             guard = MySQLSQLGuard(index_path=metadata_path)
+            previous_guard = (
+                MySQLSQLGuard(index_path=previous_metadata_path)
+                if previous_metadata_path is not None
+                and previous_metadata_path.exists()
+                else None
+            )
         else:
             from backend.sql_guard import SQLGuard
 
             guard = SQLGuard(index_path=metadata_path)
+            previous_guard = (
+                SQLGuard(index_path=previous_metadata_path)
+                if previous_metadata_path is not None
+                and previous_metadata_path.exists()
+                else None
+            )
+        if formal_ids and previous_guard is None:
+            raise DataSourceCatalogError("旧正式 SQL Tool Memory 缺少对应 Metadata")
         payload = []
         for record_id, document, metadata in zip(
             ids, documents, metadatas, strict=True
@@ -1230,13 +1246,32 @@ class DataSourceAssetPreparer:
                 raise DataSourceCatalogError(
                         "SQL Tool Memory 参数不可解析"
                 ) from None
+            if str(record_id) in formal_ids:
+                previous_result = previous_guard.validate(
+                    sql=sql,
+                    query=str(item.get("question") or document),
+                )
+                if not previous_result.passed:
+                    raise DataSourceCatalogError(
+                        "旧正式 SQL Tool Memory 未通过原范围完整性校验"
+                    )
             result = guard.validate(
                 sql=sql,
                 query=str(item.get("question") or document),
             )
             if not result.passed:
+                scope_incompatible = bool(
+                    result.unknown_tables or result.unknown_columns
+                ) and not result.forbidden_operations
+                if scope_incompatible:
+                    logger.info(
+                        "数据源 %s 淘汰不再适配新 scope 的 SQL Memory：%s",
+                        source_id,
+                        record_id,
+                    )
+                    continue
                 raise DataSourceCatalogError(
-                        "既有 SQL Tool Memory 未通过新范围 SQLGuard"
+                    "既有 SQL Tool Memory 未通过新范围 SQLGuard"
                 )
             item["source_id"] = source_id
             payload.append((str(record_id), str(document), item))
@@ -1705,6 +1740,9 @@ class DataSourceAssetPreparer:
             sql_tool_payload = self._preserved_sql_tool_payload(
                 source_id=source_id,
                 memory_path=(record.memory_path if preserve_existing_sql else None),
+                previous_metadata_path=(
+                    record.metadata_path if preserve_existing_sql else None
+                ),
                 metadata_path=candidate_paths["metadata"],
                 database_type=record.database_type,
                 generated_records=self.catalog.list_verified_sql_memories(

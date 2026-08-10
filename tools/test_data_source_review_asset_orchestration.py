@@ -64,7 +64,25 @@ class _FakeCollection:
         return self.total
 
     def get(self, *, where=None, include=None) -> dict:
-        return {"ids": [], "documents": [], "metadatas": []}
+        path = self.root / "records.json"
+        if not path.exists():
+            return {"ids": [], "documents": [], "metadatas": []}
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        indexes = range(len(payload.get("ids") or []))
+        if where:
+            indexes = [
+                index
+                for index in indexes
+                if all(
+                    (payload["metadatas"][index] or {}).get(key) == value
+                    for key, value in where.items()
+                )
+            ]
+        return {
+            "ids": [payload["ids"][index] for index in indexes],
+            "documents": [payload["documents"][index] for index in indexes],
+            "metadatas": [payload["metadatas"][index] for index in indexes],
+        }
 
 
 class _FakeMemory:
@@ -223,6 +241,29 @@ def _publish_old_scope(
             decision_reason="seed",
             availability_status="present",
         )
+    sql_records = []
+    for table, record_id in ((A, "sql_A"), (B, "sql_B")):
+        sql = f"SELECT station_id FROM {table} LIMIT 10"
+        question = f"查询 {table}"
+        sql_records.append(
+            {
+                "record_id": record_id,
+                "question": question,
+                "sql": sql,
+                "metadata": {
+                    "source_id": source_id,
+                    "category": "sql_example",
+                    "tool_name": "run_sql",
+                    "question": question,
+                    "args_json": json.dumps({"sql": sql}),
+                    "content_fingerprint": hashlib.sha256(
+                        sql.encode("utf-8")
+                    ).hexdigest(),
+                    "chroma:document": "必须被 sanitizer 清除",
+                },
+            }
+        )
+    catalog.replace_verified_sql_memories(source_id, sql_records)
     with _managed_root_patch(catalog, source_id), patch(
         "backend.memory.create_memory",
         side_effect=_FakeMemory,
@@ -310,6 +351,12 @@ def test_review_rebuilds_and_publishes_only_new_scope() -> None:
         )
         assert {item["table"] for item in metadata} == expected_tables
         assert A not in joined_assets and B in joined_assets and C in joined_assets
+        assert "sql_A" not in memory_records["ids"]
+        assert "sql_B" in memory_records["ids"]
+        sql_b_metadata = memory_records["metadatas"][
+            memory_records["ids"].index("sql_B")
+        ]
+        assert not any(key.startswith("chroma:") for key in sql_b_metadata)
 
         policy = catalog.review_policy(source_id)
         scope_fingerprint = selected_scope_fingerprint(record.selected_scope)
