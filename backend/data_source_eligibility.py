@@ -37,7 +37,7 @@ _STRONG_DOMAIN_TOKENS = frozenset(
         "water", "hydro", "hydrology", "meteorology", "meteorological",
         "pollutant", "pollution", "outlet", "sewage", "emission",
         "ecology", "ecological", "aquatic", "river", "lake", "watershed",
-        "environment", "environmental", "remediation", "waterbody", "fish",
+        "environmental", "remediation", "waterbody", "fish",
         "plankton", "sediment", "zoobenthos", "zooplankton", "unmaned",
         "unmanned",
     }

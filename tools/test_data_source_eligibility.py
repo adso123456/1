@@ -102,6 +102,7 @@ def test_generic_substrings_and_columns_do_not_prove_business_scope() -> None:
     cases = [
         _profile("workstation_config", "桌面平台配置"),
         _profile("intersection_mapping", "路口映射"),
+        _profile("system_environment_config", "环境变量/系统环境配置"),
         _profile(
             "technical_device_registry",
             "平台设备注册表",
