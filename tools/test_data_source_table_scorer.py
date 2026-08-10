@@ -113,12 +113,12 @@ def test_score_high_quality_table_reaches_active_threshold() -> None:
     assert result["confidence"] >= 0.55
 
 
-def test_score_backup_mark_deducts_10() -> None:
+def test_quality_score_does_not_penalize_backup_semantics() -> None:
     backup = _profile("water_data_old", WATER_COLUMNS)
     normal = _profile("water_data", WATER_COLUMNS)
     backup_score = score_table(backup, backup["quality"], 0.8)["score"]
     normal_score = score_table(normal, normal["quality"], 0.8)["score"]
-    assert normal_score - backup_score == 10
+    assert normal_score == backup_score
 
 
 def test_score_data_table_without_latest_cannot_be_active() -> None:
@@ -169,7 +169,6 @@ def test_audit_time_column_not_time_series() -> None:
         profile,
         profile["quality"],
         1.0,
-        static_volume=True,
     )
     assert result["breakdown"]["有效数据量"] == 15.0
     assert result["can_propose_active"] is True
@@ -273,7 +272,6 @@ def test_static_table_volume_full_for_nonempty() -> None:
         profile,
         profile["quality"],
         1.0,
-        static_volume=True,
     )
     assert result["breakdown"]["有效数据量"] == 15.0
 
@@ -294,7 +292,6 @@ def test_static_table_volume_unknown_rows_with_sample() -> None:
         profile,
         profile["quality"],
         1.0,
-        static_volume=True,
     )
     assert result["breakdown"]["有效数据量"] == 12.0
     assert any("行数估算未知" in warning for warning in result["warnings"])
@@ -306,8 +303,8 @@ def test_time_series_volume_curve_unchanged() -> None:
     assert result["breakdown"]["有效数据量"] == 10.0
 
 
-def test_small_business_time_series_volume_floor() -> None:
-    # 540 行监测表：原始 volume 7 -> floor 12
+def test_small_business_time_series_uses_pure_volume_curve() -> None:
+    # Quality 不再因业务语义提供 volume floor。
     profile = _profile(
         "rs_outlet_records",
         WATER_COLUMNS,
@@ -320,14 +317,13 @@ def test_small_business_time_series_volume_floor() -> None:
         profile,
         profile["quality"],
         0.5,
-        volume_floor_eligible=True,
     )
-    assert result["breakdown"]["有效数据量"] == 12.0
-    assert any("volume floor" in warning for warning in result["warnings"])
+    assert result["breakdown"]["有效数据量"] == 7.0
+    assert not any("volume floor" in warning for warning in result["warnings"])
 
 
-def test_small_time_series_without_strong_business_no_floor() -> None:
-    # system_log + timestamp 不是强业务时序，不得享受 floor
+def test_non_business_taxonomy_does_not_change_quality_volume() -> None:
+    # system_log 的业务归属由 Eligibility 处理；Quality 只看其实际结构。
     profile = _profile(
         "system_log",
         ["id", "user", "timestamp", "action", "method", "ip"],
@@ -343,9 +339,8 @@ def test_small_time_series_without_strong_business_no_floor() -> None:
         profile,
         profile["quality"],
         0.5,
-        volume_floor_eligible=True,
     )
-    assert result["breakdown"]["有效数据量"] == 7.0
+    assert result["breakdown"]["有效数据量"] == 15.0
 
 
 def test_identity_platform_high_confidence() -> None:
@@ -573,7 +568,7 @@ def test_proposal_unknown_key_metrics_force_pending() -> None:
     proposals = compute_proposals([profile], {}, {})
     fields = proposals[("public", "monitor_data")]
     assert fields["proposed_decision"] == "pending"
-    assert "关键质量指标 unknown" in fields["proposed_reason"]
+    assert "关键质量证据 unknown" in fields["proposed_reason"]
 
 
 def test_update_interval_unknown_is_neutral() -> None:
@@ -610,7 +605,7 @@ def test_unknown_empty_to_pending() -> None:
     proposals = compute_proposals([profile], {}, {})
     fields = proposals[("public", "unknown_empty")]
     assert fields["proposed_decision"] == "pending"
-    assert "数据状态未知" in fields["proposed_reason"]
+    assert "关键质量证据 unknown" in fields["proposed_reason"]
 
 
 def test_non_business_high_confidence_to_standby() -> None:

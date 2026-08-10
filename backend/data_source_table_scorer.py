@@ -1,4 +1,4 @@
-"""表准入审核阶段 B：确定性评分 + 同业务表分组。
+"""表准入审核编排：Eligibility → Quality → Proposed Decision。
 
 本模块只生成建议字段：
   proposed_decision / proposed_score / proposed_reason
@@ -11,15 +11,14 @@
   不生成正式 Metadata / DDL / Chroma；
   不增加 runtime_revision。
 
-评分结果不能直接决定正式范围。决策契约（冻结版）：
-- 每张表独立评分、独立判定；业务组只描述关系，不再 winner-takes-all；
+Quality Score 只表示数据质量，不能决定业务归属或正式范围。决策契约：
+- Eligibility 先行且不可被高质量分覆盖；
+- Proposed Decision 独立组合质量结果与确定性跨表约束；
 - 组内唯一允许自动降级的是确定性重复证据（duplicate_structure /
   backup_mirror）；obsolete 只提示、不决策；
 - update_interval 未知按中性计分；非时序表时间维度全部 N/A-neutral；
 - confirmed_empty -> standby；数据状态未知 -> pending；
-- 高置信非业务表（system_log / platform_config / media_asset /
-  model_artifact / operation_trace）至少两类独立证据才可排除候选，
-  排除候选落 standby（proposed 词汇不新增 exclude），业务反证可覆盖。
+- 旧 non-business taxonomy 仅保留诊断兼容，不参与 Quality 或 Proposed。
 """
 
 from __future__ import annotations
@@ -31,28 +30,30 @@ from collections import defaultdict
 from typing import Any, Mapping
 
 from backend.data_source_eligibility import evaluate_table_eligibility
+from backend.data_source_proposed_decision import (
+    ProposalConstraint,
+    apply_constraint,
+    decide_proposal,
+)
+from backend.data_source_quality_scoring import (
+    _business_time_column,
+    _is_audit_time_column,
+    _is_time_series_like,
+    _looks_time_column,
+    score_table,
+)
 
 
 # ---------------------------------------------------------------------------
 # 阈值（与评审方案一致，可通过环境变量微调）
 # ---------------------------------------------------------------------------
 
-ACTIVE_MIN_SCORE = float(os.getenv("DATA_SOURCE_ACTIVE_MIN_SCORE", "80"))
-PENDING_MIN_SCORE = float(os.getenv("DATA_SOURCE_PENDING_MIN_SCORE", "60"))
 GROUP_MIN_GAP = float(os.getenv("DATA_SOURCE_GROUP_MIN_GAP", "5"))
 GROUP_CONFIDENCE_THRESHOLD = float(
     os.getenv("DATA_SOURCE_GROUP_CONFIDENCE_THRESHOLD", "0.55")
 )
-MIN_CONFIDENCE_FOR_ACTIVE = float(
-    os.getenv("DATA_SOURCE_MIN_CONFIDENCE_FOR_ACTIVE", "0.55")
-)
 
-# 时间类数据表：缺少最新数据时间/可用键属于关键指标未知，不能建议 active。
-_TIME_DATA_ROLES = {"事实表", "日志表"}
-# 静态表：允许没有最新数据时间，也不按新鲜度重罚。
-_STATIC_ROLES = {"字典表", "配置表"}
-
-# 明显备份/临时/历史标记：只扣分，不直接 blocked（旧表恢复写入后仍参与重评）。
+# 明显备份/临时/历史标记：用于分组与确定性 proposal constraint，不进入 Quality Score。
 _BACKUP_MARKS_CN = ("历史", "备份", "临时", "旧")
 _BACKUP_MARKS_EN = ("old", "backup", "copy", "tmp", "bak")
 
@@ -228,14 +229,6 @@ _ROLE_MARKERS = (
 # 物理分片表：数字后缀 + 同 family >=3 张 + 结构指纹一致 + 存在统一入口。
 _PHYSICAL_SHARD_RE = re.compile(r"^(?P<family>.+?)_(?P<num>\d+)$")
 
-# 审计类列：全空不影响业务判断，不计入"大量空值"。
-_AUDIT_COLUMN_MARKS = (
-    "create_by", "created_by", "create_time", "created_at",
-    "update_by", "updated_by", "update_time", "updated_at",
-    "modify_by", "modify_time", "delete_flag", "is_deleted",
-    "del_flag", "deleted_at",
-)
-
 # 时间粒度标记：同一业务组内出现多种粒度（日/时/月/年）视为需人工确认。
 _GRANULARITY_MARKS = (
     "minute", "hour", "day", "month", "year", "旬",
@@ -328,140 +321,6 @@ def _is_history_like(table_name: str, role: str) -> bool:
         return True
     text = str(table_name).lower()
     return any(mark in text for mark in _HISTORY_MARKS)
-
-
-# 审计/技术时间字段：不作为时序证据。
-_AUDIT_TIME_COLUMNS = (
-    "create_time", "created_at", "created_time",
-    "update_time", "updated_at", "updated_time",
-    "modify_time", "modified_at", "modified_time",
-    "delete_time", "deleted_at",
-    "import_time", "ingest_time", "sync_time",
-)
-# 时间字段词法边界（冻结契约）：
-#   1. _looks_time_column：token 级时间类型识别，禁止 "date" in name 这类任意子串；
-#   2. _is_audit_time_column：审计时间排除（update_time/created_at/sync_time 等）；
-#   3. _business_time_column：业务观测时间（monitor_time/monitor_year/sampling_time 等）。
-# 最终用于 is_time_series_like 的只能是 business_time_column。
-_TIME_TYPE_TOKENS = (
-    "date", "time", "datetime", "timestamp",
-    "year", "month", "day", "hour", "at", "on",
-)
-# 中文无分隔符，使用明确的双字时间标记。
-_TIME_TYPE_CN = ("时间", "日期", "年月", "年份", "月份")
-# 业务观测时间前缀 token：时间类型 token + 观测前缀才构成业务观测时间。
-_BUSINESS_TIME_PREFIX_TOKENS = (
-    "monitor", "monitoring", "sampling", "sample", "measure",
-    "measurement", "observe", "observation", "record", "report",
-    "stat", "collect", "collection", "data",
-)
-_BUSINESS_TIME_CN = (
-    "监测时间", "采样时间", "观测时间", "数据时间", "记录时间",
-    "测量时间", "监测日期", "采样日期", "观测日期",
-)
-_OBJECT_MARKS = ("station", "section", "site", "断面", "站点", "测站")
-_VALUE_MARKS = ("value", "val", "浓度", "流量", "水位", "雨量", "温度", "指标", "值")
-
-
-def _tokenize_column_name(column: str) -> list[str]:
-    """snake_case / camelCase / 非字母数字边界切分为独立 token。"""
-    text = str(column or "")
-    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", text)
-    parts = re.split(r"[^0-9a-z\u4e00-\u9fff]+", text.lower())
-    return [part for part in parts if part]
-
-
-def _is_audit_time_column(column: str) -> bool:
-    name = str(column or "").lower()
-    return any(mark in name for mark in _AUDIT_TIME_COLUMNS)
-
-
-def _looks_time_column(column: str) -> bool:
-    """token 级时间类型识别：时间词必须是独立 token。
-
-    update_by / candidate_id / validated_by 等 token 不含时间词，返回 False；
-    monitor_year / stat_date / created_at(_at 后缀) 等返回 True。
-    """
-    name = str(column or "")
-    if any(mark in name for mark in _TIME_TYPE_CN):
-        return True
-    tokens = _tokenize_column_name(name)
-    return any(token in _TIME_TYPE_TOKENS for token in tokens)
-
-
-def _business_time_column(column: str) -> bool:
-    """业务观测时间：时间类型 + 业务观测前缀（monitor/sampling/stat 等）。
-
-    create_time / updated_at / sync_time 等审计或纯时间字段不满足，不能作为时序证据。
-    """
-    if _is_audit_time_column(column):
-        return False
-    name = str(column or "")
-    if any(mark in name for mark in _BUSINESS_TIME_CN):
-        return True
-    tokens = _tokenize_column_name(name)
-    if not any(token in _TIME_TYPE_TOKENS for token in tokens):
-        return False
-    return any(token in _BUSINESS_TIME_PREFIX_TOKENS for token in tokens)
-
-
-def _is_time_series_like(
-    profile: Mapping[str, Any],
-    quality: Mapping[str, Any],
-) -> bool:
-    """时序型判定（契约 v1 + 词法边界修复）：只有业务观测时间列才能作为时序证据。
-
-    update_by/created_by 等 actor 字段、审计时间列、普通 date/time 字段
-    均不作为业务时序证据。
-    """
-    columns = [str(item.get("column") or "") for item in (profile.get("columns") or [])]
-    return any(_business_time_column(column) for column in columns)
-
-
-def _business_time_series_strong(
-    profile: Mapping[str, Any],
-    quality: Mapping[str, Any],
-) -> bool:
-    """明确业务时序证据（契约 4 修订）：非审计业务时间列 + 业务结构/领域证据。"""
-    columns = [
-        str(item.get("column") or "")
-        for item in (profile.get("columns") or [])
-    ]
-    business_time = [
-        column for column in columns if _business_time_column(column)
-    ]
-    if not business_time:
-        return False
-    text = (
-        f"{profile.get('table') or ''} "
-        f"{quality.get('table_comment') or profile.get('table_comment') or ''}"
-    ).lower()
-    object_hit = any(
-        mark in column.lower()
-        for column in columns
-        for mark in (
-            "station", "section", "outlet", "enterprise", "pollutant",
-            "monitor", "采样点", "站点", "断面", "排口", "企业", "污染物",
-        )
-    )
-    value_hit = any(
-        mark in column.lower()
-        for column in columns
-        for mark in (
-            "value", "concentration", "flow", "level", "indicator",
-            "state", "值", "浓度", "流量", "水位", "指标", "状态",
-        )
-    )
-    if object_hit and value_hit:
-        return True
-    return any(
-        mark in text
-        for mark in (
-            "waterquality", "hydrological", "meteorological", "pollutant",
-            "outlet", "ecology", "enterprise", "sampling",
-            "水质", "水文", "气象", "污染物", "排污", "生态", "采样", "监测",
-        )
-    )
 
 
 def _role_markers(table_name: str) -> set[str]:
@@ -601,30 +460,6 @@ def classify_non_business_evidence(
                 "business_counter": business_counter,
             }
     return best
-
-
-def _mostly_null_business_ratio(profile: Mapping[str, Any]) -> float:
-    """业务列中空值率 >= 0.8 的比例（排除审计列）。
-
-    监测表常含大量可选参数列（bod/flow 等按指标为空），
-    用"多数业务列整体为空"而不是全表单元格空值率，避免误伤。"""
-    columns = profile.get("columns") or []
-    business = [
-        column
-        for column in columns
-        if not any(
-            mark in str(column.get("column") or "").lower()
-            for mark in _AUDIT_COLUMN_MARKS
-        )
-    ]
-    if not business:
-        return 0.0
-    mostly_null = [
-        column
-        for column in business
-        if (column.get("sample_null_rate") or 0) >= 0.8
-    ]
-    return len(mostly_null) / len(business)
 
 
 def group_tables(
@@ -767,300 +602,6 @@ def _granularity_markers(table_name: str) -> set[str]:
     return {mark for mark in _GRANULARITY_MARKS if mark in lowered}
 
 
-def score_table(
-    profile: Mapping[str, Any],
-    quality: Mapping[str, Any],
-    comment_ratio: float = 0.0,
-    *,
-    static_volume: bool = False,
-    volume_floor_eligible: bool = False,
-) -> dict[str, Any]:
-    """确定性评分：只依赖结构/画像指标，不调用 LLM，结果可复现。
-
-    总分 100：
-      完整度 25 / 数据新鲜度 20 / 有效数据量 15 / 时间覆盖 10
-      主键与唯一性 10 / 字段注释与语义 10 / 持续更新迹象 5 / 索引质量 5
-
-    扣分：大量空值 -15、缺核心字段 -30/-10、明显备份/临时表 -10。
-    长期没有新数据 -20 只在更新周期可信时执行（V1 更新周期恒未知，暂缓）。
-    """
-    warnings: list[str] = []
-    breakdown: dict[str, float] = {}
-    deductions: list[tuple[str, float]] = []
-
-    table_name = str(profile.get("table") or "")
-    role = str(profile.get("table_role_candidate") or "")
-    table_comment = str(
-        quality.get("table_comment") or profile.get("table_comment") or ""
-    )
-    qcols = int(quality.get("queryable_column_count") or 0)
-    row_estimate = quality.get("row_estimate")
-    sample_count = int(quality.get("sample_row_count") or 0)
-    latest = quality.get("latest_data_at")
-    freshness_confidence = float(quality.get("freshness_confidence") or 0.0)
-    time_coverage = quality.get("time_coverage_days")
-    has_primary_key = bool(quality.get("has_primary_key"))
-    has_unique_key = bool(quality.get("has_unique_key"))
-    duplicate_ratio = quality.get("duplicate_key_ratio")
-    error = str(profile.get("error") or "")
-    skipped = bool(quality.get("skipped_by_total_timeout"))
-    time_column = str(profile.get("time_column_candidate") or "")
-    is_time_series = _is_time_series_like(profile, quality)
-
-    # 1. 完整度 25
-    if qcols >= 8:
-        completeness = 25.0
-    elif qcols >= 5:
-        completeness = 20.0
-    elif qcols >= 3:
-        completeness = 14.0
-    elif qcols >= 1:
-        completeness = 8.0
-    else:
-        completeness = 0.0
-    breakdown["完整度"] = completeness
-
-    # 2. 数据新鲜度 20（非时序表 N/A-neutral；时序表 latest 缺失才低分）
-    if not is_time_series:
-        freshness = 20.0
-        if latest is None or freshness_confidence < 0.5:
-            warnings.append("非时序表，新鲜度按中性计分")
-    elif latest:
-        if freshness_confidence >= 0.5:
-            freshness = 20.0
-        else:
-            freshness = 20.0
-            warnings.append("更新周期未知，新鲜度按中性计分，未做新旧扣分")
-    else:
-        freshness = 5.0
-        warnings.append("缺少最新数据时间，新鲜度按低分计")
-    breakdown["数据新鲜度"] = freshness
-
-    # 3. 有效数据量 15（静态/实体表按"已确认非空"相对评分；
-    #    小型业务时序表 volume floor = max(原始分, 12)）
-    if not is_time_series and static_volume:
-        if row_estimate is None:
-            volume = 12.0 if sample_count > 0 else 0.0
-            if sample_count > 0:
-                warnings.append("行数估算未知，已确认存在业务数据")
-        elif row_estimate >= 1:
-            volume = 15.0
-        else:
-            volume = 0.0
-    else:
-        if row_estimate is None:
-            volume = 4.0 if sample_count > 0 else 0.0
-            warnings.append("行数估算未知，按样本量计分")
-        elif row_estimate >= 100_000:
-            volume = 15.0
-        elif row_estimate >= 10_000:
-            volume = 13.0
-        elif row_estimate >= 1_000:
-            volume = 10.0
-        elif row_estimate >= 100:
-            volume = 7.0
-        elif row_estimate >= 1:
-            volume = 4.0
-        else:
-            volume = 0.0
-        if volume_floor_eligible and is_time_series:
-            volume = max(volume, 12.0)
-            warnings.append("小型业务时序表，有效数据量按 volume floor=12 计分")
-    breakdown["有效数据量"] = volume
-
-    # 4. 时间覆盖连续性 10（非时序表 N/A-neutral）
-    if not is_time_series:
-        time_coverage_score = 10.0
-        if time_coverage is None:
-            warnings.append("非时序表，时间覆盖按中性计分")
-    elif time_coverage is None:
-        time_coverage_score = 0.0
-        if latest:
-            warnings.append("时间覆盖范围未知")
-    elif time_coverage >= 365:
-        time_coverage_score = 10.0
-    elif time_coverage >= 90:
-        time_coverage_score = 8.0
-    elif time_coverage >= 30:
-        time_coverage_score = 6.0
-    elif time_coverage >= 7:
-        time_coverage_score = 4.0
-    else:
-        time_coverage_score = 2.0
-    breakdown["时间覆盖连续性"] = time_coverage_score
-
-    # 5. 主键与唯一性 10
-    key_score = (5.0 if has_primary_key else 0.0) + (
-        2.0 if has_unique_key else 0.0
-    )
-    if duplicate_ratio == "unknown" or duplicate_ratio is None:
-        if not has_primary_key and not has_unique_key:
-            warnings.append("无可用键，重复键比例 unknown（未按质量差扣分）")
-        else:
-            warnings.append("重复键比例未知")
-    elif duplicate_ratio == 0:
-        key_score += 3.0
-    else:
-        key_score += 1.0
-    breakdown["主键与唯一性"] = key_score
-
-    # 6. 字段注释与语义清晰度 10
-    comment_score = (5.0 if table_comment else 0.0) + round(
-        5.0 * max(0.0, min(1.0, float(comment_ratio or 0.0))),
-        2,
-    )
-    breakdown["字段注释与语义"] = comment_score
-
-    # 7. 持续更新迹象 5（unknown 完全中性；仅时序表且无 latest 才低分）
-    observed_interval = bool(quality.get("observed_update_interval"))
-    if not is_time_series:
-        update_score = 5.0
-        if not observed_interval:
-            warnings.append("非时序表，持续更新按中性计分")
-    elif observed_interval:
-        update_score = 5.0
-    elif latest:
-        update_score = 5.0
-        warnings.append("更新周期未知，持续更新按中性计分")
-    else:
-        update_score = 0.0
-    breakdown["持续更新迹象"] = update_score
-
-    # 8. 索引质量 5
-    breakdown["索引质量"] = 5.0 if (has_primary_key or has_unique_key) else 0.0
-
-    score = sum(breakdown.values())
-
-    # 扣分项（全部有明确依据，且不把"无法计算"当作质量差）
-    mostly_null_ratio = _mostly_null_business_ratio(profile)
-    if mostly_null_ratio >= 0.6:
-        deductions.append(("大量空值", 15.0))
-    elif mostly_null_ratio >= 0.4:
-        deductions.append(("大量空值", 10.0))
-    elif mostly_null_ratio >= 0.2:
-        deductions.append(("大量空值", 5.0))
-    # 长期没有新数据：更新周期可信时才扣分；V1 恒为未知，只展示不扣分。
-    if qcols == 0:
-        deductions.append(("缺少可用的业务字段", 30.0))
-    elif is_time_series and not time_column:
-        deductions.append(("数据表缺少时间类核心字段", 10.0))
-    if _is_backup_mark(table_name, table_comment):
-        deductions.append(("明显备份/临时/历史表", 10.0))
-
-    for label, amount in deductions:
-        warnings.append(f"{label}：-{amount:g}")
-        score -= amount
-    score = round(max(0.0, min(100.0, score)), 2)
-
-    # 置信度：关键指标未知会降低置信，且不能建议 active。
-    confidence = 1.0
-    if skipped:
-        confidence -= 0.35
-    if error:
-        confidence -= 0.30
-    if sample_count == 0:
-        confidence -= 0.25
-    if row_estimate is None:
-        confidence -= 0.10
-    if (
-        (duplicate_ratio == "unknown" or duplicate_ratio is None)
-        and not has_primary_key
-        and not has_unique_key
-    ):
-        confidence -= 0.15
-    if latest is None and is_time_series:
-        confidence -= 0.20
-    confidence = round(max(0.0, confidence), 2)
-
-    critical: list[str] = []
-    if skipped:
-        critical.append("表画像被总超时跳过")
-    if error:
-        critical.append("受限样本读取失败")
-    if sample_count == 0:
-        critical.append("无样本数据（空表或无法画像）")
-    if latest is None and is_time_series:
-        critical.append("数据表缺少最新数据时间")
-    if (
-        role in _TIME_DATA_ROLES
-        and (duplicate_ratio == "unknown" or duplicate_ratio is None)
-        and not has_primary_key
-        and not has_unique_key
-    ):
-        critical.append("数据表无可用键且重复键比例 unknown")
-
-    can_propose_active = (
-        confidence >= MIN_CONFIDENCE_FOR_ACTIVE and not critical
-    )
-    return {
-        "score": score,
-        "breakdown": breakdown,
-        "deductions": deductions,
-        "warnings": warnings,
-        "confidence": confidence,
-        "can_propose_active": can_propose_active,
-        "confirmed_empty": (
-            row_estimate == 0
-            and sample_count == 0
-            and not error
-            and not skipped
-        ),
-        "is_time_series": is_time_series,
-    }
-
-
-def _decide_independent(
-    profile: Mapping[str, Any],
-    quality: Mapping[str, Any],
-    scored_item: Mapping[str, Any],
-    eligibility: Mapping[str, Any],
-) -> tuple[str, list[str]]:
-    """每张表独立判定（冻结契约：组不再 winner-takes-all）。"""
-    score = float(scored_item.get("score") or 0.0)
-    reason_parts = [f"评分 {score:g}"]
-    error = str(profile.get("error") or "")
-    skipped = bool(quality.get("skipped_by_total_timeout"))
-    sample_count = int(quality.get("sample_row_count") or 0)
-
-    eligibility_status = str(eligibility.get("status") or "unknown")
-    eligibility_category = str(eligibility.get("category") or "unknown")
-    eligibility_reasons = eligibility.get("reasons") or []
-    eligibility_detail = "、".join(str(item) for item in eligibility_reasons)
-    reason_parts.append(
-        f"eligibility:{eligibility_status}/{eligibility_category}, "
-        f"confidence={float(eligibility.get('confidence') or 0):g}"
-        + (f", evidence={eligibility_detail}" if eligibility_detail else "")
-    )
-    if eligibility_status == "unknown":
-        return "pending", reason_parts
-    if eligibility_status == "ineligible":
-        return "standby", reason_parts
-    if error:
-        reason_parts.append("受限样本读取失败")
-        return "pending", reason_parts
-    if skipped:
-        reason_parts.append("表画像被总超时跳过")
-        return "pending", reason_parts
-    if bool(scored_item.get("confirmed_empty")):
-        reason_parts.append("confirmed_empty（确认 0 行空表）")
-        return "standby", reason_parts
-    if sample_count == 0:
-        reason_parts.append("数据状态未知（无样本且行数非确认零）")
-        return "pending", reason_parts
-    if not bool(scored_item.get("can_propose_active")):
-        reason_parts.extend(scored_item.get("warnings") or [])
-        reason_parts.append("关键质量指标 unknown，需人工确认")
-        return "pending", reason_parts
-    if score >= ACTIVE_MIN_SCORE:
-        decision = "active"
-    elif score >= PENDING_MIN_SCORE:
-        decision = "pending"
-    else:
-        decision = "standby"
-    reason_parts.extend(scored_item.get("warnings") or [])
-    return decision, reason_parts
-
-
 def _find_duplicate_evidence(
     key: tuple[str, str],
     other: tuple[str, str],
@@ -1200,7 +741,6 @@ def compute_proposals(
     profiles_by_key: dict[tuple[str, str], Mapping[str, Any]] = {}
     quality_by_key: dict[tuple[str, str], Mapping[str, Any]] = {}
     scored: dict[tuple[str, str], dict[str, Any]] = {}
-    non_biz_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     eligibility_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     shard_evidence = _physical_shard_evidence(profiles)
     for profile in profiles:
@@ -1212,71 +752,39 @@ def compute_proposals(
         profiles_by_key[key] = profile
         quality = profile.get("quality") or {}
         quality_by_key[key] = quality
-        non_biz = classify_non_business_evidence(profile, quality)
-        non_biz_by_key[key] = non_biz
         eligibility_by_key[key] = evaluate_table_eligibility(
             profile,
             quality,
         ).as_dict()
-        is_time_series = _is_time_series_like(profile, quality)
-        static_volume = (
-            not is_time_series
-            and non_biz["confidence"] < 0.6
-            and not _is_backup_mark(
-                table,
-                str(quality.get("table_comment") or profile.get("table_comment") or ""),
-            )
-        )
-        volume_floor_eligible = (
-            is_time_series
-            and _business_time_series_strong(profile, quality)
-            and int(quality.get("sample_row_count") or 0) > 0
-            and (quality.get("row_estimate") is None or quality.get("row_estimate") >= 1)
-            and non_biz["confidence"] < 0.6
-            and shard_evidence.get(key, 0.0) < 0.9
-            and not _is_backup_mark(
-                table,
-                str(quality.get("table_comment") or profile.get("table_comment") or ""),
-            )
-            and not str(profile.get("error") or "")
-            and not bool(quality.get("skipped_by_total_timeout"))
-        )
         scored[key] = score_table(
             profile,
             quality,
             comment_ratios.get(key, 0.0),
-            static_volume=static_volume,
-            volume_floor_eligible=volume_floor_eligible,
         )
 
     updates: dict[tuple[str, str], dict[str, Any]] = {}
     for key, profile in profiles_by_key.items():
         quality = quality_by_key[key]
         scored_item = scored[key]
-        non_biz = non_biz_by_key[key]
         eligibility = eligibility_by_key[key]
         shard_confidence = shard_evidence.get(key, 0.0)
+        constraints: list[ProposalConstraint] = []
         if shard_confidence >= 0.9:
-            decision = "standby"
-            reason_parts = [
-                f"评分 {scored_item['score']:g}",
-                f"eligibility:ineligible/physical_shard, confidence={shard_confidence:g}",
-            ]
-        else:
-            decision, reason_parts = _decide_independent(
-                profile,
-                quality,
-                scored_item,
-                eligibility,
+            constraints.append(
+                ProposalConstraint(
+                    "physical_shard",
+                    confidence=shard_confidence,
+                )
             )
+        proposal = decide_proposal(eligibility, scored_item, constraints)
         updates[key] = {
             "business_group": "",
             "group_confidence": 0.0,
             "compared_tables_json": "[]",
             "group_reason": "",
-            "proposed_decision": decision,
+            "proposed_decision": proposal.decision,
             "proposed_score": scored_item["score"],
-            "proposed_reason": "；".join(reason_parts),
+            "proposed_reason": "；".join(proposal.reasons),
         }
 
     # 组级：只补充关系证据，唯一自动降级是确定性重复。
@@ -1289,21 +797,19 @@ def compute_proposals(
         member_names = {
             key: str(profiles_by_key[key].get("table") or "") for key in members
         }
-        active_members = [
+        eligible_members = [
             key
             for key in members
-            if updates[key]["proposed_decision"] == "active"
+            if eligibility_by_key[key].get("status") == "eligible"
         ]
-        active_members.sort(
+        eligible_members.sort(
             key=lambda key: (
                 -scored[key]["score"],
                 member_names.get(key, key[1]),
             )
         )
         # 1) backup_mirror 优先：backup 表降 standby，主表保留。
-        for key in active_members:
-            if updates[key]["proposed_decision"] != "active":
-                continue
+        for key in eligible_members:
             backup, backup_detail = _find_backup_evidence(
                 key,
                 members,
@@ -1312,14 +818,14 @@ def compute_proposals(
                 quality_by_key,
             )
             if backup:
-                updates[key]["proposed_decision"] = "standby"
-                updates[key]["proposed_reason"] += f"；{backup_detail}"
+                decision, reasons = apply_constraint(
+                    [updates[key]["proposed_reason"]],
+                    ProposalConstraint("backup_mirror", backup_detail),
+                )
+                updates[key]["proposed_decision"] = decision
+                updates[key]["proposed_reason"] = "；".join(reasons)
         # 2) duplicate_structure：同分/低分者降 standby，保留组内高分主表。
-        remaining = [
-            key
-            for key in active_members
-            if updates[key]["proposed_decision"] == "active"
-        ]
+        remaining = list(eligible_members)
         for index, key in enumerate(remaining):
             for other in remaining[index + 1 :]:
                 duplicate, duplicate_detail = _find_duplicate_evidence(
@@ -1330,8 +836,12 @@ def compute_proposals(
                     quality_by_key,
                 )
                 if duplicate:
-                    updates[other]["proposed_decision"] = "standby"
-                    updates[other]["proposed_reason"] += f"；{duplicate_detail}"
+                    decision, reasons = apply_constraint(
+                        [updates[other]["proposed_reason"]],
+                        ProposalConstraint("duplicate_structure", duplicate_detail),
+                    )
+                    updates[other]["proposed_decision"] = decision
+                    updates[other]["proposed_reason"] = "；".join(reasons)
         for key in members:
             hint = _find_obsolete_hint(key, members, member_names, quality_by_key)
             if hint:
