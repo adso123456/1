@@ -27,6 +27,7 @@ import json
 import os
 import re
 from collections import defaultdict
+from datetime import date
 from typing import Any, Mapping
 
 from backend.data_source_eligibility import evaluate_table_eligibility
@@ -339,6 +340,7 @@ def _has_role_conflict(left_name: str, right_name: str) -> bool:
 
 def _physical_shard_evidence(
     profiles: list[Mapping[str, Any]],
+    baseline_year_month: tuple[int, int],
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """识别物理分片，并区分冗余分片与必要查询入口。"""
     profiles_by_table: dict[tuple[str, str], Mapping[str, Any]] = {}
@@ -424,13 +426,22 @@ def _physical_shard_evidence(
             for table in shards
         )
         consecutive = suffixes == list(range(suffixes[0], suffixes[-1] + 1))
-        closed_time_partition = bool(
-            re.search(r"(?:^|_)(?:19|20)\d{2}$", family) and consecutive
-        )
+        year_match = re.search(r"(?:^|_)((?:19|20)\d{2})$", family)
+        family_confidence = 0.98 if year_match and consecutive else 0.95
         shard_role = "redundant_shard" if unified else "required_access_shard"
         for table in shards:
+            match = _PHYSICAL_SHARD_RE.match(table)
+            month = int(match.group("num")) if match else 0
+            shard_year_month = (
+                (int(year_match.group(1)), month) if year_match else None
+            )
+            closed_time_partition = bool(
+                shard_year_month
+                and 1 <= month <= 12
+                and shard_year_month < baseline_year_month
+            )
             evidence[(schema, table)] = {
-                "confidence": 0.98 if closed_time_partition else 0.95,
+                "confidence": family_confidence,
                 "family": family,
                 "role": shard_role,
                 "closed_time_partition": closed_time_partition,
@@ -443,6 +454,12 @@ def _physical_shard_evidence(
                 "closed_time_partition": False,
             }
     return evidence
+
+
+def _governance_year_month() -> tuple[int, int]:
+    """一次 proposal 计算只读取一次当前年月，避免跨日期边界不一致。"""
+    today = date.today()
+    return today.year, today.month
 
 
 def classify_non_business_evidence(
@@ -798,7 +815,10 @@ def compute_proposals(
     quality_by_key: dict[tuple[str, str], Mapping[str, Any]] = {}
     scored: dict[tuple[str, str], dict[str, Any]] = {}
     eligibility_by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    shard_evidence = _physical_shard_evidence(profiles)
+    shard_evidence = _physical_shard_evidence(
+        profiles,
+        _governance_year_month(),
+    )
     for profile in profiles:
         schema = str(profile.get("schema") or "")
         table = str(profile.get("table") or "")

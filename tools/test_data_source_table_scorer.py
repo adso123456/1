@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -1048,7 +1049,11 @@ def test_physical_shard_without_unified_entry_is_required_access() -> None:
         )
         for month in range(1, 8)
     ]
-    proposals = compute_proposals(profiles, {}, {})
+    with patch(
+        "backend.data_source_table_scorer._governance_year_month",
+        return_value=(2026, 8),
+    ):
+        proposals = compute_proposals(profiles, {}, {})
     for month in range(1, 8):
         fields = proposals[("public", f"model_hydro_gaoqiaohe_2026_{month}")]
         assert fields["proposed_decision"] == "active", fields
@@ -1059,6 +1064,60 @@ def test_physical_shard_without_unified_entry_is_required_access() -> None:
         assert metrics["physical_shard_family"] == "model_hydro_gaoqiaohe_2026"
         assert metrics["physical_shard_role"] == "required_access_shard"
         assert metrics["closed_physical_time_partition"] is True
+
+
+def test_closed_partition_is_decided_per_shard_month() -> None:
+    fingerprint = "sha256-monthly-partition"
+    profiles = []
+    for year, months in (
+        (2025, (11, 12)),
+        (2026, (1, 7, 8, 9, 12, 13)),
+        (2027, (1, 2)),
+    ):
+        profiles.extend(
+            _profile(
+                f"model_hydro_monthly_{year}_{month}",
+                ["id", "res_date", "value"],
+                structure_fingerprint=fingerprint,
+                data_fingerprint=f"{year}-{month}",
+                table_comment="水动力模型月度结果",
+                time_column="res_date",
+                grain="id",
+                latest=None,
+                coverage=None,
+            )
+            for month in months
+        )
+    with patch(
+        "backend.data_source_table_scorer._governance_year_month",
+        return_value=(2026, 8),
+    ):
+        proposals = compute_proposals(profiles, {}, {})
+
+    expected = {
+        (2025, 12): True,
+        (2026, 1): True,
+        (2026, 7): True,
+        (2026, 8): False,
+        (2026, 9): False,
+        (2026, 12): False,
+        (2026, 13): False,
+        (2027, 1): False,
+    }
+    for (year, month), closed in expected.items():
+        fields = proposals[("public", f"model_hydro_monthly_{year}_{month}")]
+        metrics = fields["quality_metrics_patch"]
+        assert metrics["physical_shard_role"] == "required_access_shard"
+        assert metrics["closed_physical_time_partition"] is closed
+
+    historical = proposals[("public", "model_hydro_monthly_2026_7")]
+    assert historical["proposed_decision"] == "active"
+    assert "历史物理分片" in historical["proposed_reason"]
+    current = proposals[("public", "model_hydro_monthly_2026_8")]
+    assert current["proposed_decision"] == "pending"
+    assert "历史物理分片" not in current["proposed_reason"]
+    assert "缺少最新数据时间" in current["proposed_reason"]
+    assert "关键质量证据 unknown" in current["proposed_reason"]
 
 
 def test_shard_family_requires_distinct_data_and_consistent_grain() -> None:
