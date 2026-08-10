@@ -83,6 +83,17 @@ def _is_time_series_like(
     quality: Mapping[str, Any],
 ) -> bool:
     del quality
+    time_candidate = str(profile.get("time_column_candidate") or "")
+    columns = {
+        str(item.get("column") or "")
+        for item in (profile.get("columns") or [])
+    }
+    if (
+        time_candidate
+        and time_candidate in columns
+        and not _is_audit_time_column(time_candidate)
+    ):
+        return True
     return any(
         _business_time_column(str(item.get("column") or ""))
         for item in (profile.get("columns") or [])
@@ -113,6 +124,8 @@ def score_table(
     profile: Mapping[str, Any],
     quality: Mapping[str, Any],
     comment_ratio: float = 0.0,
+    *,
+    closed_physical_time_partition: bool = False,
 ) -> dict[str, Any]:
     """只根据结构和画像指标计算可复现的 Quality Score。"""
     warnings: list[str] = []
@@ -148,7 +161,10 @@ def score_table(
     else:
         breakdown["完整度"] = 0.0
 
-    if not is_time_series:
+    if closed_physical_time_partition:
+        freshness = 20.0
+        warnings.append("历史物理分片，新鲜度不参与持续更新评分")
+    elif not is_time_series:
         freshness = 20.0
         if latest is None or freshness_confidence < 0.5:
             warnings.append("非时序表，新鲜度按中性计分")
@@ -185,7 +201,11 @@ def score_table(
         volume = 0.0
     breakdown["有效数据量"] = volume
 
-    if not is_time_series:
+    if closed_physical_time_partition:
+        coverage_score = 10.0
+        if time_coverage is None:
+            warnings.append("历史物理分片，时间覆盖按分区语义中性计分")
+    elif not is_time_series:
         coverage_score = 10.0
         if time_coverage is None:
             warnings.append("非时序表，时间覆盖按中性计分")
@@ -224,7 +244,10 @@ def score_table(
     ) + round(5.0 * max(0.0, min(1.0, float(comment_ratio or 0.0))), 2)
 
     observed_interval = bool(quality.get("observed_update_interval"))
-    if not is_time_series:
+    if closed_physical_time_partition:
+        update_score = 5.0
+        warnings.append("历史物理分片，持续更新频率不适用")
+    elif not is_time_series:
         update_score = 5.0
         if not observed_interval:
             warnings.append("非时序表，持续更新按中性计分")
@@ -270,7 +293,7 @@ def score_table(
         and not has_unique_key
     ):
         confidence -= 0.15
-    if latest is None and is_time_series:
+    if latest is None and is_time_series and not closed_physical_time_partition:
         confidence -= 0.20
     confidence = round(max(0.0, confidence), 2)
 
@@ -281,7 +304,7 @@ def score_table(
         critical.append("受限样本读取失败")
     if sample_count == 0:
         critical.append("无样本数据（空表或无法画像）")
-    if latest is None and is_time_series:
+    if latest is None and is_time_series and not closed_physical_time_partition:
         critical.append("时序表缺少最新数据时间")
     if (
         role in _TIME_DATA_ROLES
@@ -307,4 +330,5 @@ def score_table(
             row_estimate == 0 and sample_count == 0 and not error and not skipped
         ),
         "is_time_series": is_time_series,
+        "closed_physical_time_partition": closed_physical_time_partition,
     }

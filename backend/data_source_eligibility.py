@@ -47,6 +47,13 @@ _STRONG_DOMAIN_CN = (
     "水生态", "河流", "河湖", "湖泊", "流域", "水体", "水源", "水生",
     "污水", "无人船", "环保项目",
 )
+_DOMAIN_COMPOUND_ALIASES = {
+    "waterquality": "water",
+    "phytoplankton": "plankton",
+    "industrypollutant": "pollutant",
+    "ecologynutrition": "ecology",
+    "hydrological": "hydrology",
+}
 _DIMENSION_TOKENS = frozenset(
     {
         "station", "section", "area", "region", "district", "dictionary",
@@ -84,6 +91,11 @@ def _positive_business_evidence(table: str, comment: str) -> tuple[str, list[str
     """只使用表名和表注释产生正向证据；列名不能单独证明业务归属。"""
     subject = f"{table} {comment}".lower()
     tokens = _identifier_tokens(subject)
+    tokens.update(
+        normalized
+        for compound, normalized in _DOMAIN_COMPOUND_ALIASES.items()
+        if compound in tokens
+    )
     strong_hits = sorted(tokens & _STRONG_DOMAIN_TOKENS)
     strong_hits.extend(term for term in _STRONG_DOMAIN_CN if term in subject)
     dimension_hits = sorted(tokens & _DIMENSION_TOKENS)

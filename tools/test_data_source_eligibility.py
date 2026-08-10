@@ -135,6 +135,23 @@ def test_domain_dimensions_require_domain_context() -> None:
         assert result.status == UNKNOWN, (table, result)
 
 
+def test_confirmed_compound_domain_aliases_are_eligible() -> None:
+    tables = (
+        "we_phytoplankton_records",
+        "we_ecologynutrition_records",
+        "wm_waterquality_day_records",
+        "wm_waterquality_hour_records",
+        "wm_waterquality_month_records",
+        "rs_industrypollutant_records",
+    )
+    for table in tables:
+        result = evaluate_table_eligibility(_profile(table))
+        assert result.status == ELIGIBLE, (table, result)
+        assert result.category == "water_environment_business", (table, result)
+    fuzzy = evaluate_table_eligibility(_profile("waterqualityish_config"))
+    assert fuzzy.status == UNKNOWN, fuzzy
+
+
 def test_gate_never_emits_governance_decisions() -> None:
     result = evaluate_table_eligibility(_profile("water_monitor")).as_dict()
     assert "proposed_decision" not in result

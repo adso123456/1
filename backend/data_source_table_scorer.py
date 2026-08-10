@@ -339,59 +339,109 @@ def _has_role_conflict(left_name: str, right_name: str) -> bool:
 
 def _physical_shard_evidence(
     profiles: list[Mapping[str, Any]],
-) -> dict[tuple[str, str], float]:
-    """物理分片识别：满足冻结契约五条件 -> confidence 0.95。
-
-    1. 表名存在明确数字分片后缀；
-    2. 同 schema 同 family 数字分表 >= 3 张；
-    3. 分表 structure_fingerprint 完全一致（不要求 data_fingerprint）；
-    4. family 存在非数字统一入口（*_hour/_day/_month/_records 等）；
-    5. 数字后缀无独立业务语义（模型/备份等其他 evidence 另行处理）。
-    只提示不降级：1~2 张、结构不一致、无统一入口。
-    """
-    profiles_by_table: dict[str, Mapping[str, Any]] = {}
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """识别物理分片，并区分冗余分片与必要查询入口。"""
+    profiles_by_table: dict[tuple[str, str], Mapping[str, Any]] = {}
     for profile in profiles:
+        schema = str(profile.get("schema") or "")
         table = str(profile.get("table") or "")
-        if table:
-            profiles_by_table[table] = profile
-    digit_families: dict[str, list[str]] = defaultdict(list)
-    for table in profiles_by_table:
+        if schema and table:
+            profiles_by_table[(schema, table)] = profile
+    digit_families: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for schema, table in profiles_by_table:
         match = _PHYSICAL_SHARD_RE.match(table)
         if match and match.group("num").isdigit():
-            digit_families[match.group("family")].append(table)
-    evidence: dict[tuple[str, str], float] = {}
-    for family, shards in digit_families.items():
-        if len(shards) == 1:
+            digit_families[(schema, match.group("family"))].append(table)
+    evidence: dict[tuple[str, str], dict[str, Any]] = {}
+    for (schema, family), shards in digit_families.items():
+        if len(shards) < 2:
             continue
         base = re.sub(r"_records$", "", family)
         unified = [
             table
-            for table in profiles_by_table
+            for candidate_schema, table in profiles_by_table
+            if candidate_schema == schema
             if table not in shards
-            and table.startswith(base)
             and not _PHYSICAL_SHARD_RE.match(table)
+            and (
+                table in {base, family}
+                or bool(
+                    re.fullmatch(
+                        re.escape(base)
+                        + r"_(?:minute|hour|day|month|year)_records",
+                        table,
+                    )
+                )
+            )
         ]
-        if not unified:
+        evidence_shards = [
+            table
+            for table in shards
+            if str(
+                (profiles_by_table[(schema, table)].get("quality") or {}).get(
+                    "data_fingerprint"
+                )
+                or ""
+            )
+        ]
+        if len(evidence_shards) < 2:
             continue
         fingerprints = {
             str(
-                (profiles_by_table[table].get("quality") or {}).get(
+                (profiles_by_table[(schema, table)].get("quality") or {}).get(
                     "structure_fingerprint"
                 )
                 or ""
             )
-            for table in shards
+            for table in evidence_shards
         }
         if not fingerprints or "" in fingerprints or len(fingerprints) > 1:
             continue
-        if len(shards) == 2:
-            # sibling==2：必须无职责/粒度差异，且结构指纹完全一致。
-            if _has_role_conflict(shards[0], shards[1]):
-                continue
+        data_fingerprints = {
+            str(
+                (profiles_by_table[(schema, table)].get("quality") or {}).get(
+                    "data_fingerprint"
+                )
+                or ""
+            )
+            for table in evidence_shards
+        }
+        if len(data_fingerprints) != len(evidence_shards):
+            continue
+        semantic_signatures = {
+            (
+                str(profile.get("table_role_candidate") or ""),
+                str(profile.get("grain_candidate") or ""),
+                str(profile.get("time_column_candidate") or ""),
+            )
+            for table in evidence_shards
+            for profile in (profiles_by_table[(schema, table)],)
+        }
+        if len(semantic_signatures) > 1:
+            continue
+        suffixes = sorted(
+            int(_PHYSICAL_SHARD_RE.match(table).group("num"))  # type: ignore[union-attr]
+            for table in shards
+        )
+        consecutive = suffixes == list(range(suffixes[0], suffixes[-1] + 1))
+        closed_time_partition = bool(
+            re.search(r"(?:^|_)(?:19|20)\d{2}$", family) and consecutive
+        )
+        shard_role = "redundant_shard" if unified else "required_access_shard"
         for table in shards:
-            profile = profiles_by_table[table]
-            key = (str(profile.get("schema") or ""), table)
-            evidence[key] = 0.95
+            evidence[(schema, table)] = {
+                "confidence": 0.98 if closed_time_partition else 0.95,
+                "family": family,
+                "role": shard_role,
+                "closed_time_partition": closed_time_partition,
+            }
+        for table in unified:
+            evidence[(schema, table)] = {
+                "confidence": 0.95,
+                "family": family,
+                "role": "unified_entry",
+                "closed_time_partition": False,
+            }
     return evidence
 
 
@@ -762,10 +812,14 @@ def compute_proposals(
             profile,
             quality,
         ).as_dict()
+        shard = shard_evidence.get(key) or {}
         scored[key] = score_table(
             profile,
             quality,
             comment_ratios.get(key, 0.0),
+            closed_physical_time_partition=bool(
+                shard.get("closed_time_partition")
+            ),
         )
 
     updates: dict[tuple[str, str], dict[str, Any]] = {}
@@ -773,16 +827,25 @@ def compute_proposals(
         quality = quality_by_key[key]
         scored_item = scored[key]
         eligibility = eligibility_by_key[key]
-        shard_confidence = shard_evidence.get(key, 0.0)
+        shard = shard_evidence.get(key) or {}
+        shard_confidence = float(shard.get("confidence") or 0.0)
+        shard_role = str(shard.get("role") or "")
+        shard_family = str(shard.get("family") or "")
         constraints: list[ProposalConstraint] = []
-        if shard_confidence >= 0.9:
+        if shard_role == "redundant_shard" and shard_confidence >= 0.9:
             constraints.append(
                 ProposalConstraint(
-                    "physical_shard",
+                    "physical_shard_redundant",
+                    detail=f"family={shard_family}",
                     confidence=shard_confidence,
                 )
             )
         proposal = decide_proposal(eligibility, scored_item, constraints)
+        reasons = list(proposal.reasons)
+        if shard_role == "required_access_shard":
+            reasons.append(
+                f"physical_shard_required_access, family={shard_family}"
+            )
         updates[key] = {
             "business_group": "",
             "group_confidence": 0.0,
@@ -790,7 +853,14 @@ def compute_proposals(
             "group_reason": "",
             "proposed_decision": proposal.decision,
             "proposed_score": scored_item["score"],
-            "proposed_reason": "；".join(proposal.reasons),
+            "proposed_reason": "；".join(reasons),
+            "quality_metrics_patch": {
+                "physical_shard_family": shard_family,
+                "physical_shard_role": shard_role,
+                "closed_physical_time_partition": bool(
+                    shard.get("closed_time_partition")
+                ),
+            } if shard_role else {},
         }
 
     # 组级：只补充关系证据，唯一自动降级是确定性重复。

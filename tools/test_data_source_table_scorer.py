@@ -340,7 +340,8 @@ def test_non_business_taxonomy_does_not_change_quality_volume() -> None:
         profile["quality"],
         0.5,
     )
-    assert result["breakdown"]["有效数据量"] == 15.0
+    # Profiler 已明确确认 timestamp 为业务时间列，按时序数据量曲线评分。
+    assert result["breakdown"]["有效数据量"] == 7.0
 
 
 def test_identity_platform_high_confidence() -> None:
@@ -918,7 +919,7 @@ def test_high_score_eligible_history_mirror_cannot_eliminate_main() -> None:
     assert "constraint:duplicate_structure" not in main["proposed_reason"]
 
 
-def test_physical_shard_to_standby() -> None:
+def test_physical_shard_with_unified_entry_is_redundant() -> None:
     fingerprint = "sha256-shard-struct"
     profiles = [
         _profile(
@@ -939,12 +940,21 @@ def test_physical_shard_to_standby() -> None:
     )
     proposals = compute_proposals(profiles, {}, {})
     assert proposals[("public", "wh_records_1")]["proposed_decision"] == "standby"
-    assert "physical_shard" in proposals[("public", "wh_records_1")][
+    assert "physical_shard_redundant" in proposals[("public", "wh_records_1")][
         "proposed_reason"
     ]
+    shard_metrics = proposals[("public", "wh_records_1")][
+        "quality_metrics_patch"
+    ]
+    assert shard_metrics["physical_shard_family"] == "wh_records"
+    assert shard_metrics["physical_shard_role"] == "redundant_shard"
     assert proposals[("public", "wh_records_5")]["proposed_decision"] == "standby"
     # 统一入口表不受影响
     assert proposals[("public", "wh_hour_records")]["proposed_decision"] == "active"
+    unified_metrics = proposals[("public", "wh_hour_records")][
+        "quality_metrics_patch"
+    ]
+    assert unified_metrics["physical_shard_role"] == "unified_entry"
 
 
 def test_physical_shard_two_siblings_different_structure_not_degraded() -> None:
@@ -992,10 +1002,10 @@ def test_physical_shard_two_siblings_identical_structure() -> None:
         )
     )
     proposals = compute_proposals(profiles, {}, {})
-    assert "physical_shard" in proposals[("public", "wh_meteorological_records_5")][
+    assert "physical_shard_redundant" in proposals[("public", "wh_meteorological_records_5")][
         "proposed_reason"
     ]
-    assert "physical_shard" in proposals[("public", "wh_meteorological_records_37")][
+    assert "physical_shard_redundant" in proposals[("public", "wh_meteorological_records_37")][
         "proposed_reason"
     ]
 
@@ -1020,6 +1030,134 @@ def test_physical_shard_single_digit_table_not_degraded() -> None:
     assert "physical_shard" not in proposals[("public", "wh_meteorological_records_5")][
         "proposed_reason"
     ]
+
+
+def test_physical_shard_without_unified_entry_is_required_access() -> None:
+    fingerprint = "sha256-model-hydro-struct"
+    profiles = [
+        _profile(
+            f"model_hydro_gaoqiaohe_2026_{month}",
+            ["id", "res_date", "hour", "water_level", "water_depth", "flow"],
+            structure_fingerprint=fingerprint,
+            data_fingerprint=f"month-{month}",
+            table_comment="水动力模型月度结果",
+            time_column="res_date",
+            grain="id",
+            latest=None,
+            coverage=None,
+        )
+        for month in range(1, 8)
+    ]
+    proposals = compute_proposals(profiles, {}, {})
+    for month in range(1, 8):
+        fields = proposals[("public", f"model_hydro_gaoqiaohe_2026_{month}")]
+        assert fields["proposed_decision"] == "active", fields
+        assert "physical_shard_required_access" in fields["proposed_reason"]
+        assert "非时序表" not in fields["proposed_reason"]
+        assert "历史物理分片" in fields["proposed_reason"]
+        metrics = fields["quality_metrics_patch"]
+        assert metrics["physical_shard_family"] == "model_hydro_gaoqiaohe_2026"
+        assert metrics["physical_shard_role"] == "required_access_shard"
+        assert metrics["closed_physical_time_partition"] is True
+
+
+def test_shard_family_requires_distinct_data_and_consistent_grain() -> None:
+    same_data = [
+        _profile(
+            f"model_hydro_same_2026_{month}",
+            WATER_COLUMNS,
+            structure_fingerprint="same-structure",
+            data_fingerprint="same-data",
+        )
+        for month in (1, 2)
+    ]
+    proposals = compute_proposals(same_data, {}, {})
+    assert all(
+        not fields["quality_metrics_patch"]
+        for fields in proposals.values()
+    )
+
+    conflicting_grain = [
+        _profile(
+            f"model_hydro_conflict_2026_{month}",
+            WATER_COLUMNS,
+            structure_fingerprint="same-structure",
+            data_fingerprint=f"data-{month}",
+            grain="station_id" if month == 1 else "section_id",
+        )
+        for month in (1, 2)
+    ]
+    proposals = compute_proposals(conflicting_grain, {}, {})
+    assert all(
+        not fields["quality_metrics_patch"]
+        for fields in proposals.values()
+    )
+
+
+def test_empty_sibling_does_not_hide_redundant_shard_family() -> None:
+    fingerprint = "sha256-waterquality-struct"
+    profiles = [
+        _profile(
+            f"wm_waterquality_records_{index}",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint=f"data-{index}",
+        )
+        for index in (1, 2)
+    ]
+    profiles.append(
+        _profile(
+            "wm_waterquality_records_3",
+            WATER_COLUMNS,
+            row_estimate=0,
+            sample_count=0,
+            latest=None,
+            coverage=None,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="",
+        )
+    )
+    profiles.append(
+        _profile(
+            "wm_waterquality_hour_records",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="unified",
+        )
+    )
+    profiles.append(
+        _profile(
+            "wm_waterquality_threshold",
+            WATER_COLUMNS,
+            structure_fingerprint=fingerprint,
+            data_fingerprint="threshold",
+        )
+    )
+    proposals = compute_proposals(profiles, {}, {})
+    for index in (1, 2):
+        fields = proposals[("public", f"wm_waterquality_records_{index}")]
+        assert fields["proposed_decision"] == "standby"
+        assert "physical_shard_redundant" in fields["proposed_reason"]
+    empty = proposals[("public", "wm_waterquality_records_3")]
+    assert empty["proposed_decision"] == "standby"
+    assert empty["quality_metrics_patch"]["physical_shard_role"] == (
+        "redundant_shard"
+    )
+    assert proposals[("public", "wm_waterquality_threshold")][
+        "quality_metrics_patch"
+    ] == {}
+
+
+def test_time_candidate_is_respected_without_adding_res_date_name_rule() -> None:
+    profile = _profile(
+        "water_model_result",
+        ["id", "res_date", "value"],
+        time_column="res_date",
+        latest=None,
+        coverage=None,
+    )
+    assert _business_time_column("res_date") is False
+    assert _is_time_series_like(profile, profile["quality"]) is True
 
 
 if __name__ == "__main__":

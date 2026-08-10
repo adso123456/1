@@ -210,6 +210,15 @@ class DataSourceTableReviewer:
             )
             for key, fields in proposals.items():
                 if key in present_keys and key in merged:
+                    metrics_patch = fields.pop("quality_metrics_patch", {})
+                    if metrics_patch:
+                        quality_metrics = json.loads(
+                            merged[key]["fields"]["quality_metrics_json"]
+                        )
+                        quality_metrics.update(metrics_patch)
+                        merged[key]["fields"]["quality_metrics_json"] = (
+                            json.dumps(quality_metrics, ensure_ascii=False)
+                        )
                     merged[key]["fields"].update(fields)
             reviewed: list[dict[str, Any]] = []
             for key, merged_state in sorted(merged.items()):

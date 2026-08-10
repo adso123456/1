@@ -85,7 +85,11 @@ def test_proposed_priority_matrix() -> None:
 
 
 def test_deterministic_constraints_override_high_quality() -> None:
-    for kind in ("physical_shard", "duplicate_structure", "backup_mirror"):
+    for kind in (
+        "physical_shard_redundant",
+        "duplicate_structure",
+        "backup_mirror",
+    ):
         result = decide_proposal(
             _eligibility("eligible"),
             _quality(95),
