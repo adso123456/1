@@ -32,10 +32,6 @@ def promote_policy(
     """按 fail-closed 契约生成单表最终 Effective Decision。"""
     proposed = str(proposed_decision or "").strip()
     availability = str(availability_status or "").strip()
-    if proposed not in VALID_PROPOSED_DECISIONS:
-        raise PolicyPromotionError(
-            f"非法 proposed_decision: {proposed or '<empty>'}"
-        )
     if availability not in VALID_AVAILABILITY:
         raise PolicyPromotionError(
             f"非法 availability_status: {availability or '<empty>'}"
@@ -44,15 +40,20 @@ def promote_policy(
     if availability == "missing":
         effective = "standby"
         rule = "missing_fail_closed"
-    elif proposed == "active":
-        effective = "active"
-        rule = "active_present_promoted"
-    elif proposed == "pending":
-        effective = "standby"
-        rule = "pending_fail_closed"
     else:
-        effective = "standby"
-        rule = "standby_preserved"
+        if proposed not in VALID_PROPOSED_DECISIONS:
+            raise PolicyPromotionError(
+                f"非法 proposed_decision: {proposed or '<empty>'}"
+            )
+        if proposed == "active":
+            effective = "active"
+            rule = "active_present_promoted"
+        elif proposed == "pending":
+            effective = "standby"
+            rule = "pending_fail_closed"
+        else:
+            effective = "standby"
+            rule = "standby_preserved"
 
     return PolicyPromotionResult(
         effective_decision=effective,

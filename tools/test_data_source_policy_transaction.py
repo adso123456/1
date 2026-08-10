@@ -201,6 +201,7 @@ def test_pure_policy_fail_closed_contract() -> None:
     assert promote_policy("pending", "present").effective_decision == "standby"
     assert promote_policy("standby", "present").effective_decision == "standby"
     assert promote_policy("active", "missing").effective_decision == "standby"
+    assert promote_policy("", "missing").effective_decision == "standby"
     for proposed in ("", "invalid", "ACTIVE"):
         try:
             promote_policy(proposed, "present")

@@ -48,14 +48,12 @@ class FakeConnector:
 
 class FakeProfiler:
     def profile(self, source_id, metadata, *, progress=None) -> list[dict]:
+        tables = list(dict.fromkeys(item["table"] for item in metadata))
         if progress:
-            progress(1, 3, "monitor_data")
-            progress(3, 3, "water_data_old")
+            progress(1, len(tables), tables[0])
+            progress(len(tables), len(tables), tables[-1])
         profiles = []
-        for index, table in enumerate(
-            ("monitor_data", "station_dict", "water_data_old"),
-            start=1,
-        ):
+        for index, table in enumerate(tables, start=1):
             columns = [item for item in metadata if item["table"] == table]
             profiles.append(
                 {
@@ -181,6 +179,40 @@ def test_first_run_migration_then_automatic_policy_takes_ownership() -> None:
         finally:
             connection.close()
         assert migration_runs == 1
+
+
+def test_first_review_removes_migrated_active_table_missing_from_discovery() -> None:
+    with tempfile.TemporaryDirectory(prefix="review-migration-missing-") as directory:
+        catalog, source_id = _setup(Path(directory))
+        legacy_scope = [
+            item for item in METADATA if item["table"] == "water_data_old"
+        ]
+        catalog.save_scope(source_id, legacy_scope)
+        current_metadata = [
+            item for item in METADATA if item["table"] != "water_data_old"
+        ]
+
+        class CurrentConnector:
+            def discover(self, source_id: str, *, persist: bool = True) -> list[dict]:
+                return [dict(item) for item in current_metadata]
+
+        reviewer = DataSourceTableReviewer(
+            catalog,
+            CurrentConnector(),
+            FakeProfiler(),
+        )
+        result = reviewer.run_review(source_id, created_by="migration-missing")
+        reviews = _reviews(catalog, source_id)
+        old_review = reviews["water_data_old"]
+
+        assert result["missing"] == 1
+        assert old_review["proposed_decision"] == ""
+        assert old_review["availability_status"] == "missing"
+        assert old_review["effective_decision"] == "standby"
+        assert old_review["decision_source"] == "automatic_policy_v2"
+        assert {
+            item["table"] for item in catalog.require(source_id).selected_scope
+        }.isdisjoint({"water_data_old"})
 
 
 def test_migration_midway_failure_rolls_back_and_retries() -> None:
