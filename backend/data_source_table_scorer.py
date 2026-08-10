@@ -610,6 +610,12 @@ def _find_duplicate_evidence(
     quality_by_key: Mapping[tuple[str, str], Mapping[str, Any]],
 ) -> tuple[bool, str]:
     """duplicate_structure：结构/数据指纹全等、样本>0、行数差≤10%、无职责/粒度差异。"""
+    left_profile = profiles_by_key.get(key) or {}
+    if _is_backup_mark(
+        str(left_profile.get("table") or ""),
+        str(left_profile.get("table_comment") or ""),
+    ):
+        return False, ""
     left_quality = quality_by_key.get(key) or {}
     left_sf = str(left_quality.get("structure_fingerprint") or "")
     left_df = str(left_quality.get("data_fingerprint") or "")
@@ -809,6 +815,7 @@ def compute_proposals(
             )
         )
         # 1) backup_mirror 优先：backup 表降 standby，主表保留。
+        backup_members: set[tuple[str, str]] = set()
         for key in eligible_members:
             backup, backup_detail = _find_backup_evidence(
                 key,
@@ -818,6 +825,7 @@ def compute_proposals(
                 quality_by_key,
             )
             if backup:
+                backup_members.add(key)
                 decision, reasons = apply_constraint(
                     [updates[key]["proposed_reason"]],
                     ProposalConstraint("backup_mirror", backup_detail),
@@ -825,7 +833,9 @@ def compute_proposals(
                 updates[key]["proposed_decision"] = decision
                 updates[key]["proposed_reason"] = "；".join(reasons)
         # 2) duplicate_structure：同分/低分者降 standby，保留组内高分主表。
-        remaining = list(eligible_members)
+        remaining = [
+            key for key in eligible_members if key not in backup_members
+        ]
         for index, key in enumerate(remaining):
             for other in remaining[index + 1 :]:
                 duplicate, duplicate_detail = _find_duplicate_evidence(

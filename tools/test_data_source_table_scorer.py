@@ -885,6 +885,39 @@ def test_backup_mirror_degrades_to_standby() -> None:
     ]
 
 
+def test_high_score_eligible_history_mirror_cannot_eliminate_main() -> None:
+    fingerprint = "sha256-structure-history"
+    data_fingerprint = "sha256-data-history"
+    profiles = [
+        _profile(
+            "water_data",
+            WATER_COLUMNS,
+            table_comment="水质监测主表",
+            structure_fingerprint=fingerprint,
+            data_fingerprint=data_fingerprint,
+        ),
+        _profile(
+            "water_data_history",
+            WATER_COLUMNS,
+            table_comment="水质监测历史数据",
+            structure_fingerprint=fingerprint,
+            data_fingerprint=data_fingerprint,
+        ),
+    ]
+    proposals = compute_proposals(
+        profiles,
+        {("public", "water_data_history"): 1.0},
+        {},
+    )
+    main = proposals[("public", "water_data")]
+    history = proposals[("public", "water_data_history")]
+    assert history["proposed_score"] > main["proposed_score"]
+    assert main["proposed_decision"] == "active"
+    assert history["proposed_decision"] == "standby"
+    assert "constraint:backup_mirror" in history["proposed_reason"]
+    assert "constraint:duplicate_structure" not in main["proposed_reason"]
+
+
 def test_physical_shard_to_standby() -> None:
     fingerprint = "sha256-shard-struct"
     profiles = [
