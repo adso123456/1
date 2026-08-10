@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import time
 from pathlib import Path
 from threading import Lock, RLock
@@ -465,37 +466,82 @@ class DataSourceAssetCleaner:
     def _managed_root(source_id: str, record: Any) -> Path | None:
         """解析受管资产根；路径不满足约束时失败关闭。"""
         if record.is_builtin:
-            expected = (PROJECT_ROOT / "agent_data" / source_id).resolve()
+            expected_raw = PROJECT_ROOT / "agent_data" / source_id
         else:
-            expected = (
+            expected_raw = (
                 PROJECT_ROOT / "agent_data" / "data_sources" / source_id
-            ).resolve()
+            )
+        if not DataSourceAssetCleaner._managed_chain_safe(expected_raw):
+            return None
+        expected = expected_raw.resolve()
         if (
             record.metadata_path.resolve().parent != expected
             or record.memory_path.resolve().parent != expected
         ):
             return None
-        if not DataSourceAssetCleaner._managed_chain_safe(expected):
-            return None
         return expected
 
     @staticmethod
-    def _managed_chain_safe(root: Path) -> bool:
-        """确保受管目录及其符号链接目标始终位于 agent_data 内。"""
-        base = (PROJECT_ROOT / "agent_data").resolve()
+    def _is_link_or_reparse(path: Path) -> bool:
+        """识别 Unix symlink、Windows junction 及其他 reparse point。"""
         try:
-            root.resolve().relative_to(base)
-            relative = Path(str(root)).relative_to(PROJECT_ROOT)
+            if path.is_symlink():
+                return True
+            is_junction = getattr(path, "is_junction", None)
+            if callable(is_junction) and is_junction():
+                return True
+            attributes = int(getattr(os.lstat(path), "st_file_attributes", 0))
+        except OSError:
+            return True
+        return bool(
+            attributes
+            & int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+        )
+
+    @staticmethod
+    def _managed_chain_safe(root_raw: Path) -> bool:
+        """逐级验证 raw lexical chain，禁止 escape 后再 re-enter。"""
+        base_raw = PROJECT_ROOT / "agent_data"
+        try:
+            relative = root_raw.relative_to(base_raw)
         except ValueError:
             return False
-        current = PROJECT_ROOT
+        if not relative.parts or any(
+            part in {"", ".", ".."} for part in relative.parts
+        ):
+            return False
+        try:
+            os.lstat(base_raw)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return False
+        else:
+            if DataSourceAssetCleaner._is_link_or_reparse(base_raw):
+                return False
+        try:
+            base = base_raw.resolve()
+        except OSError:
+            return False
+
+        current = base_raw
         for part in relative.parts:
             current = current / part
-            if current.is_symlink():
+            try:
+                os.lstat(current)
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return False
+            if DataSourceAssetCleaner._is_link_or_reparse(current):
                 try:
                     current.resolve().relative_to(base)
-                except ValueError:
+                except (OSError, ValueError):
                     return False
+        try:
+            root_raw.resolve().relative_to(base)
+        except (OSError, ValueError):
+            return False
         return True
 
     def cleanup_superseded_assets(self, source_id: str) -> dict[str, int]:

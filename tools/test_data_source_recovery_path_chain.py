@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -40,6 +42,9 @@ def test_managed_root_contract(root: Path) -> None:
     builtin = agent_data / "mysql-lzh-monitor"
     dynamic = agent_data / "data_sources" / "dynamic-source"
     outside = root / "outside"
+    builtin.mkdir(parents=True)
+    dynamic.mkdir(parents=True)
+    outside.mkdir(parents=True)
 
     with patch.object(connectors, "PROJECT_ROOT", project):
         assert DataSourceAssetCleaner._managed_root(
@@ -57,6 +62,167 @@ def test_managed_root_contract(root: Path) -> None:
         assert DataSourceAssetCleaner._managed_root(
             "dynamic-source",
             _record(False, dynamic / "metadata.json", outside / "memory"),
+        ) is None
+
+
+def _synthetic_link_chain(
+    root: Path,
+    *,
+    escape_reenter: bool,
+) -> None:
+    """无 symlink 权限的平台仍直接验证 raw lexical 判定顺序。"""
+    import backend.data_source_connectors as connectors
+
+    project = root / "project"
+    base = project / "agent_data"
+    data_sources = base / "data_sources"
+    managed = data_sources / "dynamic-source"
+    outside = root / "outside"
+    reentered = base / "reentered-dynamic-source"
+    managed.mkdir(parents=True)
+    outside.mkdir(parents=True)
+    reentered.mkdir(parents=True)
+    link_component = data_sources if escape_reenter else managed
+    real_resolve = Path.resolve
+
+    def fake_resolve(path: Path, *args, **kwargs) -> Path:
+        if path == link_component:
+            return outside
+        if escape_reenter and path == managed:
+            return reentered
+        return real_resolve(path, *args, **kwargs)
+
+    with (
+        patch.object(connectors, "PROJECT_ROOT", project),
+        patch.object(
+            DataSourceAssetCleaner,
+            "_is_link_or_reparse",
+            side_effect=lambda path: path == link_component,
+        ),
+        patch.object(Path, "resolve", new=fake_resolve),
+    ):
+        assert not DataSourceAssetCleaner._managed_chain_safe(managed)
+
+
+def test_internal_link_chain_stays_managed(root: Path) -> None:
+    """允许内部链接时，逐组件目标与最终目标都必须留在边界内。"""
+    import backend.data_source_connectors as connectors
+
+    project = root / "project"
+    base = project / "agent_data"
+    managed = base / "data_sources" / "dynamic-source"
+    inside = base / "internal-dynamic-source"
+    managed.mkdir(parents=True)
+    inside.mkdir(parents=True)
+    real_resolve = Path.resolve
+
+    def fake_resolve(path: Path, *args, **kwargs) -> Path:
+        if path == managed:
+            return inside
+        return real_resolve(path, *args, **kwargs)
+
+    with (
+        patch.object(connectors, "PROJECT_ROOT", project),
+        patch.object(
+            DataSourceAssetCleaner,
+            "_is_link_or_reparse",
+            side_effect=lambda path: path == managed,
+        ),
+        patch.object(Path, "resolve", new=fake_resolve),
+    ):
+        assert DataSourceAssetCleaner._managed_chain_safe(managed)
+
+
+def test_symlink_outside_and_reenter_rejected(root: Path) -> None:
+    import backend.data_source_connectors as connectors
+
+    if os.name == "nt":
+        # 当前 Windows 测试账户可能没有 SeCreateSymbolicLinkPrivilege；
+        # 用平台隔离映射验证 symlink 的逐组件 fail-closed 顺序。
+        _synthetic_link_chain(root / "outside", escape_reenter=False)
+        _synthetic_link_chain(root / "reenter", escape_reenter=True)
+        probe = root / "symlink-probe"
+        probe.mkdir(parents=True)
+        with patch.object(Path, "is_symlink", return_value=True):
+            assert DataSourceAssetCleaner._is_link_or_reparse(probe)
+        return
+
+    project = root / "project"
+    base = project / "agent_data"
+    outside = root / "outside-target"
+    outside.mkdir(parents=True)
+    direct = base / "data_sources" / "dynamic-source"
+    direct.parent.mkdir(parents=True)
+    direct.symlink_to(outside, target_is_directory=True)
+    with patch.object(connectors, "PROJECT_ROOT", project):
+        assert DataSourceAssetCleaner._managed_root(
+            "dynamic-source",
+            _record(False, outside / "metadata.json", outside / "memory"),
+        ) is None
+
+    reenter_root = root / "reenter"
+    project = reenter_root / "project"
+    base = project / "agent_data"
+    bridge = reenter_root / "outside-bridge"
+    inside = base / "inside-dynamic-source"
+    bridge.mkdir(parents=True)
+    inside.mkdir(parents=True)
+    (base / "data_sources").parent.mkdir(parents=True)
+    (base / "data_sources").symlink_to(bridge, target_is_directory=True)
+    (bridge / "dynamic-source").symlink_to(inside, target_is_directory=True)
+    with patch.object(connectors, "PROJECT_ROOT", project):
+        assert DataSourceAssetCleaner._managed_root(
+            "dynamic-source",
+            _record(False, inside / "metadata.json", inside / "memory"),
+        ) is None
+
+
+def _make_junction(link: Path, target: Path) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"junction 创建失败：{result.stderr or result.stdout}")
+    assert link.is_junction()
+
+
+def test_windows_junction_outside_and_reenter_rejected(root: Path) -> None:
+    import backend.data_source_connectors as connectors
+
+    if os.name != "nt":
+        probe = root / "junction-probe"
+        probe.mkdir(parents=True)
+        with patch.object(Path, "is_junction", return_value=True):
+            assert DataSourceAssetCleaner._is_link_or_reparse(probe)
+        return
+
+    project = root / "direct" / "project"
+    base = project / "agent_data"
+    outside = root / "direct" / "outside-target"
+    managed = base / "data_sources" / "dynamic-source"
+    _make_junction(managed, outside)
+    with patch.object(connectors, "PROJECT_ROOT", project):
+        assert DataSourceAssetCleaner._managed_root(
+            "dynamic-source",
+            _record(False, outside / "metadata.json", outside / "memory"),
+        ) is None
+
+    project = root / "reenter" / "project"
+    base = project / "agent_data"
+    bridge = root / "reenter" / "outside-bridge"
+    inside = base / "inside-dynamic-source"
+    inside.mkdir(parents=True)
+    _make_junction(base / "data_sources", bridge)
+    _make_junction(bridge / "dynamic-source", inside)
+    with patch.object(connectors, "PROJECT_ROOT", project):
+        assert DataSourceAssetCleaner._managed_root(
+            "dynamic-source",
+            _record(False, inside / "metadata.json", inside / "memory"),
         ) is None
 
 
@@ -241,6 +407,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="recovery-path-chain-") as name:
         root = Path(name)
         test_managed_root_contract(root / "managed-root")
+        test_internal_link_chain_stays_managed(root / "internal-link")
+        test_symlink_outside_and_reenter_rejected(root / "symlink")
+        test_windows_junction_outside_and_reenter_rejected(root / "junction")
         test_builtin_rollback_failed_recovery(root / "builtin-recovery")
     test_chroma_metadata_sanitize()
     print("data source recovery path chain: all checks passed")
