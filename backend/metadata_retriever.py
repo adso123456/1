@@ -653,6 +653,40 @@ class DeterministicMetadataRetriever:
                 "污染源类型统计降低模型和单类事实记录表优先级",
             )
 
+        pollutant_record_tables = {
+            "hour": "rs_pollutant_hour_records",
+            "day": "rs_pollutant_day_records",
+            "month": "rs_pollutant_month_records",
+        }
+        pollutant_record_granularity = ""
+        if "小时" in query_compact:
+            pollutant_record_granularity = "hour"
+        elif any(
+            word in query_compact
+            for word in ("每日", "按日", "日监测", "日记录", "日数据", "日粒度")
+        ):
+            pollutant_record_granularity = "day"
+        elif any(
+            word in query_compact
+            for word in ("每月", "按月", "月度", "月监测", "月记录", "月数据", "月粒度")
+        ):
+            pollutant_record_granularity = "month"
+        is_explicit_pollutant_record_query = bool(
+            "污染源" in query_compact
+            and pollutant_record_granularity
+            and any(word in query_compact for word in ("监测", "记录", "数据"))
+        )
+        if (
+            is_explicit_pollutant_record_query
+            and table_name
+            == pollutant_record_tables[pollutant_record_granularity]
+        ):
+            add(
+                12500,
+                "pollutant_record_granularity",
+                "污染源监测记录的明确粒度与目标表一致",
+            )
+
         pollutant_indicators = ("氨氮", "总磷", "总氮", "cod", "ph", "流量")
         is_pollutant_monitoring = (
             "污染源" in query_compact
@@ -665,7 +699,7 @@ class DeterministicMetadataRetriever:
                 if "小时" in query_compact
                 else "rs_pollutant_day_records"
             )
-            if table_name == target:
+            if table_name == target and not is_explicit_pollutant_record_query:
                 add(
                     12500,
                     "pollutant_monitoring_granularity",
