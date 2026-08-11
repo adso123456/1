@@ -101,6 +101,9 @@ class DeterministicMetadataRetriever:
                 column_comment = _compact_text(column["column_comment"])
                 score = 0
                 matched_by: list[str] = []
+                matched_values = self._matched_typical_values(
+                    query_compact, column.get("typical_values", [])
+                )
 
                 if query_name == column_name:
                     score += 1000
@@ -125,6 +128,10 @@ class DeterministicMetadataRetriever:
                         score += int(520 * ratio)
                         matched_by.append("column_comment_fuzzy")
 
+                if matched_values:
+                    score += 800
+                    matched_by.append("column_typical_value")
+
                 if score <= 0:
                     continue
 
@@ -136,6 +143,7 @@ class DeterministicMetadataRetriever:
                         "column_comment": column["column_comment"],
                         "table_comment": table["table_comment"],
                         "matched_by": matched_by,
+                        "matched_values": matched_values,
                         "reason": "；".join(matched_by),
                         "score": score,
                     }
@@ -171,6 +179,11 @@ class DeterministicMetadataRetriever:
                     "column_name": _clean_text(row.get("column")),
                     "column_type": _clean_text(row.get("type")),
                     "column_comment": _clean_text(row.get("comment")),
+                    "typical_values": (
+                        list(row.get("typical_values"))
+                        if isinstance(row.get("typical_values"), list)
+                        else []
+                    ),
                 }
             )
 
@@ -345,6 +358,9 @@ class DeterministicMetadataRetriever:
             column_comment = _compact_text(column["column_comment"])
             current_score = 0
             current_methods: list[str] = []
+            matched_values = self._matched_typical_values(
+                query_compact, column.get("typical_values", [])
+            )
 
             if query_name == column_name:
                 current_score += 2850
@@ -369,6 +385,10 @@ class DeterministicMetadataRetriever:
                     current_score += int(760 * ratio)
                     current_methods.append("column_comment_fuzzy")
 
+            if matched_values:
+                current_score += 1800
+                current_methods.append("column_typical_value")
+
             if current_score <= 0:
                 continue
 
@@ -378,6 +398,7 @@ class DeterministicMetadataRetriever:
                     "column_type": column["column_type"],
                     "column_comment": column["column_comment"],
                     "matched_by": current_methods,
+                    "matched_values": matched_values,
                 }
             )
 
@@ -392,10 +413,28 @@ class DeterministicMetadataRetriever:
             key=lambda item: (
                 0 if "exact_column_name" in item["matched_by"] else 1,
                 0 if "exact_column_comment" in item["matched_by"] else 1,
+                0 if "column_typical_value" in item["matched_by"] else 1,
                 item["column_name"],
             )
         )
         return best_score, methods, reasons, matches[:8]
+
+    @staticmethod
+    def _matched_typical_values(
+        query_compact: str,
+        typical_values: list[Any],
+    ) -> list[str]:
+        matched: list[str] = []
+        for value in typical_values:
+            rendered = _clean_text(value)
+            compact = _compact_text(rendered)
+            if not compact:
+                continue
+            exact_match = compact == query_compact
+            safe_substring_match = len(compact) >= 3 and compact in query_compact
+            if (exact_match or safe_substring_match) and rendered not in matched:
+                matched.append(rendered)
+        return matched
 
     def _score_outlet_code_intent(
         self,

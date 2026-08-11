@@ -94,10 +94,18 @@ class DeterministicMetadataContextEnhancer(LlmContextEnhancer):
                 if key in seen_columns:
                     continue
                 seen_columns.add(key)
+                matched_values = column.get("matched_values") or []
+                value_evidence = (
+                    " | matched_value="
+                    + ", ".join(str(value) for value in matched_values)
+                    if matched_values
+                    else ""
+                )
                 column_lines.append(
                     f"- {candidate['table_name']}.{column['column_name']} "
                     f"({column['column_type']}): {column['column_comment']} | "
                     f"matched_by={', '.join(column['matched_by'])}"
+                    f"{value_evidence}"
                 )
             if index <= (2 if simple else 3):
                 rendered = "、".join(

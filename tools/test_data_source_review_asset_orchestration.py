@@ -40,6 +40,7 @@ COLUMNS = (
     "water_temp",
     "flow",
     "area_code",
+    "area_name",
     "status",
 )
 
@@ -162,7 +163,16 @@ class _Profiler:
                             "type": item["type"],
                             "sample_null_rate": 0.0,
                             "sample_distinct_count": 100,
-                            "sensitive": False,
+                            "sensitive": item["column"] == "status",
+                            "typical_values": (
+                                ["梁子湖风景区"]
+                                if item["column"] == "area_name"
+                                else (
+                                    ["secret"]
+                                    if item["column"] == "status"
+                                    else []
+                                )
+                            ),
                         }
                         for item in columns
                     ],
@@ -291,6 +301,10 @@ def _service(
     source_id: str,
     preparer: DataSourceAssetPreparer,
 ) -> tuple[DataSourceOnboardingService, str]:
+    catalog.replace_table_profiles(
+        source_id,
+        _Profiler().profile(source_id, _metadata((B, C))),
+    )
     service = DataSourceOnboardingService(
         catalog,
         _Connector(_metadata((B, C))),
@@ -350,6 +364,16 @@ def test_review_rebuilds_and_publishes_only_new_scope() -> None:
             ensure_ascii=False,
         )
         assert {item["table"] for item in metadata} == expected_tables
+        assert all(
+            item["typical_values"] == ["梁子湖风景区"]
+            for item in metadata
+            if item["column"] == "area_name"
+        )
+        assert all(
+            item["typical_values"] == []
+            for item in metadata
+            if item["column"] == "status"
+        )
         assert A not in joined_assets and B in joined_assets and C in joined_assets
         assert "sql_A" not in memory_records["ids"]
         assert "sql_B" in memory_records["ids"]

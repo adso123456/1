@@ -1432,6 +1432,23 @@ class DataSourceAssetPreparer:
                 + "；".join(detail_parts)
             )
         expected_review_policy_fingerprint = policy["fingerprint"]
+        profile_typical_values: dict[tuple[str, str, str], list[Any]] = {}
+        for profile in self.catalog.list_table_profiles(source_id):
+            schema = str(profile.get("schema") or "")
+            table = str(profile.get("table") or "")
+            for column in profile.get("columns") or []:
+                column_name = str(column.get("column") or "")
+                typical_values = column.get("typical_values")
+                if (
+                    schema
+                    and table
+                    and column_name
+                    and isinstance(typical_values, list)
+                    and not column.get("sensitive")
+                ):
+                    profile_typical_values[(schema, table, column_name)] = list(
+                        typical_values
+                    )
         table_indexes: dict[
             tuple[str, str], dict[str, dict[str, Any]]
         ] = {}
@@ -1597,6 +1614,14 @@ class DataSourceAssetPreparer:
                 "time_column": item.get("time_column", ""),
                 "valid_row_rules": item.get("valid_row_rules", []),
                 "confidence": item.get("confidence", ""),
+                "typical_values": profile_typical_values.get(
+                    (
+                        str(item.get("schema") or ""),
+                        str(item["table"]),
+                        str(item["column"]),
+                    ),
+                    [],
+                ),
             }
             for item in scope
         ]
