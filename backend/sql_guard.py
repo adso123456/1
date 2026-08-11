@@ -457,9 +457,11 @@ class SQLGuard:
     def _extract_tables(self, sql: str) -> tuple[list[str], dict[str, str]]:
         used_tables: list[str] = []
         aliases: dict[str, str] = {}
+        identifier = r'(?:[^\W\d][\w$]*|"[^"]+"|`[^`]+`)'
+        qualified_identifier = rf"{identifier}(?:\s*\.\s*{identifier})*"
         pattern = re.compile(
-            r"\b(?:from|join)\s+([a-zA-Z_][\w.]*|\"[^\"]+\"|`[^`]+`)"
-            r"(?:\s+(?:as\s+)?([a-zA-Z_][\w]*))?",
+            rf"\b(?:from|join)\s+({qualified_identifier})"
+            rf"(?:\s+(?:as\s+)?({identifier}))?",
             flags=re.I,
         )
 
@@ -491,8 +493,10 @@ class SQLGuard:
         return used_tables, aliases
 
     def _normalize_table_name(self, raw_table: str) -> str:
-        cleaned = _clean_identifier(raw_table)
-        parts = cleaned.split(".")
+        parts = [
+            _clean_identifier(part)
+            for part in re.split(r"\s*\.\s*", raw_table)
+        ]
         if len(parts) >= 2 and parts[0] in {"information_schema", "pg_catalog"}:
             return ".".join(parts[:2])
         return parts[-1]
