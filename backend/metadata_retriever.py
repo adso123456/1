@@ -519,6 +519,17 @@ class DeterministicMetadataRetriever:
             and "排污口" not in query_compact
         )
         is_waterquality_query = explicit_waterquality or implicit_station_waterquality
+        is_automatic_waterquality_station = "水质自动监测站" in query_compact
+
+        if (
+            is_automatic_waterquality_station
+            and table_name == "wm_station_info"
+        ):
+            add(
+                7600,
+                "waterquality_automatic_station_entity_intent",
+                "水质自动监测站实体明确命中监测站基础信息表",
+            )
 
         if is_waterquality_query:
             is_waterquality_record = re.fullmatch(
