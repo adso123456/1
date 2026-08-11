@@ -425,7 +425,7 @@ function ScopeSelector({
         </> : <>
           <button
           disabled={Boolean(busy) || jobRunning}
-          onClick={() => void startJob(detail.selected_tables_count ? 'review' : 'analyze')}
+          onClick={() => void startJob('review')}
           style={{ background: '#2563eb', color: '#fff', borderColor: '#2563eb' }}
         >{jobRunning && ['analyze', 'review'].includes(job?.job_type || '')
           ? job?.job_type === 'review' ? '审查中…' : '分析中…'

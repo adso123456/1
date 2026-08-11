@@ -33,7 +33,7 @@ const checks = [
       && widget.includes("'data-sources'"),
   ],
   ['Widget 无管理导航', !widget.includes("<DataSourcePage")],
-  ['已有范围重新分析走正式审查链路', page.includes("startJob(detail.selected_tables_count ? 'review' : 'analyze')")],
+  ['首次与重新分析共享正式审查链路', page.includes("startJob('review')") && !page.includes("startJob(detail.selected_tables_count ? 'review' : 'analyze')")],
   ['开发代理转发同源 Origin', vite.includes("Origin: 'http://127.0.0.1:8000'")],
   ['历史空会话原地绑定数据源', hook.includes('const bindCurrentSessionSource = useCallback') && app.includes("sourceDialogMode === 'create'") && app.includes(': bindCurrentSessionSource(sourceId)')],
   ['统一数据库类型格式', presentation.includes("return 'PostgreSQL'") && presentation.includes("return 'MySQL'")],

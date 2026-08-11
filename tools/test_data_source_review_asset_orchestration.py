@@ -420,6 +420,50 @@ def test_review_rebuilds_and_publishes_only_new_scope() -> None:
         assert manifest["provenance_hash"] == identity["provenance_hash"]
 
 
+def test_first_review_governs_and_publishes_empty_source() -> None:
+    with tempfile.TemporaryDirectory(prefix="review-assets-first-") as raw:
+        catalog, source_id = _catalog(Path(raw))
+        before = catalog.require(source_id)
+        assert before.runtime_revision == 0
+        assert before.selected_scope == ()
+        assert catalog.list_table_reviews(source_id) == []
+
+        service = DataSourceOnboardingService(
+            catalog,
+            _Connector(_metadata((B, C))),
+            _Profiler(),
+            DataSourceAssetPreparer(catalog),
+            semantic_analyzer=object(),
+            sql_memory_generator=object(),
+        )
+        job = catalog.create_onboarding_job(source_id, "review")
+        try:
+            with _managed_root_patch(catalog, source_id), patch(
+                "backend.memory.create_memory",
+                side_effect=_FakeMemory,
+            ):
+                result = service._review(str(job["job_id"]), source_id)
+        finally:
+            _shutdown(service)
+
+        record = catalog.require(source_id)
+        policy = catalog.review_policy(source_id)
+        selected_tables = {
+            (item["schema"], item["table"])
+            for item in record.selected_scope
+        }
+        assert result["runtime_revision"] == 1
+        assert record.status == "ready"
+        assert record.enabled_for_chat is True
+        assert record.runtime_revision == 1
+        assert catalog.list_table_reviews(source_id)
+        assert selected_tables == set(policy["allowed_tables"])
+        assert record.metadata_path.is_file()
+        assert record.memory_path.is_dir()
+        assert (record.metadata_path.parent / "asset_manifest.json").is_file()
+        assert (record.metadata_path.parent / "asset_provenance.json").is_file()
+
+
 def test_build_and_chroma_failures_keep_new_governance_and_old_revision() -> None:
     for mode in ("candidate", "chroma"):
         with tempfile.TemporaryDirectory(prefix=f"review-assets-{mode}-") as raw:
