@@ -35,11 +35,13 @@ class FakeCursor:
                     "monitor_time": "2026-08-01 10:00:00",
                     "flow_rate": 2.5,
                     "phone": "13800000000",
+                    "contact_number": "13800000000",
                 },
                 {
                     "monitor_time": "2026-08-01 11:00:00",
                     "flow_rate": 3.5,
                     "phone": "13900000000",
+                    "contact_number": "13900000000",
                 },
             ]
         else:
@@ -114,6 +116,16 @@ def main() -> int:
                 "type": "varchar(20)",
                 "primary_key": False,
             },
+            {
+                "schema": "demo",
+                "table": "monitor_data",
+                "object_type": "table",
+                "table_comment": "流量监测记录",
+                "column": "contact_number",
+                "comment": "责任人联系电话",
+                "type": "varchar(20)",
+                "primary_key": False,
+            },
         ]
         profiler = DataSourceProfiler(catalog, connector=FakeConnector())
         profiles = profiler.profile(record.source_id, metadata)
@@ -126,6 +138,12 @@ def main() -> int:
         phone = next(item for item in profile["columns"] if item["column"] == "phone")
         assert phone["sensitive"] is True
         assert "typical_values" not in phone
+        contact_number = next(
+            item for item in profile["columns"]
+            if item["column"] == "contact_number"
+        )
+        assert contact_number["sensitive"] is True
+        assert "typical_values" not in contact_number
         flow = next(item for item in profile["columns"] if item["column"] == "flow_rate")
         assert flow["sample_min"] == 2.5 and flow["sample_max"] == 3.5
         assert catalog.list_table_profiles(record.source_id) == profiles

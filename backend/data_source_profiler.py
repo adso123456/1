@@ -14,15 +14,11 @@ from typing import Any
 
 from backend.data_source_catalog import DataSourceCatalog, DataSourceCatalogError
 from backend.data_source_connectors import DirectDatabaseConnector
+from backend.data_source_sensitive import is_sensitive_column
 
 
 logger = logging.getLogger(__name__)
 
-_SENSITIVE_WORDS = (
-    "password", "passwd", "pwd", "secret", "token", "api_key", "apikey",
-    "private_key", "id_card", "idcard", "身份证", "手机号", "phone",
-    "mobile", "email", "邮箱", "住址", "address",
-)
 _SKIPPED_TYPES = (
     "blob", "binary", "bytea", "text", "json", "xml", "geometry",
     "geography", "image",
@@ -46,11 +42,6 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, (date, datetime, Decimal)):
         return str(value)
     return str(value)
-
-
-def _is_sensitive(name: str) -> bool:
-    lowered = name.lower()
-    return any(word in lowered for word in _SENSITIVE_WORDS)
 
 
 def _is_profiled_type(data_type: str) -> bool:
@@ -358,7 +349,10 @@ class DataSourceProfiler:
                 "type": str(item.get("type") or ""),
                 "sample_null_rate": round((len(values) - len(non_null)) / len(values), 4) if values else None,
                 "sample_distinct_count": len(distinct),
-                "sensitive": _is_sensitive(name),
+                "sensitive": is_sensitive_column(
+                    name,
+                    str(item.get("comment") or ""),
+                ),
             }
             if non_null and (_is_numeric_type(profile["type"]) or _is_time_type(profile["type"])):
                 try:
@@ -495,7 +489,10 @@ class DataSourceProfiler:
             str(_json_value(value))
             for row in sample
             for item in selected
-            if not _is_sensitive(str(item["column"]))
+            if not is_sensitive_column(
+                str(item["column"]),
+                str(item.get("comment") or ""),
+            )
             for value in [row.get(str(item["column"]))]
             if value is not None
         )

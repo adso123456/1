@@ -42,6 +42,7 @@ COLUMNS = (
     "area_code",
     "area_name",
     "status",
+    "contact_number",
 )
 
 
@@ -115,7 +116,11 @@ def _metadata(tables: tuple[str, ...]) -> list[dict]:
             "table_comment": comments[table],
             "column": column,
             "type": "timestamp" if column == "monitor_time" else "numeric",
-            "comment": f"{column} 字段",
+            "comment": (
+                "责任人联系电话"
+                if column == "contact_number"
+                else f"{column} 字段"
+            ),
             "nullable": True,
             "primary_key": False,
             "ordinal_position": position,
@@ -170,7 +175,11 @@ class _Profiler:
                                 else (
                                     ["secret"]
                                     if item["column"] == "status"
-                                    else []
+                                    else (
+                                        ["13800000000"]
+                                        if item["column"] == "contact_number"
+                                        else []
+                                    )
                                 )
                             ),
                         }
@@ -373,6 +382,11 @@ def test_review_rebuilds_and_publishes_only_new_scope() -> None:
             item["typical_values"] == []
             for item in metadata
             if item["column"] == "status"
+        )
+        assert all(
+            item["typical_values"] == []
+            for item in metadata
+            if item["column"] == "contact_number"
         )
         assert A not in joined_assets and B in joined_assets and C in joined_assets
         assert "sql_A" not in memory_records["ids"]

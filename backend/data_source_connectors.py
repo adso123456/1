@@ -21,6 +21,10 @@ from backend.data_source_catalog import (
     DataSourceConflict,
     selected_scope_fingerprint,
 )
+from backend.data_source_sensitive import (
+    contains_sensitive_typical_value,
+    is_sensitive_column,
+)
 from backend.mysql_tls import build_mysql_tls_settings
 from config.settings import PROJECT_ROOT
 
@@ -1432,6 +1436,14 @@ class DataSourceAssetPreparer:
                 + "；".join(detail_parts)
             )
         expected_review_policy_fingerprint = policy["fingerprint"]
+        scope_columns = {
+            (
+                str(item.get("schema") or ""),
+                str(item["table"]),
+                str(item["column"]),
+            ): item
+            for item in scope
+        }
         profile_typical_values: dict[tuple[str, str, str], list[Any]] = {}
         for profile in self.catalog.list_table_profiles(source_id):
             schema = str(profile.get("schema") or "")
@@ -1439,14 +1451,24 @@ class DataSourceAssetPreparer:
             for column in profile.get("columns") or []:
                 column_name = str(column.get("column") or "")
                 typical_values = column.get("typical_values")
+                column_key = (schema, table, column_name)
+                scope_column = scope_columns.get(column_key, {})
                 if (
                     schema
                     and table
                     and column_name
                     and isinstance(typical_values, list)
                     and not column.get("sensitive")
+                    and not is_sensitive_column(
+                        column_name,
+                        str(scope_column.get("comment") or ""),
+                    )
+                    and not contains_sensitive_typical_value(
+                        typical_values,
+                        str(column.get("type") or scope_column.get("type") or ""),
+                    )
                 ):
-                    profile_typical_values[(schema, table, column_name)] = list(
+                    profile_typical_values[column_key] = list(
                         typical_values
                     )
         table_indexes: dict[

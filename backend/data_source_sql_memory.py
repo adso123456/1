@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -13,6 +12,7 @@ from typing import Any
 
 from backend.data_source_catalog import DataSourceCatalog
 from backend.data_source_connectors import DirectDatabaseConnector
+from backend.data_source_sensitive import is_sensitive_column
 from config.settings import resolve_project_path
 
 
@@ -20,16 +20,6 @@ def _quote(database_type: str, value: str) -> str:
     if database_type == "mysql":
         return "`" + value.replace("`", "``") + "`"
     return '"' + value.replace('"', '""') + '"'
-
-
-def _sensitive_column(name: str) -> bool:
-    return bool(
-        re.search(
-            r"password|passwd|secret|token|api_?key|private_?key|id_?card|phone|mobile|email|身份证|手机号|邮箱",
-            name,
-            flags=re.I,
-        )
-    )
 
 
 class VerifiedSQLMemoryGenerator:
@@ -88,7 +78,10 @@ class VerifiedSQLMemoryGenerator:
             safe_columns = [
                 str(item["column"])
                 for item in sorted(columns, key=lambda value: value.get("ordinal_position", 0))
-                if not _sensitive_column(str(item.get("column") or ""))
+                if not is_sensitive_column(
+                    str(item.get("column") or ""),
+                    str(item.get("comment") or ""),
+                )
                 and "geometry" not in str(item.get("type") or "").lower()
             ][:5]
             if not safe_columns:

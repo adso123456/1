@@ -91,6 +91,15 @@ def main() -> int:
                 "type": "varchar(20)",
                 "ordinal_position": 3,
             },
+            {
+                "schema": "demo",
+                "table": "monitor_data",
+                "table_comment": "流量监测",
+                "column": "contact_number",
+                "comment": "责任人联系电话",
+                "type": "varchar(20)",
+                "ordinal_position": 4,
+            },
         ]
         profiles = [
             {
@@ -105,6 +114,7 @@ def main() -> int:
         assert len(records) == 1
         assert "LIMIT 5" in records[0]["sql"]
         assert "phone" not in records[0]["sql"]
+        assert "contact_number" not in records[0]["sql"]
         assert records[0]["metadata"]["train_decision"] == "approved"
         assert records[0]["metadata"]["validation_origin"] == "self_onboarding_read_only_execution"
         assert catalog.list_verified_sql_memories(source.source_id) == records
