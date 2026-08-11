@@ -13,6 +13,7 @@ _COMPLEX_SQL = re.compile(
     r"\b(group\s+by|having|union|over\s*\(|with\s+.+\bas\s*\(|join)\b",
     flags=re.I | re.S,
 )
+_AGGREGATE_SQL = re.compile(r"\b(?:count|sum|avg|max|min)\s*\(", re.I)
 _UNSAFE_COLUMN = re.compile(r"(?:^|_)(?:geom|geometry|binary|blob)(?:$|_)", re.I)
 
 
@@ -29,6 +30,8 @@ def qualify_simple_query(state: QueryPerformanceState | None) -> tuple[bool, str
         return False, "guard_warning"
     if _COMPLEX_SQL.search(state.last_sql or ""):
         return False, "complex_sql"
+    if _AGGREGATE_SQL.search(state.last_sql or ""):
+        return False, "aggregate_result_requires_final_llm"
     metadata = state.last_result_metadata
     row_count = metadata.get("row_count")
     if not isinstance(row_count, int) or not 0 <= row_count <= 50:
