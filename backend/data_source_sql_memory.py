@@ -87,7 +87,22 @@ class VerifiedSQLMemoryGenerator:
             if not safe_columns:
                 continue
             time_column = str(profile.get("time_column_candidate") or "")
-            if time_column and time_column not in safe_columns:
+            time_column_metadata = next(
+                (
+                    item for item in columns
+                    if str(item.get("column") or "") == time_column
+                ),
+                None,
+            )
+            if time_column and (
+                time_column_metadata is None
+                or is_sensitive_column(
+                    time_column,
+                    str(time_column_metadata.get("comment") or ""),
+                )
+            ):
+                time_column = ""
+            elif time_column and time_column not in safe_columns:
                 safe_columns = [time_column, *safe_columns[:4]]
             qualified = (
                 f"{_quote(record.database_type, schema)}.{_quote(record.database_type, table)}"

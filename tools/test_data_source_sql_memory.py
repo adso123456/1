@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
+from backend.data_source_sensitive import is_sensitive_column
 from backend.data_source_sql_memory import VerifiedSQLMemoryGenerator
 
 
@@ -113,11 +114,43 @@ def main() -> int:
         records = generator.generate(source.source_id, metadata, profiles)
         assert len(records) == 1
         assert "LIMIT 5" in records[0]["sql"]
+        assert "monitor_time" in records[0]["sql"]
+        assert "ORDER BY `monitor_time` DESC" in records[0]["sql"]
         assert "phone" not in records[0]["sql"]
         assert "contact_number" not in records[0]["sql"]
         assert records[0]["metadata"]["train_decision"] == "approved"
         assert records[0]["metadata"]["validation_origin"] == "self_onboarding_read_only_execution"
         assert catalog.list_verified_sql_memories(source.source_id) == records
+
+        sensitive_time = {
+            "schema": "demo",
+            "table": "monitor_data",
+            "table_comment": "流量监测",
+            "column": "responsible_person_updated_at",
+            "comment": "责任人更新时间",
+            "type": "datetime",
+            "ordinal_position": 5,
+        }
+        assert is_sensitive_column(
+            sensitive_time["column"],
+            sensitive_time["comment"],
+        )
+        sensitive_time_records = generator.generate(
+            source.source_id,
+            [*metadata, sensitive_time],
+            [
+                {
+                    "schema": "demo",
+                    "table": "monitor_data",
+                    "time_column_candidate": "responsible_person_updated_at",
+                    "error": "",
+                }
+            ],
+            persist=False,
+        )
+        assert len(sensitive_time_records) == 1
+        assert "responsible_person_updated_at" not in sensitive_time_records[0]["sql"]
+        assert "monitor_time" in sensitive_time_records[0]["sql"]
     print("data source SQL memory tests passed")
     return 0
 
