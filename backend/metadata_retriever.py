@@ -114,7 +114,7 @@ class DeterministicMetadataRetriever:
                 if query_compact == column_comment:
                     score += 900
                     matched_by.append("exact_column_comment")
-                elif query_compact and (
+                elif query_compact and column_comment and (
                     query_compact in column_comment or column_comment in query_compact
                 ):
                     score += 650
@@ -268,7 +268,7 @@ class DeterministicMetadataRetriever:
 
         if query_compact == table_comment_compact and query_compact:
             add(3600, "exact_table_comment", "精确命中中文表注释")
-        elif query_compact and (
+        elif query_compact and table_comment_compact and (
             query_compact in table_comment_compact
             or table_comment_compact in query_compact
         ):
@@ -358,7 +358,7 @@ class DeterministicMetadataRetriever:
             if query_compact == column_comment and query_compact:
                 current_score += 2450
                 current_methods.append("exact_column_comment")
-            elif query_compact and len(query_compact) >= 2 and (
+            elif query_compact and column_comment and len(query_compact) >= 2 and (
                 query_compact in column_comment or column_comment in query_compact
             ):
                 current_score += 1420
