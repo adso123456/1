@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 import threading
 import time
@@ -17,6 +16,7 @@ from backend.runtime_learning_models import (
     LearningCandidate,
     can_transition,
 )
+from backend.learning_identity import normalize_question, normalize_sql
 
 _SCHEMA_VERSION = 1
 
@@ -106,19 +106,6 @@ class LearningCandidateConflict(LearningCandidateStoreError):
     """并发状态竞争导致更新失败。"""
 
 
-def normalize_question(question: str) -> str:
-    """规范化空白和标点，用于确定性去重。"""
-    compact = re.sub(r"[\s　]+", "", str(question or ""))
-    return re.sub(r"[。！？?!.；;：:,，]+$", "", compact)
-
-
-def normalize_sql(sql: str) -> str:
-    """规范化 SQL 空白与注释（沿用 sql_guard 风格，不引入新解析依赖）。"""
-    stripped = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)
-    stripped = re.sub(r"--[^\n\r]*", " ", stripped)
-    return re.sub(r"\s+", " ", stripped).strip().lower()
-
-
 class LearningCandidateStore:
     """候选库。所有写入参数化，禁止 SQL 拼接注入。"""
 
@@ -189,11 +176,37 @@ class LearningCandidateStore:
     # 候选写入
     # ------------------------------------------------------------------
     def save_candidate(self, candidate: LearningCandidate) -> bool:
-        """幂等插入：candidate_id 已存在则忽略，返回是否新建。"""
+        """按 content identity 幂等插入；同问异 SQL 原子进入 needs_review。"""
         row = candidate.to_row()
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            conflicts = connection.execute(
+                "SELECT candidate_id, status FROM learning_candidates "
+                "WHERE source_id=? AND normalized_question=? "
+                "AND normalized_sql<>? AND status NOT IN ('reject','superseded')",
+                (
+                    row["source_id"],
+                    row["normalized_question"],
+                    row["normalized_sql"],
+                ),
+            ).fetchall()
+            if conflicts:
+                row["status"] = "needs_review"
+                row["conflict_status"] = "conflict"
+                row["last_error"] = "同问异 SQL 冲突，需人工复核"
+                for conflict in conflicts:
+                    if can_transition(str(conflict["status"]), "needs_review"):
+                        connection.execute(
+                            "UPDATE learning_candidates SET status='needs_review',"
+                            " conflict_status='conflict', last_error=?, updated_at=?"
+                            " WHERE candidate_id=?",
+                            (
+                                "同问异 SQL 冲突，需人工复核",
+                                time.time(),
+                                conflict["candidate_id"],
+                            ),
+                        )
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO learning_candidates ("
                 " candidate_id, source_id, conversation_id, request_id,"

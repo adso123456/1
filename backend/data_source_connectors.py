@@ -1339,8 +1339,43 @@ class DataSourceAssetPreparer:
         结构校验 + 按 record_id 幂等去重；不在此处做 SQLGuard 复检
         （调用方发布前已用当前 Metadata 复检过）。
         """
+        from backend.learning_identity import (
+            content_identity,
+            normalize_question,
+            normalize_sql,
+        )
+
         existing_ids = {record_id for record_id, _, _ in preserved}
         merged: list[tuple[str, str, dict[str, Any]]] = list(preserved)
+        content_ids: set[str] = set()
+        sql_by_question: dict[str, str] = {}
+
+        def register(
+            document: str,
+            metadata: Mapping[str, Any],
+            *,
+            reject_conflict: bool,
+        ) -> None:
+            try:
+                args = json.loads(str(metadata.get("args_json") or "{}"))
+                sql = str(args.get("sql") or "")
+            except (TypeError, ValueError):
+                sql = ""
+            question = str(metadata.get("question") or document)
+            normalized_question = normalize_question(question)
+            normalized_sql = normalize_sql(sql)
+            previous_sql = sql_by_question.get(normalized_question)
+            if (
+                reject_conflict
+                and previous_sql is not None
+                and previous_sql != normalized_sql
+            ):
+                raise DataSourceCatalogError("SQL Tool Memory 存在同问异 SQL 冲突")
+            sql_by_question.setdefault(normalized_question, normalized_sql)
+            content_ids.add(content_identity(source_id, question, sql))
+
+        for _, document, metadata in preserved:
+            register(document, metadata, reject_conflict=False)
         for record_id, document, metadata in extra:
             item = DataSourceAssetPreparer._sanitize_chroma_metadata(metadata)
             if str(item.get("tool_name") or "") != "run_sql":
@@ -1352,6 +1387,16 @@ class DataSourceAssetPreparer:
             record_id = str(record_id)
             if record_id in existing_ids:
                 continue  # 幂等：重试不重复写入
+            try:
+                args = json.loads(str(item.get("args_json") or "{}"))
+                sql = str(args.get("sql") or "")
+            except (TypeError, ValueError):
+                raise DataSourceCatalogError("额外 Tool Memory 参数不可解析") from None
+            question = str(item.get("question") or document)
+            identity = content_identity(source_id, question, sql)
+            if identity in content_ids:
+                continue
+            register(str(document), item, reject_conflict=True)
             merged.append((record_id, str(document), item))
             existing_ids.add(record_id)
         return merged

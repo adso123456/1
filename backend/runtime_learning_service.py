@@ -21,8 +21,8 @@ from backend.data_source_runtime_manager import DataSourceRuntimeManager
 from backend.learning_candidate_store import (
     LearningCandidateConflict,
     LearningCandidateStore,
-    normalize_question,
 )
+from backend.learning_identity import content_identity, normalize_question, normalize_sql
 from backend.learning_settings_store import effective_learning_settings
 from backend.query_performance import QueryPerformanceState
 from backend.runtime_learning_capture import (
@@ -149,6 +149,8 @@ class RuntimeLearningService:
         runtime_revision: int,
         final_answer: str,
         request_failed: bool,
+        request_origin: str = "user",
+        learning_eligible: bool = True,
     ) -> LearningCandidate | None:
         self.refresh_settings()
         if not self._settings.enabled or not self._settings.capture_enabled:
@@ -160,6 +162,8 @@ class RuntimeLearningService:
             runtime_revision=runtime_revision,
             final_answer=final_answer,
             request_failed=request_failed,
+            request_origin=request_origin,
+            learning_eligible=learning_eligible,
             store=self._store,
             settings=self._settings,
         )
@@ -382,6 +386,8 @@ class RuntimeLearningService:
 
         include: list[LearningCandidate] = []
         skipped: list[LearningCandidate] = []
+        batch_by_question: dict[str, LearningCandidate] = {}
+        batch_content: set[str] = set()
         for candidate in candidates:
             try:
                 self._revalidate_candidate(
@@ -390,7 +396,38 @@ class RuntimeLearningService:
                     current_revision=current_revision,
                     metadata_path=metadata_path,
                 )
+                if candidate.content_fingerprint in batch_content:
+                    self._store.transition(
+                        candidate.candidate_id,
+                        "superseded",
+                        last_error="批次内容级去重：已存在相同样本",
+                    )
+                    skipped.append(candidate)
+                    continue
+                previous = batch_by_question.get(candidate.normalized_question)
+                if previous is not None and (
+                    previous.normalized_sql != candidate.normalized_sql
+                ):
+                    self._store.transition(
+                        candidate.candidate_id,
+                        "needs_review",
+                        last_error="批次内同问异 SQL 冲突，需人工复核",
+                        extra={"conflict_status": "conflict"},
+                    )
+                    self._store.transition(
+                        previous.candidate_id,
+                        "needs_review",
+                        last_error="批次内同问异 SQL 冲突，需人工复核",
+                        extra={"conflict_status": "conflict"},
+                    )
+                    if previous in include:
+                        include.remove(previous)
+                        skipped.append(previous)
+                    skipped.append(candidate)
+                    continue
                 include.append(candidate)
+                batch_content.add(candidate.content_fingerprint)
+                batch_by_question[candidate.normalized_question] = candidate
             except RuntimeLearningServiceError as exc:
                 skipped.append(candidate)
                 logger.warning(
@@ -532,8 +569,11 @@ class RuntimeLearningService:
         fingerprint_hit = [
             item
             for item in existing
-            if str(item.get("content_fingerprint") or "")
-            == candidate.content_fingerprint
+            if content_identity(
+                candidate.source_id,
+                str(item.get("question") or ""),
+                str(item.get("sql") or ""),
+            ) == candidate.content_fingerprint
         ]
         if fingerprint_hit:
             self._store.transition(
@@ -549,7 +589,8 @@ class RuntimeLearningService:
             if str(item.get("question") or "") != ""
             and normalize_question(str(item["question"]))
             == candidate.normalized_question
-            and str(item.get("sql") or "") != candidate.sql
+            and normalize_sql(str(item.get("sql") or ""))
+            != candidate.normalized_sql
         ]
         if same_question_different_sql:
             self._store.transition(

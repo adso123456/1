@@ -18,6 +18,7 @@ from backend.data_source_request_coordinator import (
 )
 from backend.question_suggestion_assets import (
     load_question_directory,
+    matches_formal_identity,
     select_suggested_questions,
 )
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -28,6 +29,7 @@ def create_question_suggestion_router(
     coordinator: DataSourceRequestCoordinator,
     *,
     asset_root: Path | None = None,
+    identity_provider: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
 
@@ -74,8 +76,13 @@ def create_question_suggestion_router(
                 "asset_version": None,
                 "questions": [],
             }
-        # 资产必须与当前数据源 runtime revision 严格一致，否则禁止展示
-        if directory.get("runtime_revision") != record.runtime_revision:
+        if identity_provider is None:
+            from backend.question_suggestion_generator import generation_identity
+
+            current_identity = generation_identity(catalog, context.source_id)
+        else:
+            current_identity = identity_provider(catalog, context.source_id)
+        if not matches_formal_identity(directory, current_identity):
             return {
                 "source_id": context.source_id,
                 "asset_version": directory["asset_version"],

@@ -29,7 +29,10 @@ from backend.runtime_learning_judge import RuntimeLearningJudge
 from backend.runtime_learning_service import RuntimeLearningService
 from backend.runtime_learning_worker import RuntimeLearningWorker
 from backend.question_suggestion_generator import generation_identity
-from backend.question_suggestion_tasks import QuestionSuggestionTaskStore
+from backend.question_suggestion_tasks import (
+    QuestionSuggestionTaskStore,
+    reconcile_question_suggestion_tasks,
+)
 from backend.question_suggestion_worker import QuestionSuggestionWorker
 from backend.system_logs_api import create_system_logs_router
 from backend.data_source_catalog import (
@@ -66,6 +69,7 @@ from backend.runtime_prewarm import RuntimePrewarmer
 from backend.question_suggestion_api import create_question_suggestion_router
 from backend.question_suggestion_assets import (
     load_question_directory,
+    matches_formal_identity,
     select_suggested_questions,
 )
 from backend.water_quality_reports.api import create_report_router
@@ -223,6 +227,17 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
             pass
         # Worker 常驻：未启用时每轮直接返回，管理页打开开关后无需重启即生效。
         if self.question_suggestion_worker is not None:
+            if (
+                self.question_suggestion_store is not None
+                and self.resources.catalog is not None
+            ):
+                try:
+                    reconcile_question_suggestion_tasks(
+                        self.resources.catalog,
+                        self.question_suggestion_store,
+                    )
+                except Exception:
+                    logger.exception("推荐问题启动收敛失败")
             self.question_suggestion_worker.start()
         self.learning_worker.start()
         try:
@@ -565,7 +580,10 @@ class DataSourceVannaFastAPIServer(VannaFastAPIServer):
                     "asset_version": None,
                     "questions": [],
                 }
-            if directory.get("runtime_revision") != record.runtime_revision:
+            if not matches_formal_identity(
+                directory,
+                generation_identity(self.resources.catalog, context.source_id),
+            ):
                 return {
                     "source_id": context.source_id,
                     "asset_version": directory["asset_version"],

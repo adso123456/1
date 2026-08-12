@@ -14,9 +14,8 @@ from typing import Any
 
 from backend.learning_candidate_store import (
     LearningCandidateStore,
-    normalize_question,
-    normalize_sql,
 )
+from backend.learning_identity import content_identity, normalize_question, normalize_sql
 from backend.query_performance import QueryPerformanceState
 from backend.runtime_learning_models import LearningCandidate, ResultEvidence
 from config.learning_settings import OnlineLearningSettings
@@ -210,10 +209,8 @@ def candidate_identity(
     """确定性身份：(candidate_id, normalized_question, normalized_sql, content_fingerprint, args_json)。"""
     normalized_question = normalize_question(question)
     normalized_sql = normalize_sql(sql)
-    candidate_id = _sha256(f"{source_id}|{question}|{sql}")[:24]
-    content_fingerprint = _sha256(
-        f"{source_id}|{normalized_question}|{normalized_sql}"
-    )
+    content_fingerprint = content_identity(source_id, question, sql)
+    candidate_id = content_fingerprint[:24]
     args_json = json.dumps({"sql": sql}, ensure_ascii=False, sort_keys=True)
     return (
         candidate_id,
@@ -234,10 +231,14 @@ def capture_candidate(
     request_failed: bool,
     store: LearningCandidateStore,
     settings: OnlineLearningSettings,
+    request_origin: str = "user",
+    learning_eligible: bool = True,
 ) -> LearningCandidate | None:
     """V1 硬门禁全通过才写入 staged 候选；任何失败静默跳过，绝不抛出。"""
     try:
         if not settings.enabled or not settings.capture_enabled:
+            return None
+        if not learning_eligible or request_origin == "suggestion":
             return None
         if state.request_cancelled:
             return None
@@ -340,7 +341,7 @@ def capture_candidate(
             updated_at=now,
         )
         store.save_candidate(candidate)
-        return candidate
+        return store.get_candidate(candidate_id)
     except Exception:
         # 候选库写入失败绝不能影响用户问答。
         return None

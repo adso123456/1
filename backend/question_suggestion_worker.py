@@ -82,10 +82,13 @@ class QuestionSuggestionWorker:
         identity = {
             "source_id": task["source_id"],
             "runtime_revision": task["runtime_revision"],
+            "selected_scope_fingerprint": task["selected_scope_fingerprint"],
             "metadata_sha256": task["metadata_sha256"],
             "review_policy_fingerprint": task["review_policy_fingerprint"],
+            "formal_sql_memory_fingerprint": task[
+                "formal_sql_memory_fingerprint"
+            ],
             "generator_version": task["generator_version"],
-            "materials_fingerprint": task["materials_fingerprint"],
         }
         try:
             summary = generate_for_source(

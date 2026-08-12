@@ -70,7 +70,13 @@ def _make_asset(
         metadata_sha256=metadata_sha256,
         generated_at="2026-01-01T00:00:00+00:00",
         generator="test",
-        basis={"note": "test asset"},
+        basis={
+            "note": "test asset",
+            "selected_scope_fingerprint": "test-scope",
+            "review_policy_fingerprint": "test-policy",
+            "formal_sql_memory_fingerprint": "test-memory",
+            "generator_version": "test-generator",
+        },
     )
     return write_question_directory(directory, root=root)
 
@@ -153,6 +159,17 @@ def _make_api(root: Path):
             catalog=catalog,
             coordinator=coordinator,
             asset_root=root / "question_suggestions",
+            identity_provider=lambda current_catalog, source_id: {
+                "source_id": source_id,
+                "runtime_revision": current_catalog.require(
+                    source_id
+                ).runtime_revision,
+                "selected_scope_fingerprint": "test-scope",
+                "metadata_sha256": "test-metadata-sha",
+                "review_policy_fingerprint": "test-policy",
+                "formal_sql_memory_fingerprint": "test-memory",
+                "generator_version": "test-generator",
+            },
         )
     )
     return catalog, coordinator, app

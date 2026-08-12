@@ -25,8 +25,8 @@ from backend.request_diagnostics import (
 )
 from backend.question_suggestion_assets import (
     find_suggested_question,
-    find_suggested_question_by_text,
     load_question_directory,
+    matches_formal_identity,
 )
 from backend.suggested_question_executor import execute_suggested_question
 from config.performance_settings import QueryPerformanceSettings
@@ -105,8 +105,7 @@ class DataSourceChatHandler:
         self,
         source_id: str,
         *,
-        suggestion_id: str | None = None,
-        question: str | None = None,
+        suggestion_id: str,
     ) -> dict[str, Any] | None:
         catalog = self._runtime_manager.registry.catalog
         if catalog is None:
@@ -115,13 +114,14 @@ class DataSourceChatHandler:
         directory = load_question_directory(source_id)
         if directory is None:
             return None
-        if directory.get("runtime_revision") != record.runtime_revision:
+        from backend.question_suggestion_generator import generation_identity
+
+        if not matches_formal_identity(
+            directory,
+            generation_identity(catalog, source_id),
+        ):
             return None
-        if isinstance(suggestion_id, str) and suggestion_id.strip():
-            return find_suggested_question(directory, suggestion_id)
-        if isinstance(question, str) and question.strip():
-            return find_suggested_question_by_text(directory, question)
-        return None
+        return find_suggested_question(directory, suggestion_id)
 
     @staticmethod
     def _dataframe_rich(result: Any) -> dict[str, Any]:
@@ -209,6 +209,10 @@ class DataSourceChatHandler:
         final_answer = ""
         producer: asyncio.Task[None] | None = None
         request_failed = False
+        learning_provenance = {
+            "request_origin": "user",
+            "learning_eligible": True,
+        }
         try:
             if self._prewarm_status_provider is not None:
                 prewarm = self._prewarm_status_provider().get(
@@ -250,11 +254,8 @@ class DataSourceChatHandler:
                             )
                             if package is None:
                                 raise ValueError("推荐问题不存在、已失效或尚未通过验证")
-                        else:
-                            package = self._suggestion_package(
-                                context.source_id,
-                                question=request.message,
-                            )
+                            learning_provenance["request_origin"] = "suggestion"
+                            learning_provenance["learning_eligible"] = False
                         if package is not None:
                             emit_progress("validating_sql", "正在校验推荐问题")
                             result = await execute_suggested_question(
@@ -375,6 +376,8 @@ class DataSourceChatHandler:
                         runtime_revision=captured_runtime_revision,
                         final_answer=final_answer,
                         request_failed=request_failed,
+                        request_origin=learning_provenance["request_origin"],
+                        learning_eligible=learning_provenance["learning_eligible"],
                     )
                 except Exception:
                     # 学习捕获失败绝不能反向影响用户问答。

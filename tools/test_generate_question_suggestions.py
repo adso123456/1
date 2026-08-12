@@ -197,6 +197,18 @@ def _write_materials(materials_dir: Path) -> Path:
             "SELECT monitor_time FROM wm_data LIMIT 5",
             expected_tables=["wm_data"],
         ),
+        _sql(
+            "SAMPLE_CONFLICT_A",
+            "查询站点总数",
+            "SELECT COUNT(s.id) AS total FROM wm_station AS s",
+            expected_tables=["wm_station"],
+        ),
+        _sql(
+            "SAMPLE_CONFLICT_B",
+            " 查询站点总数？ ",
+            "SELECT COUNT(DISTINCT s.id) AS total FROM wm_station AS s",
+            expected_tables=["wm_station"],
+        ),
     ]
     materials_file = materials_dir / "sql_examples.json"
     materials_file.write_text(
@@ -380,6 +392,10 @@ def main() -> int:
 
         # Metadata 不匹配不启用
         check("Metadata 不匹配问题不启用", summary["disabled_reasons"].get("metadata_mismatch") == 1)
+        check(
+            "历史同问异 SQL 气泡 fail-closed",
+            summary["disabled_reasons"].get("question_sql_conflict") == 2,
+        )
 
         # 启用的问题：占位词检查 + 数量
         enabled = [q for q in payload["questions"] if q.get("enabled")]

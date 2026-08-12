@@ -1,7 +1,8 @@
 """推荐问题生成任务的幂等存储（独立 SQLite，进卷不进镜像）。
 
-任务身份键 = source_id + runtime_revision + metadata_sha256
-             + review_policy_fingerprint + generator_version + materials_fingerprint。
+任务身份键 = source_id + runtime_revision + selected_scope_fingerprint
+             + metadata_sha256 + review_policy_fingerprint
+             + formal_sql_memory_fingerprint + generator_version。
 
 - 同一身份 succeeded：不重复执行；
 - pending / running：返回现有任务；
@@ -25,10 +26,11 @@ CREATE TABLE IF NOT EXISTS question_suggestion_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL,
     runtime_revision INTEGER NOT NULL,
+    selected_scope_fingerprint TEXT NOT NULL DEFAULT '',
     metadata_sha256 TEXT NOT NULL,
     review_policy_fingerprint TEXT NOT NULL,
+    formal_sql_memory_fingerprint TEXT NOT NULL DEFAULT '',
     generator_version TEXT NOT NULL,
-    materials_fingerprint TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     attempt_count INTEGER NOT NULL DEFAULT 0,
     claimed_at REAL,
@@ -42,10 +44,11 @@ CREATE TABLE IF NOT EXISTS question_suggestion_tasks (
     UNIQUE (
         source_id,
         runtime_revision,
+        selected_scope_fingerprint,
         metadata_sha256,
         review_policy_fingerprint,
-        generator_version,
-        materials_fingerprint
+        formal_sql_memory_fingerprint,
+        generator_version
     )
 );
 """
@@ -53,10 +56,11 @@ CREATE TABLE IF NOT EXISTS question_suggestion_tasks (
 IDENTITY_COLUMNS = (
     "source_id",
     "runtime_revision",
+    "selected_scope_fingerprint",
     "metadata_sha256",
     "review_policy_fingerprint",
+    "formal_sql_memory_fingerprint",
     "generator_version",
-    "materials_fingerprint",
 )
 
 
@@ -86,6 +90,45 @@ class QuestionSuggestionTaskStore:
     def _ensure_schema(self) -> None:
         with self._lock, self._conn:
             self._conn.executescript(SCHEMA)
+            columns = {
+                row["name"] for row in self._conn.execute(
+                    "PRAGMA table_info(question_suggestion_tasks)"
+                )
+            }
+            if "materials_fingerprint" in columns:
+                for name in (
+                    "selected_scope_fingerprint",
+                    "formal_sql_memory_fingerprint",
+                ):
+                    if name not in columns:
+                        self._conn.execute(
+                            f"ALTER TABLE question_suggestion_tasks "
+                            f"ADD COLUMN {name} TEXT NOT NULL DEFAULT ''"
+                        )
+                self._conn.execute(
+                    "ALTER TABLE question_suggestion_tasks "
+                    "RENAME TO question_suggestion_tasks_legacy"
+                )
+                self._conn.executescript(SCHEMA)
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO question_suggestion_tasks ("
+                    " id, source_id, runtime_revision,"
+                    " selected_scope_fingerprint, metadata_sha256,"
+                    " review_policy_fingerprint,"
+                    " formal_sql_memory_fingerprint, generator_version,"
+                    " status, attempt_count, claimed_at, lease_expires_at,"
+                    " next_retry_at, worker_id, asset_path, error,"
+                    " created_at, updated_at)"
+                    " SELECT id, source_id, runtime_revision,"
+                    " COALESCE(selected_scope_fingerprint, ''),"
+                    " metadata_sha256, review_policy_fingerprint,"
+                    " COALESCE(formal_sql_memory_fingerprint, ''),"
+                    " generator_version, status, attempt_count, claimed_at,"
+                    " lease_expires_at, next_retry_at, worker_id, asset_path,"
+                    " error, created_at, updated_at"
+                    " FROM question_suggestion_tasks_legacy"
+                )
+                self._conn.execute("DROP TABLE question_suggestion_tasks_legacy")
 
     def _row(self, task_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(
@@ -100,9 +143,10 @@ class QuestionSuggestionTaskStore:
         with self._lock, self._conn:
             row = self._conn.execute(
                 "SELECT * FROM question_suggestion_tasks "
-                "WHERE source_id=? AND runtime_revision=? AND metadata_sha256=?"
-                " AND review_policy_fingerprint=? AND generator_version=?"
-                " AND materials_fingerprint=?",
+                "WHERE source_id=? AND runtime_revision=?"
+                " AND selected_scope_fingerprint=? AND metadata_sha256=?"
+                " AND review_policy_fingerprint=?"
+                " AND formal_sql_memory_fingerprint=? AND generator_version=?",
                 _identity_key(identity),
             ).fetchone()
             if row is not None:
@@ -116,11 +160,12 @@ class QuestionSuggestionTaskStore:
                 return self._row(row["id"])  # type: ignore[return-value]
             cursor = self._conn.execute(
                 "INSERT INTO question_suggestion_tasks ("
-                " source_id, runtime_revision, metadata_sha256,"
-                " review_policy_fingerprint, generator_version,"
-                " materials_fingerprint, status, attempt_count,"
+                " source_id, runtime_revision, selected_scope_fingerprint,"
+                " metadata_sha256, review_policy_fingerprint,"
+                " formal_sql_memory_fingerprint, generator_version,"
+                " status, attempt_count,"
                 " created_at, updated_at"
-                ") VALUES (?,?,?,?,?,?, 'pending', 0, ?, ?)",
+                ") VALUES (?,?,?,?,?,?,?, 'pending', 0, ?, ?)",
                 (*_identity_key(identity), now, now),
             )
             return self._row(cursor.lastrowid)  # type: ignore[return-value]
@@ -201,3 +246,43 @@ class QuestionSuggestionTaskStore:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+
+def reconcile_question_suggestion_tasks(
+    catalog: Any,
+    store: QuestionSuggestionTaskStore,
+) -> int:
+    """启动时把 ready+enabled 且缺失/过期的气泡资产幂等入队。"""
+    from backend.question_suggestion_assets import load_question_directory
+    from backend.question_suggestion_generator import generation_identity
+
+    enqueued = 0
+    for record in catalog.list():
+        if record.status != "ready" or not record.enabled_for_chat:
+            continue
+        identity = generation_identity(catalog, record.source_id)
+        directory = load_question_directory(record.source_id)
+        basis = dict(directory.get("basis") or {}) if directory else {}
+        current = {
+            "source_id": directory.get("source_id") if directory else None,
+            "runtime_revision": (
+                directory.get("runtime_revision") if directory else None
+            ),
+            "selected_scope_fingerprint": basis.get(
+                "selected_scope_fingerprint"
+            ),
+            "metadata_sha256": (
+                directory.get("metadata_sha256") if directory else None
+            ),
+            "review_policy_fingerprint": basis.get(
+                "review_policy_fingerprint"
+            ),
+            "formal_sql_memory_fingerprint": basis.get(
+                "formal_sql_memory_fingerprint"
+            ),
+            "generator_version": basis.get("generator_version"),
+        }
+        if current != identity:
+            store.enqueue(identity)
+            enqueued += 1
+    return enqueued

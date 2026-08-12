@@ -226,8 +226,33 @@ def load_question_directory(
         "asset_version": asset_version.strip(),
         "runtime_revision": runtime_revision,
         "metadata_sha256": metadata_sha256.strip(),
+        "basis": dict(payload.get("basis") or {}),
         "questions": questions,
     }
+
+
+def matches_formal_identity(
+    directory: Mapping[str, Any],
+    identity: Mapping[str, Any],
+) -> bool:
+    """气泡资产必须与当前 Formal State 七项身份完全一致。"""
+    basis = dict(directory.get("basis") or {})
+    actual = {
+        "source_id": directory.get("source_id"),
+        "runtime_revision": directory.get("runtime_revision"),
+        "selected_scope_fingerprint": basis.get(
+            "selected_scope_fingerprint"
+        ),
+        "metadata_sha256": directory.get("metadata_sha256"),
+        "review_policy_fingerprint": basis.get(
+            "review_policy_fingerprint"
+        ),
+        "formal_sql_memory_fingerprint": basis.get(
+            "formal_sql_memory_fingerprint"
+        ),
+        "generator_version": basis.get("generator_version"),
+    }
+    return actual == dict(identity)
 
 
 def select_suggested_questions(

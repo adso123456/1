@@ -51,7 +51,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.data_source_catalog import CredentialCipher, DataSourceCatalog
+from backend.data_source_catalog import (
+    CredentialCipher,
+    DataSourceCatalog,
+    selected_scope_fingerprint,
+)
+from backend.learning_identity import (
+    normalize_question,
+    normalize_sql,
+    question_identity,
+)
 from backend.question_suggestion_assets import (
     build_question_directory,
     question_suggestions_root,
@@ -293,6 +302,107 @@ def default_materials_paths(source_id: str) -> list[Path]:
         ]
     path = training / source_id / "sql_examples.json"
     return [path] if path.is_file() else []
+
+
+def _formal_sql_memory_fingerprint(record: Any) -> str:
+    provenance_path = Path(record.metadata_path).parent / "asset_provenance.json"
+    try:
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        rows = provenance["assets"]["sql_tool_memory"]
+    except (OSError, KeyError, TypeError, ValueError):
+        rows = []
+    canonical = json.dumps(
+        sorted(
+            [dict(item) for item in rows if isinstance(item, Mapping)],
+            key=lambda item: str(item.get("record_id") or ""),
+        ),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _formal_sql_samples(record: Any) -> tuple[list[dict[str, Any]], str]:
+    """从当前正式 Chroma 读取 SQL Tool Memory，并返回确定性指纹。"""
+    memory_path = Path(record.memory_path)
+    if not memory_path.exists():
+        return [], _formal_sql_memory_fingerprint(record)
+    from backend.memory import create_memory
+
+    memory = create_memory(memory_path)
+    try:
+        result = memory._get_collection().get(
+            where={"category": "sql_example"},
+            include=["documents", "metadatas"],
+        )
+    finally:
+        try:
+            memory._executor.shutdown(wait=True)
+        except Exception:
+            pass
+        memory._collection = None
+        client = getattr(memory, "_client", None)
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+        memory._client = None
+
+    samples: list[dict[str, Any]] = []
+    ids = list(result.get("ids") or [])
+    documents = list(result.get("documents") or [])
+    metadatas = list(result.get("metadatas") or [])
+    for record_id, document, metadata in zip(ids, documents, metadatas, strict=True):
+        item = dict(metadata or {})
+        try:
+            args = json.loads(str(item.get("args_json") or "{}"))
+            compatibility = json.loads(str(item.get("metadata_json") or "{}"))
+        except (TypeError, ValueError):
+            continue
+        question = str(item.get("question") or document or "").strip()
+        sql = str(args.get("sql") or "").strip()
+        if not question or not sql or item.get("tool_name") != "run_sql":
+            continue
+        tables = item.get("expected_tables")
+        if not isinstance(tables, list):
+            tables = compatibility.get("expected_tables") or []
+        samples.append(
+            {
+                "sample_id": str(record_id),
+                "question": question,
+                "sql": sql,
+                "expected_behavior": str(item.get("expected_behavior") or ""),
+                "tables": list(tables) if isinstance(tables, list) else [],
+            }
+        )
+    samples.sort(key=lambda item: item["sample_id"])
+    return samples, _formal_sql_memory_fingerprint(record)
+
+
+def _formal_state_materials(
+    catalog: DataSourceCatalog,
+    source_id: str,
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    record = catalog.require(source_id)
+    samples, memory_fingerprint = _formal_sql_samples(record)
+    policy = catalog.review_policy(source_id)
+    allowed_tables = {table for _, table in policy["allowed_tables"]}
+    scope_tables = {
+        str(item.get("table") or "") for item in record.selected_scope
+    }
+    governed = [
+        sample
+        for sample in samples
+        if set(map(str, sample["tables"])).issubset(allowed_tables)
+        and set(map(str, sample["tables"])).issubset(scope_tables)
+    ]
+    return governed, {
+        "selected_scope_fingerprint": selected_scope_fingerprint(
+            record.selected_scope
+        ),
+        "review_policy_fingerprint": policy["fingerprint"],
+        "formal_sql_memory_fingerprint": memory_fingerprint,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -682,12 +792,17 @@ def generate_questions(
 
     guard = _build_guard(record.database_type, resolved_metadata)
 
-    materials = (
-        sorted(Path(materials_dir).glob("*.json"))
-        if materials_dir
-        else default_materials_paths(source_id)
-    )
-    samples, filter_reasons = load_approved_samples(materials)
+    materials = sorted(Path(materials_dir).glob("*.json")) if materials_dir else []
+    formal_identity: dict[str, str] = {}
+    if materials:
+        samples, filter_reasons = load_approved_samples(materials)
+        formal_sql_memory_fingerprint = _files_sha256(materials)
+    else:
+        samples, formal_identity = _formal_state_materials(catalog, source_id)
+        filter_reasons = Counter()
+        formal_sql_memory_fingerprint = formal_identity[
+            "formal_sql_memory_fingerprint"
+        ]
 
     # 只读验证器：日期改写与最终 SQL 验证都依赖它，须在循环前建立
     verification_note = "skipped"
@@ -700,7 +815,20 @@ def generate_questions(
 
     disabled_reasons: Counter = Counter()
     candidates: list[dict[str, Any]] = []
-    seen_texts: set[str] = set()
+    sql_by_question: dict[str, str] = {}
+    conflicted_questions: set[str] = set()
+
+    for sample in samples:
+        q_identity = question_identity(source_id, sample["question"])
+        normalized = normalize_sql(sample["sql"])
+        previous = sql_by_question.get(q_identity)
+        if previous is not None and previous != normalized:
+            conflicted_questions.add(q_identity)
+        else:
+            sql_by_question[q_identity] = normalized
+
+    generated_sql_by_question: dict[str, str] = {}
+    generated_entry_by_question: dict[str, dict[str, Any]] = {}
 
     try:
         for sample in samples:
@@ -711,6 +839,14 @@ def generate_questions(
                 "related_sample_id": sample["sample_id"],
                 "related_tables": list(sample["tables"]),
             }
+            source_question_identity = question_identity(
+                source_id, sample["question"]
+            )
+            if source_question_identity in conflicted_questions:
+                entry["disabled_reason"] = "question_sql_conflict"
+                disabled_reasons["question_sql_conflict"] += 1
+                candidates.append(entry)
+                continue
             output_kind, chart_type = _output_contract(
                 sample.get("expected_behavior", ""),
                 sample["question"],
@@ -782,9 +918,26 @@ def generate_questions(
                 continue
 
             # 4) 去重
-            if question in seen_texts:
+            normalized_question_identity = question_identity(source_id, question)
+            normalized_rewritten_sql = normalize_sql(rewritten_sql)
+            previous_sql = generated_sql_by_question.get(
+                normalized_question_identity
+            )
+            if previous_sql is not None:
+                if previous_sql != normalized_rewritten_sql:
+                    previous_entry = generated_entry_by_question[
+                        normalized_question_identity
+                    ]
+                    previous_entry.pop("enabled", None)
+                    previous_entry["disabled_reason"] = "question_sql_conflict"
+                    entry["disabled_reason"] = "question_sql_conflict"
+                    disabled_reasons["question_sql_conflict"] += 2
+                    candidates.append(entry)
                 continue
-            seen_texts.add(question)
+            generated_sql_by_question[
+                normalized_question_identity
+            ] = normalized_rewritten_sql
+            generated_entry_by_question[normalized_question_identity] = entry
 
             entry["text"] = question
             entry["related_sql"] = rewritten_sql
@@ -840,8 +993,14 @@ def generate_questions(
 
     enabled_entries = [entry for entry in candidates if entry.get("enabled") is True]
 
-    review_policy_fingerprint = catalog.review_policy(source_id)["fingerprint"]
-    materials_fingerprint = _files_sha256(materials) if materials else ""
+    review_policy_fingerprint = (
+        formal_identity.get("review_policy_fingerprint")
+        or catalog.review_policy(source_id)["fingerprint"]
+    )
+    scope_fingerprint = (
+        formal_identity.get("selected_scope_fingerprint")
+        or selected_scope_fingerprint(record.selected_scope)
+    )
 
     basis: dict[str, Any] = {
         "metadata_path": _portable_project_path(resolved_metadata),
@@ -849,9 +1008,10 @@ def generate_questions(
         "metadata_table_count": len(metadata_tables),
         "sql_examples_paths": [_portable_project_path(path) for path in materials],
         "sql_examples_sha256": _files_sha256(materials) if materials else "",
+        "selected_scope_fingerprint": scope_fingerprint,
         "review_policy_fingerprint": review_policy_fingerprint,
+        "formal_sql_memory_fingerprint": formal_sql_memory_fingerprint,
         "generator_version": GENERATOR_VERSION,
-        "materials_fingerprint": materials_fingerprint,
         "approved_sample_count": len(samples),
         "enabled_question_count": len(enabled_entries),
         "db_verification": verification_note,
@@ -905,17 +1065,22 @@ def generation_identity(
     record = catalog.require(source_id)
     resolved_metadata = Path(record.metadata_path)
     metadata_sha256 = _file_sha256(resolved_metadata)
-    review_policy_fingerprint = catalog.review_policy(source_id)["fingerprint"]
-    materials = (
-        materials if materials is not None else default_materials_paths(source_id)
-    )
+    if materials:
+        formal_sql_memory_fingerprint = _files_sha256(materials)
+        policy_fingerprint = catalog.review_policy(source_id)["fingerprint"]
+        scope_fingerprint = selected_scope_fingerprint(record.selected_scope)
+    else:
+        policy_fingerprint = catalog.review_policy(source_id)["fingerprint"]
+        scope_fingerprint = selected_scope_fingerprint(record.selected_scope)
+        formal_sql_memory_fingerprint = _formal_sql_memory_fingerprint(record)
     return {
         "source_id": source_id,
         "runtime_revision": record.runtime_revision,
+        "selected_scope_fingerprint": scope_fingerprint,
         "metadata_sha256": metadata_sha256,
-        "review_policy_fingerprint": review_policy_fingerprint,
+        "review_policy_fingerprint": policy_fingerprint,
+        "formal_sql_memory_fingerprint": formal_sql_memory_fingerprint,
         "generator_version": GENERATOR_VERSION,
-        "materials_fingerprint": _files_sha256(materials) if materials else "",
     }
 
 
@@ -929,10 +1094,11 @@ def _assert_same_identity(
     for key in (
         "source_id",
         "runtime_revision",
+        "selected_scope_fingerprint",
         "metadata_sha256",
         "review_policy_fingerprint",
+        "formal_sql_memory_fingerprint",
         "generator_version",
-        "materials_fingerprint",
     ):
         if actual.get(key) != expected.get(key):
             raise GenerationIdentityMismatchError(
@@ -960,13 +1126,7 @@ def generate_for_source(
     - 素材缺失或生成失败时不触碰既有正式资产。
     """
     catalog = catalog if catalog is not None else _open_catalog(catalog_path)
-    materials = (
-        sorted(Path(materials_dir).glob("*.json"))
-        if materials_dir
-        else default_materials_paths(source_id)
-    )
-    if not materials:
-        raise ValueError(f"{source_id} 无可用的已批准示例素材，拒绝生成空资产")
+    materials = sorted(Path(materials_dir).glob("*.json")) if materials_dir else []
     identity_start = generation_identity(catalog, source_id, materials=materials)
     if expected_identity is not None:
         _assert_same_identity(identity_start, dict(expected_identity), phase="生成开始")

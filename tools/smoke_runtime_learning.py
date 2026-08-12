@@ -31,6 +31,11 @@ from backend.runtime_learning_capture import capture_candidate
 from backend.runtime_learning_judge import RuntimeLearningJudge
 from backend.runtime_learning_models import JudgeVerdict
 from backend.runtime_learning_service import RuntimeLearningService
+from backend.question_suggestion_generator import (
+    generate_questions,
+    generation_identity,
+)
+from backend.question_suggestion_tasks import QuestionSuggestionTaskStore
 from config.learning_settings import OnlineLearningSettings
 
 
@@ -60,6 +65,7 @@ def _metadata() -> list[dict]:
     ):
         rows.append(
             {
+                "schema": "public",
                 "table": "t1",
                 "table_comment": "测试表",
                 "column": column,
@@ -90,6 +96,7 @@ def _add_ready_source(catalog: DataSourceCatalog) -> str:
     metadata = _metadata()
     catalog.save_discovery(record.source_id, metadata)
     catalog.save_scope(record.source_id, metadata)
+    catalog.migrate_table_reviews_from_existing(record.source_id)
     published = catalog.publish(
         record.source_id, routing_summary="运行时学习烟雾验证源"
     )
@@ -149,6 +156,16 @@ class _PassJudge(RuntimeLearningJudge):
             risk_flags=[],
             reason="烟雾验证：一致",
         )
+
+
+class _SuggestionVerifier:
+    def verify(self, sql: str) -> dict:
+        return {
+            "verified": True,
+            "read_only": True,
+            "columns": ["station_id", "avg_value"],
+            "row_count_sampled": 2,
+        }
 
 
 def _close_memory(memory) -> None:
@@ -224,6 +241,9 @@ def main() -> int:
             candidate_db_path=root / "learning_candidates.sqlite3",
         )
         store = LearningCandidateStore(settings.candidate_db_path)
+        suggestion_store = QuestionSuggestionTaskStore(
+            root / "question_suggestions" / "tasks.sqlite3"
+        )
 
         # 捕获
         state = _make_state()
@@ -267,6 +287,11 @@ def main() -> int:
             store=store,
             judge=_PassJudge(object(), settings),
             settings=settings,
+            post_publish_hook=lambda published_source, result: (
+                suggestion_store.enqueue(
+                    generation_identity(catalog, published_source)
+                )
+            ),
         )
         result = asyncio.run(service.publish_source(source_id, force=True))
         check(result["published"] == 1, "发布 1 条候选")
@@ -294,6 +319,36 @@ def main() -> int:
             _close_memory(memory)
         check(len(found["ids"]) >= 1, "正式 Chroma 含 sql_example 记录")
 
+        task = suggestion_store.claim_next("smoke-worker")
+        check(task is not None, "正式发布后气泡重建任务已入队")
+        suggestion_summary = generate_questions(
+            source_id=source_id,
+            root=root / "question_suggestions",
+            catalog_path=None,
+            materials_dir=None,
+            metadata_path=None,
+            no_db_verify=False,
+            max_questions=100,
+            asset_version="v1",
+            verifier=_SuggestionVerifier(),
+            catalog=catalog,
+        )
+        suggestion_payload = json.loads(
+            Path(suggestion_summary["asset_path"]).read_text(encoding="utf-8")
+        )
+        check(
+            any(
+                item.get("text") == state.question
+                and item.get("enabled") is True
+                for item in suggestion_payload["questions"]
+            ),
+            "Formal SQL Tool Memory 新样本生成新气泡",
+        )
+        check(
+            suggestion_payload["runtime_revision"] == before + 1,
+            "新气泡绑定发布后的 runtime revision",
+        )
+
         # 召回
         asyncio.run(
             _verify_recall(
@@ -302,6 +357,7 @@ def main() -> int:
                 state.last_sql,
             )
         )
+        suggestion_store.close()
 
         # 幂等：同一批重试不会重复写（revision 再次 +1，但记录不重复）
         print("smoke runtime learning: all checks passed")
